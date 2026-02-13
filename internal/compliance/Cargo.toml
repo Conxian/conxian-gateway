@@ -1,0 +1,10 @@
+[package]
+name = "compliance"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+conxian-core.workspace = true
+serde.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
