@@ -1,0 +1,13 @@
+[package]
+name = "engine"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+conxian-core.workspace = true
+bitcoin.workspace = true
+bitcoincore-rpc.workspace = true
+tokio.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+async-trait.workspace = true

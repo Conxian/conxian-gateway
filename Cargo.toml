@@ -1,0 +1,51 @@
+[workspace]
+resolver = "2"
+members = [
+    "cmd/gateway",
+    "internal/engine",
+    "internal/api",
+    "internal/compliance",
+    "pkg/conxian-core",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Conxian Gateway Contributors"]
+license = "MIT"
+description = "Institutional-grade Bitcoin/Stacks Gateway"
+
+[workspace.dependencies]
+# Bitcoin & Stacks
+bitcoin = { version = "0.32.6", features = ["std", "serde", "rand", "secp-recovery"] }
+secp256k1 = { version = "0.29.1", features = ["global-context", "recovery", "rand"] }
+bitcoincore-rpc = { version = "0.19.0" }
+
+# Async & Runtime
+tokio = { version = "1.45.1", features = ["full"] }
+futures = { version = "0.3.31" }
+async-trait = { version = "0.1.88" }
+
+# Serialization
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = { version = "1.0.140" }
+
+# HTTP & API
+axum = { version = "0.8.4" }
+tower = { version = "0.5.2" }
+tower-http = { version = "0.6.6", features = ["cors", "trace"] }
+hyper = { version = "1.6.0", features = ["full"] }
+
+# Utilities & Error Handling
+anyhow = { version = "1.0.98" }
+thiserror = { version = "1.0.69" }
+chrono = { version = "0.4.34", features = ["serde"] }
+uuid = { version = "1.17.0", features = ["v4", "serde"] }
+tracing = { version = "0.1.41" }
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+
+# Internal crates
+engine = { path = "internal/engine" }
+api = { path = "internal/api" }
+compliance = { path = "internal/compliance" }
+conxian-core = { path = "pkg/conxian-core" }

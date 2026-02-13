@@ -1,0 +1,15 @@
+[package]
+name = "gateway"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+engine.workspace = true
+api.workspace = true
+compliance.workspace = true
+conxian-core.workspace = true
+tokio.workspace = true
+axum.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
