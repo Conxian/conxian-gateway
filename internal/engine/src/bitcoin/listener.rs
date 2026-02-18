@@ -1,16 +1,22 @@
 use crate::bitcoin::BitcoinRpcClient;
-use conxian_core::ConxianResult;
+use conxian_core::{ConxianResult, SharedState};
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::time::{sleep, Duration};
-use tracing::{info, error};
+use tracing::{error, info};
 
 pub struct BitcoinListener {
     rpc: BitcoinRpcClient,
+    state: SharedState,
     last_height: u64,
 }
 
 impl BitcoinListener {
-    pub fn new(rpc: BitcoinRpcClient) -> Self {
-        Self { rpc, last_height: 0 }
+    pub fn new(rpc: BitcoinRpcClient, state: SharedState) -> Self {
+        Self {
+            rpc,
+            state,
+            last_height: 0,
+        }
     }
 
     pub async fn run(&mut self) -> ConxianResult<()> {
@@ -18,6 +24,15 @@ impl BitcoinListener {
 
         // Initial height
         self.last_height = self.rpc.get_block_count().await?;
+        {
+            let mut state = self.state.write().unwrap();
+            state.bitcoin.height = self.last_height;
+            state.bitcoin.status = "synced".to_string();
+            state.bitcoin.last_updated = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+        }
         info!("Current Bitcoin height: {}", self.last_height);
 
         loop {
@@ -28,15 +43,23 @@ impl BitcoinListener {
                             match self.rpc.get_block_info(h).await {
                                 Ok(block) => {
                                     info!("New Bitcoin block: {} ({})", block.height, block.hash);
-                                    // Here we would trigger events/indexing
+                                    let mut state = self.state.write().unwrap();
+                                    state.bitcoin.height = block.height;
+                                    state.bitcoin.last_updated = block.timestamp;
                                 }
-                                Err(e) => error!("Failed to get block info for height {}: {}", h, e),
+                                Err(e) => {
+                                    error!("Failed to get block info for height {}: {}", h, e)
+                                }
                             }
                         }
                         self.last_height = current_height;
                     }
                 }
-                Err(e) => error!("Failed to get Bitcoin block count: {}", e),
+                Err(e) => {
+                    error!("Failed to get Bitcoin block count: {}", e);
+                    let mut state = self.state.write().unwrap();
+                    state.bitcoin.status = format!("error: {}", e);
+                }
             }
             sleep(Duration::from_secs(10)).await;
         }

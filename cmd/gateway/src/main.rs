@@ -1,6 +1,11 @@
+mod config;
+
 use api::configure_routes;
-use engine::{BitcoinRpcClient, BitcoinListener, StacksListener};
+use config::Config;
+use conxian_core::{GatewayState, SharedState};
+use engine::{BitcoinListener, BitcoinRpcClient, StacksListener};
 use std::net::SocketAddr;
+use std::sync::{Arc, RwLock};
 use tracing::info;
 
 #[tokio::main]
@@ -10,12 +15,23 @@ async fn main() -> anyhow::Result<()> {
 
     info!("Starting Conxian Gateway...");
 
-    // Initialize Bitcoin RPC (using placeholders for now)
-    let btc_rpc = BitcoinRpcClient::new("http://localhost:18332", "user", "pass")?;
-    let mut btc_listener = BitcoinListener::new(btc_rpc);
+    // Load configuration
+    let config = Config::from_env();
+
+    // Initialize shared state
+    let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
+
+    // Initialize Bitcoin RPC
+    let btc_rpc = BitcoinRpcClient::new(
+        &config.bitcoin_rpc_url,
+        &config.bitcoin_rpc_user,
+        &config.bitcoin_rpc_pass,
+    )?;
+
+    let mut btc_listener = BitcoinListener::new(btc_rpc, state.clone());
 
     // Initialize Stacks listener
-    let mut stx_listener = StacksListener::new();
+    let mut stx_listener = StacksListener::new(state.clone());
 
     // Spawn listeners
     tokio::spawn(async move {
@@ -31,8 +47,8 @@ async fn main() -> anyhow::Result<()> {
     });
 
     // Configure and start API server
-    let app = configure_routes();
-    let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
+    let app = configure_routes(state);
+    let addr = SocketAddr::from(([0, 0, 0, 0], config.api_port));
     info!("API server listening on {}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;

@@ -1,5 +1,5 @@
+use conxian_core::{ConxianError, ConxianResult};
 use serde::{Deserialize, Serialize};
-use conxian_core::{ConxianResult, ConxianError};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Attestation {
@@ -9,6 +9,12 @@ pub struct Attestation {
 }
 
 pub struct ZkcVerifier;
+
+impl Default for ZkcVerifier {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl ZkcVerifier {
     pub fn new() -> Self {
@@ -21,7 +27,9 @@ impl ZkcVerifier {
         if attestation.device_id.starts_with("conxius-") {
             Ok(true)
         } else {
-            Err(ConxianError::Compliance("Invalid device attestation".to_string()))
+            Err(ConxianError::Compliance(
+                "Invalid device attestation".to_string(),
+            ))
         }
     }
 }

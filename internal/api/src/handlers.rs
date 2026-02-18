@@ -1,6 +1,7 @@
-use axum::Json;
-use serde_json::{json, Value};
+use axum::{extract::State, Json};
 use compliance::{Attestation, ZkcVerifier};
+use conxian_core::SharedState;
+use serde_json::{json, Value};
 
 pub async fn health_check() -> Json<Value> {
     Json(json!({
@@ -10,20 +11,17 @@ pub async fn health_check() -> Json<Value> {
     }))
 }
 
-pub async fn get_state() -> Json<Value> {
+pub async fn get_state(State(state): State<SharedState>) -> Json<Value> {
+    let state = state.read().unwrap();
     Json(json!({
-        "bitcoin": {
-            "status": "synced",
-            "height": 800000
-        },
-        "stacks": {
-            "status": "synced",
-            "height": 100000
-        }
+        "bitcoin": state.bitcoin,
+        "stacks": state.stacks
     }))
 }
 
-pub async fn verify_attestation(Json(attestation): Json<Attestation>) -> Result<Json<Value>, Json<Value>> {
+pub async fn verify_attestation(
+    Json(attestation): Json<Attestation>,
+) -> Result<Json<Value>, Json<Value>> {
     let verifier = ZkcVerifier::new();
     match verifier.verify(&attestation) {
         Ok(valid) => Ok(Json(json!({ "valid": valid }))),

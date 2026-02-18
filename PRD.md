@@ -18,3 +18,10 @@ The Conxian Gateway is an institutional-grade middleware for Bitcoin/Stacks stat
 - 2026-02-13: Ported Institutional API and Auth layer (Axum based).
 - 2026-02-13: Implemented ZKC Module for Conxius Wallet attestation.
 - 2026-02-13: Finalized documentation and entry point. System ready for initialization.
+
+## 4. Recent Improvements (2026-02-13)
+- **Synchronized State Management**: Implemented `GatewayState` in `conxian-core` using `Arc<RwLock<...>>`, allowing listeners to update and the API to serve real-time blockchain state.
+- **Configurable Environment**: Added `Config` module to `gateway` for loading settings from environment variables.
+- **Improved Observability**: Added timestamp tracking and status updates to both Bitcoin and Stacks listeners.
+- **Enhanced API Handlers**: Refactored API handlers to be state-aware, providing accurate data to institutional clients.
+- **Integration Testing**: Added integration tests in `cmd/gateway/tests` to verify API functionality and state synchronization.
