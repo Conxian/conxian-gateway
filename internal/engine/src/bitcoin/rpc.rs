@@ -1,5 +1,5 @@
 use bitcoincore_rpc::{Auth, Client, RpcApi};
-use conxian_core::{BlockInfo, ConxianResult, ConxianError};
+use conxian_core::{BlockInfo, ConxianError, ConxianResult};
 use std::sync::Arc;
 
 pub struct BitcoinRpcClient {
@@ -19,7 +19,9 @@ impl BitcoinRpcClient {
     pub async fn get_block_count(&self) -> ConxianResult<u64> {
         let client = self.client.clone();
         tokio::task::spawn_blocking(move || {
-            client.get_block_count().map_err(|e: bitcoincore_rpc::Error| ConxianError::Bitcoin(e.to_string()))
+            client
+                .get_block_count()
+                .map_err(|e: bitcoincore_rpc::Error| ConxianError::Bitcoin(e.to_string()))
         })
         .await
         .map_err(|e: tokio::task::JoinError| ConxianError::Internal(e.to_string()))?
@@ -28,9 +30,11 @@ impl BitcoinRpcClient {
     pub async fn get_block_info(&self, height: u64) -> ConxianResult<BlockInfo> {
         let client = self.client.clone();
         tokio::task::spawn_blocking(move || {
-            let hash = client.get_block_hash(height)
+            let hash = client
+                .get_block_hash(height)
                 .map_err(|e: bitcoincore_rpc::Error| ConxianError::Bitcoin(e.to_string()))?;
-            let header = client.get_block_header(&hash)
+            let header = client
+                .get_block_header(&hash)
                 .map_err(|e: bitcoincore_rpc::Error| ConxianError::Bitcoin(e.to_string()))?;
 
             Ok(BlockInfo {

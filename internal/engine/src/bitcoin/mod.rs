@@ -1,5 +1,5 @@
-pub mod rpc;
 pub mod listener;
+pub mod rpc;
 
-pub use rpc::BitcoinRpcClient;
 pub use listener::BitcoinListener;
+pub use rpc::BitcoinRpcClient;
