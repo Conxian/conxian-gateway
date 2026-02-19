@@ -3,7 +3,7 @@ mod config;
 use api::configure_routes;
 use config::Config;
 use conxian_core::{GatewayState, SharedState};
-use engine::{BitcoinListener, BitcoinRpcClient, StacksListener};
+use engine::{BitcoinListener, BitcoinRpcClient, StacksListener, SimulatedStacksRpc};
 use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
 use tracing::info;
@@ -31,7 +31,8 @@ async fn main() -> anyhow::Result<()> {
     let mut btc_listener = BitcoinListener::new(btc_rpc, state.clone());
 
     // Initialize Stacks listener
-    let mut stx_listener = StacksListener::new(state.clone());
+    let stx_rpc = SimulatedStacksRpc { initial_height: 100000 };
+    let mut stx_listener = StacksListener::new(stx_rpc, state.clone());
 
     // Spawn listeners
     tokio::spawn(async move {
@@ -47,7 +48,7 @@ async fn main() -> anyhow::Result<()> {
     });
 
     // Configure and start API server
-    let app = configure_routes(state);
+    let app = configure_routes(state, config.api_token);
     let addr = SocketAddr::from(([0, 0, 0, 0], config.api_port));
     info!("API server listening on {}", addr);
 

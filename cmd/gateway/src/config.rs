@@ -5,6 +5,7 @@ pub struct Config {
     pub bitcoin_rpc_user: String,
     pub bitcoin_rpc_pass: String,
     pub api_port: u16,
+    pub api_token: String,
 }
 
 impl Config {
@@ -18,6 +19,7 @@ impl Config {
                 .unwrap_or_else(|_| "3000".to_string())
                 .parse()
                 .unwrap_or(3000),
+            api_token: env::var("API_TOKEN").unwrap_or_else(|_| "institutional-default-token".to_string()),
         }
     }
 }
