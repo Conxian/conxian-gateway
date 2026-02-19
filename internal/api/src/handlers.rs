@@ -28,3 +28,38 @@ pub async fn verify_attestation(
         Err(e) => Err(Json(json!({ "error": e.to_string() }))),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use conxian_core::GatewayState;
+    use std::sync::{Arc, RwLock};
+
+    #[tokio::test]
+    async fn test_health_check_handler() {
+        let res = health_check().await;
+        assert_eq!(res.0["status"], "healthy");
+    }
+
+    #[tokio::test]
+    async fn test_get_state_handler() {
+        let state = Arc::new(RwLock::new(GatewayState::default()));
+        {
+            let mut s = state.write().unwrap();
+            s.bitcoin.height = 100;
+        }
+        let res = get_state(State(state)).await;
+        assert_eq!(res.0["bitcoin"]["height"], 100);
+    }
+
+    #[tokio::test]
+    async fn test_verify_attestation_handler() {
+        let attestation = Attestation {
+            device_id: "conxius-123".to_string(),
+            signature: "sig".to_string(),
+            payload: "payload".to_string(),
+        };
+        let res = verify_attestation(Json(attestation)).await.unwrap();
+        assert_eq!(res.0["valid"], true);
+    }
+}

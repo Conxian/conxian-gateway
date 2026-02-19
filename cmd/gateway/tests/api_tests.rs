@@ -8,10 +8,12 @@ use serde_json::Value;
 use std::sync::{Arc, RwLock};
 use tower::ServiceExt; // for `oneshot` and `ready`
 
+const TEST_TOKEN: &str = "test-token";
+
 #[tokio::test]
 async fn test_health_check() {
     let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
-    let app = configure_routes(state);
+    let app = configure_routes(state, TEST_TOKEN.to_string());
 
     let response = app
         .oneshot(
@@ -29,7 +31,7 @@ async fn test_health_check() {
 #[tokio::test]
 async fn test_get_state_unauthorized() {
     let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
-    let app = configure_routes(state);
+    let app = configure_routes(state, TEST_TOKEN.to_string());
 
     let response = app
         .oneshot(
@@ -53,13 +55,13 @@ async fn test_get_state_authorized() {
         s.bitcoin.status = "testing".to_string();
     }
 
-    let app = configure_routes(state);
+    let app = configure_routes(state, TEST_TOKEN.to_string());
 
     let response = app
         .oneshot(
             Request::builder()
                 .uri("/api/v1/state")
-                .header("Authorization", "Bearer institutional-test-token")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
                 .body(Body::empty())
                 .unwrap(),
         )

@@ -25,3 +25,10 @@ The Conxian Gateway is an institutional-grade middleware for Bitcoin/Stacks stat
 - **Improved Observability**: Added timestamp tracking and status updates to both Bitcoin and Stacks listeners.
 - **Enhanced API Handlers**: Refactored API handlers to be state-aware, providing accurate data to institutional clients.
 - **Integration Testing**: Added integration tests in `cmd/gateway/tests` to verify API functionality and state synchronization.
+
+## 5. Technical Implementation Details (Updated 2026-02-13)
+- **Bitcoin Engine**: Uses `bitcoincore-rpc` for state monitoring. Now includes a `BitcoinRpc` trait for improved testability and mocking.
+- **Stacks Engine**: Currently uses a `SimulatedStacksRpc` for Nakamoto-ready state logic. Designed with a `StacksRpc` trait for future integration with real Stacks nodes.
+- **ZKC Module**: Implements robust attestation validation. Validates device IDs (prefix `conxius-`) and ensures non-empty signatures and payloads.
+- **Security**: Institutional API is protected by Bearer token authentication (configurable via `API_TOKEN`).
+- **Testing**: Comprehensive unit tests added for all modules (Engine, API, Compliance) and integration tests for the full Gateway.

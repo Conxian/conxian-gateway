@@ -1,6 +1,13 @@
+use async_trait::async_trait;
 use bitcoincore_rpc::{Auth, Client, RpcApi};
 use conxian_core::{BlockInfo, ConxianError, ConxianResult};
 use std::sync::Arc;
+
+#[async_trait]
+pub trait BitcoinRpc: Send + Sync {
+    async fn get_block_count(&self) -> ConxianResult<u64>;
+    async fn get_block_info(&self, height: u64) -> ConxianResult<BlockInfo>;
+}
 
 pub struct BitcoinRpcClient {
     client: Arc<Client>,
@@ -15,8 +22,11 @@ impl BitcoinRpcClient {
             client: Arc::new(client),
         })
     }
+}
 
-    pub async fn get_block_count(&self) -> ConxianResult<u64> {
+#[async_trait]
+impl BitcoinRpc for BitcoinRpcClient {
+    async fn get_block_count(&self) -> ConxianResult<u64> {
         let client = self.client.clone();
         tokio::task::spawn_blocking(move || {
             client
@@ -27,7 +37,7 @@ impl BitcoinRpcClient {
         .map_err(|e: tokio::task::JoinError| ConxianError::Internal(e.to_string()))?
     }
 
-    pub async fn get_block_info(&self, height: u64) -> ConxianResult<BlockInfo> {
+    async fn get_block_info(&self, height: u64) -> ConxianResult<BlockInfo> {
         let client = self.client.clone();
         tokio::task::spawn_blocking(move || {
             let hash = client
