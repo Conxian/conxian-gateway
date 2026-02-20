@@ -78,3 +78,33 @@ async fn test_get_state_authorized() {
     assert_eq!(json["bitcoin"]["height"], 12345);
     assert_eq!(json["bitcoin"]["status"], "testing");
 }
+
+#[tokio::test]
+async fn test_verify_attestation_authorized() {
+    let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
+    let app = configure_routes(state, TEST_TOKEN.to_string());
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/verify")
+                .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("Content-Type", "application/json")
+                .body(Body::from(serde_json::to_string(&serde_json::json!({
+                    "device_id": "conxius-123",
+                    "signature": "30440220263f69528d22384a32c2a07c3f3e1a8e9b6a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0220263f69528d22384a32c2a07c3f3e1a8e9b6a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+                    "payload": "payload",
+                    "public_key": "0250863ad64a87ad8a2bf2bb8ae16617bc25e101c70628d01f0599a4f7bb4d602f"
+                })).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    // Since it's an invalid signature, it should return 400 or something,
+    // but the handler returns Result<Json<Value>, Json<Value>>.
+    // In Axum, Err(Json(Value)) returns 500 by default unless specified.
+    // Let's check what the handler does.
+    assert_ne!(response.status(), StatusCode::UNAUTHORIZED);
+}

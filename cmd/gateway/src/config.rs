@@ -4,6 +4,7 @@ pub struct Config {
     pub bitcoin_rpc_url: String,
     pub bitcoin_rpc_user: String,
     pub bitcoin_rpc_pass: String,
+    pub stacks_rpc_url: String,
     pub api_port: u16,
     pub api_token: String,
 }
@@ -15,6 +16,8 @@ impl Config {
                 .unwrap_or_else(|_| "http://localhost:18332".to_string()),
             bitcoin_rpc_user: env::var("BITCOIN_RPC_USER").unwrap_or_else(|_| "user".to_string()),
             bitcoin_rpc_pass: env::var("BITCOIN_RPC_PASS").unwrap_or_else(|_| "pass".to_string()),
+            stacks_rpc_url: env::var("STACKS_RPC_URL")
+                .unwrap_or_else(|_| "https://api.mainnet.hiro.so".to_string()),
             api_port: env::var("API_PORT")
                 .unwrap_or_else(|_| "3000".to_string())
                 .parse()

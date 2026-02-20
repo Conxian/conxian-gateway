@@ -3,10 +3,11 @@ mod config;
 use api::configure_routes;
 use config::Config;
 use conxian_core::{GatewayState, SharedState};
-use engine::{BitcoinListener, BitcoinRpcClient, StacksListener, SimulatedStacksRpc};
+use engine::{BitcoinListener, BitcoinRpcClient, StacksListener, StacksRpcClient};
 use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
-use tracing::info;
+use tokio::signal;
+use tracing::{info, error};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -31,19 +32,39 @@ async fn main() -> anyhow::Result<()> {
     let mut btc_listener = BitcoinListener::new(btc_rpc, state.clone());
 
     // Initialize Stacks listener
-    let stx_rpc = SimulatedStacksRpc { initial_height: 100000 };
+    let stx_rpc = StacksRpcClient::new(&config.stacks_rpc_url);
     let mut stx_listener = StacksListener::new(stx_rpc, state.clone());
 
-    // Spawn listeners
+    // Create a cancellation token for graceful shutdown of listeners
+    // For simplicity, we'll use a simple flag or just let them be dropped when the program exits,
+    // but a better way is to use a broadcast channel or CancellationToken.
+    let (shutdown_tx, _) = tokio::sync::broadcast::channel::<()>(1);
+
+    let mut btc_shutdown_rx = shutdown_tx.subscribe();
     tokio::spawn(async move {
-        if let Err(e) = btc_listener.run().await {
-            tracing::error!("Bitcoin listener failed: {}", e);
+        tokio::select! {
+            res = btc_listener.run() => {
+                if let Err(e) = res {
+                    error!("Bitcoin listener failed: {}", e);
+                }
+            }
+            _ = btc_shutdown_rx.recv() => {
+                info!("Bitcoin listener stopping...");
+            }
         }
     });
 
+    let mut stx_shutdown_rx = shutdown_tx.subscribe();
     tokio::spawn(async move {
-        if let Err(e) = stx_listener.run().await {
-            tracing::error!("Stacks listener failed: {}", e);
+        tokio::select! {
+            res = stx_listener.run() => {
+                if let Err(e) = res {
+                    error!("Stacks listener failed: {}", e);
+                }
+            }
+            _ = stx_shutdown_rx.recv() => {
+                info!("Stacks listener stopping...");
+            }
         }
     });
 
@@ -53,7 +74,39 @@ async fn main() -> anyhow::Result<()> {
     info!("API server listening on {}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app).await?;
 
+    // Axum graceful shutdown
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal(shutdown_tx))
+        .await?;
+
+    info!("Conxian Gateway shut down successfully.");
     Ok(())
+}
+
+async fn shutdown_signal(shutdown_tx: tokio::sync::broadcast::Sender<()>) {
+    let ctrl_c = async {
+        signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        signal::unix::signal(signal::unix::SignalKind::terminate())
+            .expect("failed to install signal handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+
+    info!("Shutdown signal received...");
+    let _ = shutdown_tx.send(());
 }

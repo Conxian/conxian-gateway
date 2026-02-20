@@ -8,6 +8,7 @@ pub struct BitcoinListener<R: BitcoinRpc> {
     rpc: R,
     state: SharedState,
     last_height: u64,
+    network: Option<String>,
 }
 
 impl<R: BitcoinRpc> BitcoinListener<R> {
@@ -16,10 +17,18 @@ impl<R: BitcoinRpc> BitcoinListener<R> {
             rpc,
             state,
             last_height: 0,
+            network: None,
         }
     }
 
     pub async fn sync_once(&mut self) -> ConxianResult<()> {
+        if self.network.is_none() {
+            match self.rpc.get_network_info().await {
+                Ok(n) => self.network = Some(n),
+                Err(e) => error!("Failed to get Bitcoin network info: {}", e),
+            }
+        }
+
         match self.rpc.get_block_count().await {
             Ok(current_height) => {
                 if current_height > self.last_height || self.last_height == 0 {
@@ -32,6 +41,10 @@ impl<R: BitcoinRpc> BitcoinListener<R> {
                                 state.bitcoin.height = block.height;
                                 state.bitcoin.last_updated = block.timestamp;
                                 state.bitcoin.status = "synced".to_string();
+                                state.bitcoin.best_block_hash = block.hash.clone();
+                                if let Some(ref n) = self.network {
+                                    state.bitcoin.network = n.clone();
+                                }
                             }
                             Err(e) => {
                                 error!("Failed to get block info for height {}: {}", h, e);
@@ -87,6 +100,9 @@ mod tests {
                 timestamp: 123456789,
             })
         }
+        async fn get_network_info(&self) -> ConxianResult<String> {
+            Ok("testnet".to_string())
+        }
     }
 
     #[tokio::test]
@@ -101,6 +117,8 @@ mod tests {
             let s = state.read().unwrap();
             assert_eq!(s.bitcoin.height, 100);
             assert_eq!(s.bitcoin.status, "synced");
+            assert_eq!(s.bitcoin.network, "testnet");
+            assert_eq!(s.bitcoin.best_block_hash, "hash-100");
         }
 
         // Update height
@@ -110,6 +128,7 @@ mod tests {
         {
             let s = state.read().unwrap();
             assert_eq!(s.bitcoin.height, 101);
+            assert_eq!(s.bitcoin.best_block_hash, "hash-101");
         }
     }
 }

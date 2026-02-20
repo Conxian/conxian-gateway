@@ -7,6 +7,7 @@ use std::sync::Arc;
 pub trait BitcoinRpc: Send + Sync {
     async fn get_block_count(&self) -> ConxianResult<u64>;
     async fn get_block_info(&self, height: u64) -> ConxianResult<BlockInfo>;
+    async fn get_network_info(&self) -> ConxianResult<String>;
 }
 
 pub struct BitcoinRpcClient {
@@ -52,6 +53,18 @@ impl BitcoinRpc for BitcoinRpcClient {
                 height,
                 timestamp: header.time as u64,
             })
+        })
+        .await
+        .map_err(|e: tokio::task::JoinError| ConxianError::Internal(e.to_string()))?
+    }
+
+    async fn get_network_info(&self) -> ConxianResult<String> {
+        let client = self.client.clone();
+        tokio::task::spawn_blocking(move || {
+            let info = client
+                .get_blockchain_info()
+                .map_err(|e: bitcoincore_rpc::Error| ConxianError::Bitcoin(e.to_string()))?;
+            Ok(info.chain.to_string())
         })
         .await
         .map_err(|e: tokio::task::JoinError| ConxianError::Internal(e.to_string()))?

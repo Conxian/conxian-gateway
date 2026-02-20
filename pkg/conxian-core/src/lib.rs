@@ -22,6 +22,8 @@ pub struct ChainState {
     pub height: u64,
     pub status: String,
     pub last_updated: u64,
+    pub best_block_hash: String,
+    pub network: String,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -36,6 +38,8 @@ impl Default for ChainState {
             height: 0,
             status: "initializing".to_string(),
             last_updated: 0,
+            best_block_hash: "".to_string(),
+            network: "unknown".to_string(),
         }
     }
 }
