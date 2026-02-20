@@ -8,3 +8,7 @@ conxian-core.workspace = true
 serde.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
+secp256k1 = { workspace = true, features = ["global-context", "rand-std"] }
+bitcoin = { workspace = true }
+hex = "0.4.3"
+rand = "0.8"

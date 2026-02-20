@@ -30,6 +30,7 @@ impl<R: StacksRpc> StacksListener<R> {
                         .duration_since(UNIX_EPOCH)
                         .unwrap()
                         .as_secs();
+                    state.stacks.network = "mainnet".to_string(); // Assume mainnet for now or get from RPC
                     self.last_height = current_height;
                 }
                 Ok(())
