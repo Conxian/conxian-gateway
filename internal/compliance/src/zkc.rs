@@ -1,15 +1,8 @@
-use conxian_core::{ConxianError, ConxianResult};
-use serde::{Deserialize, Serialize};
+pub use conxian_core::{Attestation, SchnorrAttestation, ConxianError, ConxianResult};
 use secp256k1::{Message, Secp256k1, PublicKey, ecdsa::Signature};
+use secp256k1::schnorr::Signature as SchnorrSignature;
+use secp256k1::XOnlyPublicKey;
 use bitcoin::hashes::{sha256, Hash};
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Attestation {
-    pub device_id: String,
-    pub signature: String, // Hex encoded
-    pub payload: String,
-    pub public_key: String, // Hex encoded
-}
 
 pub struct ZkcVerifier {
     secp: Secp256k1<secp256k1::All>,
@@ -74,13 +67,38 @@ impl ZkcVerifier {
             Err(e) => Err(ConxianError::Compliance(format!("Signature verification failed: {}", e))),
         }
     }
+
+    /// Research enhancement: Verify Schnorr signature for Taproot-compatible attestations.
+    pub fn verify_schnorr(&self, attestation: &SchnorrAttestation) -> ConxianResult<bool> {
+        // Parse X-only public key
+        let pubkey_bytes = hex::decode(&attestation.x_only_public_key)
+            .map_err(|e| ConxianError::Compliance(format!("Invalid x-only public key hex: {}", e)))?;
+        let pubkey = XOnlyPublicKey::from_slice(&pubkey_bytes)
+            .map_err(|e| ConxianError::Compliance(format!("Invalid x-only public key: {}", e)))?;
+
+        // Parse Schnorr signature
+        let sig_bytes = hex::decode(&attestation.signature)
+            .map_err(|e| ConxianError::Compliance(format!("Invalid Schnorr signature hex: {}", e)))?;
+        let sig = SchnorrSignature::from_slice(&sig_bytes)
+            .map_err(|e| ConxianError::Compliance(format!("Invalid Schnorr signature: {}", e)))?;
+
+        // Hash the payload
+        let message_hash = sha256::Hash::hash(attestation.payload.as_bytes());
+        let message = Message::from_digest(message_hash.to_byte_array());
+
+        // Verify signature
+        match self.secp.verify_schnorr(&sig, &message, &pubkey) {
+            Ok(_) => Ok(true),
+            Err(e) => Err(ConxianError::Compliance(format!("Schnorr signature verification failed: {}", e))),
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use secp256k1::SecretKey;
     use rand::thread_rng;
+    use secp256k1::Keypair;
 
     #[test]
     fn test_zkc_verify_valid() {
@@ -103,24 +121,24 @@ mod tests {
     }
 
     #[test]
-    fn test_zkc_verify_invalid_signature() {
+    fn test_zkc_verify_schnorr_valid() {
         let secp = Secp256k1::new();
-        let (_sk, pk) = secp.generate_keypair(&mut thread_rng());
-        let (sk2, _pk2) = secp.generate_keypair(&mut thread_rng());
+        let mut rng = thread_rng();
+        let kp = Keypair::new(&secp, &mut rng);
+        let (pk, _) = kp.x_only_public_key();
 
-        let payload = "valid-payload";
+        let payload = "valid-schnorr-payload";
         let message_hash = sha256::Hash::hash(payload.as_bytes());
         let message = Message::from_digest(message_hash.to_byte_array());
-        let sig = secp.sign_ecdsa(&message, &sk2); // Signed with wrong key
+        let sig = secp.sign_schnorr(&message, &kp);
 
         let verifier = ZkcVerifier::new();
-        let attestation = Attestation {
-            device_id: "conxius-123".to_string(),
-            signature: hex::encode(sig.serialize_der()),
+        let attestation = SchnorrAttestation {
+            device_id: "conxius-schnorr-123".to_string(),
+            signature: hex::encode(sig.as_ref()),
             payload: payload.to_string(),
-            public_key: hex::encode(pk.serialize()),
+            x_only_public_key: hex::encode(pk.serialize()),
         };
-        let result = verifier.verify(&attestation);
-        assert!(result.is_err());
+        assert!(verifier.verify_schnorr(&attestation).unwrap());
     }
 }

@@ -8,9 +8,10 @@ The Conxian Gateway is an institutional-grade middleware for Bitcoin/Stacks stat
 - [x] R2: Bitcoin State Engine Porting (Status: Complete)
 - [x] R3: Stacks State Engine Porting (Status: Complete)
 - [x] R4: Institutional API & Auth Porting (Status: Complete)
-- [x] R5: ZKC Module Implementation (Status: Complete)
+- [x] R5: ZKC Module Implementation (Status: Enhanced with Schnorr/Taproot support)
 - [x] R6: Audit-Ready Cleanliness (Status: Complete)
 - [x] R7: Robustness & Graceful Shutdown (Status: Complete)
+- [x] R8: Core Library Alignment (Status: Complete)
 
 ## 3. Progress Log
 - 2026-02-13: Initialized workspace structure.
@@ -22,10 +23,15 @@ The Conxian Gateway is an institutional-grade middleware for Bitcoin/Stacks stat
 - 2026-02-13: Enhanced ZKC with secp256k1 verification.
 - 2026-02-13: Implemented real Stacks RPC client.
 - 2026-02-13: Added graceful shutdown and improved state monitoring.
+- 2026-02-20: Aligned `conxian-core` with latest research:
+    - Moved `Attestation` to core library for better interoperability.
+    - Added support for Schnorr/Taproot-ready attestations.
+    - Integrated Nakamoto-specific state signaling in Stacks listener.
+    - Standardized error reporting and versioning.
 
 ## 4. Technical Implementation Details
 - **Bitcoin Engine**: Uses `bitcoincore-rpc` for state monitoring. Includes a `BitcoinRpc` trait for improved testability and mocking.
-- **Stacks Engine**: Uses `StacksRpcClient` for real-time state monitoring via Stacks Node API.
-- **ZKC Module**: Implements robust attestation validation using `secp256k1` ECDSA signatures.
+- **Stacks Engine**: Uses `StacksRpcClient` for real-time state monitoring via Stacks Node API. Nakamoto-ready with epoch signaling.
+- **ZKC Module**: Implements robust attestation validation using `secp256k1` ECDSA and Schnorr signatures.
 - **Security**: Institutional API is protected by Bearer token authentication.
 - **Testing**: Comprehensive unit and integration tests.

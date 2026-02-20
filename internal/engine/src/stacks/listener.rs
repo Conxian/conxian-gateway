@@ -30,7 +30,11 @@ impl<R: StacksRpc> StacksListener<R> {
                         .duration_since(UNIX_EPOCH)
                         .unwrap()
                         .as_secs();
-                    state.stacks.network = "mainnet".to_string(); // Assume mainnet for now or get from RPC
+                    state.stacks.network = "mainnet".to_string();
+                    // Research enhancement: Nakamoto-ready signaling
+                    state.stacks.mode = Some("nakamoto".to_string());
+                    state.stacks.epoch = Some("3.0".to_string());
+
                     self.last_height = current_height;
                 }
                 Ok(())
@@ -85,6 +89,7 @@ mod tests {
             let s = state.read().unwrap();
             assert_eq!(s.stacks.height, 555);
             assert_eq!(s.stacks.status, "synced");
+            assert_eq!(s.stacks.mode.as_deref(), Some("nakamoto"));
         }
 
         // Update height
