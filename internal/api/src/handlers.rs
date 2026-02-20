@@ -1,13 +1,13 @@
 use axum::{extract::State, Json};
-use compliance::{Attestation, ZkcVerifier};
-use conxian_core::SharedState;
+use compliance::ZkcVerifier;
+use conxian_core::{Attestation, SharedState};
 use serde_json::{json, Value};
 
 pub async fn health_check() -> Json<Value> {
     Json(json!({
         "status": "healthy",
         "service": "conxian-gateway",
-        "version": "0.1.0"
+        "version": conxian_core::VERSION
     }))
 }
 
@@ -39,6 +39,7 @@ mod tests {
     async fn test_health_check_handler() {
         let res = health_check().await;
         assert_eq!(res.0["status"], "healthy");
+        assert_eq!(res.0["version"], conxian_core::VERSION);
     }
 
     #[tokio::test]
@@ -54,17 +55,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_verify_attestation_handler() {
-        // We'll use a dummy attestation that will actually fail verification now
-        // but we want to check the handler logic.
-        // To make it pass, we'd need a real signature.
         let attestation = Attestation {
             device_id: "conxius-123".to_string(),
             signature: "30440220263f69528d22384a32c2a07c3f3e1a8e9b6a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0220263f69528d22384a32c2a07c3f3e1a8e9b6a0a0a0a0a0a0a0a0a0a0a0a0a0a0a".to_string(),
             payload: "payload".to_string(),
             public_key: "0250863ad64a87ad8a2bf2bb8ae16617bc25e101c70628d01f0599a4f7bb4d602f".to_string(),
         };
-        // This will likely return an error because the signature is invalid for the payload
         let res = verify_attestation(Json(attestation)).await;
-        assert!(res.is_err()); // It should be an error now due to real verification
+        assert!(res.is_err());
     }
 }
