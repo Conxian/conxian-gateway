@@ -92,10 +92,10 @@ async fn test_verify_attestation_authorized() {
                 .header("Authorization", format!("Bearer {}", TEST_TOKEN))
                 .header("Content-Type", "application/json")
                 .body(Body::from(serde_json::to_string(&serde_json::json!({
-                    "device_id": "conxius-123",
+                    "type": "Ecdsa", "data": { "device_id": "conxius-123",
                     "signature": "30440220263f69528d22384a32c2a07c3f3e1a8e9b6a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0220263f69528d22384a32c2a07c3f3e1a8e9b6a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
                     "payload": "payload",
-                    "public_key": "0250863ad64a87ad8a2bf2bb8ae16617bc25e101c70628d01f0599a4f7bb4d602f"
+                    "public_key": "0250863ad64a87ad8a2bf2bb8ae16617bc25e101c70628d01f0599a4f7bb4d602f" }
                 })).unwrap()))
                 .unwrap(),
         )
@@ -106,5 +106,60 @@ async fn test_verify_attestation_authorized() {
     // but the handler returns Result<Json<Value>, Json<Value>>.
     // In Axum, Err(Json(Value)) returns 500 by default unless specified.
     // Let's check what the handler does.
-    assert_ne!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn test_verify_schnorr_attestation_authorized() {
+    let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
+    let app = configure_routes(state, TEST_TOKEN.to_string());
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/verify")
+                .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("Content-Type", "application/json")
+                .body(Body::from(serde_json::to_string(&serde_json::json!({
+                    "type": "Schnorr",
+                    "data": {
+                        "device_id": "conxius-schnorr-123",
+                        "signature": "64646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464",
+                        "payload": "payload",
+                        "x_only_public_key": "3232323232323232323232323232323232323232323232323232323232323232"
+                    }
+                })).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn test_metrics_endpoint() {
+    let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
+    let app = configure_routes(state, TEST_TOKEN.to_string());
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/metrics")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let body_str = String::from_utf8(body.to_vec()).unwrap();
+
+    assert!(body_str.contains("gateway_total_requests"));
+    assert!(body_str.contains("bitcoin_block_height"));
 }

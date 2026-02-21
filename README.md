@@ -5,7 +5,8 @@ Institutional-grade middleware bridging Bitcoin/Stacks state logic with enterpri
 ## Features
 - **Engine**: Nakamoto-ready indexing and state monitoring for Bitcoin and Stacks.
 - **API**: SLA-grade B2B interface with secure authentication (Bearer token).
-- **Compliance**: Zero-Knowledge Compliance (ZKC) module for Conxius Wallet attestation with cryptographic verification.
+- **Compliance**: Zero-Knowledge Compliance (ZKC) module for Conxius Wallet attestation with cryptographic verification (ECDSA & Schnorr).
+- **Metrics**: Built-in Prometheus-compatible metrics endpoint.
 - **Audit-Ready**: Clean codebase optimized for security audits.
 - **Testable**: Decoupled RPC layers with traits for mocking and unit testing.
 - **Robust**: Graceful shutdown and improved state monitoring.
@@ -14,8 +15,14 @@ Institutional-grade middleware bridging Bitcoin/Stacks state logic with enterpri
 - `/cmd/gateway`: Entry point and configuration.
 - `/internal/engine`: State listeners (Bitcoin & Stacks) and block ingestion.
 - `/internal/api`: Institutional API, Auth middleware, and handlers.
-- `/internal/compliance`: ZKC attestation verifier with secp256k1 support.
+- `/internal/compliance`: ZKC attestation verifier with secp256k1 support (ECDSA & Schnorr).
 - `/pkg/conxian-core`: Shared libraries and common types.
+
+## API Endpoints
+- `GET /api/v1/health`: Service health check.
+- `GET /api/v1/metrics`: Prometheus-compatible metrics.
+- `GET /api/v1/state`: Current chain state (Authorized).
+- `POST /api/v1/verify`: Verify cryptographic attestations (Authorized).
 
 ## Configuration
 The following environment variables can be used to configure the gateway:

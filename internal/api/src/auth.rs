@@ -16,7 +16,7 @@ pub async fn auth_middleware(
         .and_then(|h| h.to_str().ok());
 
     match auth_header {
-        Some(auth) if auth.starts_with("Bearer ") && &auth[7..] == expected_token => {
+        Some(auth) if auth.starts_with("Bearer ") && auth[7..] == expected_token => {
             Ok(next.run(req).await)
         }
         _ => Err(StatusCode::UNAUTHORIZED),
