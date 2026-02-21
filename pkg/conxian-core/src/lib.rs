@@ -33,9 +33,16 @@ pub struct ChainState {
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct Metrics {
+    pub total_requests: u64,
+    pub verification_count: u64,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct GatewayState {
     pub bitcoin: ChainState,
     pub stacks: ChainState,
+    pub metrics: Metrics,
 }
 
 impl Default for ChainState {
@@ -71,6 +78,14 @@ pub struct SchnorrAttestation {
     pub signature: String, // 64-byte Schnorr signature in hex
     pub payload: String,
     pub x_only_public_key: String, // 32-byte X-only public key in hex
+}
+
+/// Unified request for attestation verification.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(tag = "type", content = "data")]
+pub enum AttestationRequest {
+    Ecdsa(Attestation),
+    Schnorr(SchnorrAttestation),
 }
 
 #[derive(Error, Debug)]

@@ -10,7 +10,10 @@ use conxian_core::SharedState;
 pub fn configure_routes(state: SharedState, api_token: String) -> Router {
     let token_for_auth = api_token.clone();
 
-    let public_routes = Router::new().route("/health", get(handlers::health_check));
+    let public_routes = Router::new()
+        .route("/health", get(handlers::health_check))
+        .route("/metrics", get(handlers::get_metrics))
+        .with_state(state.clone());
 
     let private_routes = Router::new()
         .route("/state", get(handlers::get_state))

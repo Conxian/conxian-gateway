@@ -12,6 +12,8 @@ The Conxian Gateway is an institutional-grade middleware for Bitcoin/Stacks stat
 - [x] R6: Audit-Ready Cleanliness (Status: Complete)
 - [x] R7: Robustness & Graceful Shutdown (Status: Complete)
 - [x] R8: Core Library Alignment (Status: Complete)
+- [x] R9: Unified ZKC API (Status: Complete)
+- [x] R10: Basic Metrics Support (Status: Complete)
 
 ## 3. Progress Log
 - 2026-02-13: Initialized workspace structure.
@@ -28,10 +30,16 @@ The Conxian Gateway is an institutional-grade middleware for Bitcoin/Stacks stat
     - Added support for Schnorr/Taproot-ready attestations.
     - Integrated Nakamoto-specific state signaling in Stacks listener.
     - Standardized error reporting and versioning.
+- 2026-02-21: Maintenance and Enhancements:
+    - Fixed clippy warnings in API module.
+    - Implemented Unified ZKC API supporting both ECDSA and Schnorr attestations.
+    - Improved API error handling with appropriate HTTP status codes (400 for verification failures).
+    - Added basic Prometheus-compatible metrics support (`/api/v1/metrics`).
 
 ## 4. Technical Implementation Details
 - **Bitcoin Engine**: Uses `bitcoincore-rpc` for state monitoring. Includes a `BitcoinRpc` trait for improved testability and mocking.
 - **Stacks Engine**: Uses `StacksRpcClient` for real-time state monitoring via Stacks Node API. Nakamoto-ready with epoch signaling.
 - **ZKC Module**: Implements robust attestation validation using `secp256k1` ECDSA and Schnorr signatures.
 - **Security**: Institutional API is protected by Bearer token authentication.
-- **Testing**: Comprehensive unit and integration tests.
+- **Metrics**: Exposes internal state and request counters via a Prometheus-compatible endpoint.
+- **Testing**: Comprehensive unit and integration tests covering API, Compliance, and Engine.
