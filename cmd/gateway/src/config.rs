@@ -22,7 +22,8 @@ impl Config {
                 .unwrap_or_else(|_| "3000".to_string())
                 .parse()
                 .unwrap_or(3000),
-            api_token: env::var("API_TOKEN").unwrap_or_else(|_| "institutional-default-token".to_string()),
+            api_token: env::var("API_TOKEN")
+                .unwrap_or_else(|_| "institutional-default-token".to_string()),
         }
     }
 }

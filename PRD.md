@@ -14,6 +14,9 @@ The Conxian Gateway is an institutional-grade middleware for Bitcoin/Stacks stat
 - [x] R8: Core Library Alignment (Status: Complete)
 - [x] R9: Unified ZKC API (Status: Complete)
 - [x] R10: Basic Metrics Support (Status: Complete)
+- [x] R11: Persistence Support (Status: Complete)
+- [x] R12: Enhanced Stacks RPC (Status: Complete)
+- [x] R13: Uptime and Enhanced Metrics (Status: Complete)
 
 ## 3. Progress Log
 - 2026-02-13: Initialized workspace structure.
@@ -35,11 +38,18 @@ The Conxian Gateway is an institutional-grade middleware for Bitcoin/Stacks stat
     - Implemented Unified ZKC API supporting both ECDSA and Schnorr attestations.
     - Improved API error handling with appropriate HTTP status codes (400 for verification failures).
     - Added basic Prometheus-compatible metrics support (`/api/v1/metrics`).
+- 2026-02-22: System-wide Review and Repairs:
+    - Fixed formatting issues across the entire workspace (`cargo fmt`).
+    - Implemented a Persistence layer for saving/loading gateway state (Bitcoin/Stacks heights).
+    - Enhanced Stacks RPC to fetch real network and Nakamoto epoch information from Hiro API.
+    - Added uptime and detailed request counters to Prometheus metrics and state API.
+    - Refactored listeners to use the persistence layer for reliable state monitoring across restarts.
 
 ## 4. Technical Implementation Details
 - **Bitcoin Engine**: Uses `bitcoincore-rpc` for state monitoring. Includes a `BitcoinRpc` trait for improved testability and mocking.
 - **Stacks Engine**: Uses `StacksRpcClient` for real-time state monitoring via Stacks Node API. Nakamoto-ready with epoch signaling.
 - **ZKC Module**: Implements robust attestation validation using `secp256k1` ECDSA and Schnorr signatures.
 - **Security**: Institutional API is protected by Bearer token authentication.
-- **Metrics**: Exposes internal state and request counters via a Prometheus-compatible endpoint.
+- **Metrics**: Exposes internal state, uptime, and request counters via a Prometheus-compatible endpoint.
+- **Persistence**: Simple file-based persistence for cross-restart reliability.
 - **Testing**: Comprehensive unit and integration tests covering API, Compliance, and Engine.

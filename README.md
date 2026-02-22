@@ -6,7 +6,8 @@ Institutional-grade middleware bridging Bitcoin/Stacks state logic with enterpri
 - **Engine**: Nakamoto-ready indexing and state monitoring for Bitcoin and Stacks.
 - **API**: SLA-grade B2B interface with secure authentication (Bearer token).
 - **Compliance**: Zero-Knowledge Compliance (ZKC) module for Conxius Wallet attestation with cryptographic verification (ECDSA & Schnorr).
-- **Metrics**: Built-in Prometheus-compatible metrics endpoint.
+- **Metrics**: Built-in Prometheus-compatible metrics endpoint with uptime and detailed counters.
+- **Persistence**: File-based state persistence ensuring continuity across service restarts.
 - **Audit-Ready**: Clean codebase optimized for security audits.
 - **Testable**: Decoupled RPC layers with traits for mocking and unit testing.
 - **Robust**: Graceful shutdown and improved state monitoring.
@@ -16,12 +17,12 @@ Institutional-grade middleware bridging Bitcoin/Stacks state logic with enterpri
 - `/internal/engine`: State listeners (Bitcoin & Stacks) and block ingestion.
 - `/internal/api`: Institutional API, Auth middleware, and handlers.
 - `/internal/compliance`: ZKC attestation verifier with secp256k1 support (ECDSA & Schnorr).
-- `/pkg/conxian-core`: Shared libraries and common types.
+- `/pkg/conxian-core`: Shared libraries, common types, and persistence layer.
 
 ## API Endpoints
 - `GET /api/v1/health`: Service health check.
-- `GET /api/v1/metrics`: Prometheus-compatible metrics.
-- `GET /api/v1/state`: Current chain state (Authorized).
+- `GET /api/v1/metrics`: Prometheus-compatible metrics (includes uptime).
+- `GET /api/v1/state`: Current chain state and gateway metrics (Authorized).
 - `POST /api/v1/verify`: Verify cryptographic attestations (Authorized).
 
 ## Configuration

@@ -1,5 +1,6 @@
 use crate::stacks::StacksRpc;
-use conxian_core::{ConxianResult, SharedState};
+use conxian_core::{ConxianResult, Persistence, PersistentState, SharedState};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::time::{sleep, Duration};
 use tracing::{error, info};
@@ -7,35 +8,44 @@ use tracing::{error, info};
 pub struct StacksListener<R: StacksRpc> {
     rpc: R,
     state: SharedState,
+    persistence: Arc<dyn Persistence>,
     last_height: u64,
 }
 
 impl<R: StacksRpc> StacksListener<R> {
-    pub fn new(rpc: R, state: SharedState) -> Self {
+    pub fn new(rpc: R, state: SharedState, persistence: Arc<dyn Persistence>) -> Self {
+        let last_height = persistence.load().map(|s| s.stacks_height).unwrap_or(0);
         Self {
             rpc,
             state,
-            last_height: 0,
+            persistence,
+            last_height,
         }
     }
 
     pub async fn sync_once(&mut self) -> ConxianResult<()> {
-        match self.rpc.get_block_count().await {
-            Ok(current_height) => {
-                if current_height > self.last_height || self.last_height == 0 {
+        match self.rpc.get_network_info().await {
+            Ok(info) => {
+                if info.height > self.last_height || self.last_height == 0 {
                     let mut state = self.state.write().unwrap();
-                    state.stacks.height = current_height;
+                    state.stacks.height = info.height;
                     state.stacks.status = "synced".to_string();
                     state.stacks.last_updated = SystemTime::now()
                         .duration_since(UNIX_EPOCH)
                         .unwrap()
                         .as_secs();
-                    state.stacks.network = "mainnet".to_string();
-                    // Research enhancement: Nakamoto-ready signaling
+                    state.stacks.network = info.network;
                     state.stacks.mode = Some("nakamoto".to_string());
-                    state.stacks.epoch = Some("3.0".to_string());
+                    state.stacks.epoch = Some(info.epoch);
 
-                    self.last_height = current_height;
+                    // Save persistence
+                    let p_state = PersistentState {
+                        bitcoin_height: state.bitcoin.height,
+                        stacks_height: info.height,
+                    };
+                    let _ = self.persistence.save(&p_state);
+
+                    self.last_height = info.height;
                 }
                 Ok(())
             }
@@ -62,9 +72,10 @@ impl<R: StacksRpc> StacksListener<R> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::stacks::rpc::StacksNetworkInfo;
+    use async_trait::async_trait;
     use conxian_core::GatewayState;
     use std::sync::{Arc, RwLock};
-    use async_trait::async_trait;
 
     struct MockStacksRpc {
         height: u64,
@@ -75,13 +86,31 @@ mod tests {
         async fn get_block_count(&self) -> ConxianResult<u64> {
             Ok(self.height)
         }
+        async fn get_network_info(&self) -> ConxianResult<StacksNetworkInfo> {
+            Ok(StacksNetworkInfo {
+                height: self.height,
+                network: "mainnet".to_string(),
+                epoch: "3.0".to_string(),
+            })
+        }
+    }
+
+    struct MockPersistence;
+    impl Persistence for MockPersistence {
+        fn save(&self, _state: &PersistentState) -> ConxianResult<()> {
+            Ok(())
+        }
+        fn load(&self) -> ConxianResult<PersistentState> {
+            Ok(PersistentState::default())
+        }
     }
 
     #[tokio::test]
     async fn test_stacks_listener_sync_once() {
         let state = Arc::new(RwLock::new(GatewayState::default()));
         let rpc = MockStacksRpc { height: 555 };
-        let mut listener = StacksListener::new(rpc, state.clone());
+        let persistence = Arc::new(MockPersistence);
+        let mut listener = StacksListener::new(rpc, state.clone(), persistence);
 
         listener.sync_once().await.unwrap();
 

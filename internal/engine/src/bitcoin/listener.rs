@@ -1,22 +1,25 @@
 use crate::bitcoin::BitcoinRpc;
-use conxian_core::{ConxianResult, SharedState};
-
+use conxian_core::{ConxianResult, Persistence, PersistentState, SharedState};
+use std::sync::Arc;
 use tokio::time::{sleep, Duration};
 use tracing::{error, info};
 
 pub struct BitcoinListener<R: BitcoinRpc> {
     rpc: R,
     state: SharedState,
+    persistence: Arc<dyn Persistence>,
     last_height: u64,
     network: Option<String>,
 }
 
 impl<R: BitcoinRpc> BitcoinListener<R> {
-    pub fn new(rpc: R, state: SharedState) -> Self {
+    pub fn new(rpc: R, state: SharedState, persistence: Arc<dyn Persistence>) -> Self {
+        let last_height = persistence.load().map(|s| s.bitcoin_height).unwrap_or(0);
         Self {
             rpc,
             state,
-            last_height: 0,
+            persistence,
+            last_height,
             network: None,
         }
     }
@@ -32,7 +35,11 @@ impl<R: BitcoinRpc> BitcoinListener<R> {
         match self.rpc.get_block_count().await {
             Ok(current_height) => {
                 if current_height > self.last_height || self.last_height == 0 {
-                    let start_h = if self.last_height == 0 { current_height } else { self.last_height + 1 };
+                    let start_h = if self.last_height == 0 {
+                        current_height
+                    } else {
+                        self.last_height + 1
+                    };
                     for h in start_h..=current_height {
                         match self.rpc.get_block_info(h).await {
                             Ok(block) => {
@@ -45,6 +52,13 @@ impl<R: BitcoinRpc> BitcoinListener<R> {
                                 if let Some(ref n) = self.network {
                                     state.bitcoin.network = n.clone();
                                 }
+
+                                // Save persistence
+                                let p_state = PersistentState {
+                                    bitcoin_height: block.height,
+                                    stacks_height: state.stacks.height,
+                                };
+                                let _ = self.persistence.save(&p_state);
                             }
                             Err(e) => {
                                 error!("Failed to get block info for height {}: {}", h, e);
@@ -80,9 +94,9 @@ impl<R: BitcoinRpc> BitcoinListener<R> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_trait::async_trait;
     use conxian_core::{BlockInfo, GatewayState};
     use std::sync::{Arc, RwLock};
-    use async_trait::async_trait;
 
     struct MockBitcoinRpc {
         height: u64,
@@ -105,11 +119,22 @@ mod tests {
         }
     }
 
+    struct MockPersistence;
+    impl Persistence for MockPersistence {
+        fn save(&self, _state: &PersistentState) -> ConxianResult<()> {
+            Ok(())
+        }
+        fn load(&self) -> ConxianResult<PersistentState> {
+            Ok(PersistentState::default())
+        }
+    }
+
     #[tokio::test]
     async fn test_bitcoin_listener_sync_once() {
         let state = Arc::new(RwLock::new(GatewayState::default()));
         let rpc = MockBitcoinRpc { height: 100 };
-        let mut listener = BitcoinListener::new(rpc, state.clone());
+        let persistence = Arc::new(MockPersistence);
+        let mut listener = BitcoinListener::new(rpc, state.clone(), persistence);
 
         listener.sync_once().await.unwrap();
 
