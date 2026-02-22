@@ -7,7 +7,7 @@ Institutional-grade middleware bridging Bitcoin/Stacks state logic with enterpri
 - **API**: SLA-grade B2B interface with secure authentication (Bearer token).
 - **Compliance**: Zero-Knowledge Compliance (ZKC) module for Conxius Wallet attestation with cryptographic verification (ECDSA & Schnorr).
 - **Metrics**: Built-in Prometheus-compatible metrics endpoint with uptime and detailed counters.
-- **Persistence**: File-based state persistence ensuring continuity across service restarts.
+- **Persistence**: File-based state persistence with atomic write guarantees ensuring continuity across service restarts.
 - **Audit-Ready**: Clean codebase optimized for security audits.
 - **Testable**: Decoupled RPC layers with traits for mocking and unit testing.
 - **Robust**: Graceful shutdown and improved state monitoring.

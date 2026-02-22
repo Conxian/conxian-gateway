@@ -37,6 +37,7 @@ impl<R: StacksRpc> StacksListener<R> {
                     state.stacks.network = info.network;
                     state.stacks.mode = Some("nakamoto".to_string());
                     state.stacks.epoch = Some(info.epoch);
+                    state.stacks.burn_block_height = Some(info.burn_block_height);
 
                     // Save persistence
                     let p_state = PersistentState {
@@ -91,6 +92,7 @@ mod tests {
                 height: self.height,
                 network: "mainnet".to_string(),
                 epoch: "3.0".to_string(),
+                burn_block_height: self.height / 10,
             })
         }
     }
@@ -119,6 +121,7 @@ mod tests {
             assert_eq!(s.stacks.height, 555);
             assert_eq!(s.stacks.status, "synced");
             assert_eq!(s.stacks.mode.as_deref(), Some("nakamoto"));
+            assert_eq!(s.stacks.burn_block_height, Some(55));
         }
 
         // Update height
@@ -128,6 +131,7 @@ mod tests {
         {
             let s = state.read().unwrap();
             assert_eq!(s.stacks.height, 556);
+            assert_eq!(s.stacks.burn_block_height, Some(55)); // Mock int div
         }
     }
 }

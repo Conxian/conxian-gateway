@@ -7,6 +7,7 @@ pub struct StacksNetworkInfo {
     pub height: u64,
     pub network: String,
     pub epoch: String,
+    pub burn_block_height: u64,
 }
 
 #[async_trait]
@@ -30,6 +31,7 @@ impl StacksRpc for SimulatedStacksRpc {
             height: self.initial_height,
             network: "simulated".to_string(),
             epoch: "3.0".to_string(),
+            burn_block_height: self.initial_height / 10,
         })
     }
 }
@@ -51,6 +53,7 @@ struct StacksInfo {
     stacks_tip_height: u64,
     mode: String,
     stacks_tip_epoch: String,
+    burn_block_height: u64,
 }
 
 #[async_trait]
@@ -85,6 +88,7 @@ impl StacksRpc for StacksRpcClient {
                 height: info.stacks_tip_height,
                 network: info.mode,
                 epoch: info.stacks_tip_epoch,
+                burn_block_height: info.burn_block_height,
             })
         })
         .await
