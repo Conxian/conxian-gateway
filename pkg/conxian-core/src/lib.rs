@@ -31,6 +31,7 @@ pub struct ChainState {
     /// Research enhancement: Nakamoto-specific fields
     pub epoch: Option<String>,
     pub mode: Option<String>,
+    pub burn_block_height: Option<u64>,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -71,6 +72,7 @@ impl Default for ChainState {
             network: "unknown".to_string(),
             epoch: None,
             mode: None,
+            burn_block_height: None,
         }
     }
 }

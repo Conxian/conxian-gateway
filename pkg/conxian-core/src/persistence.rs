@@ -18,7 +18,12 @@ impl Persistence for FilePersistence {
     fn save(&self, state: &PersistentState) -> ConxianResult<()> {
         let json = serde_json::to_string_pretty(state)
             .map_err(|e| ConxianError::Internal(e.to_string()))?;
-        fs::write(&self.path, json).map_err(|e| ConxianError::Io(e.to_string()))?;
+
+        let mut temp_path = self.path.clone();
+        temp_path.set_extension("tmp");
+
+        fs::write(&temp_path, json).map_err(|e| ConxianError::Io(e.to_string()))?;
+        fs::rename(&temp_path, &self.path).map_err(|e| ConxianError::Io(e.to_string()))?;
         Ok(())
     }
 
