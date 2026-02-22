@@ -2,9 +2,17 @@ use async_trait::async_trait;
 use conxian_core::{ConxianError, ConxianResult};
 use serde::Deserialize;
 
+#[derive(Debug, Clone)]
+pub struct StacksNetworkInfo {
+    pub height: u64,
+    pub network: String,
+    pub epoch: String,
+}
+
 #[async_trait]
 pub trait StacksRpc: Send + Sync {
     async fn get_block_count(&self) -> ConxianResult<u64>;
+    async fn get_network_info(&self) -> ConxianResult<StacksNetworkInfo>;
 }
 
 pub struct SimulatedStacksRpc {
@@ -15,6 +23,14 @@ pub struct SimulatedStacksRpc {
 impl StacksRpc for SimulatedStacksRpc {
     async fn get_block_count(&self) -> ConxianResult<u64> {
         Ok(self.initial_height)
+    }
+
+    async fn get_network_info(&self) -> ConxianResult<StacksNetworkInfo> {
+        Ok(StacksNetworkInfo {
+            height: self.initial_height,
+            network: "simulated".to_string(),
+            epoch: "3.0".to_string(),
+        })
     }
 }
 
@@ -33,28 +49,43 @@ impl StacksRpcClient {
 #[derive(Deserialize)]
 struct StacksInfo {
     stacks_tip_height: u64,
+    mode: String,
+    stacks_tip_epoch: String,
 }
 
 #[async_trait]
 impl StacksRpc for StacksRpcClient {
     async fn get_block_count(&self) -> ConxianResult<u64> {
+        self.get_network_info().await.map(|info| info.height)
+    }
+
+    async fn get_network_info(&self) -> ConxianResult<StacksNetworkInfo> {
         let url = format!("{}/v2/info", self.url);
 
         tokio::task::spawn_blocking(move || {
-            let res = minreq::get(&url).send()
+            let res = minreq::get(&url)
+                .send()
                 .map_err(|e| ConxianError::Stacks(e.to_string()))?;
 
             if res.status_code != 200 {
-                return Err(ConxianError::Stacks(format!("Stacks RPC error: status {}", res.status_code)));
+                return Err(ConxianError::Stacks(format!(
+                    "Stacks RPC error: status {}",
+                    res.status_code
+                )));
             }
 
-            let body = res.as_str()
+            let body = res
+                .as_str()
                 .map_err(|e| ConxianError::Stacks(e.to_string()))?;
 
-            let info: StacksInfo = serde_json::from_str(body)
-                .map_err(|e| ConxianError::Stacks(e.to_string()))?;
+            let info: StacksInfo =
+                serde_json::from_str(body).map_err(|e| ConxianError::Stacks(e.to_string()))?;
 
-            Ok(info.stacks_tip_height)
+            Ok(StacksNetworkInfo {
+                height: info.stacks_tip_height,
+                network: info.mode,
+                epoch: info.stacks_tip_epoch,
+            })
         })
         .await
         .map_err(|e| ConxianError::Internal(e.to_string()))?

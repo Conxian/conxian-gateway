@@ -1,3 +1,4 @@
+pub mod persistence;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, RwLock};
 use thiserror::Error;
@@ -38,11 +39,26 @@ pub struct Metrics {
     pub verification_count: u64,
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GatewayState {
     pub bitcoin: ChainState,
     pub stacks: ChainState,
     pub metrics: Metrics,
+    pub start_time: u64,
+}
+
+impl Default for GatewayState {
+    fn default() -> Self {
+        Self {
+            bitcoin: ChainState::default(),
+            stacks: ChainState::default(),
+            metrics: Metrics::default(),
+            start_time: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+        }
+    }
 }
 
 impl Default for ChainState {
@@ -88,6 +104,19 @@ pub enum AttestationRequest {
     Schnorr(SchnorrAttestation),
 }
 
+/// Persistent data that needs to be saved across restarts.
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct PersistentState {
+    pub bitcoin_height: u64,
+    pub stacks_height: u64,
+}
+
+/// Trait for persistence of gateway state.
+pub trait Persistence: Send + Sync {
+    fn save(&self, state: &PersistentState) -> ConxianResult<()>;
+    fn load(&self) -> ConxianResult<PersistentState>;
+}
+
 #[derive(Error, Debug)]
 pub enum ConxianError {
     #[error("Bitcoin error: {0}")]
@@ -102,6 +131,8 @@ pub enum ConxianError {
     Internal(String),
     #[error("Security/Verification error: {0}")]
     Security(String),
+    #[error("IO error: {0}")]
+    Io(String),
 }
 
 pub type ConxianResult<T> = Result<T, ConxianError>;

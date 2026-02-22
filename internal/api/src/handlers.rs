@@ -2,6 +2,7 @@ use axum::{extract::State, http::StatusCode, Json};
 use compliance::ZkcVerifier;
 use conxian_core::{AttestationRequest, SharedState};
 use serde_json::{json, Value};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 pub async fn health_check() -> Json<Value> {
     Json(json!({
@@ -17,21 +18,36 @@ pub async fn get_state(State(state): State<SharedState>) -> Json<Value> {
         s.metrics.total_requests += 1;
     }
     let s = state.read().unwrap();
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let uptime = now.saturating_sub(s.start_time);
+
     Json(json!({
         "bitcoin": s.bitcoin,
         "stacks": s.stacks,
-        "metrics": s.metrics
+        "metrics": s.metrics,
+        "start_time": s.start_time,
+        "uptime_seconds": uptime
     }))
 }
 
 pub async fn get_metrics(State(state): State<SharedState>) -> String {
     let s = state.read().unwrap();
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let uptime = now.saturating_sub(s.start_time);
+
     format!(
-        "# HELP gateway_total_requests The total number of API requests received.\n         # TYPE gateway_total_requests counter\n         gateway_total_requests {}\n         # HELP gateway_verification_count The total number of attestation verifications attempted.\n         # TYPE gateway_verification_count counter\n         gateway_verification_count {}\n         # HELP bitcoin_block_height The current block height of the Bitcoin chain.\n         # TYPE bitcoin_block_height gauge\n         bitcoin_block_height {}\n         # HELP stacks_block_height The current block height of the Stacks chain.\n         # TYPE stacks_block_height gauge\n         stacks_block_height {}\n",
+        "# HELP gateway_total_requests The total number of API requests received.\n         # TYPE gateway_total_requests counter\n         gateway_total_requests {}\n         # HELP gateway_verification_count The total number of attestation verifications attempted.\n         # TYPE gateway_verification_count counter\n         gateway_verification_count {}\n         # HELP bitcoin_block_height The current block height of the Bitcoin chain.\n         # TYPE bitcoin_block_height gauge\n         bitcoin_block_height {}\n         # HELP stacks_block_height The current block height of the Stacks chain.\n         # TYPE stacks_block_height gauge\n         stacks_block_height {}\n         # HELP gateway_uptime_seconds The total uptime of the gateway in seconds.\n         # TYPE gateway_uptime_seconds counter\n         gateway_uptime_seconds {}\n",
         s.metrics.total_requests,
         s.metrics.verification_count,
         s.bitcoin.height,
-        s.stacks.height
+        s.stacks.height,
+        uptime
     )
 }
 
@@ -53,7 +69,10 @@ pub async fn verify_attestation(
 
     match result {
         Ok(valid) => Ok(Json(json!({ "valid": valid }))),
-        Err(e) => Err((StatusCode::BAD_REQUEST, Json(json!({ "error": e.to_string() })))),
+        Err(e) => Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": e.to_string() })),
+        )),
     }
 }
 
@@ -80,6 +99,7 @@ mod tests {
         let res = get_state(State(state)).await;
         assert_eq!(res.0["bitcoin"]["height"], 100);
         assert_eq!(res.0["metrics"]["total_requests"], 1);
+        assert!(res.0.as_object().unwrap().contains_key("uptime_seconds"));
     }
 
     #[tokio::test]
@@ -92,7 +112,8 @@ mod tests {
             payload: "payload".to_string(),
             public_key: "0250863ad64a87ad8a2bf2bb8ae16617bc25e101c70628d01f0599a4f7bb4d602f".to_string(),
         };
-        let res = verify_attestation(State(state), Json(AttestationRequest::Ecdsa(attestation))).await;
+        let res =
+            verify_attestation(State(state), Json(AttestationRequest::Ecdsa(attestation))).await;
         assert!(res.is_err());
     }
 }

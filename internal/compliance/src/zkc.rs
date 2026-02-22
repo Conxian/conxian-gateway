@@ -1,8 +1,8 @@
-pub use conxian_core::{Attestation, SchnorrAttestation, ConxianError, ConxianResult};
-use secp256k1::{Message, Secp256k1, PublicKey, ecdsa::Signature};
+use bitcoin::hashes::{sha256, Hash};
+pub use conxian_core::{Attestation, ConxianError, ConxianResult, SchnorrAttestation};
 use secp256k1::schnorr::Signature as SchnorrSignature;
 use secp256k1::XOnlyPublicKey;
-use bitcoin::hashes::{sha256, Hash};
+use secp256k1::{ecdsa::Signature, Message, PublicKey, Secp256k1};
 
 pub struct ZkcVerifier {
     secp: Secp256k1<secp256k1::All>,
@@ -64,21 +64,26 @@ impl ZkcVerifier {
         // Verify signature
         match self.secp.verify_ecdsa(&message, &sig, &pubkey) {
             Ok(_) => Ok(true),
-            Err(e) => Err(ConxianError::Compliance(format!("Signature verification failed: {}", e))),
+            Err(e) => Err(ConxianError::Compliance(format!(
+                "Signature verification failed: {}",
+                e
+            ))),
         }
     }
 
     /// Research enhancement: Verify Schnorr signature for Taproot-compatible attestations.
     pub fn verify_schnorr(&self, attestation: &SchnorrAttestation) -> ConxianResult<bool> {
         // Parse X-only public key
-        let pubkey_bytes = hex::decode(&attestation.x_only_public_key)
-            .map_err(|e| ConxianError::Compliance(format!("Invalid x-only public key hex: {}", e)))?;
+        let pubkey_bytes = hex::decode(&attestation.x_only_public_key).map_err(|e| {
+            ConxianError::Compliance(format!("Invalid x-only public key hex: {}", e))
+        })?;
         let pubkey = XOnlyPublicKey::from_slice(&pubkey_bytes)
             .map_err(|e| ConxianError::Compliance(format!("Invalid x-only public key: {}", e)))?;
 
         // Parse Schnorr signature
-        let sig_bytes = hex::decode(&attestation.signature)
-            .map_err(|e| ConxianError::Compliance(format!("Invalid Schnorr signature hex: {}", e)))?;
+        let sig_bytes = hex::decode(&attestation.signature).map_err(|e| {
+            ConxianError::Compliance(format!("Invalid Schnorr signature hex: {}", e))
+        })?;
         let sig = SchnorrSignature::from_slice(&sig_bytes)
             .map_err(|e| ConxianError::Compliance(format!("Invalid Schnorr signature: {}", e)))?;
 
@@ -89,7 +94,10 @@ impl ZkcVerifier {
         // Verify signature
         match self.secp.verify_schnorr(&sig, &message, &pubkey) {
             Ok(_) => Ok(true),
-            Err(e) => Err(ConxianError::Compliance(format!("Schnorr signature verification failed: {}", e))),
+            Err(e) => Err(ConxianError::Compliance(format!(
+                "Schnorr signature verification failed: {}",
+                e
+            ))),
         }
     }
 }

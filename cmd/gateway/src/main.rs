@@ -2,12 +2,13 @@ mod config;
 
 use api::configure_routes;
 use config::Config;
-use conxian_core::{GatewayState, SharedState};
+use conxian_core::persistence::FilePersistence;
+use conxian_core::{GatewayState, Persistence, SharedState};
 use engine::{BitcoinListener, BitcoinRpcClient, StacksListener, StacksRpcClient};
 use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
 use tokio::signal;
-use tracing::{info, error};
+use tracing::{error, info};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -19,8 +20,21 @@ async fn main() -> anyhow::Result<()> {
     // Load configuration
     let config = Config::from_env();
 
+    // Initialize persistence
+    let persistence = Arc::new(FilePersistence::new("gateway_state.json"));
+
     // Initialize shared state
-    let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
+    let mut initial_state = GatewayState::default();
+    if let Ok(p_state) = persistence.load() {
+        initial_state.bitcoin.height = p_state.bitcoin_height;
+        initial_state.stacks.height = p_state.stacks_height;
+        info!(
+            "Loaded persisted state: Bitcoin height {}, Stacks height {}",
+            p_state.bitcoin_height, p_state.stacks_height
+        );
+    }
+
+    let state: SharedState = Arc::new(RwLock::new(initial_state));
 
     // Initialize Bitcoin RPC
     let btc_rpc = BitcoinRpcClient::new(
@@ -29,15 +43,13 @@ async fn main() -> anyhow::Result<()> {
         &config.bitcoin_rpc_pass,
     )?;
 
-    let mut btc_listener = BitcoinListener::new(btc_rpc, state.clone());
+    let mut btc_listener = BitcoinListener::new(btc_rpc, state.clone(), persistence.clone());
 
     // Initialize Stacks listener
     let stx_rpc = StacksRpcClient::new(&config.stacks_rpc_url);
-    let mut stx_listener = StacksListener::new(stx_rpc, state.clone());
+    let mut stx_listener = StacksListener::new(stx_rpc, state.clone(), persistence);
 
     // Create a cancellation token for graceful shutdown of listeners
-    // For simplicity, we'll use a simple flag or just let them be dropped when the program exits,
-    // but a better way is to use a broadcast channel or CancellationToken.
     let (shutdown_tx, _) = tokio::sync::broadcast::channel::<()>(1);
 
     let mut btc_shutdown_rx = shutdown_tx.subscribe();
