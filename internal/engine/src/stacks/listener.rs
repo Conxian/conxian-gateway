@@ -27,6 +27,8 @@ impl<R: StacksRpc> StacksListener<R> {
         match self.rpc.get_network_info().await {
             Ok(info) => {
                 if info.height > self.last_height || self.last_height == 0 {
+                    info!("New Stacks block processed: height={}, network={}, epoch={}, burn_height={}", info.height, info.network, info.epoch, info.burn_block_height);
+
                     let mut state = self.state.write().unwrap();
                     state.stacks.height = info.height;
                     state.stacks.status = "synced".to_string();
