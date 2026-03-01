@@ -43,7 +43,10 @@ impl<R: BitcoinRpc> BitcoinListener<R> {
                     for h in start_h..=current_height {
                         match self.rpc.get_block_info(h).await {
                             Ok(block) => {
-                                info!("New Bitcoin block: {} ({})", block.height, block.hash);
+                                info!(
+                                    "New Bitcoin block processed: height={}, hash={}, network={:?}",
+                                    block.height, block.hash, self.network
+                                );
                                 let mut state = self.state.write().unwrap();
                                 state.bitcoin.height = block.height;
                                 state.bitcoin.last_updated = block.timestamp;

@@ -61,3 +61,13 @@ The Conxian Gateway is an institutional-grade middleware for Bitcoin/Stacks stat
 - **Metrics**: Exposes internal state, uptime, and request counters via a Prometheus-compatible endpoint.
 - **Persistence**: File-based state persistence with atomic write guarantees.
 - **Testing**: Comprehensive unit and integration tests covering API, Compliance, and Engine.
+- [x] R16: Enhanced Health Monitoring (Status: Complete)
+- [x] R17: Detailed API Metrics (Status: Complete)
+
+## 3. Progress Log (Continued)
+- 2026-02-24: Observability and Health Enhancements:
+    - Expanded `Metrics` struct with detailed per-endpoint request counters.
+    - Implemented fine-grained tracking for attestation verification results (success vs failure).
+    - Enhanced `/api/v1/health` to report "degraded" status if any underlying chain listener encounters errors, including specific error details.
+    - Updated Prometheus metrics endpoint to expose the new granular telemetry data.
+    - Improved internal logging in Bitcoin and Stacks listeners for better operational visibility.

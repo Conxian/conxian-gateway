@@ -36,8 +36,13 @@ pub struct ChainState {
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Metrics {
+    pub health_requests: u64,
+    pub state_requests: u64,
+    pub metrics_requests: u64,
+    pub verification_requests: u64,
+    pub verification_success: u64,
+    pub verification_failure: u64,
     pub total_requests: u64,
-    pub verification_count: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
