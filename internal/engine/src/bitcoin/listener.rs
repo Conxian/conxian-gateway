@@ -1,6 +1,7 @@
 use crate::bitcoin::BitcoinRpc;
 use conxian_core::{ConxianResult, Persistence, PersistentState, SharedState};
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::time::{sleep, Duration};
 use tracing::{error, info};
 
@@ -10,10 +11,16 @@ pub struct BitcoinListener<R: BitcoinRpc> {
     persistence: Arc<dyn Persistence>,
     last_height: u64,
     network: Option<String>,
+    sync_interval: u64,
 }
 
 impl<R: BitcoinRpc> BitcoinListener<R> {
-    pub fn new(rpc: R, state: SharedState, persistence: Arc<dyn Persistence>) -> Self {
+    pub fn new(
+        rpc: R,
+        state: SharedState,
+        persistence: Arc<dyn Persistence>,
+        sync_interval: u64,
+    ) -> Self {
         let last_height = persistence.load().map(|s| s.bitcoin_height).unwrap_or(0);
         Self {
             rpc,
@@ -21,6 +28,7 @@ impl<R: BitcoinRpc> BitcoinListener<R> {
             persistence,
             last_height,
             network: None,
+            sync_interval,
         }
     }
 
@@ -34,6 +42,11 @@ impl<R: BitcoinRpc> BitcoinListener<R> {
 
         match self.rpc.get_block_count().await {
             Ok(current_height) => {
+                let now = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
+
                 if current_height > self.last_height || self.last_height == 0 {
                     let start_h = if self.last_height == 0 {
                         current_height
@@ -50,6 +63,7 @@ impl<R: BitcoinRpc> BitcoinListener<R> {
                                 let mut state = self.state.write().unwrap();
                                 state.bitcoin.height = block.height;
                                 state.bitcoin.last_updated = block.timestamp;
+                                state.bitcoin.last_sync_time = now;
                                 state.bitcoin.status = "synced".to_string();
                                 state.bitcoin.best_block_hash = block.hash.clone();
                                 if let Some(ref n) = self.network {
@@ -70,6 +84,9 @@ impl<R: BitcoinRpc> BitcoinListener<R> {
                         }
                     }
                     self.last_height = current_height;
+                } else {
+                    let mut state = self.state.write().unwrap();
+                    state.bitcoin.last_sync_time = now;
                 }
                 Ok(())
             }
@@ -83,13 +100,16 @@ impl<R: BitcoinRpc> BitcoinListener<R> {
     }
 
     pub async fn run(&mut self) -> ConxianResult<()> {
-        info!("Starting Bitcoin listener...");
+        info!(
+            "Starting Bitcoin listener with sync interval {}s...",
+            self.sync_interval
+        );
 
         loop {
             if let Err(e) = self.sync_once().await {
                 error!("Failed to sync Bitcoin: {}", e);
             }
-            sleep(Duration::from_secs(10)).await;
+            sleep(Duration::from_secs(self.sync_interval)).await;
         }
     }
 }
@@ -137,7 +157,7 @@ mod tests {
         let state = Arc::new(RwLock::new(GatewayState::default()));
         let rpc = MockBitcoinRpc { height: 100 };
         let persistence = Arc::new(MockPersistence);
-        let mut listener = BitcoinListener::new(rpc, state.clone(), persistence);
+        let mut listener = BitcoinListener::new(rpc, state.clone(), persistence, 10);
 
         listener.sync_once().await.unwrap();
 
@@ -147,6 +167,7 @@ mod tests {
             assert_eq!(s.bitcoin.status, "synced");
             assert_eq!(s.bitcoin.network, "testnet");
             assert_eq!(s.bitcoin.best_block_hash, "hash-100");
+            assert!(s.bitcoin.last_sync_time > 0);
         }
 
         // Update height

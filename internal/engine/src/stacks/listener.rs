@@ -10,32 +10,42 @@ pub struct StacksListener<R: StacksRpc> {
     state: SharedState,
     persistence: Arc<dyn Persistence>,
     last_height: u64,
+    sync_interval: u64,
 }
 
 impl<R: StacksRpc> StacksListener<R> {
-    pub fn new(rpc: R, state: SharedState, persistence: Arc<dyn Persistence>) -> Self {
+    pub fn new(
+        rpc: R,
+        state: SharedState,
+        persistence: Arc<dyn Persistence>,
+        sync_interval: u64,
+    ) -> Self {
         let last_height = persistence.load().map(|s| s.stacks_height).unwrap_or(0);
         Self {
             rpc,
             state,
             persistence,
             last_height,
+            sync_interval,
         }
     }
 
     pub async fn sync_once(&mut self) -> ConxianResult<()> {
         match self.rpc.get_network_info().await {
             Ok(info) => {
+                let now = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
+
                 if info.height > self.last_height || self.last_height == 0 {
                     info!("New Stacks block processed: height={}, network={}, epoch={}, burn_height={}", info.height, info.network, info.epoch, info.burn_block_height);
 
                     let mut state = self.state.write().unwrap();
                     state.stacks.height = info.height;
                     state.stacks.status = "synced".to_string();
-                    state.stacks.last_updated = SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap()
-                        .as_secs();
+                    state.stacks.last_updated = now;
+                    state.stacks.last_sync_time = now;
                     state.stacks.network = info.network;
                     state.stacks.mode = Some("nakamoto".to_string());
                     state.stacks.epoch = Some(info.epoch);
@@ -49,6 +59,9 @@ impl<R: StacksRpc> StacksListener<R> {
                     let _ = self.persistence.save(&p_state);
 
                     self.last_height = info.height;
+                } else {
+                    let mut state = self.state.write().unwrap();
+                    state.stacks.last_sync_time = now;
                 }
                 Ok(())
             }
@@ -61,13 +74,16 @@ impl<R: StacksRpc> StacksListener<R> {
     }
 
     pub async fn run(&mut self) -> ConxianResult<()> {
-        info!("Starting Stacks (Nakamoto) listener...");
+        info!(
+            "Starting Stacks (Nakamoto) listener with sync interval {}s...",
+            self.sync_interval
+        );
 
         loop {
             if let Err(e) = self.sync_once().await {
                 error!("Failed to sync Stacks: {}", e);
             }
-            sleep(Duration::from_secs(30)).await;
+            sleep(Duration::from_secs(self.sync_interval)).await;
         }
     }
 }
@@ -114,7 +130,7 @@ mod tests {
         let state = Arc::new(RwLock::new(GatewayState::default()));
         let rpc = MockStacksRpc { height: 555 };
         let persistence = Arc::new(MockPersistence);
-        let mut listener = StacksListener::new(rpc, state.clone(), persistence);
+        let mut listener = StacksListener::new(rpc, state.clone(), persistence, 30);
 
         listener.sync_once().await.unwrap();
 
@@ -124,6 +140,7 @@ mod tests {
             assert_eq!(s.stacks.status, "synced");
             assert_eq!(s.stacks.mode.as_deref(), Some("nakamoto"));
             assert_eq!(s.stacks.burn_block_height, Some(55));
+            assert!(s.stacks.last_sync_time > 0);
         }
 
         // Update height
