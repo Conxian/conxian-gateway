@@ -43,11 +43,21 @@ async fn main() -> anyhow::Result<()> {
         &config.bitcoin_rpc_pass,
     )?;
 
-    let mut btc_listener = BitcoinListener::new(btc_rpc, state.clone(), persistence.clone());
+    let mut btc_listener = BitcoinListener::new(
+        btc_rpc,
+        state.clone(),
+        persistence.clone(),
+        config.bitcoin_sync_interval,
+    );
 
     // Initialize Stacks listener
     let stx_rpc = StacksRpcClient::new(&config.stacks_rpc_url);
-    let mut stx_listener = StacksListener::new(stx_rpc, state.clone(), persistence);
+    let mut stx_listener = StacksListener::new(
+        stx_rpc,
+        state.clone(),
+        persistence,
+        config.stacks_sync_interval,
+    );
 
     // Create a cancellation token for graceful shutdown of listeners
     let (shutdown_tx, _) = tokio::sync::broadcast::channel::<()>(1);

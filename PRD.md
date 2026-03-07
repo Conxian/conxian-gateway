@@ -19,6 +19,10 @@ The Conxian Gateway is an institutional-grade middleware for Bitcoin/Stacks stat
 - [x] R13: Uptime and Enhanced Metrics (Status: Complete)
 - [x] R14: Atomic Persistence (Status: Complete)
 - [x] R15: Cross-Chain State Referencing (Status: Complete)
+- [x] R16: Enhanced Health Monitoring (Status: Complete)
+- [x] R17: Detailed API Metrics (Status: Complete)
+- [x] R18: Configurable Sync Intervals (Status: Complete)
+- [x] R19: Stale Sync Detection & Observability (Status: Complete)
 
 ## 3. Progress Log
 - 2026-02-13: Initialized workspace structure.
@@ -52,22 +56,24 @@ The Conxian Gateway is an institutional-grade middleware for Bitcoin/Stacks stat
     - Improved Prometheus metrics formatting for better compatibility with standard scrapers.
     - Implemented atomic write mechanism in `FilePersistence` to prevent data corruption.
     - Conducted a full system audit and verified all modules pass rigorous testing and clippy checks.
-
-## 4. Technical Implementation Details
-- **Bitcoin Engine**: Uses `bitcoincore-rpc` for state monitoring. Includes a `BitcoinRpc` trait for improved testability and mocking.
-- **Stacks Engine**: Uses `StacksRpcClient` for real-time state monitoring via Stacks Node API. Nakamoto-ready with epoch signaling and burn block height tracking.
-- **ZKC Module**: Implements robust attestation validation using `secp256k1` ECDSA and Schnorr signatures.
-- **Security**: Institutional API is protected by Bearer token authentication.
-- **Metrics**: Exposes internal state, uptime, and request counters via a Prometheus-compatible endpoint.
-- **Persistence**: File-based state persistence with atomic write guarantees.
-- **Testing**: Comprehensive unit and integration tests covering API, Compliance, and Engine.
-- [x] R16: Enhanced Health Monitoring (Status: Complete)
-- [x] R17: Detailed API Metrics (Status: Complete)
-
-## 3. Progress Log (Continued)
 - 2026-02-24: Observability and Health Enhancements:
     - Expanded `Metrics` struct with detailed per-endpoint request counters.
     - Implemented fine-grained tracking for attestation verification results (success vs failure).
     - Enhanced `/api/v1/health` to report "degraded" status if any underlying chain listener encounters errors, including specific error details.
     - Updated Prometheus metrics endpoint to expose the new granular telemetry data.
     - Improved internal logging in Bitcoin and Stacks listeners for better operational visibility.
+- 2026-02-25: Institutional Observability Upgrade:
+    - Added configurable sync intervals for Bitcoin and Stacks listeners to optimize resource usage.
+    - Implemented `last_sync_time` tracking for all blockchain listeners.
+    - Enhanced health monitoring with stale sync detection (flagging status as degraded if sync is delayed).
+    - Added granular logging for ZKC verification types (ECDSA vs Schnorr) to support compliance auditing.
+    - Expanded Prometheus metrics to include last successful sync timestamps for all chains.
+
+## 4. Technical Implementation Details
+- **Bitcoin Engine**: Uses `bitcoincore-rpc` for state monitoring. Includes a `BitcoinRpc` trait for improved testability and mocking.
+- **Stacks Engine**: Uses `StacksRpcClient` for real-time state monitoring via Stacks Node API. Nakamoto-ready with epoch signaling and burn block height tracking.
+- **ZKC Module**: Implements robust attestation validation using `secp256k1` ECDSA and Schnorr signatures.
+- **Security**: Institutional API is protected by Bearer token authentication.
+- **Metrics**: Exposes internal state, uptime, and request counters via a Prometheus-compatible endpoint. Includes timestamps for last successful blockchain syncs.
+- **Persistence**: File-based state persistence with atomic write guarantees.
+- **Testing**: Comprehensive unit and integration tests covering API, Compliance, and Engine.
