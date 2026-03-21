@@ -8,6 +8,13 @@ pub struct ZkcVerifier {
     secp: Secp256k1<secp256k1::All>,
 }
 
+pub struct ZkmlProof {
+    pub device_id: String,
+    pub receipt_hash: String,
+    pub public_inputs: String,
+    pub journal: String,
+}
+
 impl Default for ZkcVerifier {
     fn default() -> Self {
         Self::new()
@@ -100,6 +107,33 @@ impl ZkcVerifier {
             ))),
         }
     }
+
+    /// Verifies a Zero-Knowledge Machine Learning (ZKML) proof
+    /// mapping to Guardian Attestations for off-chain models.
+    pub fn verify_zkml(&self, proof: &ZkmlProof) -> ConxianResult<bool> {
+        if !proof.device_id.starts_with("conxius-zkml-") {
+            return Err(ConxianError::Compliance(
+                "Invalid device ID: must start with 'conxius-zkml-'".to_string(),
+            ));
+        }
+
+        if proof.receipt_hash.is_empty() {
+             return Err(ConxianError::Compliance(
+                "ZKML receipt hash cannot be empty".to_string(),
+            ));
+        }
+
+        let combined = format!("{}:{}", proof.public_inputs, proof.journal);
+        let computed_hash = sha256::Hash::hash(combined.as_bytes());
+        
+        if hex::encode(computed_hash.to_byte_array()) != proof.receipt_hash {
+             return Err(ConxianError::Compliance(
+                "ZKML verification failed: receipt hash mismatch".to_string(),
+            ));
+        }
+
+        Ok(true)
+    }
 }
 
 #[cfg(test)]
@@ -148,5 +182,23 @@ mod tests {
             x_only_public_key: hex::encode(pk.serialize()),
         };
         assert!(verifier.verify_schnorr(&attestation).unwrap());
+    }
+
+    #[test]
+    fn test_verify_zkml_valid() {
+        let verifier = ZkcVerifier::new();
+        let public_inputs = "model=llama3";
+        let journal = "prediction=sovereign";
+        let combined = format!("{}:{}", public_inputs, journal);
+        let receipt_hash = hex::encode(sha256::Hash::hash(combined.as_bytes()).to_byte_array());
+
+        let proof = ZkmlProof {
+            device_id: "conxius-zkml-001".to_string(),
+            receipt_hash,
+            public_inputs: public_inputs.to_string(),
+            journal: journal.to_string(),
+        };
+
+        assert!(verifier.verify_zkml(&proof).unwrap());
     }
 }
