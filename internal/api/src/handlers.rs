@@ -20,7 +20,6 @@ pub async fn health_check(State(state): State<SharedState>) -> Json<Value> {
         status = "degraded";
         details.push(format!("Bitcoin error: {}", s.bitcoin.status));
     } else if s.bitcoin.last_sync_time > 0 && now.saturating_sub(s.bitcoin.last_sync_time) > 120 {
-        // If Bitcoin hasn't synced in 2 minutes (assuming 10s default), consider it degraded
         status = "degraded";
         details.push(format!("Bitcoin sync is stale (last sync: {}s ago)", now.saturating_sub(s.bitcoin.last_sync_time)));
     }
@@ -30,7 +29,6 @@ pub async fn health_check(State(state): State<SharedState>) -> Json<Value> {
         status = "degraded";
         details.push(format!("Stacks error: {}", s.stacks.status));
     } else if s.stacks.last_sync_time > 0 && now.saturating_sub(s.stacks.last_sync_time) > 300 {
-        // If Stacks hasn't synced in 5 minutes (assuming 30s default), consider it degraded
         status = "degraded";
         details.push(format!("Stacks sync is stale (last sync: {}s ago)", now.saturating_sub(s.stacks.last_sync_time)));
     }
@@ -87,7 +85,7 @@ pub async fn get_metrics(State(state): State<SharedState>) -> String {
     let uptime = now.saturating_sub(s.start_time);
 
     format!(
-        "# HELP gateway_total_requests The total number of API requests received.\n         # TYPE gateway_total_requests counter\n         gateway_total_requests {}\n         # HELP gateway_health_requests The number of health check requests.\n         # TYPE gateway_health_requests counter\n         gateway_health_requests {}\n         # HELP gateway_state_requests The number of state requests.\n         # TYPE gateway_state_requests counter\n         gateway_state_requests {}\n         # HELP gateway_metrics_requests The number of metrics requests.\n         # TYPE gateway_metrics_requests counter\n         gateway_metrics_requests {}\n         # HELP gateway_verification_requests The total number of attestation verifications attempted.\n         # TYPE gateway_verification_requests counter\n         gateway_verification_requests {}\n         # HELP gateway_verification_success The number of successful attestation verifications.\n         # TYPE gateway_verification_success counter\n         gateway_verification_success {}\n         # HELP gateway_verification_failure The number of failed attestation verifications.\n         # TYPE gateway_verification_failure counter\n         gateway_verification_failure {}\n         # HELP bitcoin_block_height The current block height of the Bitcoin chain.\n         # TYPE bitcoin_block_height gauge\n         bitcoin_block_height {}\n         # HELP stacks_block_height The current block height of the Stacks chain.\n         # TYPE stacks_block_height gauge\n         stacks_block_height {}\n         # HELP bitcoin_last_sync_timestamp The last successful sync timestamp for Bitcoin.\n         # TYPE bitcoin_last_sync_timestamp gauge\n         bitcoin_last_sync_timestamp {}\n         # HELP stacks_last_sync_timestamp The last successful sync timestamp for Stacks.\n         # TYPE stacks_last_sync_timestamp gauge\n         stacks_last_sync_timestamp {}\n         # HELP gateway_uptime_seconds The total uptime of the gateway in seconds.\n         # TYPE gateway_uptime_seconds counter\n         gateway_uptime_seconds {}\n",
+        "# HELP gateway_total_requests The total number of API requests received.\n         # TYPE gateway_total_requests counter\n         gateway_total_requests {}\n         # HELP gateway_health_requests The number of health check requests.\n         # TYPE gateway_health_requests counter\n         gateway_health_requests {}\n         # HELP gateway_state_requests The number of state requests.\n         # TYPE gateway_state_requests counter\n         gateway_state_requests {}\n         # HELP gateway_metrics_requests The number of metrics requests.\n         # TYPE gateway_metrics_requests counter\n         gateway_metrics_requests {}\n         # HELP gateway_verification_requests The total number of attestation verifications attempted.\n         # TYPE gateway_verification_requests counter\n         gateway_verification_requests {}\n         # HELP gateway_verification_success The number of successful attestation verifications.\n         # TYPE gateway_verification_success counter\n         gateway_verification_success {}\n         # HELP gateway_verification_failure The number of failed attestation verifications.\n         # TYPE gateway_verification_failure counter\n         gateway_verification_failure {}\n         # HELP bitcoin_block_height The current block height of the Bitcoin chain.\n         # TYPE bitcoin_block_height gauge\n         bitcoin_block_height {}\n         # HELP stacks_block_height The current block height of the Stacks chain.\n         # TYPE stacks_block_height gauge\n         stacks_block_height {}\n         # HELP bitcoin_last_sync_timestamp The last successful sync timestamp for Bitcoin.\n         # TYPE bitcoin_last_sync_timestamp gauge\n         bitcoin_last_sync_timestamp {}\n         # HELP stacks_last_sync_timestamp The last successful sync timestamp for Stacks.\n         # TYPE stacks_last_sync_timestamp gauge\n         stacks_last_sync_timestamp {}\n         # HELP gateway_uptime_seconds The total uptime of the gateway in seconds.\n         # TYPE gateway_uptime_seconds counter\n         gateway_uptime_seconds {}\n         # HELP treasury_balance_stx Current STX balance in treasury.\n         # TYPE treasury_balance_stx gauge\n         treasury_balance_stx {}\n         # HELP treasury_balance_btc Current BTC balance in treasury.\n         # TYPE treasury_balance_btc gauge\n         treasury_balance_btc {}\n",
         s.metrics.total_requests,
         s.metrics.health_requests,
         s.metrics.state_requests,
@@ -99,7 +97,9 @@ pub async fn get_metrics(State(state): State<SharedState>) -> String {
         s.stacks.height,
         s.bitcoin.last_sync_time,
         s.stacks.last_sync_time,
-        uptime
+        uptime,
+        s.metrics.treasury_balance_stx,
+        s.metrics.treasury_balance_btc
     )
 }
 
@@ -117,6 +117,7 @@ pub async fn verify_attestation(
     let (attestation_type, result) = match request {
         AttestationRequest::Ecdsa(a) => ("ECDSA", verifier.verify(&a)),
         AttestationRequest::Schnorr(a) => ("Schnorr", verifier.verify_schnorr(&a)),
+        AttestationRequest::Zkml(a) => ("ZKML", verifier.verify_zkml(&a)),
     };
 
     info!("Processing {} attestation verification request", attestation_type);

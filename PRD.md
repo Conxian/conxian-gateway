@@ -1,7 +1,7 @@
 # Product Requirements Document (PRD): Conxian Gateway
 
 ## 1. Executive Summary
-The Conxian Gateway is an institutional-grade middleware for Bitcoin/Stacks state logic and enterprise compliance.
+The Conxian Gateway is an institutional-grade middleware for Bitcoin/Stacks state logic and enterprise compliance. It serves as the primary "Compliance Pipe" for B2B fintech integrations, ensuring secure, SLA-grade interfaces and cryptographic state verification.
 
 ## 2. Requirements Tracking
 - [x] R1: Rust Workspace Initialization (Status: Complete)
@@ -23,6 +23,9 @@ The Conxian Gateway is an institutional-grade middleware for Bitcoin/Stacks stat
 - [x] R17: Detailed API Metrics (Status: Complete)
 - [x] R18: Configurable Sync Intervals (Status: Complete)
 - [x] R19: Stale Sync Detection & Observability (Status: Complete)
+- [x] R20: ZKML Verification Support (Status: Complete)
+- [x] R21: MVCR (Mathematically Verifiable Compliance Reports) Generation (Status: Complete)
+- [x] R22: Institutional Treasury Monitoring (Status: Complete)
 
 ## 3. Progress Log
 - 2026-02-13: Initialized workspace structure.
@@ -68,12 +71,19 @@ The Conxian Gateway is an institutional-grade middleware for Bitcoin/Stacks stat
     - Enhanced health monitoring with stale sync detection (flagging status as degraded if sync is delayed).
     - Added granular logging for ZKC verification types (ECDSA vs Schnorr) to support compliance auditing.
     - Expanded Prometheus metrics to include last successful sync timestamps for all chains.
+- 2026-03-22: Sovereign/Institutional Realignment (Jules):
+    - Aligned codebase with the "Sovereign/Institutional" ethos and standardized naming.
+    - Enhanced ZKC module with ZKML proof verification and MVCR generation.
+    - Implemented Treasury Monitor for institutional balance tracking and Sovereign Tax (1%) simulation.
+    - Expanded Prometheus metrics with treasury-specific gauges.
+    - Formalized development standards with a new `AGENTS.md`.
 
 ## 4. Technical Implementation Details
 - **Bitcoin Engine**: Uses `bitcoincore-rpc` for state monitoring. Includes a `BitcoinRpc` trait for improved testability and mocking.
 - **Stacks Engine**: Uses `StacksRpcClient` for real-time state monitoring via Stacks Node API. Nakamoto-ready with epoch signaling and burn block height tracking.
-- **ZKC Module**: Implements robust attestation validation using `secp256k1` ECDSA and Schnorr signatures.
+- **Treasury Engine**: Monitors institutional balances and simulates automated tax extraction.
+- **ZKC Module**: Implements robust attestation validation using `secp256k1` ECDSA and Schnorr signatures. Supports ZKML proof verification.
+- **MVCR Generator**: Provides Mathematically Verifiable Compliance Reports for institutional state attestation.
 - **Security**: Institutional API is protected by Bearer token authentication.
-- **Metrics**: Exposes internal state, uptime, and request counters via a Prometheus-compatible endpoint. Includes timestamps for last successful blockchain syncs.
+- **Metrics**: Exposes internal state, uptime, request counters, and treasury balances via a Prometheus-compatible endpoint.
 - **Persistence**: File-based state persistence with atomic write guarantees.
-- **Testing**: Comprehensive unit and integration tests covering API, Compliance, and Engine.
