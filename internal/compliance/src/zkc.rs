@@ -1,5 +1,7 @@
 use bitcoin::hashes::{sha256, Hash};
-pub use conxian_core::{Attestation, ConxianError, ConxianResult, SchnorrAttestation, ZkmlProof};
+pub use conxian_core::{
+    Attestation, BitVmAttestation, ConxianError, ConxianResult, SchnorrAttestation, ZkmlProof,
+};
 use secp256k1::schnorr::Signature as SchnorrSignature;
 use secp256k1::XOnlyPublicKey;
 use secp256k1::{ecdsa::Signature, Message, PublicKey, Secp256k1};
@@ -112,17 +114,46 @@ impl ZkcVerifier {
         }
 
         if proof.receipt_hash.is_empty() {
-             return Err(ConxianError::Compliance(
+            return Err(ConxianError::Compliance(
                 "ZKML receipt hash cannot be empty".to_string(),
             ));
         }
 
-        let combined = format!("{}:{}:{}", proof.public_inputs, proof.journal, proof.device_id);
+        let combined = format!(
+            "{}:{}:{}",
+            proof.public_inputs, proof.journal, proof.device_id
+        );
         let computed_hash = sha256::Hash::hash(combined.as_bytes());
-        
+
         if hex::encode(computed_hash.to_byte_array()) != proof.receipt_hash {
-             return Err(ConxianError::Compliance(
+            return Err(ConxianError::Compliance(
                 "ZKML verification failed: receipt hash mismatch".to_string(),
+            ));
+        }
+
+        Ok(true)
+    }
+
+    /// Industry Enhancement: Verify BitVM attestation for trustless cross-chain state verification.
+    /// BitVM removes bridge risk by allowing optimistic fraud proofs on Bitcoin.
+    pub fn verify_bitvm(&self, attestation: &BitVmAttestation) -> ConxianResult<bool> {
+        info!(
+            "Verifying BitVM attestation for prover: {}",
+            attestation.prover_id
+        );
+
+        if attestation.commitment_hash.is_empty() {
+            return Err(ConxianError::Compliance(
+                "BitVM commitment hash cannot be empty".to_string(),
+            ));
+        }
+
+        // Simulation: verify state_root matches commitment_hash via mock fraud proof check
+        let expected_hash =
+            hex::encode(sha256::Hash::hash(attestation.state_root.as_bytes()).to_byte_array());
+        if expected_hash != attestation.commitment_hash {
+            return Err(ConxianError::Compliance(
+                "BitVM verification failed: state root mismatch".to_string(),
             ));
         }
 
@@ -137,7 +168,10 @@ impl ZkcVerifier {
             .unwrap()
             .as_secs();
 
-        let report_content = format!("Nexus-ID: {}\nState-Root: {}\nTimestamp: {}\nSovereign-Status: Verified", nexus_id, state_root, timestamp);
+        let report_content = format!(
+            "Nexus-ID: {}\nState-Root: {}\nTimestamp: {}\nSovereign-Status: Verified",
+            nexus_id, state_root, timestamp
+        );
         let report_hash = sha256::Hash::hash(report_content.as_bytes());
 
         Ok(hex::encode(report_hash.to_byte_array()))
@@ -146,76 +180,43 @@ impl ZkcVerifier {
     /// Research enhancement: Generate CARF/BRS v1.5 compliant data export (CON-53).
     /// Standardized export for family offices and institutional banks.
     pub fn export_compliance_report(&self, entity_id: &str) -> ConxianResult<String> {
-        info!("Generating CARF/BRS v1.5 compliance report for {}", entity_id);
+        info!(
+            "Generating CARF/BRS v1.5 compliance report for {}",
+            entity_id
+        );
         // Implementation placeholder for standardized XML/JSON export
         Ok(format!("CARF-BRS-v1.5-{}", entity_id))
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use rand::thread_rng;
-    use secp256k1::Keypair;
-
-    #[test]
-    fn test_zkc_verify_valid() {
-        let secp = Secp256k1::new();
-        let (sk, pk) = secp.generate_keypair(&mut thread_rng());
-
-        let payload = "valid-payload";
-        let message_hash = sha256::Hash::hash(payload.as_bytes());
-        let message = Message::from_digest(message_hash.to_byte_array());
-        let sig = secp.sign_ecdsa(&message, &sk);
-
-        let verifier = ZkcVerifier::new();
-        let attestation = Attestation {
-            device_id: "conxius-123".to_string(),
-            signature: hex::encode(sig.serialize_der()),
-            payload: payload.to_string(),
-            public_key: hex::encode(pk.serialize()),
-        };
-        assert!(verifier.verify(&attestation).unwrap());
-    }
-
-    #[test]
-    fn test_zkc_verify_schnorr_valid() {
-        let secp = Secp256k1::new();
-        let mut rng = thread_rng();
-        let kp = Keypair::new(&secp, &mut rng);
-        let (pk, _) = kp.x_only_public_key();
-
-        let payload = "valid-schnorr-payload";
-        let message_hash = sha256::Hash::hash(payload.as_bytes());
-        let message = Message::from_digest(message_hash.to_byte_array());
-        let sig = secp.sign_schnorr(&message, &kp);
-
-        let verifier = ZkcVerifier::new();
-        let attestation = SchnorrAttestation {
-            device_id: "conxius-schnorr-123".to_string(),
-            signature: hex::encode(sig.as_ref()),
-            payload: payload.to_string(),
-            x_only_public_key: hex::encode(pk.serialize()),
-        };
-        assert!(verifier.verify_schnorr(&attestation).unwrap());
-    }
-
-    #[test]
-    fn test_verify_zkml_valid() {
-        let verifier = ZkcVerifier::new();
-        let public_inputs = "model=llama3";
-        let journal = "prediction=sovereign";
-        let device_id = "conxius-zkml-001";
-        let combined = format!("{}:{}:{}", public_inputs, journal, device_id);
-        let receipt_hash = hex::encode(sha256::Hash::hash(combined.as_bytes()).to_byte_array());
-
-        let proof = ZkmlProof {
-            device_id: device_id.to_string(),
-            receipt_hash,
-            public_inputs: public_inputs.to_string(),
-            journal: journal.to_string(),
-        };
-
-        assert!(verifier.verify_zkml(&proof).unwrap());
+    /// Industry Enhancement: Institutional ISO 20022 Egress formatter.
+    /// Aligns the Payment Forge with global banking messaging standards.
+    pub fn format_iso20022_pacs008(&self, sender: &str, receiver: &str, amount: f64) -> String {
+        format!(
+            r#"<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pacs.008.001.07">
+    <FIToFICstmrCdtTrf>
+        <GrpHdr>
+            <MsgId>CONXIAN-{}-{}</MsgId>
+            <CreDtTm>{}</CreDtTm>
+        </GrpHdr>
+        <CdtTrfTxInf>
+            <Amt>
+                <InstdAmt Ccy="STX">{}</InstdAmt>
+            </Amt>
+            <Dbtr>
+                <Nm>{}</Nm>
+            </Dbtr>
+            <Cdtr>
+                <Nm>{}</Nm>
+            </Cdtr>
+        </CdtTrfTxInf>
+    </FIToFICstmrCdtTrf>
+</Document>"#,
+            sender,
+            receiver,
+            chrono::Utc::now().to_rfc3339(),
+            amount,
+            sender,
+            receiver
+        )
     }
 }

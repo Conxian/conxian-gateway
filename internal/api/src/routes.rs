@@ -18,6 +18,8 @@ pub fn configure_routes(state: SharedState, api_token: String) -> Router {
     let private_routes = Router::new()
         .route("/state", get(handlers::get_state))
         .route("/verify", post(handlers::verify_attestation))
+        .route("/identity/exchange", post(handlers::exchange_identity))
+        .route("/iso20022/payment", post(handlers::generate_iso_payment))
         .layer(middleware::from_fn(move |req, next| {
             auth_middleware(req, next, token_for_auth.clone())
         }))
