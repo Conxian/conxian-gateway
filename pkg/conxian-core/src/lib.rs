@@ -44,6 +44,10 @@ pub struct Metrics {
     pub verification_success: u64,
     pub verification_failure: u64,
     pub total_requests: u64,
+    /// Research enhancement: Treasury metrics
+    pub treasury_balance_stx: f64,
+    pub treasury_balance_btc: f64,
+    pub last_treasury_update: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -111,6 +115,16 @@ pub struct SchnorrAttestation {
 pub enum AttestationRequest {
     Ecdsa(Attestation),
     Schnorr(SchnorrAttestation),
+    Zkml(ZkmlProof),
+}
+
+/// ZKML proof mapping to Guardian Attestations for off-chain models.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ZkmlProof {
+    pub device_id: String,
+    pub receipt_hash: String,
+    pub public_inputs: String,
+    pub journal: String,
 }
 
 /// Persistent data that needs to be saved across restarts.

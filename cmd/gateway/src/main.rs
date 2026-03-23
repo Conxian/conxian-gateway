@@ -4,7 +4,7 @@ use api::configure_routes;
 use config::Config;
 use conxian_core::persistence::FilePersistence;
 use conxian_core::{GatewayState, Persistence, SharedState};
-use engine::{BitcoinListener, BitcoinRpcClient, StacksListener, StacksRpcClient};
+use engine::{BitcoinListener, BitcoinRpcClient, StacksListener, StacksRpcClient, TreasuryMonitor};
 use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
 use tokio::signal;
@@ -59,6 +59,9 @@ async fn main() -> anyhow::Result<()> {
         config.stacks_sync_interval,
     );
 
+    // Initialize Treasury monitor
+    let treasury_monitor = TreasuryMonitor::new(state.clone(), 60);
+
     // Create a cancellation token for graceful shutdown of listeners
     let (shutdown_tx, _) = tokio::sync::broadcast::channel::<()>(1);
 
@@ -86,6 +89,20 @@ async fn main() -> anyhow::Result<()> {
             }
             _ = stx_shutdown_rx.recv() => {
                 info!("Stacks listener stopping...");
+            }
+        }
+    });
+
+    let mut treasury_shutdown_rx = shutdown_tx.subscribe();
+    tokio::spawn(async move {
+        tokio::select! {
+            res = treasury_monitor.run() => {
+                if let Err(e) = res {
+                    error!("Treasury monitor failed: {}", e);
+                }
+            }
+            _ = treasury_shutdown_rx.recv() => {
+                info!("Treasury monitor stopping...");
             }
         }
     });
