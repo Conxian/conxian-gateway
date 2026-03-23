@@ -1,38 +1,36 @@
 # Conxian Gateway (The Pipe)
 
-Institutional-grade middleware bridging Bitcoin/Stacks state logic with enterprise compliance.
+Institutional-grade middleware bridging Bitcoin/Stacks state logic with enterprise compliance. The gateway is designed to capture the Total Addressable Market (TAM) of Bitcoin-native liquidity while maintaining sovereign alignment.
 
 ## Features
-- **Engine**: Nakamoto-ready indexing and state monitoring for Bitcoin and Stacks.
-- **API**: SLA-grade B2B interface with secure authentication (Bearer token).
-- **Compliance**: Zero-Knowledge Compliance (ZKC) module for Conxius Wallet attestation with cryptographic verification (ECDSA & Schnorr).
-- **Metrics**: Built-in Prometheus-compatible metrics endpoint with uptime and detailed counters.
-- **Persistence**: File-based state persistence with atomic write guarantees ensuring continuity across service restarts.
-- **Audit-Ready**: Clean codebase optimized for security audits.
-- **Testable**: Decoupled RPC layers with traits for mocking and unit testing.
-- **Robust**: Graceful shutdown and improved state monitoring.
+- **Engine**: Nakamoto-ready indexing and state monitoring for Bitcoin and Stacks. Enhanced with the sBTC "Suction" pattern and Sovereign Yield Index (SYI) tracking.
+- **API**: SLA-grade B2B interface with secure authentication. Supports ISO 20022 banking egress and identity exchange (WIF).
+- **Compliance**: Zero-Knowledge Compliance (ZKC) module for Conxius Wallet attestation with cryptographic verification (ECDSA, Schnorr, ZKML, and BitVM).
+- **Metrics**: Built-in Prometheus-compatible metrics endpoint with detailed chain state and treasury telemetry.
+- **Persistence**: Atomic file-based persistence for reliable state monitoring across restarts.
 
 ## Architecture
-- `/cmd/gateway`: Entry point and configuration.
-- `/internal/engine`: State listeners (Bitcoin & Stacks) and block ingestion.
+- `/cmd/gateway`: Entry point and wiring.
+- `/internal/engine`: Blockchain listeners and Treasury monitor.
 - `/internal/api`: Institutional API, Auth middleware, and handlers.
-- `/internal/compliance`: ZKC attestation verifier with secp256k1 support (ECDSA & Schnorr).
-- `/pkg/conxian-core`: Shared libraries, common types, and persistence layer.
+- `/internal/compliance`: ZKC attestation verifier, BitVM verifier, and Identity Manager (WIF).
+- `/pkg/conxian-core`: Shared models, error types, and persistence layer.
 
 ## API Endpoints
 - `GET /api/v1/health`: Service health check.
-- `GET /api/v1/metrics`: Prometheus-compatible metrics (includes uptime).
+- `GET /api/v1/metrics`: Prometheus-compatible metrics (includes uptime, treasury, and SYI).
 - `GET /api/v1/state`: Current chain state and gateway metrics (Authorized).
-- `POST /api/v1/verify`: Verify cryptographic attestations (Authorized).
+- `POST /api/v1/verify`: Verify cryptographic attestations (ECDSA, Schnorr, ZKML, BitVM) (Authorized).
+- `POST /api/v1/identity/exchange`: Exchange OIDC token for GCP access token (WIF) (Authorized).
+- `POST /api/v1/iso20022/payment`: Generate standardized ISO 20022 egress messages (Authorized).
 
 ## Configuration
 The following environment variables can be used to configure the gateway:
 - `BITCOIN_RPC_URL`: URL of the Bitcoin node RPC (default: http://localhost:18332)
-- `BITCOIN_RPC_USER`: Bitcoin RPC username
-- `BITCOIN_RPC_PASS`: Bitcoin RPC password
 - `STACKS_RPC_URL`: URL of the Stacks node API (default: https://api.mainnet.hiro.so)
-- `API_PORT`: Port for the Gateway API (default: 3000)
 - `API_TOKEN`: Bearer token for institutional API access (default: institutional-default-token)
+- `BITCOIN_SYNC_INTERVAL`: Sync interval for Bitcoin (default: 10s)
+- `STACKS_SYNC_INTERVAL`: Sync interval for Stacks (default: 30s)
 
 ## Getting Started
 ```bash

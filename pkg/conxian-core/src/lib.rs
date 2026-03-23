@@ -48,6 +48,9 @@ pub struct Metrics {
     pub treasury_balance_stx: f64,
     pub treasury_balance_btc: f64,
     pub last_treasury_update: u64,
+    /// Industry Enhancement: TAM Capture Metrics
+    pub sbtc_liquidity: f64,
+    pub syi_index: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -116,6 +119,7 @@ pub enum AttestationRequest {
     Ecdsa(Attestation),
     Schnorr(SchnorrAttestation),
     Zkml(ZkmlProof),
+    BitVm(BitVmAttestation),
 }
 
 /// ZKML proof mapping to Guardian Attestations for off-chain models.
@@ -125,6 +129,43 @@ pub struct ZkmlProof {
     pub receipt_hash: String,
     pub public_inputs: String,
     pub journal: String,
+}
+
+/// Industry Enhancement: BitVM Attestation for trustless state verification.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct BitVmAttestation {
+    pub prover_id: String,
+    pub commitment_hash: String,
+    pub state_root: String,
+}
+
+/// Industry Enhancement: Workload Identity Federation (WIF) token request.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct GcpTokenRequest {
+    pub audience: String,
+    pub grant_type: String,
+    pub requested_token_type: String,
+    pub scope: String,
+    pub subject_token: String,
+    pub subject_token_type: String,
+}
+
+/// Industry Enhancement: Discrete Log Contract (DLC) Bond.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DlcBond {
+    pub bond_id: String,
+    pub amount_btc: f64,
+    pub interest_rate: f64,
+    pub maturity_date: u64,
+    pub sovereign_alignment: bool,
+}
+
+/// Industry Enhancement: Sovereign Yield Index (SYI) tracking.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SovereignYield {
+    pub sbtc_liquidity: f64,
+    pub syi_index: f64,
+    pub yield_multiplier: f64,
 }
 
 /// Persistent data that needs to be saved across restarts.
