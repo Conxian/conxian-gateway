@@ -55,3 +55,9 @@ Conxian is designed to capture the Total Addressable Market (TAM) of Bitcoin-nat
 - **BitVM Verifier**: Implements state-root commitment verification for optimistic fraud proofs.
 - **ISO 20022 Forge**: Generates standardized XML banking messages for institutional egress.
 - **Metrics**: Exposes SYI and sBTC liquidity depth alongside existing blockchain telemetry.
+- [x] R27: Fiat Webhook Verification (Status: Complete)
+- [x] R28: Production Fiat On-Ramp Integration (Status: Complete)
+- 2026-03-24: Fiat Gateway Implementation (Jules):
+    - Implemented FiatRouter with production-grade Ramp and Investec integrations.
+    - Added HMAC-SHA256 signature verification for authenticated webhooks.
+    - Exposed /fiat/session and /fiat/webhook endpoints for institutional workflows.

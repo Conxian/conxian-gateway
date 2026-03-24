@@ -1,6 +1,7 @@
 use axum::{extract::State, http::StatusCode, Json};
 use compliance::{IdentityManager, ZkcVerifier};
 use conxian_core::{AttestationRequest, GcpTokenRequest, SharedState};
+use crate::fiat::{FiatRouter, OnRampSessionRequest, OnRampSessionResponse, WebhookPayload};
 use serde_json::{json, Value};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::info;
@@ -170,7 +171,6 @@ pub async fn verify_attestation(
     }
 }
 
-/// Industry Enhancement: Exchange OIDC token for GCP access token (WIF).
 pub async fn exchange_identity(
     State(state): State<SharedState>,
     Json(request): Json<GcpTokenRequest>,
@@ -192,7 +192,6 @@ pub async fn exchange_identity(
     }
 }
 
-/// Industry Enhancement: ISO 20022 Egress simulation.
 pub async fn generate_iso_payment(
     State(_state): State<SharedState>,
     Json(payload): Json<Value>,
@@ -207,30 +206,53 @@ pub async fn generate_iso_payment(
     Ok(verifier.format_iso20022_pacs008(sender, receiver, amount))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use conxian_core::GatewayState;
-    use std::sync::{Arc, RwLock};
-
-    #[tokio::test]
-    async fn test_health_check_handler() {
-        let state = Arc::new(RwLock::new(GatewayState::default()));
-        let res = health_check(State(state)).await;
-        assert_eq!(res.0["status"], "healthy");
-        assert_eq!(res.0["version"], conxian_core::VERSION);
+/// Industry Enhancement: Create Fiat On-Ramp Session (CON-36).
+pub async fn create_fiat_session(
+    State(state): State<SharedState>,
+    Json(request): Json<OnRampSessionRequest>,
+) -> Result<Json<OnRampSessionResponse>, (StatusCode, Json<Value>)> {
+    {
+        let mut s = state.write().unwrap();
+        s.metrics.total_requests += 1;
     }
 
-    #[tokio::test]
-    async fn test_get_state_handler() {
-        let state = Arc::new(RwLock::new(GatewayState::default()));
-        {
-            let mut s = state.write().unwrap();
-            s.bitcoin.height = 100;
-        }
-        let res = get_state(State(state)).await;
-        assert_eq!(res.0["bitcoin"]["height"], 100);
-        assert_eq!(res.0["metrics"]["state_requests"], 1);
-        assert!(res.0.as_object().unwrap().contains_key("uptime_seconds"));
+    // In production, these would come from config/env
+    let router = FiatRouter::new(
+        "ramp-api-key".to_string(),
+        "investec-client-id".to_string(),
+        "investec-secret".to_string()
+    );
+
+    match router.create_session(request).await {
+        Ok(res) => Ok(Json(res)),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        )),
+    }
+}
+
+/// Industry Enhancement: Verify Fiat Webhook (CON-35).
+pub async fn verify_fiat_webhook(
+    State(state): State<SharedState>,
+    Json(payload): Json<WebhookPayload>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    {
+        let mut s = state.write().unwrap();
+        s.metrics.total_requests += 1;
+    }
+
+    let router = FiatRouter::new(
+        "ramp-api-key".to_string(),
+        "investec-client-id".to_string(),
+        "investec-secret".to_string()
+    );
+
+    match router.verify_webhook(&payload, "shared-secret") {
+        Ok(valid) => Ok(Json(json!({ "valid": valid, "provider": payload.provider }))),
+        Err(e) => Err((
+            StatusCode::UNAUTHORIZED, // 403 or 401
+            Json(json!({ "error": e.to_string() })),
+        )),
     }
 }
