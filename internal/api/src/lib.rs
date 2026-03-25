@@ -1,3 +1,4 @@
+pub mod a2p;
 pub mod auth;
 pub mod fiat;
 pub mod handlers;

@@ -1,3 +1,4 @@
+use crate::a2p::{A2pRouter, OtpRequest, OtpVerificationRequest};
 use crate::fiat::{FiatRouter, OnRampSessionRequest, OnRampSessionResponse, WebhookPayload};
 use axum::{extract::State, http::StatusCode, Json};
 use compliance::{IdentityManager, ZkcVerifier};
@@ -262,6 +263,61 @@ pub async fn verify_fiat_webhook(
         )),
         Err(e) => Err((
             StatusCode::UNAUTHORIZED, // 403 or 401
+            Json(json!({ "error": e.to_string() })),
+        )),
+    }
+}
+
+/// Industry Enhancement: Send OTP via A2P Router (CON-39).
+pub async fn send_otp(
+    State(state): State<SharedState>,
+    Json(request): Json<OtpRequest>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    {
+        let mut s = state.write().unwrap();
+        s.metrics.total_requests += 1;
+    }
+
+    let router = A2pRouter::new(
+        "infobip-api-key".to_string(),
+        "infobip-base-url".to_string(),
+        "hmac-secret".to_string(),
+    );
+
+    match router.send_otp(request).await {
+        Ok((res, hmac, ts)) => Ok(Json(json!({
+            "session_id": res.session_id,
+            "status": res.status,
+            "hmac": hmac,
+            "timestamp": ts
+        }))),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        )),
+    }
+}
+
+/// Industry Enhancement: Verify OTP via A2P Router (CON-40).
+pub async fn verify_otp(
+    State(state): State<SharedState>,
+    Json(request): Json<OtpVerificationRequest>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    {
+        let mut s = state.write().unwrap();
+        s.metrics.total_requests += 1;
+    }
+
+    let router = A2pRouter::new(
+        "infobip-api-key".to_string(),
+        "infobip-base-url".to_string(),
+        "hmac-secret".to_string(),
+    );
+
+    match router.verify_otp(request) {
+        Ok(valid) => Ok(Json(json!({ "valid": valid }))),
+        Err(e) => Err((
+            StatusCode::BAD_REQUEST,
             Json(json!({ "error": e.to_string() })),
         )),
     }

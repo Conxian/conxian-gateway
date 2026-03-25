@@ -4,7 +4,7 @@ use api::configure_routes;
 use config::Config;
 use conxian_core::persistence::FilePersistence;
 use conxian_core::{GatewayState, Persistence, SharedState};
-use engine::{BitcoinListener, BitcoinRpcClient, StacksListener, StacksRpcClient, TreasuryMonitor};
+use engine::{BitcoinListener, BitcoinRpcClient, NttRelayer, StacksListener, StacksRpcClient, TreasuryMonitor};
 use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
 use tokio::signal;
@@ -62,6 +62,9 @@ async fn main() -> anyhow::Result<()> {
     // Initialize Treasury monitor
     let treasury_monitor = TreasuryMonitor::new(state.clone(), 60);
 
+    // Initialize NTT Relayer
+    let ntt_relayer = NttRelayer::new(state.clone(), 30);
+
     // Create a cancellation token for graceful shutdown of listeners
     let (shutdown_tx, _) = tokio::sync::broadcast::channel::<()>(1);
 
@@ -103,6 +106,20 @@ async fn main() -> anyhow::Result<()> {
             }
             _ = treasury_shutdown_rx.recv() => {
                 info!("Treasury monitor stopping...");
+            }
+        }
+    });
+
+    let mut ntt_shutdown_rx = shutdown_tx.subscribe();
+    tokio::spawn(async move {
+        tokio::select! {
+            res = ntt_relayer.run() => {
+                if let Err(e) = res {
+                    error!("NTT relayer failed: {}", e);
+                }
+            }
+            _ = ntt_shutdown_rx.recv() => {
+                info!("NTT relayer stopping...");
             }
         }
     });

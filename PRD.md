@@ -38,6 +38,10 @@ Conxian is designed to capture the Total Addressable Market (TAM) of Bitcoin-nat
 - [x] R24: WIF Identity Exchange (Status: Complete)
 - [x] R25: ISO 20022 Egress Support (Status: Complete)
 - [x] R26: BitVM Attestation Verification (Status: Complete)
+- [x] R27: Fiat Webhook Verification (Status: Complete)
+- [x] R28: Production Fiat On-Ramp Integration (Status: Complete)
+- [x] R29: Global Stateless OTP Messaging (Status: Complete)
+- [x] R30: Specialized NTT Relayer Deployment (Status: Complete)
 
 ## 3. Progress Log
 - 2026-02-13: Initialized workspace structure.
@@ -48,6 +52,14 @@ Conxian is designed to capture the Total Addressable Market (TAM) of Bitcoin-nat
     - Integrated Workload Identity Federation (WIF) for TEE-based enclave authentication.
     - Enhanced Treasury Monitor with sBTC "Suction" simulation and Sovereign Yield Index (SYI).
     - Expanded REST API with identity exchange and ISO payment formatting endpoints.
+- 2026-03-24: Fiat Gateway Implementation (Jules):
+    - Implemented FiatRouter with production-grade Ramp and Investec integrations.
+    - Added HMAC-SHA256 signature verification for authenticated webhooks.
+    - Exposed /fiat/session and /fiat/webhook endpoints for institutional workflows.
+- 2026-03-25: A2P & NTT Enhancement (Jules):
+    - Implemented Infobip integration and hardened stateless OTP verification in A2pRouter.
+    - Deployed specialized NTT Relayer for sovereign bridging of native token transfers.
+    - Exposed /a2p/otp and /a2p/verify endpoints for privacy-first authentication.
 
 ## 4. Technical Implementation Details
 - **TAM Engine**: Simulates growth of sBTC liquidity and tracks the Sovereign Yield Index.
@@ -55,9 +67,5 @@ Conxian is designed to capture the Total Addressable Market (TAM) of Bitcoin-nat
 - **BitVM Verifier**: Implements state-root commitment verification for optimistic fraud proofs.
 - **ISO 20022 Forge**: Generates standardized XML banking messages for institutional egress.
 - **Metrics**: Exposes SYI and sBTC liquidity depth alongside existing blockchain telemetry.
-- [x] R27: Fiat Webhook Verification (Status: Complete)
-- [x] R28: Production Fiat On-Ramp Integration (Status: Complete)
-- 2026-03-24: Fiat Gateway Implementation (Jules):
-    - Implemented FiatRouter with production-grade Ramp and Investec integrations.
-    - Added HMAC-SHA256 signature verification for authenticated webhooks.
-    - Exposed /fiat/session and /fiat/webhook endpoints for institutional workflows.
+- **A2P Router**: Orchestrates global stateless OTP delivery via Infobip with HMAC verification.
+- **NTT Relayer**: Observes and relays Native Token Transfer events for the sovereign bridge.
