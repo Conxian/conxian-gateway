@@ -1,7 +1,7 @@
+use crate::fiat::{FiatRouter, OnRampSessionRequest, OnRampSessionResponse, WebhookPayload};
 use axum::{extract::State, http::StatusCode, Json};
 use compliance::{IdentityManager, ZkcVerifier};
 use conxian_core::{AttestationRequest, GcpTokenRequest, SharedState};
-use crate::fiat::{FiatRouter, OnRampSessionRequest, OnRampSessionResponse, WebhookPayload};
 use serde_json::{json, Value};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::info;
@@ -206,7 +206,7 @@ pub async fn generate_iso_payment(
     Ok(verifier.format_iso20022_pacs008(sender, receiver, amount))
 }
 
-/// Industry Enhancement: Create Fiat On-Ramp Session (CON-36).
+/// Industry Enhancement: Create Fiat On-Ramp Session (CON-36/CON-41).
 pub async fn create_fiat_session(
     State(state): State<SharedState>,
     Json(request): Json<OnRampSessionRequest>,
@@ -220,7 +220,11 @@ pub async fn create_fiat_session(
     let router = FiatRouter::new(
         "ramp-api-key".to_string(),
         "investec-client-id".to_string(),
-        "investec-secret".to_string()
+        "investec-secret".to_string(),
+        "alchemypay-app-id".to_string(),
+        "alchemypay-secret".to_string(),
+        "banxa-api-key".to_string(),
+        "banxa-secret".to_string(),
     );
 
     match router.create_session(request).await {
@@ -232,7 +236,7 @@ pub async fn create_fiat_session(
     }
 }
 
-/// Industry Enhancement: Verify Fiat Webhook (CON-35).
+/// Industry Enhancement: Verify Fiat Webhook (CON-35/CON-41).
 pub async fn verify_fiat_webhook(
     State(state): State<SharedState>,
     Json(payload): Json<WebhookPayload>,
@@ -245,11 +249,17 @@ pub async fn verify_fiat_webhook(
     let router = FiatRouter::new(
         "ramp-api-key".to_string(),
         "investec-client-id".to_string(),
-        "investec-secret".to_string()
+        "investec-secret".to_string(),
+        "alchemypay-app-id".to_string(),
+        "alchemypay-secret".to_string(),
+        "banxa-api-key".to_string(),
+        "banxa-secret".to_string(),
     );
 
     match router.verify_webhook(&payload, "shared-secret") {
-        Ok(valid) => Ok(Json(json!({ "valid": valid, "provider": payload.provider }))),
+        Ok(valid) => Ok(Json(
+            json!({ "valid": valid, "provider": payload.provider }),
+        )),
         Err(e) => Err((
             StatusCode::UNAUTHORIZED, // 403 or 401
             Json(json!({ "error": e.to_string() })),
