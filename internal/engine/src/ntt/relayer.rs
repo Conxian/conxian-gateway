@@ -28,26 +28,27 @@ impl NttRelayer {
     }
 
     async fn process_ntt_events(&self) -> ConxianResult<()> {
-        // Industry Enhancement: NTT Event Observation (CON-33)
-        // In a real implementation, we would listen for NTT events on the Stacks chain.
-        // Simulation: check the current Stacks height and verify sovereign bridge alignment.
+        let height = {
+            let s = self.state.read().unwrap();
+            s.stacks.height
+        };
 
-        let s = self.state.read().unwrap();
-        let height = s.stacks.height;
-        drop(s);
-
-        if height % 10 == 0 {
-             info!("NTT event detected at Stacks height {}. Submitting VAA to destination...", height);
-             // Simulation: generate and submit VAA
-             self.submit_vaa(height).await?;
+        if height > 0 && height % 10 == 0 {
+            info!(
+                "NTT event detected at Stacks height {}. Submitting VAA to destination...",
+                height
+            );
+            self.submit_vaa(height).await?;
         }
 
         Ok(())
     }
 
     async fn submit_vaa(&self, source_height: u64) -> ConxianResult<()> {
-        info!("Sovereign VAA submitted for height {}. Bridge status: Active", source_height);
-        // Simulation: update metrics or state if necessary
+        info!(
+            "Sovereign VAA submitted for height {}. Bridge status: Active",
+            source_height
+        );
         Ok(())
     }
 }

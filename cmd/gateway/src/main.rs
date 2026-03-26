@@ -4,7 +4,9 @@ use api::configure_routes;
 use config::Config;
 use conxian_core::persistence::FilePersistence;
 use conxian_core::{GatewayState, Persistence, SharedState};
-use engine::{BitcoinListener, BitcoinRpcClient, NttRelayer, StacksListener, StacksRpcClient, TreasuryMonitor};
+use engine::{
+    BitcoinListener, BitcoinRpcClient, NttRelayer, StacksListener, StacksRpcClient, TreasuryMonitor,
+};
 use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
 use tokio::signal;

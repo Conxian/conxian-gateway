@@ -29,13 +29,18 @@ pub struct OtpVerificationRequest {
 }
 
 pub struct A2pRouter {
-    #[allow(dead_code)] infobip_api_key: String,
+    #[allow(dead_code)]
+    infobip_api_key: String,
     infobip_base_url: String,
     hmac_secret: String,
 }
 
 impl A2pRouter {
-    pub fn new(#[allow(dead_code)] infobip_api_key: String, infobip_base_url: String, hmac_secret: String) -> Self {
+    pub fn new(
+        #[allow(dead_code)] infobip_api_key: String,
+        infobip_base_url: String,
+        hmac_secret: String,
+    ) -> Self {
         Self {
             infobip_api_key,
             infobip_base_url,
@@ -64,7 +69,10 @@ impl A2pRouter {
         let session_id = uuid::Uuid::new_v4().to_string();
 
         // Mock Infobip API call
-        info!("Infobip API call to {}: sending {} to {}", self.infobip_base_url, otp_code, request.phone_number);
+        info!(
+            "Infobip API call to {}: sending {} to {}",
+            self.infobip_base_url, otp_code, request.phone_number
+        );
 
         Ok((
             OtpResponse {
@@ -87,7 +95,8 @@ impl A2pRouter {
             return Err(ConxianError::Security("OTP has expired".to_string()));
         }
 
-        let expected_hmac = self.generate_hmac(&request.phone_number, &request.otp_code, request.timestamp)?;
+        let expected_hmac =
+            self.generate_hmac(&request.phone_number, &request.otp_code, request.timestamp)?;
 
         if request.hmac != expected_hmac {
             return Ok(false);

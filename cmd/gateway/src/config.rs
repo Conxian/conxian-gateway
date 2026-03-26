@@ -1,5 +1,6 @@
 use std::env;
 
+#[allow(dead_code)]
 pub struct Config {
     pub bitcoin_rpc_url: String,
     pub bitcoin_rpc_user: String,
@@ -9,6 +10,16 @@ pub struct Config {
     pub stacks_sync_interval: u64,
     pub api_port: u16,
     pub api_token: String,
+    pub ramp_api_key: String,
+    pub investec_client_id: String,
+    pub investec_secret: String,
+    pub alchemy_pay_app_id: String,
+    pub alchemy_pay_secret: String,
+    pub banxa_api_key: String,
+    pub banxa_secret: String,
+    pub infobip_api_key: String,
+    pub infobip_base_url: String,
+    pub hmac_secret: String,
 }
 
 impl Config {
@@ -34,6 +45,26 @@ impl Config {
                 .unwrap_or(3000),
             api_token: env::var("API_TOKEN")
                 .unwrap_or_else(|_| "institutional-default-token".to_string()),
+            ramp_api_key: env::var("RAMP_API_KEY")
+                .unwrap_or_else(|_| "default-ramp-key".to_string()),
+            investec_client_id: env::var("INVESTEC_CLIENT_ID")
+                .unwrap_or_else(|_| "default-investec-id".to_string()),
+            investec_secret: env::var("INVESTEC_SECRET")
+                .unwrap_or_else(|_| "default-investec-secret".to_string()),
+            alchemy_pay_app_id: env::var("ALCHEMY_PAY_APP_ID")
+                .unwrap_or_else(|_| "default-alchemy-id".to_string()),
+            alchemy_pay_secret: env::var("ALCHEMY_PAY_SECRET")
+                .unwrap_or_else(|_| "default-alchemy-secret".to_string()),
+            banxa_api_key: env::var("BANXA_API_KEY")
+                .unwrap_or_else(|_| "default-banxa-key".to_string()),
+            banxa_secret: env::var("BANXA_SECRET")
+                .unwrap_or_else(|_| "default-banxa-secret".to_string()),
+            infobip_api_key: env::var("INFOBIP_API_KEY")
+                .unwrap_or_else(|_| "default-infobip-key".to_string()),
+            infobip_base_url: env::var("INFOBIP_BASE_URL")
+                .unwrap_or_else(|_| "https://api.infobip.com".to_string()),
+            hmac_secret: env::var("HMAC_SECRET")
+                .unwrap_or_else(|_| "default-hmac-secret".to_string()),
         }
     }
 }

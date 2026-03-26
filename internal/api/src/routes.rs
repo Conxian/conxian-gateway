@@ -1,5 +1,6 @@
 use crate::auth::auth_middleware;
 use crate::handlers;
+use crate::middleware::latency_tracker;
 use axum::{
     middleware,
     routing::{get, post},
@@ -24,10 +25,18 @@ pub fn configure_routes(state: SharedState, api_token: String) -> Router {
         .route("/fiat/webhook", post(handlers::verify_fiat_webhook))
         .route("/a2p/otp", post(handlers::send_otp))
         .route("/a2p/verify", post(handlers::verify_otp))
+        .route("/erp/sync", post(handlers::sync_erp_ledger))
+        .route("/settle", post(handlers::settle_job_card))
         .layer(middleware::from_fn(move |req, next| {
             auth_middleware(req, next, token_for_auth.clone())
         }))
-        .with_state(state);
+        .with_state(state.clone());
 
-    Router::new().nest("/api/v1", public_routes.merge(private_routes))
+    Router::new()
+        .route("/api/v1/version", get(|| async { conxian_core::VERSION }))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            latency_tracker,
+        ))
+        .nest("/api/v1", public_routes.merge(private_routes))
 }
