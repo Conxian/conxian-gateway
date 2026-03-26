@@ -200,3 +200,22 @@ pub enum ConxianError {
 }
 
 pub type ConxianResult<T> = Result<T, ConxianError>;
+
+/// CON-73: [ATS-v12.0] Conxian Job Card Schema (CJCS) v2.0 JSON-LD
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ConxianJobCard {
+    #[serde(rename = "@context")]
+    pub context: String,
+    #[serde(rename = "@type")]
+    pub r#type: String,
+    pub work_intent: WorkIntent,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct WorkIntent {
+    pub sender_address: String,
+    pub receiver_address: String,
+    pub amount_sbtc: f64,
+    pub town_name: Option<String>,
+    pub country_code: Option<String>,
+}

@@ -42,6 +42,10 @@ Conxian is designed to capture the Total Addressable Market (TAM) of Bitcoin-nat
 - [x] R28: Production Fiat On-Ramp Integration (Status: Complete)
 - [x] R29: Global Stateless OTP Messaging (Status: Complete)
 - [x] R30: Specialized NTT Relayer Deployment (Status: Complete)
+- [x] R31: Conxian Job Card Schema (CJCS) v2.0 Integration (Status: Complete)
+- [x] R32: BitVM2-Backed Job Card Settlement Verification (Status: Complete)
+- [x] R33: Institutional OData v4 ERP Sync (Status: Simulated)
+- [x] R34: Advanced Axum Observability & Latency Tracking (Status: Complete)
 
 ## 3. Progress Log
 - 2026-02-13: Initialized workspace structure.
@@ -57,6 +61,12 @@ Conxian is designed to capture the Total Addressable Market (TAM) of Bitcoin-nat
     - Added HMAC-SHA256 signature verification for authenticated webhooks.
     - Exposed /fiat/session and /fiat/webhook endpoints for institutional workflows.
 - 2026-03-25: A2P & NTT Enhancement (Jules):
+- 2026-03-26: Institutional Hardening & CJCS v2.0 (Jules):
+    - Integrated CJCS v2.0 JSON-LD into core SDK for labor orchestration.
+    - Implemented BitVM2 verification floor for trustless Job Card settlement.
+    - Developed OData v4 ERP translation layer simulation for SAP/Oracle.
+    - Upgraded ISO 20022 egress to strictly match pacs.008.001.08 standards.
+    - Added Axum latency tracking middleware and versioning endpoint.
     - Implemented Infobip integration and hardened stateless OTP verification in A2pRouter.
     - Deployed specialized NTT Relayer for sovereign bridging of native token transfers.
     - Exposed /a2p/otp and /a2p/verify endpoints for privacy-first authentication.

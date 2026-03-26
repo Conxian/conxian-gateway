@@ -2,6 +2,7 @@ pub mod a2p;
 pub mod auth;
 pub mod fiat;
 pub mod handlers;
+pub mod middleware;
 pub mod routes;
 
 pub use routes::configure_routes;

@@ -48,11 +48,16 @@ impl TreasuryMonitor {
         }
 
         // Simulate growth towards TAM ($10B+)
-        let growth_factor = 0.0001; // Small incremental growth per cycle
+        let growth_factor = if s.metrics.sbtc_liquidity > 1_000_000_000.0 {
+            0.00005
+        } else {
+            0.0002
+        }; // Small incremental growth per cycle
         s.metrics.sbtc_liquidity += s.metrics.sbtc_liquidity * growth_factor;
 
         // SYI oscillates based on sovereign alignment and liquidity depth
-        s.metrics.syi_index += growth_factor * 0.1;
+        s.metrics.syi_index =
+            (0.05 + (s.metrics.sbtc_liquidity / 10_000_000_000.0) * 0.02).min(0.12);
 
         // Institutional yield extraction (1% Sovereign Tax - CON-55)
         let yield_stx = 1250.0;

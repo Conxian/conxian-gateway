@@ -163,3 +163,142 @@ async fn test_metrics_endpoint() {
     assert!(body_str.contains("gateway_total_requests"));
     assert!(body_str.contains("bitcoin_block_height"));
 }
+
+#[tokio::test]
+async fn test_version_endpoint() {
+    let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
+    let app = configure_routes(state, TEST_TOKEN.to_string());
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/version")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    assert_eq!(body, conxian_core::VERSION.as_bytes());
+}
+
+#[tokio::test]
+async fn test_erp_sync_authorized() {
+    let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
+    let app = configure_routes(state, TEST_TOKEN.to_string());
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/erp/sync")
+                .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("Content-Type", "application/json")
+                .body(Body::from(
+                    serde_json::to_string(&serde_json::json!({
+                        "d": {
+                            "results": [
+                                { "OrderID": 1, "Status": "Paid" },
+                                { "OrderID": 2, "Status": "Pending" }
+                            ]
+                        }
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["synced_records"], 2);
+}
+
+#[tokio::test]
+async fn test_settle_job_card_authorized() {
+    let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
+    let app = configure_routes(state, TEST_TOKEN.to_string());
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/settle")
+                .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("Content-Type", "application/json")
+                .body(Body::from(
+                    serde_json::to_string(&serde_json::json!({
+                        "job_card": {
+                            "@context": "https://conxian.com/contexts/job-card/v2.0",
+                            "@type": "ConxianJobCard",
+                            "work_intent": {
+                                "sender_address": "ST123",
+                                "receiver_address": "ST456",
+                                "amount_sbtc": 0.1,
+                                "town_name": "Joburg",
+                                "country_code": "ZA"
+                            }
+                        },
+                        "bitvm_proof": {
+                            "prover_id": "prover-1",
+                            "commitment_hash": "MOCK_COMMITMENT",
+                            "state_root": "PROTOTYPE_ROOT"
+                        }
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn test_iso_payment_v8_authorized() {
+    let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
+    let app = configure_routes(state, TEST_TOKEN.to_string());
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/iso20022/payment")
+                .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("Content-Type", "application/json")
+                .body(Body::from(
+                    serde_json::to_string(&serde_json::json!({
+                        "@context": "https://conxian.com/contexts/job-card/v2.0",
+                        "@type": "ConxianJobCard",
+                        "work_intent": {
+                            "sender_address": "ST12345678",
+                            "receiver_address": "ST87654321",
+                            "amount_sbtc": 0.05,
+                            "town_name": "Johannesburg",
+                            "country_code": "ZA"
+                        }
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["schema"], "pacs.008.001.08");
+    assert!(json["xml"].as_str().unwrap().contains("pacs.008.001.08"));
+}

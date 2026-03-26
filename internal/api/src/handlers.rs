@@ -1,11 +1,18 @@
-use crate::a2p::{A2pRouter, OtpRequest, OtpVerificationRequest};
-use crate::fiat::{FiatRouter, OnRampSessionRequest, OnRampSessionResponse, WebhookPayload};
-use axum::{extract::State, http::StatusCode, Json};
-use compliance::{IdentityManager, ZkcVerifier};
-use conxian_core::{AttestationRequest, GcpTokenRequest, SharedState};
+use axum::{
+    extract::{Json, State},
+    http::StatusCode,
+};
+use conxian_core::{
+    AttestationRequest, BitVmAttestation, ConxianJobCard, GcpTokenRequest, SharedState,
+};
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::info;
+
+use crate::a2p::{A2pRouter, OtpRequest, OtpVerificationRequest};
+use crate::fiat::{FiatRouter, OnRampSessionRequest, OnRampSessionResponse, WebhookPayload};
+use compliance::{IdentityManager, ZkcVerifier};
 
 pub async fn health_check(State(state): State<SharedState>) -> Json<Value> {
     let s = state.read().unwrap();
@@ -17,7 +24,6 @@ pub async fn health_check(State(state): State<SharedState>) -> Json<Value> {
         .unwrap()
         .as_secs();
 
-    // Check Bitcoin sync status
     if s.bitcoin.status.contains("error") {
         status = "degraded";
         details.push(format!("Bitcoin error: {}", s.bitcoin.status));
@@ -29,7 +35,6 @@ pub async fn health_check(State(state): State<SharedState>) -> Json<Value> {
         ));
     }
 
-    // Check Stacks sync status
     if s.stacks.status.contains("error") {
         status = "degraded";
         details.push(format!("Stacks error: {}", s.stacks.status));
@@ -41,47 +46,33 @@ pub async fn health_check(State(state): State<SharedState>) -> Json<Value> {
         ));
     }
 
-    {
-        let mut s_write = state.write().unwrap();
-        s_write.metrics.total_requests += 1;
-        s_write.metrics.health_requests += 1;
-    }
-
     Json(json!({
         "status": status,
-        "service": "conxian-gateway",
+        "details": details,
         "version": conxian_core::VERSION,
-        "details": if details.is_empty() { None } else { Some(details) },
-        "timestamp": now,
-        "industry_enhancements": "enabled"
+        "timestamp": now
     }))
 }
 
-pub async fn get_state(State(state): State<SharedState>) -> Json<Value> {
-    {
-        let mut s = state.write().unwrap();
-        s.metrics.total_requests += 1;
-        s.metrics.state_requests += 1;
-    }
-    let s = state.read().unwrap();
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
-    let uptime = now.saturating_sub(s.start_time);
+pub async fn get_state(State(state): State<SharedState>) -> Json<GatewayStateResponse> {
+    let mut s_write = state.write().unwrap();
+    s_write.metrics.total_requests += 1;
+    s_write.metrics.state_requests += 1;
+    drop(s_write);
 
-    Json(json!({
-        "bitcoin": s.bitcoin,
-        "stacks": s.stacks,
-        "metrics": s.metrics,
-        "start_time": s.start_time,
-        "uptime_seconds": uptime,
-        "current_timestamp": now,
-        "tam_capture": {
-            "sbtc_liquidity": s.metrics.sbtc_liquidity,
-            "syi_index": s.metrics.syi_index
-        }
-    }))
+    let s = state.read().unwrap();
+    Json(GatewayStateResponse {
+        bitcoin: s.bitcoin.clone(),
+        stacks: s.stacks.clone(),
+        metrics: s.metrics.clone(),
+    })
+}
+
+#[derive(Serialize)]
+pub struct GatewayStateResponse {
+    pub bitcoin: conxian_core::ChainState,
+    pub stacks: conxian_core::ChainState,
+    pub metrics: conxian_core::Metrics,
 }
 
 pub async fn get_metrics(State(state): State<SharedState>) -> String {
@@ -196,28 +187,35 @@ pub async fn exchange_identity(
 pub async fn generate_iso_payment(
     State(_state): State<SharedState>,
     Json(payload): Json<Value>,
-) -> Result<String, (StatusCode, Json<Value>)> {
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let verifier = ZkcVerifier::new();
+
+    if let Ok(job_card) = serde_json::from_value::<ConxianJobCard>(payload.clone()) {
+        match verifier.format_iso20022_pacs008_v8(&job_card) {
+            Ok(xml) => return Ok(Json(json!({ "xml": xml, "schema": "pacs.008.001.08" }))),
+            Err(e) => {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({ "error": e.to_string(), "code": "ISO-404" })),
+                ))
+            }
+        }
+    }
+
     let sender = payload["sender"].as_str().unwrap_or("CONXIAN-SENDER");
     let receiver = payload["receiver"]
         .as_str()
         .unwrap_or("INSTITUTIONAL-RECEIVER");
     let amount = payload["amount"].as_f64().unwrap_or(0.0);
 
-    let verifier = ZkcVerifier::new();
-    Ok(verifier.format_iso20022_pacs008(sender, receiver, amount))
+    let xml = verifier.format_iso20022_pacs008(sender, receiver, amount);
+    Ok(Json(json!({ "xml": xml, "schema": "pacs.008.001.07" })))
 }
 
-/// Industry Enhancement: Create Fiat On-Ramp Session (CON-36/CON-41).
 pub async fn create_fiat_session(
-    State(state): State<SharedState>,
+    State(_state): State<SharedState>,
     Json(request): Json<OnRampSessionRequest>,
 ) -> Result<Json<OnRampSessionResponse>, (StatusCode, Json<Value>)> {
-    {
-        let mut s = state.write().unwrap();
-        s.metrics.total_requests += 1;
-    }
-
-    // In production, these would come from config/env
     let router = FiatRouter::new(
         "ramp-api-key".to_string(),
         "investec-client-id".to_string(),
@@ -237,16 +235,10 @@ pub async fn create_fiat_session(
     }
 }
 
-/// Industry Enhancement: Verify Fiat Webhook (CON-35/CON-41).
 pub async fn verify_fiat_webhook(
-    State(state): State<SharedState>,
+    State(_state): State<SharedState>,
     Json(payload): Json<WebhookPayload>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    {
-        let mut s = state.write().unwrap();
-        s.metrics.total_requests += 1;
-    }
-
     let router = FiatRouter::new(
         "ramp-api-key".to_string(),
         "investec-client-id".to_string(),
@@ -262,22 +254,16 @@ pub async fn verify_fiat_webhook(
             json!({ "valid": valid, "provider": payload.provider }),
         )),
         Err(e) => Err((
-            StatusCode::UNAUTHORIZED, // 403 or 401
+            StatusCode::UNAUTHORIZED,
             Json(json!({ "error": e.to_string() })),
         )),
     }
 }
 
-/// Industry Enhancement: Send OTP via A2P Router (CON-39).
 pub async fn send_otp(
-    State(state): State<SharedState>,
+    State(_state): State<SharedState>,
     Json(request): Json<OtpRequest>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    {
-        let mut s = state.write().unwrap();
-        s.metrics.total_requests += 1;
-    }
-
     let router = A2pRouter::new(
         "infobip-api-key".to_string(),
         "infobip-base-url".to_string(),
@@ -298,16 +284,10 @@ pub async fn send_otp(
     }
 }
 
-/// Industry Enhancement: Verify OTP via A2P Router (CON-40).
 pub async fn verify_otp(
-    State(state): State<SharedState>,
+    State(_state): State<SharedState>,
     Json(request): Json<OtpVerificationRequest>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    {
-        let mut s = state.write().unwrap();
-        s.metrics.total_requests += 1;
-    }
-
     let router = A2pRouter::new(
         "infobip-api-key".to_string(),
         "infobip-base-url".to_string(),
@@ -316,6 +296,55 @@ pub async fn verify_otp(
 
     match router.verify_otp(request) {
         Ok(valid) => Ok(Json(json!({ "valid": valid }))),
+        Err(e) => Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": e.to_string() })),
+        )),
+    }
+}
+
+pub async fn sync_erp_ledger(
+    State(_state): State<SharedState>,
+    Json(payload): Json<Value>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    info!("Processing ERP OData sync request for institutional ledger.");
+    let d = &payload["d"];
+    if d.is_null() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Invalid OData payload: missing 'd' root"})),
+        ));
+    }
+    let results = &d["results"];
+    if results.is_array() {
+        let count = results.as_array().unwrap().len();
+        info!("Synced {} ERP records to Conxian Nexus.", count);
+        Ok(Json(
+            json!({ "status": "success", "synced_records": count, "ledger": "SAP-S4HANA-ORCHESTRATION" }),
+        ))
+    } else {
+        Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Invalid OData payload: 'results' must be an array"})),
+        ))
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SettlementRequest {
+    pub job_card: ConxianJobCard,
+    pub bitvm_proof: BitVmAttestation,
+}
+
+pub async fn settle_job_card(
+    State(_state): State<SharedState>,
+    Json(request): Json<SettlementRequest>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let verifier = ZkcVerifier::new();
+    match verifier.verify_job_card_settlement(&request.job_card, &request.bitvm_proof) {
+        Ok(valid) => Ok(Json(
+            json!({ "valid": valid, "settlement": "BitVM2-Verified" }),
+        )),
         Err(e) => Err((
             StatusCode::BAD_REQUEST,
             Json(json!({ "error": e.to_string() })),
