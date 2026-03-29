@@ -20,6 +20,7 @@ pub fn configure_routes(state: SharedState, api_token: String) -> Router {
         .route("/state", get(handlers::get_state))
         .route("/verify", post(handlers::verify_attestation))
         .route("/identity/exchange", post(handlers::exchange_identity))
+        .route("/identity/resolve", post(handlers::resolve_identity_v1))
         .route("/iso20022/payment", post(handlers::generate_iso_payment))
         .route("/fiat/session", post(handlers::create_fiat_session))
         .route("/fiat/webhook", post(handlers::verify_fiat_webhook))
