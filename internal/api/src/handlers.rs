@@ -3,7 +3,8 @@ use axum::{
     http::StatusCode,
 };
 use conxian_core::{
-    AttestationRequest, BitVmAttestation, ConxianJobCard, GcpTokenRequest, SharedState,
+    AttestationRequest, BitVmAttestation, ConxianJobCard, GcpTokenRequest,
+    IdentityResolutionRequest, IdentityResolutionResponse, SharedState,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -179,6 +180,26 @@ pub async fn exchange_identity(
         )),
         Err(e) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        )),
+    }
+}
+
+/// CON-66: Resolve identities across ENS, BNS, World ID, and Web3.bio.
+pub async fn resolve_identity_v1(
+    State(state): State<SharedState>,
+    Json(request): Json<IdentityResolutionRequest>,
+) -> Result<Json<IdentityResolutionResponse>, (StatusCode, Json<Value>)> {
+    {
+        let mut s = state.write().unwrap();
+        s.metrics.total_requests += 1;
+    }
+
+    let manager = IdentityManager::new();
+    match manager.resolve_identity(&request).await {
+        Ok(res) => Ok(Json(res)),
+        Err(e) => Err((
+            StatusCode::BAD_REQUEST,
             Json(json!({ "error": e.to_string() })),
         )),
     }

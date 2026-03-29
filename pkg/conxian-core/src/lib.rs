@@ -219,3 +219,25 @@ pub struct WorkIntent {
     pub town_name: Option<String>,
     pub country_code: Option<String>,
 }
+
+/// CON-66: Identity resolution request for ENS, BNS, and World ID.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct IdentityResolutionRequest {
+    pub identifier: String,
+    pub provider: String, // "ens", "bns", "worldid", or "web3bio"
+}
+
+/// CON-66: Identity resolution response.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct IdentityResolutionResponse {
+    pub address: String,
+    pub provider: String,
+    pub verified: bool,
+    pub metadata: Option<serde_json::Value>,
+}
+
+/// Industry Enhancement: Discrete Log Contract (DLC) Orchestrator (CON-62).
+pub trait DlcOrchestrator: Send + Sync {
+    fn create_dlc_bond(&self, bond: &DlcBond) -> ConxianResult<String>;
+    fn settle_coupon(&self, bond_id: &str, amount_sbtc: f64) -> ConxianResult<bool>;
+}

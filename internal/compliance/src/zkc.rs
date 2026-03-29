@@ -166,6 +166,22 @@ impl ZkcVerifier {
         Ok(true)
     }
 
+    /// CON-69: Commit state to Tableland (Simulation of persistent sharding).
+    pub fn commit_to_tableland(&self, table_name: &str, _data: &str) -> ConxianResult<String> {
+        info!(
+            "Committing state to Tableland table: {} with data payload.",
+            table_name
+        );
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        // Tableland is a decentralized SQL layer. In the gateway, we simulate the commitment.
+        let commitment_id = format!("tbl-commitment-{}-{}", table_name, timestamp);
+        Ok(commitment_id)
+    }
+
     pub fn generate_mvcr(&self, nexus_id: &str, state_root: &str) -> ConxianResult<String> {
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

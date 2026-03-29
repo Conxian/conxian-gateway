@@ -1,0 +1,39 @@
+use conxian_core::{IdentityResolutionRequest};
+use compliance::IdentityManager;
+
+#[tokio::test]
+async fn test_resolve_ens() {
+    let manager = IdentityManager::new();
+    let req = IdentityResolutionRequest {
+        identifier: "alice.eth".to_string(),
+        provider: "ens".to_string(),
+    };
+    let res = manager.resolve_identity(&req).await.unwrap();
+    assert_eq!(res.provider, "ens");
+    assert!(res.verified);
+    assert!(res.metadata.is_some());
+}
+
+#[tokio::test]
+async fn test_resolve_bns() {
+    let manager = IdentityManager::new();
+    let req = IdentityResolutionRequest {
+        identifier: "bob.id".to_string(),
+        provider: "bns".to_string(),
+    };
+    let res = manager.resolve_identity(&req).await.unwrap();
+    assert_eq!(res.provider, "bns");
+    assert!(res.verified);
+}
+
+#[tokio::test]
+async fn test_resolve_worldid() {
+    let manager = IdentityManager::new();
+    let req = IdentityResolutionRequest {
+        identifier: "world-id-user".to_string(),
+        provider: "worldid".to_string(),
+    };
+    let res = manager.resolve_identity(&req).await.unwrap();
+    assert_eq!(res.provider, "worldid");
+    assert!(res.verified);
+}
