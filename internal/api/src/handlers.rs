@@ -1,4 +1,5 @@
 use axum::{
+    body::Bytes,
     extract::{Json, State},
     http::StatusCode,
 };
@@ -8,12 +9,23 @@ use conxian_core::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
+use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::info;
 
 use crate::a2p::{A2pRouter, OtpRequest, OtpVerificationRequest};
 use crate::fiat::{FiatRouter, OnRampSessionRequest, OnRampSessionResponse, WebhookPayload};
 use compliance::{IdentityManager, ZkcVerifier};
+
+fn zkc_verifier() -> &'static ZkcVerifier {
+    static VERIFIER: OnceLock<ZkcVerifier> = OnceLock::new();
+    VERIFIER.get_or_init(ZkcVerifier::new)
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    hex::encode(Sha256::digest(bytes))
+}
 
 pub async fn health_check(State(state): State<SharedState>) -> Json<Value> {
     let s = state.read().unwrap();
@@ -120,7 +132,7 @@ pub async fn verify_attestation(
         s.metrics.verification_requests += 1;
     }
 
-    let verifier = ZkcVerifier::new();
+    let verifier = zkc_verifier();
     let (attestation_type, result) = match request {
         AttestationRequest::Ecdsa(a) => ("ECDSA", verifier.verify(&a)),
         AttestationRequest::Schnorr(a) => ("Schnorr", verifier.verify_schnorr(&a)),
@@ -209,7 +221,7 @@ pub async fn generate_iso_payment(
     State(_state): State<SharedState>,
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    let verifier = ZkcVerifier::new();
+    let verifier = zkc_verifier();
 
     if let Ok(job_card) = serde_json::from_value::<ConxianJobCard>(payload.clone()) {
         match verifier.format_iso20022_pacs008_v8(&job_card) {
@@ -361,7 +373,7 @@ pub async fn settle_job_card(
     State(_state): State<SharedState>,
     Json(request): Json<SettlementRequest>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    let verifier = ZkcVerifier::new();
+    let verifier = zkc_verifier();
     match verifier.verify_job_card_settlement(&request.job_card, &request.bitvm_proof) {
         Ok(valid) => Ok(Json(
             json!({ "valid": valid, "settlement": "BitVM2-Verified" }),
@@ -375,10 +387,18 @@ pub async fn settle_job_card(
 
 pub async fn ingress_iso20022(
     State(_state): State<SharedState>,
-    body: String,
+    bytes: Bytes,
 ) -> Result<Json<conxian_core::SettlementEnvelope>, (StatusCode, Json<Value>)> {
-    let verifier = ZkcVerifier::new();
-    match verifier.normalize_iso20022_ingress(&body) {
+    let raw_payload_hash = sha256_hex(&bytes);
+    let xml = std::str::from_utf8(&bytes).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": format!("Invalid UTF-8 body: {e}") })),
+        )
+    })?;
+
+    let verifier = zkc_verifier();
+    match verifier.normalize_iso20022_ingress(xml, raw_payload_hash) {
         Ok(envelope) => {
             info!("Successfully ingested ISO 20022 settlement: {}", envelope.payload.transaction_id);
             Ok(Json(envelope))
@@ -392,10 +412,18 @@ pub async fn ingress_iso20022(
 
 pub async fn ingress_papss(
     State(_state): State<SharedState>,
-    Json(payload): Json<Value>,
+    bytes: Bytes,
 ) -> Result<Json<conxian_core::SettlementEnvelope>, (StatusCode, Json<Value>)> {
-    let verifier = ZkcVerifier::new();
-    match verifier.normalize_papss_ingress(&payload) {
+    let raw_payload_hash = sha256_hex(&bytes);
+    let payload: Value = serde_json::from_slice(&bytes).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": format!("Invalid JSON body: {e}") })),
+        )
+    })?;
+
+    let verifier = zkc_verifier();
+    match verifier.normalize_papss_ingress(&payload, raw_payload_hash) {
         Ok(envelope) => {
             info!("Successfully ingested PAPSS settlement: {}", envelope.payload.transaction_id);
             Ok(Json(envelope))
@@ -409,10 +437,18 @@ pub async fn ingress_papss(
 
 pub async fn ingress_brics(
     State(_state): State<SharedState>,
-    Json(payload): Json<Value>,
+    bytes: Bytes,
 ) -> Result<Json<conxian_core::SettlementEnvelope>, (StatusCode, Json<Value>)> {
-    let verifier = ZkcVerifier::new();
-    match verifier.normalize_brics_ingress(&payload) {
+    let raw_payload_hash = sha256_hex(&bytes);
+    let payload: Value = serde_json::from_slice(&bytes).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": format!("Invalid JSON body: {e}") })),
+        )
+    })?;
+
+    let verifier = zkc_verifier();
+    match verifier.normalize_brics_ingress(&payload, raw_payload_hash) {
         Ok(envelope) => {
             info!("Successfully ingested BRICS settlement: {}", envelope.payload.transaction_id);
             Ok(Json(envelope))

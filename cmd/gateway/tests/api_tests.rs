@@ -308,7 +308,7 @@ async fn test_ingress_iso20022_authorized() {
     let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
     let app = configure_routes(state, TEST_TOKEN.to_string());
 
-    let xml_payload = "<Document xmlns=\"urn:iso:std:iso:20022:tech:xsd:pacs.008.001.08\"><FIToFICstmrCdtTrf><GrpHdr><MsgId>TX-123</MsgId></GrpHdr><CdtTrfTxInf><IntrBkSttlmAmt Ccy=\"sBTC\">0.5</IntrBkSttlmAmt><DbtrAcct><Id><Othr><Id>SENDER-AC-1</Id></Othr></Id></DbtrAcct><CdtrAcct><Id><Othr><Id>RECEIVER-AC-1</Id></Othr></Id></CdtrAcct></CdtTrfTxInf></FIToFICstmrCdtTrf></Document>";
+    let xml_payload = r#"<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pacs.008.001.08"><FIToFICstmrCdtTrf><GrpHdr><MsgId>TX-123</MsgId></GrpHdr><CdtTrfTxInf><IntrBkSttlmAmt Ccy="sBTC">0.5</IntrBkSttlmAmt><DbtrAcct><Id><Othr><Id>SENDER-AC-1</Id></Othr></Id></DbtrAcct><CdtrAcct><Id><Othr><Id>RECEIVER-AC-1</Id></Othr></Id></CdtrAcct></CdtTrfTxInf></FIToFICstmrCdtTrf></Document>"#;
 
     let response = app
         .oneshot(
@@ -329,7 +329,8 @@ async fn test_ingress_iso20022_authorized() {
         .unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["payload"]["transaction_id"], "TX-123");
-    assert_eq!(json["payload"]["amount"], 0.5);
+    assert_eq!(json["payload"]["amount_minor"], 5);
+    assert_eq!(json["payload"]["amount_scale"], 1);
     assert_eq!(json["payload"]["sender"], "SENDER-AC-1");
 }
 
@@ -340,7 +341,7 @@ async fn test_ingress_papss_authorized() {
 
     let payload = serde_json::json!({
         "transaction_id": "PAPSS-456",
-        "amount": 1000.0,
+        "amount": "1000.00",
         "sender_bic": "BANK-ZA-1",
         "receiver_bic": "BANK-NG-1"
     });
@@ -364,7 +365,8 @@ async fn test_ingress_papss_authorized() {
         .unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["payload"]["transaction_id"], "PAPSS-456");
-    assert_eq!(json["payload"]["amount"], 1000.0);
+    assert_eq!(json["payload"]["amount_minor"], 100000);
+    assert_eq!(json["payload"]["amount_scale"], 2);
 }
 
 #[tokio::test]
@@ -374,7 +376,7 @@ async fn test_ingress_brics_authorized() {
 
     let payload = serde_json::json!({
         "brics_tx_id": "BRICS-789",
-        "amount": 50.0,
+        "amount": "50",
         "origin_bank": "RUB-BANK",
         "target_bank": "CNY-BANK"
     });
