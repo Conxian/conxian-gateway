@@ -1,7 +1,7 @@
 use axum::{
     body::Bytes,
     extract::{Json, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
 };
 use conxian_core::{
     AttestationRequest, BitVmAttestation, ConxianJobCard, GcpTokenRequest,
@@ -25,6 +25,23 @@ fn zkc_verifier() -> &'static ZkcVerifier {
 
 fn sha256_hex(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
+}
+
+fn is_json_content_type(headers: &HeaderMap) -> bool {
+    let Some(content_type) = headers.get(axum::http::header::CONTENT_TYPE) else {
+        return false;
+    };
+    let Ok(content_type) = content_type.to_str() else {
+        return false;
+    };
+
+    let content_type = content_type
+        .split(';')
+        .next()
+        .unwrap_or(content_type)
+        .trim();
+
+    content_type == "application/json" || content_type.ends_with("+json")
 }
 
 pub async fn health_check(State(state): State<SharedState>) -> Json<Value> {
@@ -415,8 +432,16 @@ pub async fn ingress_iso20022(
 
 pub async fn ingress_papss(
     State(_state): State<SharedState>,
+    headers: HeaderMap,
     bytes: Bytes,
 ) -> Result<Json<conxian_core::SettlementEnvelope>, (StatusCode, Json<Value>)> {
+    if !is_json_content_type(&headers) {
+        return Err((
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            Json(json!({ "error": "Unsupported Content-Type" })),
+        ));
+    }
+
     let raw_payload_hash = sha256_hex(&bytes);
     let payload: Value = serde_json::from_slice(&bytes).map_err(|e| {
         (
@@ -443,8 +468,16 @@ pub async fn ingress_papss(
 
 pub async fn ingress_brics(
     State(_state): State<SharedState>,
+    headers: HeaderMap,
     bytes: Bytes,
 ) -> Result<Json<conxian_core::SettlementEnvelope>, (StatusCode, Json<Value>)> {
+    if !is_json_content_type(&headers) {
+        return Err((
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            Json(json!({ "error": "Unsupported Content-Type" })),
+        ));
+    }
+
     let raw_payload_hash = sha256_hex(&bytes);
     let payload: Value = serde_json::from_slice(&bytes).map_err(|e| {
         (

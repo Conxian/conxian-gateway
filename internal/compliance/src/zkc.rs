@@ -395,11 +395,13 @@ impl ZkcVerifier {
                     {
                         amount = Some(text.to_string());
                     } else if sender.is_none()
-                        && Self::stack_ends_with(&stack, &[b"DbtrAcct", b"Id", b"Othr", b"Id"])
+                        && (Self::stack_ends_with(&stack, &[b"DbtrAcct", b"Id", b"Othr", b"Id"])
+                            || Self::stack_ends_with(&stack, &[b"DbtrAcct", b"Id", b"IBAN"]))
                     {
                         sender = Some(text.to_string());
                     } else if receiver.is_none()
-                        && Self::stack_ends_with(&stack, &[b"CdtrAcct", b"Id", b"Othr", b"Id"])
+                        && (Self::stack_ends_with(&stack, &[b"CdtrAcct", b"Id", b"Othr", b"Id"])
+                            || Self::stack_ends_with(&stack, &[b"CdtrAcct", b"Id", b"IBAN"]))
                     {
                         receiver = Some(text.to_string());
                     }
@@ -423,10 +425,10 @@ impl ZkcVerifier {
                 ConxianError::Compliance("Missing IntrBkSttlmAmt Ccy".to_string())
             })?,
             sender: sender.ok_or_else(|| {
-                ConxianError::Compliance("Missing DbtrAcct/Id/Othr/Id".to_string())
+                ConxianError::Compliance("Missing debtor account identifier".to_string())
             })?,
             receiver: receiver.ok_or_else(|| {
-                ConxianError::Compliance("Missing CdtrAcct/Id/Othr/Id".to_string())
+                ConxianError::Compliance("Missing creditor account identifier".to_string())
             })?,
         })
     }
