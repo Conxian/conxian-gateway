@@ -308,7 +308,7 @@ async fn test_ingress_iso20022_authorized() {
     let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
     let app = configure_routes(state, TEST_TOKEN.to_string());
 
-    let xml_payload = r#"<Document><GrpHdr><MsgId>TX-123</MsgId></GrpHdr><CdtTrfTxInf><IntrBkSttlmAmt>0.5</IntrBkSttlmAmt><DbtrAcct>SENDER-AC-1</DbtrAcct><CdtrAcct>RECEIVER-AC-1</CdtrAcct></CdtTrfTxInf></Document>"#;
+    let xml_payload = "<Document xmlns=\"urn:iso:std:iso:20022:tech:xsd:pacs.008.001.08\"><FIToFICstmrCdtTrf><GrpHdr><MsgId>TX-123</MsgId></GrpHdr><CdtTrfTxInf><IntrBkSttlmAmt Ccy=\"sBTC\">0.5</IntrBkSttlmAmt><DbtrAcct><Id><Othr><Id>SENDER-AC-1</Id></Othr></Id></DbtrAcct><CdtrAcct><Id><Othr><Id>RECEIVER-AC-1</Id></Othr></Id></CdtrAcct></CdtTrfTxInf></FIToFICstmrCdtTrf></Document>";
 
     let response = app
         .oneshot(

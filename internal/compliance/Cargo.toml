@@ -16,3 +16,4 @@ chrono = { workspace = true }
 serde_json = { workspace = true }
 uuid = { version = "1.7.0", features = ["v4"] }
 tokio = { workspace = true, features = ["full"] }
+quick-xml = "0.37"
