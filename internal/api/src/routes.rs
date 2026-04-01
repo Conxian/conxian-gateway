@@ -28,6 +28,10 @@ pub fn configure_routes(state: SharedState, api_token: String) -> Router {
         .route("/a2p/verify", post(handlers::verify_otp))
         .route("/erp/sync", post(handlers::sync_erp_ledger))
         .route("/settle", post(handlers::settle_job_card))
+        // CON-163: Add global settlement ingress routes
+        .route("/ingress/iso20022", post(handlers::ingress_iso20022))
+        .route("/ingress/papss", post(handlers::ingress_papss))
+        .route("/ingress/brics", post(handlers::ingress_brics))
         .layer(middleware::from_fn(move |req, next| {
             auth_middleware(req, next, token_for_auth.clone())
         }))
