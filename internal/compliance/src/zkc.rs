@@ -408,6 +408,14 @@ impl ZkcVerifier {
             let attr = attr.map_err(|err| {
                 ConxianError::Compliance(format!("Invalid XML attribute: {}", err))
             })?;
+
+            let key = std::str::from_utf8(attr.key.as_ref()).map_err(|err| {
+                ConxianError::Compliance(format!("Invalid XML attribute name: {}", err))
+            })?;
+            if !(key == "xmlns" || key.starts_with("xmlns:") || key == "xsi:schemaLocation") {
+                continue;
+            }
+
             let value = attr.unescape_value().map_err(|err| {
                 ConxianError::Compliance(format!("Invalid XML attribute value: {}", err))
             })?;
