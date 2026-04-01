@@ -1,4 +1,6 @@
+pub mod settlement;
 pub mod persistence;
+pub use settlement::*;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, RwLock};
 use thiserror::Error;

@@ -372,3 +372,54 @@ pub async fn settle_job_card(
         )),
     }
 }
+
+pub async fn ingress_iso20022(
+    State(_state): State<SharedState>,
+    body: String,
+) -> Result<Json<conxian_core::SettlementEnvelope>, (StatusCode, Json<Value>)> {
+    let verifier = ZkcVerifier::new();
+    match verifier.normalize_iso20022_ingress(&body) {
+        Ok(envelope) => {
+            info!("Successfully ingested ISO 20022 settlement: {}", envelope.payload.transaction_id);
+            Ok(Json(envelope))
+        }
+        Err(e) => Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": e.to_string() })),
+        )),
+    }
+}
+
+pub async fn ingress_papss(
+    State(_state): State<SharedState>,
+    Json(payload): Json<Value>,
+) -> Result<Json<conxian_core::SettlementEnvelope>, (StatusCode, Json<Value>)> {
+    let verifier = ZkcVerifier::new();
+    match verifier.normalize_papss_ingress(&payload) {
+        Ok(envelope) => {
+            info!("Successfully ingested PAPSS settlement: {}", envelope.payload.transaction_id);
+            Ok(Json(envelope))
+        }
+        Err(e) => Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": e.to_string() })),
+        )),
+    }
+}
+
+pub async fn ingress_brics(
+    State(_state): State<SharedState>,
+    Json(payload): Json<Value>,
+) -> Result<Json<conxian_core::SettlementEnvelope>, (StatusCode, Json<Value>)> {
+    let verifier = ZkcVerifier::new();
+    match verifier.normalize_brics_ingress(&payload) {
+        Ok(envelope) => {
+            info!("Successfully ingested BRICS settlement: {}", envelope.payload.transaction_id);
+            Ok(Json(envelope))
+        }
+        Err(e) => Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": e.to_string() })),
+        )),
+    }
+}
