@@ -400,7 +400,10 @@ pub async fn ingress_iso20022(
     let verifier = zkc_verifier();
     match verifier.normalize_iso20022_ingress(xml, raw_payload_hash) {
         Ok(envelope) => {
-            info!("Successfully ingested ISO 20022 settlement: {}", envelope.payload.transaction_id);
+            info!(
+                "Successfully ingested ISO 20022 settlement: {}",
+                envelope.payload.transaction_id
+            );
             Ok(Json(envelope))
         }
         Err(e) => Err((
@@ -425,7 +428,10 @@ pub async fn ingress_papss(
     let verifier = zkc_verifier();
     match verifier.normalize_papss_ingress(&payload, raw_payload_hash) {
         Ok(envelope) => {
-            info!("Successfully ingested PAPSS settlement: {}", envelope.payload.transaction_id);
+            info!(
+                "Successfully ingested PAPSS settlement: {}",
+                envelope.payload.transaction_id
+            );
             Ok(Json(envelope))
         }
         Err(e) => Err((
@@ -450,7 +456,10 @@ pub async fn ingress_brics(
     let verifier = zkc_verifier();
     match verifier.normalize_brics_ingress(&payload, raw_payload_hash) {
         Ok(envelope) => {
-            info!("Successfully ingested BRICS settlement: {}", envelope.payload.transaction_id);
+            info!(
+                "Successfully ingested BRICS settlement: {}",
+                envelope.payload.transaction_id
+            );
             Ok(Json(envelope))
         }
         Err(e) => Err((

@@ -1,5 +1,5 @@
-use conxian_core::{IdentityResolutionRequest};
 use compliance::IdentityManager;
+use conxian_core::IdentityResolutionRequest;
 
 #[tokio::test]
 async fn test_resolve_ens() {

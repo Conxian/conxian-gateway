@@ -1,16 +1,17 @@
 use bitcoin::hashes::{sha256, Hash};
 pub use conxian_core::{
-    Attestation, BitVmAttestation, ConxianError, ConxianJobCard, ConxianResult, SchnorrAttestation,
-    NormalizedSettlement, SettlementEnvelope, SettlementSource, SettlementStatus, ZkmlProof,
+    Attestation, BitVmAttestation, ConxianError, ConxianJobCard, ConxianResult,
+    NormalizedSettlement, SchnorrAttestation, SettlementEnvelope, SettlementSource,
+    SettlementStatus, ZkmlProof,
 };
 use quick_xml::events::Event;
 use quick_xml::Reader;
 use secp256k1::schnorr::Signature as SchnorrSignature;
 use secp256k1::XOnlyPublicKey;
 use secp256k1::{ecdsa::Signature, Message, PublicKey, Secp256k1};
+use serde_json::Value;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{info, warn};
-use serde_json::Value;
 
 struct Iso20022Fields {
     transaction_id: String,
@@ -230,9 +231,9 @@ impl ZkcVerifier {
     ) -> ConxianResult<SettlementEnvelope> {
         info!("Normalizing PAPSS ingress message.");
 
-        let tx_id = json["transaction_id"].as_str().ok_or_else(|| {
-            ConxianError::Compliance("Missing transaction_id".to_string())
-        })?;
+        let tx_id = json["transaction_id"]
+            .as_str()
+            .ok_or_else(|| ConxianError::Compliance("Missing transaction_id".to_string()))?;
 
         let amount_str = match json.get("amount") {
             Some(Value::String(s)) => s.clone(),
@@ -243,12 +244,12 @@ impl ZkcVerifier {
         };
         let (amount_minor, amount_scale) = Self::parse_amount_minor_scale(&amount_str)?;
 
-        let sender = json["sender_bic"].as_str().ok_or_else(|| {
-            ConxianError::Compliance("Missing sender_bic".to_string())
-        })?;
-        let receiver = json["receiver_bic"].as_str().ok_or_else(|| {
-            ConxianError::Compliance("Missing receiver_bic".to_string())
-        })?;
+        let sender = json["sender_bic"]
+            .as_str()
+            .ok_or_else(|| ConxianError::Compliance("Missing sender_bic".to_string()))?;
+        let receiver = json["receiver_bic"]
+            .as_str()
+            .ok_or_else(|| ConxianError::Compliance("Missing receiver_bic".to_string()))?;
 
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -281,9 +282,9 @@ impl ZkcVerifier {
     ) -> ConxianResult<SettlementEnvelope> {
         info!("Normalizing BRICS ingress message.");
 
-        let tx_id = json["brics_tx_id"].as_str().ok_or_else(|| {
-            ConxianError::Compliance("Missing brics_tx_id".to_string())
-        })?;
+        let tx_id = json["brics_tx_id"]
+            .as_str()
+            .ok_or_else(|| ConxianError::Compliance("Missing brics_tx_id".to_string()))?;
 
         let amount_str = match json.get("amount") {
             Some(Value::String(s)) => s.clone(),
@@ -294,12 +295,12 @@ impl ZkcVerifier {
         };
         let (amount_minor, amount_scale) = Self::parse_amount_minor_scale(&amount_str)?;
 
-        let sender = json["origin_bank"].as_str().ok_or_else(|| {
-            ConxianError::Compliance("Missing origin_bank".to_string())
-        })?;
-        let receiver = json["target_bank"].as_str().ok_or_else(|| {
-            ConxianError::Compliance("Missing target_bank".to_string())
-        })?;
+        let sender = json["origin_bank"]
+            .as_str()
+            .ok_or_else(|| ConxianError::Compliance("Missing origin_bank".to_string()))?;
+        let receiver = json["target_bank"]
+            .as_str()
+            .ok_or_else(|| ConxianError::Compliance("Missing target_bank".to_string()))?;
 
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -383,9 +384,9 @@ impl ZkcVerifier {
                     stack.pop();
                 }
                 Ok(Event::Text(e)) => {
-                    let text = e.decode().map_err(|e| {
-                        ConxianError::Compliance(format!("Invalid XML text: {e}"))
-                    })?;
+                    let text = e
+                        .decode()
+                        .map_err(|e| ConxianError::Compliance(format!("Invalid XML text: {e}")))?;
 
                     if transaction_id.is_none() && Self::stack_ends_with(&stack, &[b"MsgId"]) {
                         transaction_id = Some(text.to_string());
@@ -418,8 +419,9 @@ impl ZkcVerifier {
                 .ok_or_else(|| ConxianError::Compliance("Missing MsgId".to_string()))?,
             amount: amount
                 .ok_or_else(|| ConxianError::Compliance("Missing IntrBkSttlmAmt".to_string()))?,
-            currency: currency
-                .ok_or_else(|| ConxianError::Compliance("Missing IntrBkSttlmAmt Ccy".to_string()))?,
+            currency: currency.ok_or_else(|| {
+                ConxianError::Compliance("Missing IntrBkSttlmAmt Ccy".to_string())
+            })?,
             sender: sender.ok_or_else(|| {
                 ConxianError::Compliance("Missing DbtrAcct/Id/Othr/Id".to_string())
             })?,
@@ -482,24 +484,45 @@ impl ZkcVerifier {
     }
 
     pub fn commit_to_tableland(&self, table_name: &str, _data: &str) -> ConxianResult<String> {
-        info!("Committing state to Tableland table: {} with data payload.", table_name);
-        let timestamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+        info!(
+            "Committing state to Tableland table: {} with data payload.",
+            table_name
+        );
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
         let commitment_id = format!("tbl-commitment-{}-{}", table_name, timestamp);
         Ok(commitment_id)
     }
 
     pub fn generate_mvcr(&self, nexus_id: &str, state_root: &str) -> ConxianResult<String> {
-        let timestamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
-        let report_content = format!("Nexus-ID: {}\nState-Root: {}\nTimestamp: {}\nSovereign-Status: Verified", nexus_id, state_root, timestamp);
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let report_content = format!(
+            "Nexus-ID: {}\nState-Root: {}\nTimestamp: {}\nSovereign-Status: Verified",
+            nexus_id, state_root, timestamp
+        );
         let report_hash = sha256::Hash::hash(report_content.as_bytes());
         Ok(hex::encode(report_hash.to_byte_array()))
     }
 
     pub fn format_iso20022_pacs008_v8(&self, job_card: &ConxianJobCard) -> ConxianResult<String> {
         let intent = &job_card.work_intent;
-        let town = intent.town_name.as_ref().ok_or_else(|| ConxianError::Compliance("ISO-404: Missing town_name".to_string()))?;
-        let country = intent.country_code.as_ref().ok_or_else(|| ConxianError::Compliance("ISO-404: Missing country_code".to_string()))?;
-        info!("Formatting ISO 20022 pacs.008.001.08 for job card in {}", town);
+        let town = intent
+            .town_name
+            .as_ref()
+            .ok_or_else(|| ConxianError::Compliance("ISO-404: Missing town_name".to_string()))?;
+        let country = intent
+            .country_code
+            .as_ref()
+            .ok_or_else(|| ConxianError::Compliance("ISO-404: Missing country_code".to_string()))?;
+        info!(
+            "Formatting ISO 20022 pacs.008.001.08 for job card in {}",
+            town
+        );
         Ok(format!(
             r#"<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pacs.008.001.08">
     <FIToFICstmrCdtTrf>
@@ -576,7 +599,12 @@ impl ZkcVerifier {
         </CdtTrfTxInf>
     </FIToFICstmrCdtTrf>
 </Document>"#,
-            sender, receiver, chrono::Utc::now().to_rfc3339(), amount, sender, receiver
+            sender,
+            receiver,
+            chrono::Utc::now().to_rfc3339(),
+            amount,
+            sender,
+            receiver
         )
     }
 }
