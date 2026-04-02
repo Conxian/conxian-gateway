@@ -334,7 +334,7 @@ impl ZkcVerifier {
         loop {
             match reader.read_event_into(&mut buf) {
                 Ok(Event::Start(e)) => {
-                    if source.is_none() {
+                    if source.is_none() && stack.is_empty() {
                         source = Self::iso20022_source_from_attributes(&e)?;
                     }
 
@@ -358,7 +358,7 @@ impl ZkcVerifier {
                     stack.push(name);
                 }
                 Ok(Event::Empty(e)) => {
-                    if source.is_none() {
+                    if source.is_none() && stack.is_empty() {
                         source = Self::iso20022_source_from_attributes(&e)?;
                     }
 
