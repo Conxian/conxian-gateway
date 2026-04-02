@@ -32,7 +32,7 @@ fn is_json_content_type(headers: &HeaderMap) -> bool {
     let content_type = content_type
         .split(';')
         .next()
-        .unwrap_or(content_type)
+        .unwrap_or("")
         .trim()
         .to_ascii_lowercase();
 
