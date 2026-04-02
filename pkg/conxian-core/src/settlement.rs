@@ -11,6 +11,7 @@ pub enum SettlementSource {
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum SettlementStatus {
+    #[serde(alias = "Ingested")]
     Ingested,
 }
 
