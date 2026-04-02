@@ -1,14 +1,14 @@
 use crate::auth::auth_middleware;
 use crate::handlers;
 use crate::middleware::latency_tracker;
+use crate::AppState;
 use axum::{
     middleware,
     routing::{get, post},
     Router,
 };
-use conxian_core::SharedState;
 
-pub fn configure_routes(state: SharedState, api_token: String) -> Router {
+pub fn configure_routes(state: AppState, api_token: String) -> Router {
     let token_for_auth = api_token.clone();
 
     let public_routes = Router::new()

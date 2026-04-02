@@ -384,9 +384,15 @@ impl ZkcVerifier {
                     stack.pop();
                 }
                 Ok(Event::Text(e)) => {
-                    let text = e
-                        .decode()
-                        .map_err(|e| ConxianError::Compliance(format!("Invalid XML text: {e}")))?;
+                    let text = e.unescape().map_err(|e| {
+                        ConxianError::Compliance(format!("Invalid XML text: {e}"))
+                    })?;
+                    let text = text.trim();
+
+                    if text.is_empty() {
+                        buf.clear();
+                        continue;
+                    }
 
                     if transaction_id.is_none() && Self::stack_ends_with(&stack, &[b"MsgId"]) {
                         transaction_id = Some(text.to_string());
@@ -396,12 +402,20 @@ impl ZkcVerifier {
                         amount = Some(text.to_string());
                     } else if sender.is_none()
                         && (Self::stack_ends_with(&stack, &[b"DbtrAcct", b"Id", b"Othr", b"Id"])
-                            || Self::stack_ends_with(&stack, &[b"DbtrAcct", b"Id", b"IBAN"]))
+                            || Self::stack_ends_with(&stack, &[b"DbtrAcct", b"Id", b"IBAN"])
+                            || Self::stack_ends_with(
+                                &stack,
+                                &[b"DbtrAgt", b"FinInstnId", b"BICFI"],
+                            ))
                     {
                         sender = Some(text.to_string());
                     } else if receiver.is_none()
                         && (Self::stack_ends_with(&stack, &[b"CdtrAcct", b"Id", b"Othr", b"Id"])
-                            || Self::stack_ends_with(&stack, &[b"CdtrAcct", b"Id", b"IBAN"]))
+                            || Self::stack_ends_with(&stack, &[b"CdtrAcct", b"Id", b"IBAN"])
+                            || Self::stack_ends_with(
+                                &stack,
+                                &[b"CdtrAgt", b"FinInstnId", b"BICFI"],
+                            ))
                     {
                         receiver = Some(text.to_string());
                     }

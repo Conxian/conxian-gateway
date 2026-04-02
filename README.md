@@ -2,6 +2,25 @@
 
 Institutional-grade middleware bridging Bitcoin/Stacks state logic with enterprise compliance. The gateway is designed to capture the Total Addressable Market (TAM) of Bitcoin-native liquidity while maintaining sovereign alignment.
 
+## Purpose
+
+Provide a unified, authenticated `/api/v1` interface for chain state, compliance verification, and institutional integrations across the Conxian stack.
+
+## Status
+
+Active development. Interfaces and module boundaries may evolve as protocol, wallet, and platform requirements converge.
+
+## Audience
+
+- Backend engineers integrating chain-state monitoring and institutional egress.
+- Platform operators running the stack locally or in production environments.
+- Wallet and UI engineers consuming Gateway APIs.
+
+## Relationship to the Conxian stack
+
+- Primary API surface for Conxian UI, Conxius Wallet, and the `conxius-platform` orchestration stack.
+- Core shared logic is centralized in `lib-conxian-core/`.
+
 ## Features
 - **Engine**: Nakamoto-ready indexing and state monitoring for Bitcoin and Stacks. Enhanced with the sBTC "Suction" pattern and Sovereign Yield Index (SYI) tracking.
 - **API**: SLA-grade B2B interface with secure authentication. Supports ISO 20022 banking egress and identity exchange (WIF).
@@ -31,6 +50,17 @@ The following environment variables can be used to configure the gateway:
 - `API_TOKEN`: Bearer token for institutional API access (default: institutional-default-token)
 - `BITCOIN_SYNC_INTERVAL`: Sync interval for Bitcoin (default: 10s)
 - `STACKS_SYNC_INTERVAL`: Sync interval for Stacks (default: 30s)
+- `RAMP_API_KEY`: API key for Ramp Network integration.
+- `INVESTEC_CLIENT_ID`: Client ID for Investec Open Banking.
+- `INVESTEC_SECRET`: Client secret for Investec Open Banking.
+- `ALCHEMY_PAY_APP_ID`: App ID for Alchemy Pay.
+- `ALCHEMY_PAY_SECRET`: App secret for Alchemy Pay.
+- `BANXA_API_KEY`: API key for Banxa.
+- `BANXA_SECRET`: API secret for Banxa.
+- `INFOBIP_API_KEY`: API key for Infobip A2P messaging.
+- `INFOBIP_BASE_URL`: Base URL for Infobip API.
+- `HMAC_SECRET`: Secret used for stateless OTP HMAC generation.
+- `FIAT_WEBHOOK_SECRET`: Secret used for verifying fiat provider webhooks.
 
 ## Getting Started
 ```bash

@@ -1,15 +1,15 @@
+use crate::AppState;
 use axum::{
     body::Body,
     extract::State,
     http::{Request, Response},
     middleware::Next,
 };
-use conxian_core::SharedState;
 use std::time::Instant;
 use tracing::info;
 
 pub async fn latency_tracker(
-    State(_state): State<SharedState>,
+    State(_state): State<AppState>,
     req: Request<Body>,
     next: Next,
 ) -> Response<Body> {

@@ -1,3 +1,4 @@
+use crate::AppState;
 use axum::{
     body::Bytes,
     extract::{Json, State},
@@ -5,23 +6,16 @@ use axum::{
 };
 use conxian_core::{
     AttestationRequest, BitVmAttestation, ConxianJobCard, GcpTokenRequest,
-    IdentityResolutionRequest, IdentityResolutionResponse, SharedState,
+    IdentityResolutionRequest, IdentityResolutionResponse,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::info;
 
-use crate::a2p::{A2pRouter, OtpRequest, OtpVerificationRequest};
-use crate::fiat::{FiatRouter, OnRampSessionRequest, OnRampSessionResponse, WebhookPayload};
-use compliance::{IdentityManager, ZkcVerifier};
-
-fn zkc_verifier() -> &'static ZkcVerifier {
-    static VERIFIER: OnceLock<ZkcVerifier> = OnceLock::new();
-    VERIFIER.get_or_init(ZkcVerifier::new)
-}
+use crate::a2p::{OtpRequest, OtpVerificationRequest};
+use crate::fiat::{OnRampSessionRequest, OnRampSessionResponse, WebhookPayload};
 
 fn sha256_hex(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
@@ -44,8 +38,8 @@ fn is_json_content_type(headers: &HeaderMap) -> bool {
     content_type == "application/json" || content_type.ends_with("+json")
 }
 
-pub async fn health_check(State(state): State<SharedState>) -> Json<Value> {
-    let s = state.read().unwrap();
+pub async fn health_check(State(state): State<AppState>) -> Json<Value> {
+    let s = state.shared.read().unwrap();
     let mut status = "healthy";
     let mut details = Vec::new();
 
@@ -84,13 +78,13 @@ pub async fn health_check(State(state): State<SharedState>) -> Json<Value> {
     }))
 }
 
-pub async fn get_state(State(state): State<SharedState>) -> Json<GatewayStateResponse> {
-    let mut s_write = state.write().unwrap();
+pub async fn get_state(State(state): State<AppState>) -> Json<GatewayStateResponse> {
+    let mut s_write = state.shared.write().unwrap();
     s_write.metrics.total_requests += 1;
     s_write.metrics.state_requests += 1;
     drop(s_write);
 
-    let s = state.read().unwrap();
+    let s = state.shared.read().unwrap();
     Json(GatewayStateResponse {
         bitcoin: s.bitcoin.clone(),
         stacks: s.stacks.clone(),
@@ -105,13 +99,13 @@ pub struct GatewayStateResponse {
     pub metrics: conxian_core::Metrics,
 }
 
-pub async fn get_metrics(State(state): State<SharedState>) -> String {
-    let mut s_write = state.write().unwrap();
+pub async fn get_metrics(State(state): State<AppState>) -> String {
+    let mut s_write = state.shared.write().unwrap();
     s_write.metrics.total_requests += 1;
     s_write.metrics.metrics_requests += 1;
     drop(s_write);
 
-    let s = state.read().unwrap();
+    let s = state.shared.read().unwrap();
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
@@ -140,21 +134,20 @@ pub async fn get_metrics(State(state): State<SharedState>) -> String {
 }
 
 pub async fn verify_attestation(
-    State(state): State<SharedState>,
+    State(state): State<AppState>,
     Json(request): Json<AttestationRequest>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     {
-        let mut s = state.write().unwrap();
+        let mut s = state.shared.write().unwrap();
         s.metrics.total_requests += 1;
         s.metrics.verification_requests += 1;
     }
 
-    let verifier = zkc_verifier();
     let (attestation_type, result) = match request {
-        AttestationRequest::Ecdsa(a) => ("ECDSA", verifier.verify(&a)),
-        AttestationRequest::Schnorr(a) => ("Schnorr", verifier.verify_schnorr(&a)),
-        AttestationRequest::Zkml(a) => ("ZKML", verifier.verify_zkml(&a)),
-        AttestationRequest::BitVm(a) => ("BitVM", verifier.verify_bitvm(&a)),
+        AttestationRequest::Ecdsa(a) => ("ECDSA", state.compliance.verify(&a)),
+        AttestationRequest::Schnorr(a) => ("Schnorr", state.compliance.verify_schnorr(&a)),
+        AttestationRequest::Zkml(a) => ("ZKML", state.compliance.verify_zkml(&a)),
+        AttestationRequest::BitVm(a) => ("BitVM", state.compliance.verify_bitvm(&a)),
     };
 
     info!(
@@ -165,7 +158,7 @@ pub async fn verify_attestation(
     match result {
         Ok(valid) => {
             {
-                let mut s = state.write().unwrap();
+                let mut s = state.shared.write().unwrap();
                 if valid {
                     s.metrics.verification_success += 1;
                     info!("{} attestation verified successfully", attestation_type);
@@ -181,7 +174,7 @@ pub async fn verify_attestation(
         }
         Err(e) => {
             {
-                let mut s = state.write().unwrap();
+                let mut s = state.shared.write().unwrap();
                 s.metrics.verification_failure += 1;
             }
             info!("{} attestation verification error: {}", attestation_type, e);
@@ -194,16 +187,15 @@ pub async fn verify_attestation(
 }
 
 pub async fn exchange_identity(
-    State(state): State<SharedState>,
+    State(state): State<AppState>,
     Json(request): Json<GcpTokenRequest>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     {
-        let mut s = state.write().unwrap();
+        let mut s = state.shared.write().unwrap();
         s.metrics.total_requests += 1;
     }
 
-    let manager = IdentityManager::new();
-    match manager.exchange_token(&request).await {
+    match state.identity.exchange_token(&request).await {
         Ok(token) => Ok(Json(
             json!({ "access_token": token, "token_type": "Bearer", "expires_in": 3600 }),
         )),
@@ -216,16 +208,15 @@ pub async fn exchange_identity(
 
 /// CON-66: Resolve identities across ENS, BNS, World ID, and Web3.bio.
 pub async fn resolve_identity_v1(
-    State(state): State<SharedState>,
+    State(state): State<AppState>,
     Json(request): Json<IdentityResolutionRequest>,
 ) -> Result<Json<IdentityResolutionResponse>, (StatusCode, Json<Value>)> {
     {
-        let mut s = state.write().unwrap();
+        let mut s = state.shared.write().unwrap();
         s.metrics.total_requests += 1;
     }
 
-    let manager = IdentityManager::new();
-    match manager.resolve_identity(&request).await {
+    match state.identity.resolve_identity(&request).await {
         Ok(res) => Ok(Json(res)),
         Err(e) => Err((
             StatusCode::BAD_REQUEST,
@@ -235,13 +226,11 @@ pub async fn resolve_identity_v1(
 }
 
 pub async fn generate_iso_payment(
-    State(_state): State<SharedState>,
+    State(state): State<AppState>,
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    let verifier = zkc_verifier();
-
     if let Ok(job_card) = serde_json::from_value::<ConxianJobCard>(payload.clone()) {
-        match verifier.format_iso20022_pacs008_v8(&job_card) {
+        match state.compliance.format_iso20022_pacs008_v8(&job_card) {
             Ok(xml) => return Ok(Json(json!({ "xml": xml, "schema": "pacs.008.001.08" }))),
             Err(e) => {
                 return Err((
@@ -258,25 +247,17 @@ pub async fn generate_iso_payment(
         .unwrap_or("INSTITUTIONAL-RECEIVER");
     let amount = payload["amount"].as_f64().unwrap_or(0.0);
 
-    let xml = verifier.format_iso20022_pacs008(sender, receiver, amount);
+    let xml = state
+        .compliance
+        .format_iso20022_pacs008(sender, receiver, amount);
     Ok(Json(json!({ "xml": xml, "schema": "pacs.008.001.07" })))
 }
 
 pub async fn create_fiat_session(
-    State(_state): State<SharedState>,
+    State(state): State<AppState>,
     Json(request): Json<OnRampSessionRequest>,
 ) -> Result<Json<OnRampSessionResponse>, (StatusCode, Json<Value>)> {
-    let router = FiatRouter::new(
-        "ramp-api-key".to_string(),
-        "investec-client-id".to_string(),
-        "investec-secret".to_string(),
-        "alchemypay-app-id".to_string(),
-        "alchemypay-secret".to_string(),
-        "banxa-api-key".to_string(),
-        "banxa-secret".to_string(),
-    );
-
-    match router.create_session(request).await {
+    match state.fiat.create_session(request).await {
         Ok(res) => Ok(Json(res)),
         Err(e) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -286,20 +267,13 @@ pub async fn create_fiat_session(
 }
 
 pub async fn verify_fiat_webhook(
-    State(_state): State<SharedState>,
+    State(state): State<AppState>,
     Json(payload): Json<WebhookPayload>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    let router = FiatRouter::new(
-        "ramp-api-key".to_string(),
-        "investec-client-id".to_string(),
-        "investec-secret".to_string(),
-        "alchemypay-app-id".to_string(),
-        "alchemypay-secret".to_string(),
-        "banxa-api-key".to_string(),
-        "banxa-secret".to_string(),
-    );
-
-    match router.verify_webhook(&payload, "shared-secret") {
+    match state
+        .fiat
+        .verify_webhook(&payload, &state.fiat_webhook_secret)
+    {
         Ok(valid) => Ok(Json(
             json!({ "valid": valid, "provider": payload.provider }),
         )),
@@ -311,16 +285,10 @@ pub async fn verify_fiat_webhook(
 }
 
 pub async fn send_otp(
-    State(_state): State<SharedState>,
+    State(state): State<AppState>,
     Json(request): Json<OtpRequest>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    let router = A2pRouter::new(
-        "infobip-api-key".to_string(),
-        "infobip-base-url".to_string(),
-        "hmac-secret".to_string(),
-    );
-
-    match router.send_otp(request).await {
+    match state.a2p.send_otp(request).await {
         Ok((res, hmac, ts)) => Ok(Json(json!({
             "session_id": res.session_id,
             "status": res.status,
@@ -335,16 +303,10 @@ pub async fn send_otp(
 }
 
 pub async fn verify_otp(
-    State(_state): State<SharedState>,
+    State(state): State<AppState>,
     Json(request): Json<OtpVerificationRequest>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    let router = A2pRouter::new(
-        "infobip-api-key".to_string(),
-        "infobip-base-url".to_string(),
-        "hmac-secret".to_string(),
-    );
-
-    match router.verify_otp(request) {
+    match state.a2p.verify_otp(request) {
         Ok(valid) => Ok(Json(json!({ "valid": valid }))),
         Err(e) => Err((
             StatusCode::BAD_REQUEST,
@@ -354,7 +316,7 @@ pub async fn verify_otp(
 }
 
 pub async fn sync_erp_ledger(
-    State(_state): State<SharedState>,
+    State(_state): State<AppState>,
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     info!("Processing ERP OData sync request for institutional ledger.");
@@ -387,11 +349,13 @@ pub struct SettlementRequest {
 }
 
 pub async fn settle_job_card(
-    State(_state): State<SharedState>,
+    State(state): State<AppState>,
     Json(request): Json<SettlementRequest>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    let verifier = zkc_verifier();
-    match verifier.verify_job_card_settlement(&request.job_card, &request.bitvm_proof) {
+    match state
+        .compliance
+        .verify_job_card_settlement(&request.job_card, &request.bitvm_proof)
+    {
         Ok(valid) => Ok(Json(
             json!({ "valid": valid, "settlement": "BitVM2-Verified" }),
         )),
@@ -403,7 +367,7 @@ pub async fn settle_job_card(
 }
 
 pub async fn ingress_iso20022(
-    State(_state): State<SharedState>,
+    State(state): State<AppState>,
     bytes: Bytes,
 ) -> Result<Json<conxian_core::SettlementEnvelope>, (StatusCode, Json<Value>)> {
     let raw_payload_hash = sha256_hex(&bytes);
@@ -414,8 +378,10 @@ pub async fn ingress_iso20022(
         )
     })?;
 
-    let verifier = zkc_verifier();
-    match verifier.normalize_iso20022_ingress(xml, raw_payload_hash) {
+    match state
+        .compliance
+        .normalize_iso20022_ingress(xml, raw_payload_hash)
+    {
         Ok(envelope) => {
             info!(
                 "Successfully ingested ISO 20022 settlement: {}",
@@ -431,7 +397,7 @@ pub async fn ingress_iso20022(
 }
 
 pub async fn ingress_papss(
-    State(_state): State<SharedState>,
+    State(state): State<AppState>,
     headers: HeaderMap,
     bytes: Bytes,
 ) -> Result<Json<conxian_core::SettlementEnvelope>, (StatusCode, Json<Value>)> {
@@ -450,8 +416,10 @@ pub async fn ingress_papss(
         )
     })?;
 
-    let verifier = zkc_verifier();
-    match verifier.normalize_papss_ingress(&payload, raw_payload_hash) {
+    match state
+        .compliance
+        .normalize_papss_ingress(&payload, raw_payload_hash)
+    {
         Ok(envelope) => {
             info!(
                 "Successfully ingested PAPSS settlement: {}",
@@ -467,7 +435,7 @@ pub async fn ingress_papss(
 }
 
 pub async fn ingress_brics(
-    State(_state): State<SharedState>,
+    State(state): State<AppState>,
     headers: HeaderMap,
     bytes: Bytes,
 ) -> Result<Json<conxian_core::SettlementEnvelope>, (StatusCode, Json<Value>)> {
@@ -486,8 +454,10 @@ pub async fn ingress_brics(
         )
     })?;
 
-    let verifier = zkc_verifier();
-    match verifier.normalize_brics_ingress(&payload, raw_payload_hash) {
+    match state
+        .compliance
+        .normalize_brics_ingress(&payload, raw_payload_hash)
+    {
         Ok(envelope) => {
             info!(
                 "Successfully ingested BRICS settlement: {}",
