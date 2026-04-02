@@ -487,6 +487,9 @@ impl ZkcVerifier {
     }
 
     fn parse_amount_minor_scale(amount: &str) -> ConxianResult<(u64, u32)> {
+        const MAX_SCALE: usize = 18;
+        const MAX_DIGITS: usize = 64;
+
         let amount = amount.trim();
         if amount.is_empty() {
             return Err(ConxianError::Compliance("Invalid amount".to_string()));
@@ -509,15 +512,32 @@ impl ZkcVerifier {
             ));
         }
 
-        let scale = frac_part.len() as u32;
-        let digits = format!("{}{}", int_part, frac_part);
-        let minor_u128 = digits
-            .parse::<u128>()
-            .map_err(|e| ConxianError::Compliance(format!("Invalid amount: {e}")))?;
+        let scale = frac_part.len();
+        if scale > MAX_SCALE {
+            return Err(ConxianError::Compliance(
+                "Invalid amount: too many decimal places".to_string(),
+            ));
+        }
+
+        let total_digits = int_part.len() + frac_part.len();
+        if total_digits > MAX_DIGITS {
+            return Err(ConxianError::Compliance(
+                "Invalid amount: too many digits".to_string(),
+            ));
+        }
+
+        let mut minor_u128 = 0u128;
+        for digit in int_part.bytes().chain(frac_part.bytes()) {
+            minor_u128 = minor_u128
+                .checked_mul(10)
+                .and_then(|n| n.checked_add((digit - b'0') as u128))
+                .ok_or_else(|| ConxianError::Compliance("Invalid amount: overflow".to_string()))?;
+        }
+
         let minor = u64::try_from(minor_u128)
             .map_err(|_| ConxianError::Compliance("Invalid amount: overflow".to_string()))?;
 
-        Ok((minor, scale))
+        Ok((minor, scale as u32))
     }
 
     fn xml_local_name(name: &[u8]) -> &[u8] {
