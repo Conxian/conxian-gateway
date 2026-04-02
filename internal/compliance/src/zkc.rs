@@ -339,7 +339,7 @@ impl ZkcVerifier {
                     }
 
                     let name = Self::xml_local_name(e.name().as_ref()).to_vec();
-                    if name.as_slice() == b"IntrBkSttlmAmt" {
+                    if name.as_slice() == b"IntrBkSttlmAmt" && currency.is_none() {
                         for attr in e.attributes().with_checks(false) {
                             let attr = attr.map_err(|e| {
                                 ConxianError::Compliance(format!("Invalid XML attribute: {e}"))
@@ -352,6 +352,7 @@ impl ZkcVerifier {
                                     ))
                                 })?;
                                 currency = Some(value.into_owned());
+                                break;
                             }
                         }
                     }
@@ -363,7 +364,7 @@ impl ZkcVerifier {
                     }
 
                     let name = Self::xml_local_name(e.name().as_ref()).to_vec();
-                    if name.as_slice() == b"IntrBkSttlmAmt" {
+                    if name.as_slice() == b"IntrBkSttlmAmt" && currency.is_none() {
                         for attr in e.attributes().with_checks(false) {
                             let attr = attr.map_err(|e| {
                                 ConxianError::Compliance(format!("Invalid XML attribute: {e}"))
@@ -376,6 +377,7 @@ impl ZkcVerifier {
                                     ))
                                 })?;
                                 currency = Some(value.into_owned());
+                                break;
                             }
                         }
                     }
@@ -386,6 +388,9 @@ impl ZkcVerifier {
                 Ok(Event::Text(e)) => {
                     let text = e
                         .decode()
+                        .map_err(|e| ConxianError::Compliance(format!("Invalid XML text: {e}")))?;
+
+                    let text = quick_xml::escape::unescape(&text)
                         .map_err(|e| ConxianError::Compliance(format!("Invalid XML text: {e}")))?;
                     let text = text.trim();
 
