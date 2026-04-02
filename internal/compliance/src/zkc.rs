@@ -383,7 +383,7 @@ impl ZkcVerifier {
                 }
                 Ok(Event::Text(e)) => {
                     let text = e
-                        .unescape()
+                        .decode()
                         .map_err(|e| ConxianError::Compliance(format!("Invalid XML text: {e}")))?;
                     let text = text.trim();
 
