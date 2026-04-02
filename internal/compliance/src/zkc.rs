@@ -224,6 +224,14 @@ impl ZkcVerifier {
             return Ok(false);
         }
 
+        if signature.len() != 64 {
+            return Ok(false);
+        }
+
+        if !signature.as_bytes().iter().all(|b| b.is_ascii_hexdigit()) {
+            return Ok(false);
+        }
+
         let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
             .map_err(|e| ConxianError::Security(format!("HMAC error: {}", e)))?;
         mac.update(raw_payload.as_bytes());
@@ -639,6 +647,23 @@ impl ZkcVerifier {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn test_verify_ingress_signature_rejects_invalid_signatures() {
+        let verifier = ZkcVerifier::new();
+        let secret = "test-secret";
+        let raw_payload = "{}";
+
+        let too_long_signature = "00".repeat(1000);
+        assert!(!verifier
+            .verify_ingress_signature(raw_payload, &too_long_signature, secret)
+            .unwrap());
+
+        let invalid_hex_signature = format!("{}g", "0".repeat(63));
+        assert!(!verifier
+            .verify_ingress_signature(raw_payload, &invalid_hex_signature, secret)
+            .unwrap());
+    }
 
     #[test]
     fn test_normalize_papss_ingress_with_signature() {
