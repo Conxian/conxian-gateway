@@ -210,7 +210,7 @@ impl ZkcVerifier {
         };
 
         Ok(SettlementEnvelope {
-            version: "1.0.0".to_string(),
+            version: "2.0.0".to_string(),
             payload,
         })
     }
@@ -226,14 +226,10 @@ impl ZkcVerifier {
             .as_str()
             .ok_or_else(|| ConxianError::Compliance("Missing transaction_id".to_string()))?;
 
-        let amount_str = match json.get("amount") {
-            Some(Value::String(s)) => s.clone(),
-            Some(Value::Number(n)) => n.to_string(),
-            _ => {
-                return Err(ConxianError::Compliance("Missing amount".to_string()));
-            }
-        };
-        let (amount_minor, amount_scale) = Self::parse_amount_minor_scale(&amount_str)?;
+        let amount_str = json.get("amount").and_then(|v| v.as_str()).ok_or_else(|| {
+            ConxianError::Compliance("Missing amount (must be a string decimal)".to_string())
+        })?;
+        let (amount_minor, amount_scale) = Self::parse_amount_minor_scale(amount_str)?;
 
         let sender = json["sender_bic"]
             .as_str()
@@ -261,7 +257,7 @@ impl ZkcVerifier {
         };
 
         Ok(SettlementEnvelope {
-            version: "1.0.0".to_string(),
+            version: "2.0.0".to_string(),
             payload,
         })
     }
@@ -277,14 +273,10 @@ impl ZkcVerifier {
             .as_str()
             .ok_or_else(|| ConxianError::Compliance("Missing brics_tx_id".to_string()))?;
 
-        let amount_str = match json.get("amount") {
-            Some(Value::String(s)) => s.clone(),
-            Some(Value::Number(n)) => n.to_string(),
-            _ => {
-                return Err(ConxianError::Compliance("Missing amount".to_string()));
-            }
-        };
-        let (amount_minor, amount_scale) = Self::parse_amount_minor_scale(&amount_str)?;
+        let amount_str = json.get("amount").and_then(|v| v.as_str()).ok_or_else(|| {
+            ConxianError::Compliance("Missing amount (must be a string decimal)".to_string())
+        })?;
+        let (amount_minor, amount_scale) = Self::parse_amount_minor_scale(amount_str)?;
 
         let sender = json["origin_bank"]
             .as_str()
@@ -312,7 +304,7 @@ impl ZkcVerifier {
         };
 
         Ok(SettlementEnvelope {
-            version: "1.0.0".to_string(),
+            version: "2.0.0".to_string(),
             payload,
         })
     }
@@ -345,7 +337,9 @@ impl ZkcVerifier {
                                 ConxianError::Compliance(format!("Invalid XML attribute: {e}"))
                             })?;
 
-                            if Self::xml_local_name(attr.key.as_ref()) == b"Ccy" {
+                            if currency.is_none()
+                                && Self::xml_local_name(attr.key.as_ref()) == b"Ccy"
+                            {
                                 let value = attr.unescape_value().map_err(|e| {
                                     ConxianError::Compliance(format!(
                                         "Invalid XML attribute value: {e}"
@@ -370,7 +364,9 @@ impl ZkcVerifier {
                                 ConxianError::Compliance(format!("Invalid XML attribute: {e}"))
                             })?;
 
-                            if Self::xml_local_name(attr.key.as_ref()) == b"Ccy" {
+                            if currency.is_none()
+                                && Self::xml_local_name(attr.key.as_ref()) == b"Ccy"
+                            {
                                 let value = attr.unescape_value().map_err(|e| {
                                     ConxianError::Compliance(format!(
                                         "Invalid XML attribute value: {e}"
@@ -387,10 +383,7 @@ impl ZkcVerifier {
                 }
                 Ok(Event::Text(e)) => {
                     let text = e
-                        .decode()
-                        .map_err(|e| ConxianError::Compliance(format!("Invalid XML text: {e}")))?;
-
-                    let text = quick_xml::escape::unescape(&text)
+                        .unescape()
                         .map_err(|e| ConxianError::Compliance(format!("Invalid XML text: {e}")))?;
                     let text = text.trim();
 
@@ -509,14 +502,6 @@ impl ZkcVerifier {
         let (int_part, frac_part) = amount.split_once('.').unwrap_or((amount, ""));
         let int_part = if int_part.is_empty() { "0" } else { int_part };
 
-        if !int_part.chars().all(|c| c.is_ascii_digit())
-            || !frac_part.chars().all(|c| c.is_ascii_digit())
-        {
-            return Err(ConxianError::Compliance(
-                "Invalid amount: must be a base-10 decimal".to_string(),
-            ));
-        }
-
         let scale = frac_part.len();
         if scale > MAX_SCALE {
             return Err(ConxianError::Compliance(
@@ -524,10 +509,18 @@ impl ZkcVerifier {
             ));
         }
 
-        let total_digits = int_part.len() + frac_part.len();
-        if total_digits > MAX_DIGITS {
+        let digits_len = int_part.len() + frac_part.len();
+        if digits_len > MAX_DIGITS {
             return Err(ConxianError::Compliance(
                 "Invalid amount: too many digits".to_string(),
+            ));
+        }
+
+        if !int_part.as_bytes().iter().all(|b| b.is_ascii_digit())
+            || !frac_part.as_bytes().iter().all(|b| b.is_ascii_digit())
+        {
+            return Err(ConxianError::Compliance(
+                "Invalid amount: must be a base-10 decimal".to_string(),
             ));
         }
 

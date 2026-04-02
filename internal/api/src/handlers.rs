@@ -39,6 +39,26 @@ fn is_json_content_type(headers: &HeaderMap) -> bool {
     content_type == "application/json" || content_type.ends_with("+json")
 }
 
+fn is_xml_content_type(headers: &HeaderMap) -> bool {
+    let Some(content_type) = headers.get(axum::http::header::CONTENT_TYPE) else {
+        return false;
+    };
+    let Ok(content_type) = content_type.to_str() else {
+        return false;
+    };
+
+    let content_type = content_type
+        .split(';')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+
+    content_type == "application/xml"
+        || content_type == "text/xml"
+        || content_type.ends_with("+xml")
+}
+
 pub async fn health_check(State(state): State<AppState>) -> Json<Value> {
     let s = state.shared.read().unwrap();
     let mut status = "healthy";
@@ -369,8 +389,16 @@ pub async fn settle_job_card(
 
 pub async fn ingress_iso20022(
     State(state): State<AppState>,
+    headers: HeaderMap,
     bytes: Bytes,
 ) -> Result<Json<conxian_core::SettlementEnvelope>, (StatusCode, Json<Value>)> {
+    if !is_xml_content_type(&headers) {
+        return Err((
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            Json(json!({ "error": "Unsupported Content-Type" })),
+        ));
+    }
+
     let raw_payload_hash = sha256_hex(&bytes);
     let xml = std::str::from_utf8(&bytes).map_err(|e| {
         (
