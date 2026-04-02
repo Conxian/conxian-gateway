@@ -8,7 +8,7 @@ use conxian_core::{
     IdentityResolutionRequest, IdentityResolutionResponse,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{json, value::RawValue, Value};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{info, warn};
 
@@ -350,22 +350,24 @@ pub async fn ingress_iso20022(
 ) -> Result<Json<conxian_core::SettlementEnvelope>, (StatusCode, Json<Value>)> {
     let signature = headers
         .get("x-iso20022-signature")
-        .and_then(|h| h.to_str().ok());
+        .and_then(|h| h.to_str().ok())
+        .ok_or((
+            StatusCode::UNAUTHORIZED,
+            Json(json!({ "error": "Missing signature" })),
+        ))?;
 
-    if let Some(sig) = signature {
-        match state.compliance.verify_ingress_signature(
-            &body,
-            sig,
-            &state.fiat_webhook_secret,
-        ) {
-            Ok(true) => (),
-            _ => {
-                warn!("ISO 20022 ingress signature verification failed");
-                return Err((
-                    StatusCode::UNAUTHORIZED,
-                    Json(json!({ "error": "Invalid signature" })),
-                ));
-            }
+    match state.compliance.verify_ingress_signature(
+        &body,
+        signature,
+        &state.settlement_ingress_secret,
+    ) {
+        Ok(true) => (),
+        _ => {
+            warn!("ISO 20022 ingress signature verification failed");
+            return Err((
+                StatusCode::UNAUTHORIZED,
+                Json(json!({ "error": "Invalid signature" })),
+            ));
         }
     }
 
@@ -386,8 +388,8 @@ pub async fn ingress_iso20022(
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct IngressRequest {
-    pub payload: Value,
-    pub signature: String,
+    pub payload: Box<RawValue>,
+    pub signature: Option<String>,
 }
 
 pub async fn ingress_papss(
@@ -398,28 +400,41 @@ pub async fn ingress_papss(
     let signature = headers
         .get("x-papss-signature")
         .and_then(|h| h.to_str().ok())
-        .unwrap_or(&request.signature);
+        .or(request.signature.as_deref())
+        .ok_or((
+            StatusCode::UNAUTHORIZED,
+            Json(json!({ "error": "Missing signature" })),
+        ))?;
 
-    let raw_payload = serde_json::to_string(&request.payload).unwrap();
+    let raw_payload = request.payload.get();
 
     match state.compliance.verify_ingress_signature(
-        &raw_payload,
+        raw_payload,
         signature,
-        &state.fiat_webhook_secret,
+        &state.settlement_ingress_secret,
     ) {
-        Ok(true) => match state.compliance.normalize_papss_ingress(&request.payload) {
-            Ok(envelope) => {
-                info!(
-                    "Successfully ingested PAPSS settlement: {}",
-                    envelope.payload.transaction_id
-                );
-                Ok(Json(envelope))
+        Ok(true) => {
+            let payload: Value = serde_json::from_str(raw_payload).map_err(|_| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({ "error": "Invalid payload" })),
+                )
+            })?;
+
+            match state.compliance.normalize_papss_ingress(&payload) {
+                Ok(envelope) => {
+                    info!(
+                        "Successfully ingested PAPSS settlement: {}",
+                        envelope.payload.transaction_id
+                    );
+                    Ok(Json(envelope))
+                }
+                Err(e) => Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({ "error": e.to_string() })),
+                )),
             }
-            Err(e) => Err((
-                StatusCode::BAD_REQUEST,
-                Json(json!({ "error": e.to_string() })),
-            )),
-        },
+        }
         _ => {
             warn!("PAPSS ingress signature verification failed");
             Err((
@@ -438,28 +453,41 @@ pub async fn ingress_brics(
     let signature = headers
         .get("x-brics-signature")
         .and_then(|h| h.to_str().ok())
-        .unwrap_or(&request.signature);
+        .or(request.signature.as_deref())
+        .ok_or((
+            StatusCode::UNAUTHORIZED,
+            Json(json!({ "error": "Missing signature" })),
+        ))?;
 
-    let raw_payload = serde_json::to_string(&request.payload).unwrap();
+    let raw_payload = request.payload.get();
 
     match state.compliance.verify_ingress_signature(
-        &raw_payload,
+        raw_payload,
         signature,
-        &state.fiat_webhook_secret,
+        &state.settlement_ingress_secret,
     ) {
-        Ok(true) => match state.compliance.normalize_brics_ingress(&request.payload) {
-            Ok(envelope) => {
-                info!(
-                    "Successfully ingested BRICS settlement: {}",
-                    envelope.payload.transaction_id
-                );
-                Ok(Json(envelope))
+        Ok(true) => {
+            let payload: Value = serde_json::from_str(raw_payload).map_err(|_| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({ "error": "Invalid payload" })),
+                )
+            })?;
+
+            match state.compliance.normalize_brics_ingress(&payload) {
+                Ok(envelope) => {
+                    info!(
+                        "Successfully ingested BRICS settlement: {}",
+                        envelope.payload.transaction_id
+                    );
+                    Ok(Json(envelope))
+                }
+                Err(e) => Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({ "error": e.to_string() })),
+                )),
             }
-            Err(e) => Err((
-                StatusCode::BAD_REQUEST,
-                Json(json!({ "error": e.to_string() })),
-            )),
-        },
+        }
         _ => {
             warn!("BRICS ingress signature verification failed");
             Err((

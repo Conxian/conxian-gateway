@@ -21,10 +21,16 @@ pub struct Config {
     pub infobip_base_url: String,
     pub hmac_secret: String,
     pub fiat_webhook_secret: String,
+    pub settlement_ingress_secret: String,
 }
 
 impl Config {
     pub fn from_env() -> Self {
+        let fiat_webhook_secret =
+            env::var("FIAT_WEBHOOK_SECRET").unwrap_or_else(|_| "default-fiat-secret".to_string());
+        let settlement_ingress_secret =
+            env::var("SETTLEMENT_INGRESS_SECRET").unwrap_or_else(|_| fiat_webhook_secret.clone());
+
         Self {
             bitcoin_rpc_url: env::var("BITCOIN_RPC_URL")
                 .unwrap_or_else(|_| "http://localhost:18332".to_string()),
@@ -66,8 +72,8 @@ impl Config {
                 .unwrap_or_else(|_| "https://api.infobip.com".to_string()),
             hmac_secret: env::var("HMAC_SECRET")
                 .unwrap_or_else(|_| "default-hmac-secret".to_string()),
-            fiat_webhook_secret: env::var("FIAT_WEBHOOK_SECRET")
-                .unwrap_or_else(|_| "default-fiat-secret".to_string()),
+            fiat_webhook_secret,
+            settlement_ingress_secret,
         }
     }
 }

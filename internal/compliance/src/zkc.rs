@@ -320,7 +320,9 @@ impl ZkcVerifier {
         let mut amount: Option<String> = None;
         let mut currency: Option<String> = None;
         let mut sender: Option<String> = None;
+        let mut sender_rank: u8 = 0;
         let mut receiver: Option<String> = None;
+        let mut receiver_rank: u8 = 0;
 
         loop {
             match reader.read_event_into(&mut buf) {
@@ -368,24 +370,44 @@ impl ZkcVerifier {
                         amount = Some(text.to_string());
                     }
 
-                    if sender.is_none()
-                        && (Self::stack_ends_with(&stack, &["DbtrAcct", "Id", "Othr", "Id"])
+                    let next_sender_rank =
+                        if Self::stack_ends_with(&stack, &["DbtrAcct", "Id", "Othr", "Id"])
                             || Self::stack_ends_with(&stack, &["DbtrAcct", "Id", "IBAN"])
-                            || Self::stack_ends_with(&stack, &["DbtrAgt", "FinInstnId", "BICFI"])
+                        {
+                            3
+                        } else if Self::stack_ends_with(&stack, &["DbtrAgt", "FinInstnId", "BICFI"])
                             || Self::stack_ends_with(&stack, &["DbtrAgt", "FinInstnId", "BIC"])
-                            || Self::stack_ends_with(&stack, &["Dbtr", "Nm"]))
-                    {
+                        {
+                            2
+                        } else if Self::stack_ends_with(&stack, &["Dbtr", "Nm"]) {
+                            1
+                        } else {
+                            0
+                        };
+
+                    if next_sender_rank > sender_rank {
                         sender = Some(text.to_string());
+                        sender_rank = next_sender_rank;
                     }
 
-                    if receiver.is_none()
-                        && (Self::stack_ends_with(&stack, &["CdtrAcct", "Id", "Othr", "Id"])
+                    let next_receiver_rank =
+                        if Self::stack_ends_with(&stack, &["CdtrAcct", "Id", "Othr", "Id"])
                             || Self::stack_ends_with(&stack, &["CdtrAcct", "Id", "IBAN"])
-                            || Self::stack_ends_with(&stack, &["CdtrAgt", "FinInstnId", "BICFI"])
+                        {
+                            3
+                        } else if Self::stack_ends_with(&stack, &["CdtrAgt", "FinInstnId", "BICFI"])
                             || Self::stack_ends_with(&stack, &["CdtrAgt", "FinInstnId", "BIC"])
-                            || Self::stack_ends_with(&stack, &["Cdtr", "Nm"]))
-                    {
+                        {
+                            2
+                        } else if Self::stack_ends_with(&stack, &["Cdtr", "Nm"]) {
+                            1
+                        } else {
+                            0
+                        };
+
+                    if next_receiver_rank > receiver_rank {
                         receiver = Some(text.to_string());
+                        receiver_rank = next_receiver_rank;
                     }
                 }
                 Ok(Event::Eof) => break,
@@ -701,5 +723,42 @@ mod tests {
         assert_eq!(envelope.payload.currency, "EUR");
         assert_eq!(envelope.payload.sender, "John Doe");
         assert_eq!(envelope.payload.receiver, "Jane Smith");
+    }
+
+    #[test]
+    fn test_normalize_iso20022_prefers_iban_over_name() {
+        let verifier = ZkcVerifier::new();
+        let xml = r#"<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pacs.008.001.08">
+            <FIToFICstmrCdtTrf>
+                <GrpHdr>
+                    <MsgId>ISO-MSG-002</MsgId>
+                </GrpHdr>
+                <CdtTrfTxInf>
+                    <IntrBkSttlmAmt Ccy="EUR">123.45</IntrBkSttlmAmt>
+                    <Dbtr>
+                        <Nm>John Doe</Nm>
+                    </Dbtr>
+                    <DbtrAcct>
+                        <Id>
+                            <IBAN>DE123</IBAN>
+                        </Id>
+                    </DbtrAcct>
+                    <Cdtr>
+                        <Nm>Jane Smith</Nm>
+                    </Cdtr>
+                    <CdtrAcct>
+                        <Id>
+                            <IBAN>FR456</IBAN>
+                        </Id>
+                    </CdtrAcct>
+                </CdtTrfTxInf>
+            </FIToFICstmrCdtTrf>
+        </Document>"#;
+
+        let envelope = verifier.normalize_iso20022_ingress(xml).unwrap();
+        assert_eq!(envelope.payload.transaction_id, "ISO-MSG-002");
+        assert_eq!(envelope.payload.currency, "EUR");
+        assert_eq!(envelope.payload.sender, "DE123");
+        assert_eq!(envelope.payload.receiver, "FR456");
     }
 }

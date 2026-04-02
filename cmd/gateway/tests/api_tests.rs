@@ -15,6 +15,7 @@ use tower::ServiceExt;
 
 const TEST_TOKEN: &str = "test-token";
 const TEST_FIAT_SECRET: &str = "test-fiat-secret";
+const TEST_SETTLEMENT_SECRET: &str = "test-settlement-secret";
 
 fn setup_app(state: SharedState) -> axum::Router {
     let app_state = AppState {
@@ -36,6 +37,7 @@ fn setup_app(state: SharedState) -> axum::Router {
         identity: Arc::new(IdentityManager::new()),
         compliance: Arc::new(ZkcVerifier::new()),
         fiat_webhook_secret: TEST_FIAT_SECRET.to_string(),
+        settlement_ingress_secret: TEST_SETTLEMENT_SECRET.to_string(),
     };
     configure_routes(app_state, TEST_TOKEN.to_string())
 }
@@ -56,6 +58,12 @@ async fn test_health_check() {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["status"], "healthy");
 }
 
 #[tokio::test]
@@ -336,12 +344,17 @@ async fn test_ingress_iso20022_authorized() {
 
     let xml_payload = "<Document xmlns=\"urn:iso:std:iso:20022:tech:xsd:pacs.008.001.08\"><FIToFICstmrCdtTrf><GrpHdr><MsgId>TX-123</MsgId></GrpHdr><CdtTrfTxInf><IntrBkSttlmAmt Ccy=\"sBTC\">0.5</IntrBkSttlmAmt><DbtrAcct><Id><Othr><Id>SENDER-AC-1</Id></Othr></Id></DbtrAcct><CdtrAcct><Id><Othr><Id>RECEIVER-AC-1</Id></Othr></Id></CdtrAcct></CdtTrfTxInf></FIToFICstmrCdtTrf></Document>";
 
+    let mut mac = Hmac::<Sha256>::new_from_slice(TEST_SETTLEMENT_SECRET.as_bytes()).unwrap();
+    mac.update(xml_payload.as_bytes());
+    let signature = hex::encode(mac.finalize().into_bytes());
+
     let response = app
         .oneshot(
             Request::builder()
                 .uri("/api/v1/ingress/iso20022")
                 .method("POST")
                 .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("x-iso20022-signature", signature)
                 .header("Content-Type", "application/xml")
                 .body(Body::from(xml_payload))
                 .unwrap(),
@@ -356,6 +369,8 @@ async fn test_ingress_iso20022_authorized() {
     let json: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["payload"]["transaction_id"], "TX-123");
     assert_eq!(json["payload"]["amount"], 0.5);
+    assert_eq!(json["payload"]["sender"], "SENDER-AC-1");
+    assert_eq!(json["payload"]["receiver"], "RECEIVER-AC-1");
 }
 
 #[tokio::test]
@@ -372,13 +387,12 @@ async fn test_ingress_papss_authorized() {
     });
 
     let raw_payload = serde_json::to_string(&inner_payload).unwrap();
-    let mut mac = Hmac::<Sha256>::new_from_slice(TEST_FIAT_SECRET.as_bytes()).unwrap();
+    let mut mac = Hmac::<Sha256>::new_from_slice(TEST_SETTLEMENT_SECRET.as_bytes()).unwrap();
     mac.update(raw_payload.as_bytes());
     let signature = hex::encode(mac.finalize().into_bytes());
 
     let payload = serde_json::json!({
-        "payload": inner_payload,
-        "signature": signature
+        "payload": inner_payload
     });
 
     let response = app
@@ -387,6 +401,7 @@ async fn test_ingress_papss_authorized() {
                 .uri("/api/v1/ingress/papss")
                 .method("POST")
                 .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("x-papss-signature", signature)
                 .header("Content-Type", "application/json")
                 .body(Body::from(serde_json::to_string(&payload).unwrap()))
                 .unwrap(),
@@ -417,13 +432,12 @@ async fn test_ingress_brics_authorized() {
     });
 
     let raw_payload = serde_json::to_string(&inner_payload).unwrap();
-    let mut mac = Hmac::<Sha256>::new_from_slice(TEST_FIAT_SECRET.as_bytes()).unwrap();
+    let mut mac = Hmac::<Sha256>::new_from_slice(TEST_SETTLEMENT_SECRET.as_bytes()).unwrap();
     mac.update(raw_payload.as_bytes());
     let signature = hex::encode(mac.finalize().into_bytes());
 
     let payload = serde_json::json!({
-        "payload": inner_payload,
-        "signature": signature
+        "payload": inner_payload
     });
 
     let response = app
@@ -432,6 +446,7 @@ async fn test_ingress_brics_authorized() {
                 .uri("/api/v1/ingress/brics")
                 .method("POST")
                 .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("x-brics-signature", signature)
                 .header("Content-Type", "application/json")
                 .body(Body::from(serde_json::to_string(&payload).unwrap()))
                 .unwrap(),
