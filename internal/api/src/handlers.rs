@@ -21,15 +21,17 @@ fn sha256_hex(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
 }
 
-fn is_json_content_type(headers: &HeaderMap) -> bool {
-    let Some(content_type) = headers.get(axum::http::header::CONTENT_TYPE) else {
-        return false;
-    };
-    let Ok(content_type) = content_type.to_str() else {
-        return false;
-    };
+fn normalized_content_type<'a>(headers: &'a HeaderMap) -> Option<&'a str> {
+    let content_type = headers.get(axum::http::header::CONTENT_TYPE)?;
+    let content_type = content_type.to_str().ok()?;
 
-    let content_type = content_type.split(';').next().unwrap_or("").trim();
+    Some(content_type.split(';').next().unwrap_or("").trim())
+}
+
+fn is_json_content_type(headers: &HeaderMap) -> bool {
+    let Some(content_type) = normalized_content_type(headers) else {
+        return false;
+    };
 
     content_type.eq_ignore_ascii_case("application/json")
         || content_type
@@ -38,23 +40,16 @@ fn is_json_content_type(headers: &HeaderMap) -> bool {
 }
 
 fn is_xml_content_type(headers: &HeaderMap) -> bool {
-    let Some(content_type) = headers.get(axum::http::header::CONTENT_TYPE) else {
-        return false;
-    };
-    let Ok(content_type) = content_type.to_str() else {
-        return false;
-    };
-
-    let content_type = content_type
-        .split(';')
-        .next()
-        .unwrap_or("")
-        .trim()
-        .to_ascii_lowercase();
-
-    content_type == "application/xml"
-        || content_type == "text/xml"
-        || content_type.ends_with("+xml")
+    match normalized_content_type(headers) {
+        None => true,
+        Some(content_type) => {
+            content_type.eq_ignore_ascii_case("application/xml")
+                || content_type.eq_ignore_ascii_case("text/xml")
+                || content_type
+                    .rsplit_once('+')
+                    .is_some_and(|(_, suffix)| suffix.eq_ignore_ascii_case("xml"))
+        }
+    }
 }
 
 pub async fn health_check(State(state): State<AppState>) -> Json<Value> {
