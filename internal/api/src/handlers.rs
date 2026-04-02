@@ -43,7 +43,7 @@ fn is_xml_content_type(headers: &HeaderMap) -> bool {
     use axum::http::header::CONTENT_TYPE;
 
     if !headers.contains_key(CONTENT_TYPE) {
-        return true;
+        return false;
     }
 
     let Some(content_type) = normalized_content_type(headers) else {
