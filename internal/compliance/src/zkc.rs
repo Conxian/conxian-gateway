@@ -1,7 +1,8 @@
 use bitcoin::hashes::{sha256, Hash};
 pub use conxian_core::{
     Attestation, BitVmAttestation, ConxianError, ConxianJobCard, ConxianResult,
-    NormalizedSettlement, SchnorrAttestation, SettlementEnvelope, SettlementSource, ZkmlProof,
+    NormalizedSettlement, SchnorrAttestation, SettlementEnvelope, SettlementSource,
+    SettlementStatus, ZkmlProof,
 };
 use quick_xml::events::Event;
 use quick_xml::Reader;
@@ -9,14 +10,16 @@ use secp256k1::schnorr::Signature as SchnorrSignature;
 use secp256k1::XOnlyPublicKey;
 use secp256k1::{ecdsa::Signature, Message, PublicKey, Secp256k1};
 use serde_json::Value;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{info, warn};
 
-#[derive(Debug)]
-struct Iso20022IngressFields {
+const SETTLEMENT_ENVELOPE_VERSION: &str = "2.0.0";
+
+struct Iso20022Fields {
     source: SettlementSource,
     transaction_id: String,
     amount: String,
-    currency: Option<String>,
+    currency: String,
     sender: String,
     receiver: String,
 }
@@ -180,117 +183,146 @@ impl ZkcVerifier {
     }
 
     /// CON-163: Add global settlement ingress normalization logic.
-    pub fn normalize_iso20022_ingress(&self, xml: &str) -> ConxianResult<SettlementEnvelope> {
+    pub fn normalize_iso20022_ingress(
+        &self,
+        xml: &str,
+        raw_payload_hash: String,
+    ) -> ConxianResult<SettlementEnvelope> {
         info!("Normalizing ISO 20022 ingress message.");
 
-        let parsed = self.parse_iso20022_ingress(xml)?;
-        let amount = parsed
-            .amount
-            .parse::<f64>()
-            .map_err(|e| ConxianError::Compliance(format!("Invalid IntrBkSttlmAmt: {}", e)))?;
-        let timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_err(|e| ConxianError::Compliance(format!("Invalid system time: {}", e)))?
+        let fields = self.parse_iso20022_fields(xml)?;
+        let (amount_minor, amount_scale) = Self::parse_amount_minor_scale(&fields.amount)?;
+
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|e| ConxianError::Compliance(format!("Invalid system time: {e}")))?
             .as_secs();
 
         let payload = NormalizedSettlement {
-            source: parsed.source,
-            transaction_id: parsed.transaction_id,
-            amount,
-            currency: parsed.currency.unwrap_or_else(|| "sBTC".to_string()),
-            sender: parsed.sender,
-            receiver: parsed.receiver,
+            source: fields.source,
+            transaction_id: fields.transaction_id,
+            amount_minor,
+            amount_scale,
+            currency: fields.currency,
+            sender: fields.sender,
+            receiver: fields.receiver,
             timestamp,
-            status: "INGESTED".to_string(),
-            raw_payload_hash: hex::encode(sha256::Hash::hash(xml.as_bytes()).to_byte_array()),
+            status: SettlementStatus::Ingested,
+            raw_payload_hash,
         };
 
         Ok(SettlementEnvelope {
-            version: "1.0.0".to_string(),
+            version: SETTLEMENT_ENVELOPE_VERSION.to_string(),
             payload,
         })
     }
 
-    pub fn normalize_papss_ingress(&self, json: &Value) -> ConxianResult<SettlementEnvelope> {
+    pub fn normalize_papss_ingress(
+        &self,
+        json: &Value,
+        raw_payload_hash: String,
+    ) -> ConxianResult<SettlementEnvelope> {
         info!("Normalizing PAPSS ingress message.");
 
         let tx_id = json["transaction_id"]
             .as_str()
             .ok_or_else(|| ConxianError::Compliance("Missing transaction_id".to_string()))?;
-        let amount = json["amount"].as_f64().unwrap_or(0.0);
+
+        let amount_value = json
+            .get("amount")
+            .ok_or_else(|| ConxianError::Compliance("Missing amount".to_string()))?;
+        let amount_str = amount_value.as_str().ok_or_else(|| {
+            ConxianError::Compliance("Invalid amount: must be a string decimal".to_string())
+        })?;
+        let (amount_minor, amount_scale) = Self::parse_amount_minor_scale(amount_str)?;
+
         let sender = json["sender_bic"]
             .as_str()
-            .unwrap_or("UNKNOWN_PAPSS_SENDER");
+            .ok_or_else(|| ConxianError::Compliance("Missing sender_bic".to_string()))?;
         let receiver = json["receiver_bic"]
             .as_str()
-            .unwrap_or("UNKNOWN_PAPSS_RECEIVER");
+            .ok_or_else(|| ConxianError::Compliance("Missing receiver_bic".to_string()))?;
+
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|e| ConxianError::Compliance(format!("Invalid system time: {e}")))?
+            .as_secs();
 
         let payload = NormalizedSettlement {
             source: SettlementSource::Papss,
             transaction_id: tx_id.to_string(),
-            amount,
+            amount_minor,
+            amount_scale,
             currency: "USD".to_string(),
             sender: sender.to_string(),
             receiver: receiver.to_string(),
-            timestamp: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
-            status: "INGESTED".to_string(),
-            raw_payload_hash: hex::encode(
-                sha256::Hash::hash(json.to_string().as_bytes()).to_byte_array(),
-            ),
+            timestamp,
+            status: SettlementStatus::Ingested,
+            raw_payload_hash,
         };
 
         Ok(SettlementEnvelope {
-            version: "1.0.0".to_string(),
+            version: SETTLEMENT_ENVELOPE_VERSION.to_string(),
             payload,
         })
     }
 
-    pub fn normalize_brics_ingress(&self, json: &Value) -> ConxianResult<SettlementEnvelope> {
+    pub fn normalize_brics_ingress(
+        &self,
+        json: &Value,
+        raw_payload_hash: String,
+    ) -> ConxianResult<SettlementEnvelope> {
         info!("Normalizing BRICS ingress message.");
 
         let tx_id = json["brics_tx_id"]
             .as_str()
             .ok_or_else(|| ConxianError::Compliance("Missing brics_tx_id".to_string()))?;
-        let amount = json["amount"].as_f64().unwrap_or(0.0);
+
+        let amount_value = json
+            .get("amount")
+            .ok_or_else(|| ConxianError::Compliance("Missing amount".to_string()))?;
+        let amount_str = amount_value.as_str().ok_or_else(|| {
+            ConxianError::Compliance("Invalid amount: must be a string decimal".to_string())
+        })?;
+        let (amount_minor, amount_scale) = Self::parse_amount_minor_scale(amount_str)?;
+
         let sender = json["origin_bank"]
             .as_str()
-            .unwrap_or("UNKNOWN_BRICS_SENDER");
+            .ok_or_else(|| ConxianError::Compliance("Missing origin_bank".to_string()))?;
         let receiver = json["target_bank"]
             .as_str()
-            .unwrap_or("UNKNOWN_BRICS_RECEIVER");
+            .ok_or_else(|| ConxianError::Compliance("Missing target_bank".to_string()))?;
+
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|e| ConxianError::Compliance(format!("Invalid system time: {e}")))?
+            .as_secs();
 
         let payload = NormalizedSettlement {
             source: SettlementSource::Brics,
             transaction_id: tx_id.to_string(),
-            amount,
+            amount_minor,
+            amount_scale,
             currency: "GOLD".to_string(),
             sender: sender.to_string(),
             receiver: receiver.to_string(),
-            timestamp: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
-            status: "INGESTED".to_string(),
-            raw_payload_hash: hex::encode(
-                sha256::Hash::hash(json.to_string().as_bytes()).to_byte_array(),
-            ),
+            timestamp,
+            status: SettlementStatus::Ingested,
+            raw_payload_hash,
         };
 
         Ok(SettlementEnvelope {
-            version: "1.0.0".to_string(),
+            version: SETTLEMENT_ENVELOPE_VERSION.to_string(),
             payload,
         })
     }
 
-    fn parse_iso20022_ingress(&self, xml: &str) -> ConxianResult<Iso20022IngressFields> {
+    fn parse_iso20022_fields(&self, xml: &str) -> ConxianResult<Iso20022Fields> {
         let mut reader = Reader::from_str(xml);
         reader.config_mut().trim_text(true);
 
         let mut buf = Vec::new();
-        let mut stack: Vec<String> = Vec::new();
+        let mut stack: Vec<Vec<u8>> = Vec::new();
 
         let mut source: Option<SettlementSource> = None;
         let mut transaction_id: Option<String> = None;
@@ -306,11 +338,33 @@ impl ZkcVerifier {
                         source = Self::iso20022_source_from_attributes(&e)?;
                     }
 
-                    let name = Self::xml_local_name(e.name().as_ref())?;
-                    if name == "IntrBkSttlmAmt" && currency.is_none() {
-                        currency = Self::attribute_value(&e, "Ccy")?;
-                    }
+                    let name = Self::xml_local_name(e.name().as_ref()).to_vec();
+                    if name.as_slice() == b"IntrBkSttlmAmt" && currency.is_none() {
+                        for attr in e.attributes().with_checks(false) {
+                            let attr = attr.map_err(|e| {
+                                ConxianError::Compliance(format!("Invalid XML attribute: {e}"))
+                            })?;
 
+                            if currency.is_none()
+                                && Self::xml_local_name(attr.key.as_ref()) == b"Ccy"
+                            {
+                                let value = attr.unescape_value().map_err(|e| {
+                                    ConxianError::Compliance(format!(
+                                        "Invalid XML attribute value: {e}"
+                                    ))
+                                })?;
+                                let ccy = value.trim();
+                                if ccy.is_empty() {
+                                    return Err(ConxianError::Compliance(
+                                        "Empty IntrBkSttlmAmt Ccy attribute".to_string(),
+                                    ));
+                                }
+
+                                currency = Some(ccy.to_string());
+                                break;
+                            }
+                        }
+                    }
                     stack.push(name);
                 }
                 Ok(Event::Empty(e)) => {
@@ -318,18 +372,43 @@ impl ZkcVerifier {
                         source = Self::iso20022_source_from_attributes(&e)?;
                     }
 
-                    let name = Self::xml_local_name(e.name().as_ref())?;
-                    if name == "IntrBkSttlmAmt" && currency.is_none() {
-                        currency = Self::attribute_value(&e, "Ccy")?;
+                    let name = Self::xml_local_name(e.name().as_ref()).to_vec();
+                    if name.as_slice() == b"IntrBkSttlmAmt" && currency.is_none() {
+                        for attr in e.attributes().with_checks(false) {
+                            let attr = attr.map_err(|e| {
+                                ConxianError::Compliance(format!("Invalid XML attribute: {e}"))
+                            })?;
+
+                            if currency.is_none()
+                                && Self::xml_local_name(attr.key.as_ref()) == b"Ccy"
+                            {
+                                let value = attr.unescape_value().map_err(|e| {
+                                    ConxianError::Compliance(format!(
+                                        "Invalid XML attribute value: {e}"
+                                    ))
+                                })?;
+                                let ccy = value.trim();
+                                if ccy.is_empty() {
+                                    return Err(ConxianError::Compliance(
+                                        "Empty IntrBkSttlmAmt Ccy attribute".to_string(),
+                                    ));
+                                }
+
+                                currency = Some(ccy.to_string());
+                                break;
+                            }
+                        }
                     }
                 }
                 Ok(Event::End(_)) => {
                     stack.pop();
                 }
-                Ok(Event::Text(t)) => {
-                    let text = t.unescape().map_err(|e| {
-                        ConxianError::Compliance(format!("Invalid XML text: {}", e))
-                    })?;
+                Ok(Event::Text(e)) => {
+                    let text = e
+                        .decode()
+                        .map_err(|e| ConxianError::Compliance(format!("Invalid XML text: {e}")))?;
+                    let text = quick_xml::escape::unescape(&text)
+                        .map_err(|e| ConxianError::Compliance(format!("Invalid XML text: {e}")))?;
                     let text = text.trim();
 
                     if text.is_empty() {
@@ -337,36 +416,35 @@ impl ZkcVerifier {
                         continue;
                     }
 
-                    if transaction_id.is_none() && stack.last().is_some_and(|n| n == "MsgId") {
+                    if transaction_id.is_none() && Self::stack_ends_with(&stack, &[b"MsgId"]) {
                         transaction_id = Some(text.to_string());
-                    }
-
-                    if amount.is_none() && stack.last().is_some_and(|n| n == "IntrBkSttlmAmt") {
+                    } else if amount.is_none()
+                        && Self::stack_ends_with(&stack, &[b"IntrBkSttlmAmt"])
+                    {
                         amount = Some(text.to_string());
-                    }
-
-                    if sender.is_none()
-                        && (Self::stack_ends_with(&stack, &["DbtrAcct", "Id", "Othr", "Id"])
-                            || Self::stack_ends_with(&stack, &["DbtrAcct", "Id", "IBAN"])
-                            || Self::stack_ends_with(&stack, &["DbtrAgt", "FinInstnId", "BICFI"]))
+                    } else if sender.is_none()
+                        && (Self::stack_ends_with(&stack, &[b"DbtrAcct", b"Id", b"Othr", b"Id"])
+                            || Self::stack_ends_with(&stack, &[b"DbtrAcct", b"Id", b"IBAN"])
+                            || Self::stack_ends_with(
+                                &stack,
+                                &[b"DbtrAgt", b"FinInstnId", b"BICFI"],
+                            ))
                     {
                         sender = Some(text.to_string());
-                    }
-
-                    if receiver.is_none()
-                        && (Self::stack_ends_with(&stack, &["CdtrAcct", "Id", "Othr", "Id"])
-                            || Self::stack_ends_with(&stack, &["CdtrAcct", "Id", "IBAN"])
-                            || Self::stack_ends_with(&stack, &["CdtrAgt", "FinInstnId", "BICFI"]))
+                    } else if receiver.is_none()
+                        && (Self::stack_ends_with(&stack, &[b"CdtrAcct", b"Id", b"Othr", b"Id"])
+                            || Self::stack_ends_with(&stack, &[b"CdtrAcct", b"Id", b"IBAN"])
+                            || Self::stack_ends_with(
+                                &stack,
+                                &[b"CdtrAgt", b"FinInstnId", b"BICFI"],
+                            ))
                     {
                         receiver = Some(text.to_string());
                     }
                 }
                 Ok(Event::Eof) => break,
                 Err(e) => {
-                    return Err(ConxianError::Compliance(format!(
-                        "Failed to parse ISO 20022 XML: {}",
-                        e
-                    )))
+                    return Err(ConxianError::Compliance(format!("Invalid XML: {e}")));
                 }
                 _ => {}
             }
@@ -374,55 +452,38 @@ impl ZkcVerifier {
             buf.clear();
         }
 
-        let source = source
-            .ok_or_else(|| ConxianError::Compliance("Unsupported ISO 20022 message".to_string()))?;
-        let transaction_id =
-            transaction_id.ok_or_else(|| ConxianError::Compliance("Missing MsgId".to_string()))?;
-        let amount =
-            amount.ok_or_else(|| ConxianError::Compliance("Missing IntrBkSttlmAmt".to_string()))?;
-        let sender =
-            sender.ok_or_else(|| ConxianError::Compliance("Missing debtor account".to_string()))?;
-        let receiver = receiver
-            .ok_or_else(|| ConxianError::Compliance("Missing creditor account".to_string()))?;
-
-        Ok(Iso20022IngressFields {
-            source,
-            transaction_id,
-            amount,
-            currency,
-            sender,
-            receiver,
+        Ok(Iso20022Fields {
+            source: source.ok_or_else(|| {
+                ConxianError::Compliance("Unsupported ISO 20022 message".to_string())
+            })?,
+            transaction_id: transaction_id
+                .ok_or_else(|| ConxianError::Compliance("Missing MsgId".to_string()))?,
+            amount: amount
+                .ok_or_else(|| ConxianError::Compliance("Missing IntrBkSttlmAmt".to_string()))?,
+            currency: currency.unwrap_or_else(|| "sBTC".to_string()),
+            sender: sender.ok_or_else(|| {
+                ConxianError::Compliance("Missing debtor account identifier".to_string())
+            })?,
+            receiver: receiver.ok_or_else(|| {
+                ConxianError::Compliance("Missing creditor account identifier".to_string())
+            })?,
         })
-    }
-
-    fn xml_local_name(qname: &[u8]) -> ConxianResult<String> {
-        let full = std::str::from_utf8(qname)
-            .map_err(|e| ConxianError::Compliance(format!("Invalid XML element name: {}", e)))?;
-        Ok(full.rsplit(':').next().unwrap_or(full).to_string())
-    }
-
-    fn stack_ends_with(stack: &[String], suffix: &[&str]) -> bool {
-        if stack.len() < suffix.len() {
-            return false;
-        }
-
-        stack
-            .iter()
-            .rev()
-            .zip(suffix.iter().rev())
-            .all(|(a, b)| a == b)
     }
 
     fn iso20022_source_from_attributes(
         e: &quick_xml::events::BytesStart<'_>,
     ) -> ConxianResult<Option<SettlementSource>> {
         for attr in e.attributes().with_checks(false) {
-            let attr = attr.map_err(|err| {
-                ConxianError::Compliance(format!("Invalid XML attribute: {}", err))
-            })?;
+            let attr = attr
+                .map_err(|err| ConxianError::Compliance(format!("Invalid XML attribute: {err}")))?;
+
             let value = attr.unescape_value().map_err(|err| {
-                ConxianError::Compliance(format!("Invalid XML attribute value: {}", err))
+                ConxianError::Compliance(format!("Invalid XML attribute value: {err}"))
             })?;
+
+            if !Self::is_relevant_iso20022_source_attr_key(attr.key.as_ref()) {
+                continue;
+            }
 
             if value.contains("pacs.008") {
                 return Ok(Some(SettlementSource::Iso20022Pacs008));
@@ -435,29 +496,95 @@ impl ZkcVerifier {
         Ok(None)
     }
 
-    fn attribute_value(
-        e: &quick_xml::events::BytesStart<'_>,
-        key: &str,
-    ) -> ConxianResult<Option<String>> {
-        for attr in e.attributes().with_checks(false) {
-            let attr = attr.map_err(|err| {
-                ConxianError::Compliance(format!("Invalid XML attribute: {}", err))
-            })?;
+    fn is_relevant_iso20022_source_attr_key(key: &[u8]) -> bool {
+        let is_xmlns = key == b"xmlns" || key.starts_with(b"xmlns:");
+        let is_schema_location = key == b"schemaLocation"
+            || key.ends_with(b":schemaLocation")
+            || key == b"noNamespaceSchemaLocation"
+            || key.ends_with(b":noNamespaceSchemaLocation");
 
-            let attr_key = std::str::from_utf8(attr.key.as_ref()).map_err(|err| {
-                ConxianError::Compliance(format!("Invalid XML attribute name: {}", err))
-            })?;
-            if attr_key != key {
-                continue;
-            }
+        is_xmlns || is_schema_location
+    }
 
-            let value = attr.unescape_value().map_err(|err| {
-                ConxianError::Compliance(format!("Invalid XML attribute value: {}", err))
-            })?;
-            return Ok(Some(value.to_string()));
+    fn parse_amount_minor_scale(amount: &str) -> ConxianResult<(u64, u32)> {
+        const MAX_SCALE: usize = 18;
+        const MAX_DIGITS: usize = 64;
+
+        let amount = amount.trim();
+        if amount.is_empty() {
+            return Err(ConxianError::Compliance("Invalid amount".to_string()));
+        }
+        if amount.starts_with('-') {
+            return Err(ConxianError::Compliance(
+                "Invalid amount: must be non-negative".to_string(),
+            ));
         }
 
-        Ok(None)
+        let amount = amount.strip_prefix('+').unwrap_or(amount);
+        let (int_part_raw, frac_part) = amount.split_once('.').unwrap_or((amount, ""));
+        if int_part_raw.is_empty() && frac_part.is_empty() {
+            return Err(ConxianError::Compliance(
+                "Invalid amount: must contain at least one digit".to_string(),
+            ));
+        }
+        let int_part = if int_part_raw.is_empty() {
+            "0"
+        } else {
+            int_part_raw
+        };
+
+        let scale = frac_part.len();
+        if scale > MAX_SCALE {
+            return Err(ConxianError::Compliance(
+                "Invalid amount: too many decimal places".to_string(),
+            ));
+        }
+
+        let digits_len = int_part.len() + frac_part.len();
+        if digits_len > MAX_DIGITS {
+            return Err(ConxianError::Compliance(
+                "Invalid amount: too many digits".to_string(),
+            ));
+        }
+
+        if !int_part.as_bytes().iter().all(|b| b.is_ascii_digit())
+            || !frac_part.as_bytes().iter().all(|b| b.is_ascii_digit())
+        {
+            return Err(ConxianError::Compliance(
+                "Invalid amount: must be a base-10 decimal".to_string(),
+            ));
+        }
+
+        let mut minor_u128 = 0u128;
+        for digit in int_part.bytes().chain(frac_part.bytes()) {
+            minor_u128 = minor_u128
+                .checked_mul(10)
+                .and_then(|n| n.checked_add((digit - b'0') as u128))
+                .ok_or_else(|| ConxianError::Compliance("Invalid amount: overflow".to_string()))?;
+        }
+
+        let minor = u64::try_from(minor_u128)
+            .map_err(|_| ConxianError::Compliance("Invalid amount: overflow".to_string()))?;
+
+        Ok((minor, scale as u32))
+    }
+
+    fn xml_local_name(name: &[u8]) -> &[u8] {
+        match name.rsplit(|b| *b == b':').next() {
+            Some(local) => local,
+            None => name,
+        }
+    }
+
+    fn stack_ends_with(stack: &[Vec<u8>], suffix: &[&[u8]]) -> bool {
+        if stack.len() < suffix.len() {
+            return false;
+        }
+
+        stack[stack.len() - suffix.len()..]
+            .iter()
+            .zip(suffix)
+            .all(|(a, b)| a.as_slice() == *b)
     }
 
     pub fn commit_to_tableland(&self, table_name: &str, _data: &str) -> ConxianResult<String> {

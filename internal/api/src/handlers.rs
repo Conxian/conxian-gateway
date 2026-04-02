@@ -1,7 +1,8 @@
 use crate::AppState;
 use axum::{
+    body::Bytes,
     extract::{Json, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
 };
 use conxian_core::{
     AttestationRequest, BitVmAttestation, ConxianJobCard, GcpTokenRequest,
@@ -9,11 +10,52 @@ use conxian_core::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::info;
 
 use crate::a2p::{OtpRequest, OtpVerificationRequest};
 use crate::fiat::{OnRampSessionRequest, OnRampSessionResponse, WebhookPayload};
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    hex::encode(Sha256::digest(bytes))
+}
+
+fn normalized_content_type(headers: &HeaderMap) -> Option<&str> {
+    let content_type = headers.get(axum::http::header::CONTENT_TYPE)?;
+    let content_type = content_type.to_str().ok()?;
+
+    Some(content_type.split(';').next().unwrap_or("").trim())
+}
+
+fn is_json_content_type(headers: &HeaderMap) -> bool {
+    let Some(content_type) = normalized_content_type(headers) else {
+        return false;
+    };
+
+    content_type.eq_ignore_ascii_case("application/json")
+        || content_type
+            .rsplit_once('+')
+            .is_some_and(|(_, suffix)| suffix.eq_ignore_ascii_case("json"))
+}
+
+fn is_xml_content_type(headers: &HeaderMap) -> bool {
+    use axum::http::header::CONTENT_TYPE;
+
+    if !headers.contains_key(CONTENT_TYPE) {
+        return false;
+    }
+
+    let Some(content_type) = normalized_content_type(headers) else {
+        return false;
+    };
+
+    content_type.eq_ignore_ascii_case("application/xml")
+        || content_type.eq_ignore_ascii_case("text/xml")
+        || content_type
+            .rsplit_once('+')
+            .is_some_and(|(_, suffix)| suffix.eq_ignore_ascii_case("xml"))
+}
 
 pub async fn health_check(State(state): State<AppState>) -> Json<Value> {
     let s = state.shared.read().unwrap();
@@ -345,9 +387,28 @@ pub async fn settle_job_card(
 
 pub async fn ingress_iso20022(
     State(state): State<AppState>,
-    body: String,
+    headers: HeaderMap,
+    bytes: Bytes,
 ) -> Result<Json<conxian_core::SettlementEnvelope>, (StatusCode, Json<Value>)> {
-    match state.compliance.normalize_iso20022_ingress(&body) {
+    if !is_xml_content_type(&headers) {
+        return Err((
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            Json(json!({ "error": "Unsupported Content-Type" })),
+        ));
+    }
+
+    let raw_payload_hash = sha256_hex(&bytes);
+    let xml = std::str::from_utf8(&bytes).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": format!("Invalid UTF-8 body: {e}") })),
+        )
+    })?;
+
+    match state
+        .compliance
+        .normalize_iso20022_ingress(xml, raw_payload_hash)
+    {
         Ok(envelope) => {
             info!(
                 "Successfully ingested ISO 20022 settlement: {}",
@@ -364,9 +425,28 @@ pub async fn ingress_iso20022(
 
 pub async fn ingress_papss(
     State(state): State<AppState>,
-    Json(payload): Json<Value>,
+    headers: HeaderMap,
+    bytes: Bytes,
 ) -> Result<Json<conxian_core::SettlementEnvelope>, (StatusCode, Json<Value>)> {
-    match state.compliance.normalize_papss_ingress(&payload) {
+    if !is_json_content_type(&headers) {
+        return Err((
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            Json(json!({ "error": "Unsupported Content-Type" })),
+        ));
+    }
+
+    let raw_payload_hash = sha256_hex(&bytes);
+    let payload: Value = serde_json::from_slice(&bytes).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": format!("Invalid JSON body: {e}") })),
+        )
+    })?;
+
+    match state
+        .compliance
+        .normalize_papss_ingress(&payload, raw_payload_hash)
+    {
         Ok(envelope) => {
             info!(
                 "Successfully ingested PAPSS settlement: {}",
@@ -383,9 +463,28 @@ pub async fn ingress_papss(
 
 pub async fn ingress_brics(
     State(state): State<AppState>,
-    Json(payload): Json<Value>,
+    headers: HeaderMap,
+    bytes: Bytes,
 ) -> Result<Json<conxian_core::SettlementEnvelope>, (StatusCode, Json<Value>)> {
-    match state.compliance.normalize_brics_ingress(&payload) {
+    if !is_json_content_type(&headers) {
+        return Err((
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            Json(json!({ "error": "Unsupported Content-Type" })),
+        ));
+    }
+
+    let raw_payload_hash = sha256_hex(&bytes);
+    let payload: Value = serde_json::from_slice(&bytes).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": format!("Invalid JSON body: {e}") })),
+        )
+    })?;
+
+    match state
+        .compliance
+        .normalize_brics_ingress(&payload, raw_payload_hash)
+    {
         Ok(envelope) => {
             info!(
                 "Successfully ingested BRICS settlement: {}",
