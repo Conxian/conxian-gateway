@@ -385,6 +385,8 @@ impl ZkcVerifier {
                     let text = e
                         .decode()
                         .map_err(|e| ConxianError::Compliance(format!("Invalid XML text: {e}")))?;
+                    let text = quick_xml::escape::unescape(&text)
+                        .map_err(|e| ConxianError::Compliance(format!("Invalid XML text: {e}")))?;
                     let text = text.trim();
 
                     if text.is_empty() {
