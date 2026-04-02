@@ -14,6 +14,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{info, warn};
 
 struct Iso20022Fields {
+    source: SettlementSource,
     transaction_id: String,
     amount: String,
     currency: String,
@@ -187,16 +188,6 @@ impl ZkcVerifier {
     ) -> ConxianResult<SettlementEnvelope> {
         info!("Normalizing ISO 20022 ingress message.");
 
-        let source = if xml.contains("pacs.008") {
-            SettlementSource::Iso20022Pacs008
-        } else if xml.contains("pacs.009") {
-            SettlementSource::Iso20022Pacs009
-        } else {
-            return Err(ConxianError::Compliance(
-                "Unsupported ISO 20022 message".to_string(),
-            ));
-        };
-
         let fields = self.parse_iso20022_fields(xml)?;
         let (amount_minor, amount_scale) = Self::parse_amount_minor_scale(&fields.amount)?;
 
@@ -206,7 +197,7 @@ impl ZkcVerifier {
             .as_secs();
 
         let payload = NormalizedSettlement {
-            source,
+            source: fields.source,
             transaction_id: fields.transaction_id,
             amount_minor,
             amount_scale,
@@ -333,6 +324,7 @@ impl ZkcVerifier {
         let mut buf = Vec::new();
         let mut stack: Vec<Vec<u8>> = Vec::new();
 
+        let mut source: Option<SettlementSource> = None;
         let mut transaction_id: Option<String> = None;
         let mut amount: Option<String> = None;
         let mut currency: Option<String> = None;
@@ -342,6 +334,10 @@ impl ZkcVerifier {
         loop {
             match reader.read_event_into(&mut buf) {
                 Ok(Event::Start(e)) => {
+                    if source.is_none() {
+                        source = Self::iso20022_source_from_attributes(&e)?;
+                    }
+
                     let name = Self::xml_local_name(e.name().as_ref()).to_vec();
                     if name.as_slice() == b"IntrBkSttlmAmt" {
                         for attr in e.attributes().with_checks(false) {
@@ -362,6 +358,10 @@ impl ZkcVerifier {
                     stack.push(name);
                 }
                 Ok(Event::Empty(e)) => {
+                    if source.is_none() {
+                        source = Self::iso20022_source_from_attributes(&e)?;
+                    }
+
                     let name = Self::xml_local_name(e.name().as_ref()).to_vec();
                     if name.as_slice() == b"IntrBkSttlmAmt" {
                         for attr in e.attributes().with_checks(false) {
@@ -417,6 +417,9 @@ impl ZkcVerifier {
         }
 
         Ok(Iso20022Fields {
+            source: source.ok_or_else(|| {
+                ConxianError::Compliance("Unsupported ISO 20022 message".to_string())
+            })?,
             transaction_id: transaction_id
                 .ok_or_else(|| ConxianError::Compliance("Missing MsgId".to_string()))?,
             amount: amount
@@ -431,6 +434,42 @@ impl ZkcVerifier {
                 ConxianError::Compliance("Missing creditor account identifier".to_string())
             })?,
         })
+    }
+
+    fn iso20022_source_from_attributes(
+        e: &quick_xml::events::BytesStart<'_>,
+    ) -> ConxianResult<Option<SettlementSource>> {
+        for attr in e.attributes().with_checks(false) {
+            let attr = attr
+                .map_err(|err| ConxianError::Compliance(format!("Invalid XML attribute: {err}")))?;
+
+            let value = attr.unescape_value().map_err(|err| {
+                ConxianError::Compliance(format!("Invalid XML attribute value: {err}"))
+            })?;
+
+            if !Self::is_relevant_iso20022_source_attr_key(attr.key.as_ref()) {
+                continue;
+            }
+
+            if value.contains("pacs.008") {
+                return Ok(Some(SettlementSource::Iso20022Pacs008));
+            }
+            if value.contains("pacs.009") {
+                return Ok(Some(SettlementSource::Iso20022Pacs009));
+            }
+        }
+
+        Ok(None)
+    }
+
+    fn is_relevant_iso20022_source_attr_key(key: &[u8]) -> bool {
+        let is_xmlns = key == b"xmlns" || key.starts_with(b"xmlns:");
+        let is_schema_location = key == b"schemaLocation"
+            || key.ends_with(b":schemaLocation")
+            || key == b"noNamespaceSchemaLocation"
+            || key.ends_with(b":noNamespaceSchemaLocation");
+
+        is_xmlns || is_schema_location
     }
 
     fn parse_amount_minor_scale(amount: &str) -> ConxianResult<(u64, u32)> {
