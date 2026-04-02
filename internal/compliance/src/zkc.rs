@@ -1,15 +1,15 @@
 use bitcoin::hashes::{sha256, Hash};
 pub use conxian_core::{
-    Attestation, BitVmAttestation, ConxianError, ConxianJobCard, ConxianResult, SchnorrAttestation,
-    NormalizedSettlement, SettlementEnvelope, SettlementSource, ZkmlProof,
+    Attestation, BitVmAttestation, ConxianError, ConxianJobCard, ConxianResult,
+    NormalizedSettlement, SchnorrAttestation, SettlementEnvelope, SettlementSource, ZkmlProof,
 };
 use quick_xml::events::Event;
 use quick_xml::Reader;
 use secp256k1::schnorr::Signature as SchnorrSignature;
 use secp256k1::XOnlyPublicKey;
 use secp256k1::{ecdsa::Signature, Message, PublicKey, Secp256k1};
-use tracing::{info, warn};
 use serde_json::Value;
+use tracing::{info, warn};
 
 #[derive(Debug)]
 struct Iso20022IngressFields {
@@ -184,9 +184,10 @@ impl ZkcVerifier {
         info!("Normalizing ISO 20022 ingress message.");
 
         let parsed = self.parse_iso20022_ingress(xml)?;
-        let amount = parsed.amount.parse::<f64>().map_err(|e| {
-            ConxianError::Compliance(format!("Invalid IntrBkSttlmAmt: {}", e))
-        })?;
+        let amount = parsed
+            .amount
+            .parse::<f64>()
+            .map_err(|e| ConxianError::Compliance(format!("Invalid IntrBkSttlmAmt: {}", e)))?;
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(|e| ConxianError::Compliance(format!("Invalid system time: {}", e)))?
@@ -213,10 +214,16 @@ impl ZkcVerifier {
     pub fn normalize_papss_ingress(&self, json: &Value) -> ConxianResult<SettlementEnvelope> {
         info!("Normalizing PAPSS ingress message.");
 
-        let tx_id = json["transaction_id"].as_str().ok_or_else(|| ConxianError::Compliance("Missing transaction_id".to_string()))?;
+        let tx_id = json["transaction_id"]
+            .as_str()
+            .ok_or_else(|| ConxianError::Compliance("Missing transaction_id".to_string()))?;
         let amount = json["amount"].as_f64().unwrap_or(0.0);
-        let sender = json["sender_bic"].as_str().unwrap_or("UNKNOWN_PAPSS_SENDER");
-        let receiver = json["receiver_bic"].as_str().unwrap_or("UNKNOWN_PAPSS_RECEIVER");
+        let sender = json["sender_bic"]
+            .as_str()
+            .unwrap_or("UNKNOWN_PAPSS_SENDER");
+        let receiver = json["receiver_bic"]
+            .as_str()
+            .unwrap_or("UNKNOWN_PAPSS_RECEIVER");
 
         let payload = NormalizedSettlement {
             source: SettlementSource::Papss,
@@ -225,9 +232,14 @@ impl ZkcVerifier {
             currency: "USD".to_string(),
             sender: sender.to_string(),
             receiver: receiver.to_string(),
-            timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
             status: "INGESTED".to_string(),
-            raw_payload_hash: hex::encode(sha256::Hash::hash(json.to_string().as_bytes()).to_byte_array()),
+            raw_payload_hash: hex::encode(
+                sha256::Hash::hash(json.to_string().as_bytes()).to_byte_array(),
+            ),
         };
 
         Ok(SettlementEnvelope {
@@ -239,10 +251,16 @@ impl ZkcVerifier {
     pub fn normalize_brics_ingress(&self, json: &Value) -> ConxianResult<SettlementEnvelope> {
         info!("Normalizing BRICS ingress message.");
 
-        let tx_id = json["brics_tx_id"].as_str().ok_or_else(|| ConxianError::Compliance("Missing brics_tx_id".to_string()))?;
+        let tx_id = json["brics_tx_id"]
+            .as_str()
+            .ok_or_else(|| ConxianError::Compliance("Missing brics_tx_id".to_string()))?;
         let amount = json["amount"].as_f64().unwrap_or(0.0);
-        let sender = json["origin_bank"].as_str().unwrap_or("UNKNOWN_BRICS_SENDER");
-        let receiver = json["target_bank"].as_str().unwrap_or("UNKNOWN_BRICS_RECEIVER");
+        let sender = json["origin_bank"]
+            .as_str()
+            .unwrap_or("UNKNOWN_BRICS_SENDER");
+        let receiver = json["target_bank"]
+            .as_str()
+            .unwrap_or("UNKNOWN_BRICS_RECEIVER");
 
         let payload = NormalizedSettlement {
             source: SettlementSource::Brics,
@@ -251,9 +269,14 @@ impl ZkcVerifier {
             currency: "GOLD".to_string(),
             sender: sender.to_string(),
             receiver: receiver.to_string(),
-            timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
             status: "INGESTED".to_string(),
-            raw_payload_hash: hex::encode(sha256::Hash::hash(json.to_string().as_bytes()).to_byte_array()),
+            raw_payload_hash: hex::encode(
+                sha256::Hash::hash(json.to_string().as_bytes()).to_byte_array(),
+            ),
         };
 
         Ok(SettlementEnvelope {
@@ -304,9 +327,9 @@ impl ZkcVerifier {
                     stack.pop();
                 }
                 Ok(Event::Text(t)) => {
-                    let text = t
-                        .unescape()
-                        .map_err(|e| ConxianError::Compliance(format!("Invalid XML text: {}", e)))?;
+                    let text = t.unescape().map_err(|e| {
+                        ConxianError::Compliance(format!("Invalid XML text: {}", e))
+                    })?;
                     let text = text.trim();
 
                     if text.is_empty() {
@@ -325,10 +348,7 @@ impl ZkcVerifier {
                     if sender.is_none()
                         && (Self::stack_ends_with(&stack, &["DbtrAcct", "Id", "Othr", "Id"])
                             || Self::stack_ends_with(&stack, &["DbtrAcct", "Id", "IBAN"])
-                            || Self::stack_ends_with(
-                                &stack,
-                                &["DbtrAgt", "FinInstnId", "BICFI"],
-                            ))
+                            || Self::stack_ends_with(&stack, &["DbtrAgt", "FinInstnId", "BICFI"]))
                     {
                         sender = Some(text.to_string());
                     }
@@ -336,10 +356,7 @@ impl ZkcVerifier {
                     if receiver.is_none()
                         && (Self::stack_ends_with(&stack, &["CdtrAcct", "Id", "Othr", "Id"])
                             || Self::stack_ends_with(&stack, &["CdtrAcct", "Id", "IBAN"])
-                            || Self::stack_ends_with(
-                                &stack,
-                                &["CdtrAgt", "FinInstnId", "BICFI"],
-                            ))
+                            || Self::stack_ends_with(&stack, &["CdtrAgt", "FinInstnId", "BICFI"]))
                     {
                         receiver = Some(text.to_string());
                     }
@@ -357,21 +374,16 @@ impl ZkcVerifier {
             buf.clear();
         }
 
-        let source = source.ok_or_else(|| {
-            ConxianError::Compliance("Unsupported ISO 20022 message".to_string())
-        })?;
-        let transaction_id = transaction_id.ok_or_else(|| {
-            ConxianError::Compliance("Missing MsgId".to_string())
-        })?;
-        let amount = amount.ok_or_else(|| {
-            ConxianError::Compliance("Missing IntrBkSttlmAmt".to_string())
-        })?;
-        let sender = sender.ok_or_else(|| {
-            ConxianError::Compliance("Missing debtor account".to_string())
-        })?;
-        let receiver = receiver.ok_or_else(|| {
-            ConxianError::Compliance("Missing creditor account".to_string())
-        })?;
+        let source = source
+            .ok_or_else(|| ConxianError::Compliance("Unsupported ISO 20022 message".to_string()))?;
+        let transaction_id =
+            transaction_id.ok_or_else(|| ConxianError::Compliance("Missing MsgId".to_string()))?;
+        let amount =
+            amount.ok_or_else(|| ConxianError::Compliance("Missing IntrBkSttlmAmt".to_string()))?;
+        let sender =
+            sender.ok_or_else(|| ConxianError::Compliance("Missing debtor account".to_string()))?;
+        let receiver = receiver
+            .ok_or_else(|| ConxianError::Compliance("Missing creditor account".to_string()))?;
 
         Ok(Iso20022IngressFields {
             source,
@@ -449,24 +461,45 @@ impl ZkcVerifier {
     }
 
     pub fn commit_to_tableland(&self, table_name: &str, _data: &str) -> ConxianResult<String> {
-        info!("Committing state to Tableland table: {} with data payload.", table_name);
-        let timestamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+        info!(
+            "Committing state to Tableland table: {} with data payload.",
+            table_name
+        );
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
         let commitment_id = format!("tbl-commitment-{}-{}", table_name, timestamp);
         Ok(commitment_id)
     }
 
     pub fn generate_mvcr(&self, nexus_id: &str, state_root: &str) -> ConxianResult<String> {
-        let timestamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
-        let report_content = format!("Nexus-ID: {}\nState-Root: {}\nTimestamp: {}\nSovereign-Status: Verified", nexus_id, state_root, timestamp);
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let report_content = format!(
+            "Nexus-ID: {}\nState-Root: {}\nTimestamp: {}\nSovereign-Status: Verified",
+            nexus_id, state_root, timestamp
+        );
         let report_hash = sha256::Hash::hash(report_content.as_bytes());
         Ok(hex::encode(report_hash.to_byte_array()))
     }
 
     pub fn format_iso20022_pacs008_v8(&self, job_card: &ConxianJobCard) -> ConxianResult<String> {
         let intent = &job_card.work_intent;
-        let town = intent.town_name.as_ref().ok_or_else(|| ConxianError::Compliance("ISO-404: Missing town_name".to_string()))?;
-        let country = intent.country_code.as_ref().ok_or_else(|| ConxianError::Compliance("ISO-404: Missing country_code".to_string()))?;
-        info!("Formatting ISO 20022 pacs.008.001.08 for job card in {}", town);
+        let town = intent
+            .town_name
+            .as_ref()
+            .ok_or_else(|| ConxianError::Compliance("ISO-404: Missing town_name".to_string()))?;
+        let country = intent
+            .country_code
+            .as_ref()
+            .ok_or_else(|| ConxianError::Compliance("ISO-404: Missing country_code".to_string()))?;
+        info!(
+            "Formatting ISO 20022 pacs.008.001.08 for job card in {}",
+            town
+        );
         Ok(format!(
             r#"<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pacs.008.001.08">
     <FIToFICstmrCdtTrf>
@@ -543,7 +576,12 @@ impl ZkcVerifier {
         </CdtTrfTxInf>
     </FIToFICstmrCdtTrf>
 </Document>"#,
-            sender, receiver, chrono::Utc::now().to_rfc3339(), amount, sender, receiver
+            sender,
+            receiver,
+            chrono::Utc::now().to_rfc3339(),
+            amount,
+            sender,
+            receiver
         )
     }
 }

@@ -1,8 +1,11 @@
-use api::configure_routes;
+use api::a2p::A2pRouter;
+use api::fiat::FiatRouter;
+use api::{configure_routes, AppState};
 use axum::{
     body::Body,
     http::{Request, StatusCode},
 };
+use compliance::{IdentityManager, ZkcVerifier};
 use conxian_core::{GatewayState, SharedState};
 use serde_json::Value;
 use std::sync::{Arc, RwLock};
@@ -10,10 +13,34 @@ use tower::ServiceExt; // for `oneshot` and `ready`
 
 const TEST_TOKEN: &str = "test-token";
 
+fn setup_app(state: SharedState) -> axum::Router {
+    let app_state = AppState {
+        shared: state,
+        fiat: Arc::new(FiatRouter::new(
+            "test-key".to_string(),
+            "id".to_string(),
+            "secret".to_string(),
+            "ap-id".to_string(),
+            "ap-secret".to_string(),
+            "banxa-key".to_string(),
+            "banxa-secret".to_string(),
+        )),
+        a2p: Arc::new(A2pRouter::new(
+            "key".to_string(),
+            "url".to_string(),
+            "secret".to_string(),
+        )),
+        identity: Arc::new(IdentityManager::new()),
+        compliance: Arc::new(ZkcVerifier::new()),
+        fiat_webhook_secret: "test-fiat-secret".to_string(),
+    };
+    configure_routes(app_state, TEST_TOKEN.to_string())
+}
+
 #[tokio::test]
 async fn test_health_check() {
     let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
-    let app = configure_routes(state, TEST_TOKEN.to_string());
+    let app = setup_app(state);
 
     let response = app
         .oneshot(
@@ -31,7 +58,7 @@ async fn test_health_check() {
 #[tokio::test]
 async fn test_get_state_unauthorized() {
     let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
-    let app = configure_routes(state, TEST_TOKEN.to_string());
+    let app = setup_app(state);
 
     let response = app
         .oneshot(
@@ -55,7 +82,7 @@ async fn test_get_state_authorized() {
         s.bitcoin.status = "testing".to_string();
     }
 
-    let app = configure_routes(state, TEST_TOKEN.to_string());
+    let app = setup_app(state);
 
     let response = app
         .oneshot(
@@ -82,7 +109,7 @@ async fn test_get_state_authorized() {
 #[tokio::test]
 async fn test_verify_attestation_authorized() {
     let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
-    let app = configure_routes(state, TEST_TOKEN.to_string());
+    let app = setup_app(state);
 
     let response = app
         .oneshot(
@@ -102,17 +129,13 @@ async fn test_verify_attestation_authorized() {
         .await
         .unwrap();
 
-    // Since it's an invalid signature, it should return 400 or something,
-    // but the handler returns Result<Json<Value>, Json<Value>>.
-    // In Axum, Err(Json(Value)) returns 500 by default unless specified.
-    // Let's check what the handler does.
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]
 async fn test_verify_schnorr_attestation_authorized() {
     let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
-    let app = configure_routes(state, TEST_TOKEN.to_string());
+    let app = setup_app(state);
 
     let response = app
         .oneshot(
@@ -141,7 +164,7 @@ async fn test_verify_schnorr_attestation_authorized() {
 #[tokio::test]
 async fn test_metrics_endpoint() {
     let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
-    let app = configure_routes(state, TEST_TOKEN.to_string());
+    let app = setup_app(state);
 
     let response = app
         .oneshot(
@@ -167,7 +190,7 @@ async fn test_metrics_endpoint() {
 #[tokio::test]
 async fn test_version_endpoint() {
     let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
-    let app = configure_routes(state, TEST_TOKEN.to_string());
+    let app = setup_app(state);
 
     let response = app
         .oneshot(
@@ -189,7 +212,7 @@ async fn test_version_endpoint() {
 #[tokio::test]
 async fn test_erp_sync_authorized() {
     let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
-    let app = configure_routes(state, TEST_TOKEN.to_string());
+    let app = setup_app(state);
 
     let response = app
         .oneshot(
@@ -225,7 +248,7 @@ async fn test_erp_sync_authorized() {
 #[tokio::test]
 async fn test_settle_job_card_authorized() {
     let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
-    let app = configure_routes(state, TEST_TOKEN.to_string());
+    let app = setup_app(state);
 
     let response = app
         .oneshot(
@@ -266,7 +289,7 @@ async fn test_settle_job_card_authorized() {
 #[tokio::test]
 async fn test_iso_payment_v8_authorized() {
     let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
-    let app = configure_routes(state, TEST_TOKEN.to_string());
+    let app = setup_app(state);
 
     let response = app
         .oneshot(
@@ -306,7 +329,7 @@ async fn test_iso_payment_v8_authorized() {
 #[tokio::test]
 async fn test_ingress_iso20022_authorized() {
     let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
-    let app = configure_routes(state, TEST_TOKEN.to_string());
+    let app = setup_app(state);
 
     let xml_payload = "<Document xmlns=\"urn:iso:std:iso:20022:tech:xsd:pacs.008.001.08\"><FIToFICstmrCdtTrf><GrpHdr><MsgId>TX-123</MsgId></GrpHdr><CdtTrfTxInf><IntrBkSttlmAmt Ccy=\"sBTC\">0.5</IntrBkSttlmAmt><DbtrAcct><Id><Othr><Id>SENDER-AC-1</Id></Othr></Id></DbtrAcct><CdtrAcct><Id><Othr><Id>RECEIVER-AC-1</Id></Othr></Id></CdtrAcct></CdtTrfTxInf></FIToFICstmrCdtTrf></Document>";
 
@@ -336,7 +359,7 @@ async fn test_ingress_iso20022_authorized() {
 #[tokio::test]
 async fn test_ingress_papss_authorized() {
     let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
-    let app = configure_routes(state, TEST_TOKEN.to_string());
+    let app = setup_app(state);
 
     let payload = serde_json::json!({
         "transaction_id": "PAPSS-456",
@@ -370,7 +393,7 @@ async fn test_ingress_papss_authorized() {
 #[tokio::test]
 async fn test_ingress_brics_authorized() {
     let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
-    let app = configure_routes(state, TEST_TOKEN.to_string());
+    let app = setup_app(state);
 
     let payload = serde_json::json!({
         "brics_tx_id": "BRICS-789",

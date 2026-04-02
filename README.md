@@ -50,6 +50,17 @@ The following environment variables can be used to configure the gateway:
 - `API_TOKEN`: Bearer token for institutional API access (default: institutional-default-token)
 - `BITCOIN_SYNC_INTERVAL`: Sync interval for Bitcoin (default: 10s)
 - `STACKS_SYNC_INTERVAL`: Sync interval for Stacks (default: 30s)
+- `RAMP_API_KEY`: API key for Ramp Network integration.
+- `INVESTEC_CLIENT_ID`: Client ID for Investec Open Banking.
+- `INVESTEC_SECRET`: Client secret for Investec Open Banking.
+- `ALCHEMY_PAY_APP_ID`: App ID for Alchemy Pay.
+- `ALCHEMY_PAY_SECRET`: App secret for Alchemy Pay.
+- `BANXA_API_KEY`: API key for Banxa.
+- `BANXA_SECRET`: API secret for Banxa.
+- `INFOBIP_API_KEY`: API key for Infobip A2P messaging.
+- `INFOBIP_BASE_URL`: Base URL for Infobip API.
+- `HMAC_SECRET`: Secret used for stateless OTP HMAC generation.
+- `FIAT_WEBHOOK_SECRET`: Secret used for verifying fiat provider webhooks.
 
 ## Getting Started
 ```bash

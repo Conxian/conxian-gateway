@@ -1,6 +1,9 @@
 mod config;
 
-use api::configure_routes;
+use api::a2p::A2pRouter;
+use api::fiat::FiatRouter;
+use api::{configure_routes, AppState};
+use compliance::{IdentityManager, ZkcVerifier};
 use config::Config;
 use conxian_core::persistence::FilePersistence;
 use conxian_core::{GatewayState, Persistence, SharedState};
@@ -67,6 +70,36 @@ async fn main() -> anyhow::Result<()> {
     // Initialize NTT Relayer
     let ntt_relayer = NttRelayer::new(state.clone(), 30);
 
+    // Initialize Institutional Service Routers (Industry Enhancement: CON-41, CON-66)
+    let fiat_router = Arc::new(FiatRouter::new(
+        config.ramp_api_key.clone(),
+        config.investec_client_id.clone(),
+        config.investec_secret.clone(),
+        config.alchemy_pay_app_id.clone(),
+        config.alchemy_pay_secret.clone(),
+        config.banxa_api_key.clone(),
+        config.banxa_secret.clone(),
+    ));
+
+    let a2p_router = Arc::new(A2pRouter::new(
+        config.infobip_api_key.clone(),
+        config.infobip_base_url.clone(),
+        config.hmac_secret.clone(),
+    ));
+
+    let identity_manager = Arc::new(IdentityManager::new());
+    let zkc_verifier = Arc::new(ZkcVerifier::new());
+
+    // Create AppState
+    let app_state = AppState {
+        shared: state.clone(),
+        fiat: fiat_router,
+        a2p: a2p_router,
+        identity: identity_manager,
+        compliance: zkc_verifier,
+        fiat_webhook_secret: config.fiat_webhook_secret.clone(),
+    };
+
     // Create a cancellation token for graceful shutdown of listeners
     let (shutdown_tx, _) = tokio::sync::broadcast::channel::<()>(1);
 
@@ -127,7 +160,7 @@ async fn main() -> anyhow::Result<()> {
     });
 
     // Configure and start API server
-    let app = configure_routes(state, config.api_token);
+    let app = configure_routes(app_state, config.api_token);
     let addr = SocketAddr::from(([0, 0, 0, 0], config.api_port));
     info!("API server listening on {}", addr);
 
