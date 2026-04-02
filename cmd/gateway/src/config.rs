@@ -20,6 +20,7 @@ pub struct Config {
     pub infobip_api_key: String,
     pub infobip_base_url: String,
     pub hmac_secret: String,
+    pub fiat_webhook_secret: String,
 }
 
 impl Config {
@@ -65,6 +66,8 @@ impl Config {
                 .unwrap_or_else(|_| "https://api.infobip.com".to_string()),
             hmac_secret: env::var("HMAC_SECRET")
                 .unwrap_or_else(|_| "default-hmac-secret".to_string()),
+            fiat_webhook_secret: env::var("FIAT_WEBHOOK_SECRET")
+                .unwrap_or_else(|_| "default-fiat-secret".to_string()),
         }
     }
 }

@@ -62,6 +62,7 @@ Conxian is designed to capture the Total Addressable Market (TAM) of Bitcoin-nat
     - Exposed /fiat/session and /fiat/webhook endpoints for institutional workflows.
 - 2026-03-25: A2P & NTT Enhancement (Jules):
 - 2026-03-26: Institutional Hardening & CJCS v2.0 (Jules):
+    - Refactored API layer to use dependency injection via `AppState`, removing hardcoded mocks.
     - Integrated CJCS v2.0 JSON-LD into core SDK for labor orchestration.
     - Implemented BitVM2 verification floor for trustless Job Card settlement.
     - Developed OData v4 ERP translation layer simulation for SAP/Oracle.
