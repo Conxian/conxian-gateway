@@ -40,16 +40,21 @@ fn is_json_content_type(headers: &HeaderMap) -> bool {
 }
 
 fn is_xml_content_type(headers: &HeaderMap) -> bool {
-    match normalized_content_type(headers) {
-        None => true,
-        Some(content_type) => {
-            content_type.eq_ignore_ascii_case("application/xml")
-                || content_type.eq_ignore_ascii_case("text/xml")
-                || content_type
-                    .rsplit_once('+')
-                    .is_some_and(|(_, suffix)| suffix.eq_ignore_ascii_case("xml"))
-        }
+    use axum::http::header::CONTENT_TYPE;
+
+    if !headers.contains_key(CONTENT_TYPE) {
+        return true;
     }
+
+    let Some(content_type) = normalized_content_type(headers) else {
+        return false;
+    };
+
+    content_type.eq_ignore_ascii_case("application/xml")
+        || content_type.eq_ignore_ascii_case("text/xml")
+        || content_type
+            .rsplit_once('+')
+            .is_some_and(|(_, suffix)| suffix.eq_ignore_ascii_case("xml"))
 }
 
 pub async fn health_check(State(state): State<AppState>) -> Json<Value> {
