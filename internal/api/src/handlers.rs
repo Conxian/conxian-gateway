@@ -33,7 +33,8 @@ fn is_json_content_type(headers: &HeaderMap) -> bool {
         .split(';')
         .next()
         .unwrap_or(content_type)
-        .trim();
+        .trim()
+        .to_ascii_lowercase();
 
     content_type == "application/json" || content_type.ends_with("+json")
 }
