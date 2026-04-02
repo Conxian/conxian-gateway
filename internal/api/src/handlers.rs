@@ -29,14 +29,12 @@ fn is_json_content_type(headers: &HeaderMap) -> bool {
         return false;
     };
 
-    let content_type = content_type
-        .split(';')
-        .next()
-        .unwrap_or("")
-        .trim()
-        .to_ascii_lowercase();
+    let content_type = content_type.split(';').next().unwrap_or("").trim();
 
-    content_type == "application/json" || content_type.ends_with("+json")
+    content_type.eq_ignore_ascii_case("application/json")
+        || content_type
+            .rsplit_once('+')
+            .is_some_and(|(_, suffix)| suffix.eq_ignore_ascii_case("json"))
 }
 
 fn is_xml_content_type(headers: &HeaderMap) -> bool {
