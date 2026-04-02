@@ -21,7 +21,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
 }
 
-fn normalized_content_type<'a>(headers: &'a HeaderMap) -> Option<&'a str> {
+fn normalized_content_type(headers: &HeaderMap) -> Option<&str> {
     let content_type = headers.get(axum::http::header::CONTENT_TYPE)?;
     let content_type = content_type.to_str().ok()?;
 
