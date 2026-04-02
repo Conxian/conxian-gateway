@@ -15,6 +15,8 @@ use tracing::{info, warn};
 
 type HmacSha256 = Hmac<Sha256>;
 
+const INGRESS_SIGNATURE_HEX_LEN: usize = 64;
+
 #[derive(Debug)]
 struct Iso20022IngressFields {
     source: SettlementSource,
@@ -224,7 +226,7 @@ impl ZkcVerifier {
             return Ok(false);
         }
 
-        if signature.len() != 64 {
+        if signature.len() != INGRESS_SIGNATURE_HEX_LEN {
             return Ok(false);
         }
 
