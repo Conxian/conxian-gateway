@@ -355,7 +355,9 @@ impl ZkcVerifier {
                                 })?;
                                 let ccy = value.trim();
                                 if ccy.is_empty() {
-                                    continue;
+                                    return Err(ConxianError::Compliance(
+                                        "Empty IntrBkSttlmAmt Ccy attribute".to_string(),
+                                    ));
                                 }
 
                                 currency = Some(ccy.to_string());
@@ -387,7 +389,9 @@ impl ZkcVerifier {
                                 })?;
                                 let ccy = value.trim();
                                 if ccy.is_empty() {
-                                    continue;
+                                    return Err(ConxianError::Compliance(
+                                        "Empty IntrBkSttlmAmt Ccy attribute".to_string(),
+                                    ));
                                 }
 
                                 currency = Some(ccy.to_string());
