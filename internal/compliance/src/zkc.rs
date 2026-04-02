@@ -456,9 +456,7 @@ impl ZkcVerifier {
                 .ok_or_else(|| ConxianError::Compliance("Missing MsgId".to_string()))?,
             amount: amount
                 .ok_or_else(|| ConxianError::Compliance("Missing IntrBkSttlmAmt".to_string()))?,
-            currency: currency.ok_or_else(|| {
-                ConxianError::Compliance("Missing IntrBkSttlmAmt Ccy".to_string())
-            })?,
+            currency: currency.unwrap_or_else(|| "sBTC".to_string()),
             sender: sender.ok_or_else(|| {
                 ConxianError::Compliance("Missing debtor account identifier".to_string())
             })?,
