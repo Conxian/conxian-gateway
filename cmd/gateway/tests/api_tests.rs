@@ -354,8 +354,8 @@ async fn test_ingress_iso20022_authorized() {
                 .uri("/api/v1/ingress/iso20022")
                 .method("POST")
                 .header("Authorization", format!("Bearer {}", TEST_TOKEN))
-                .header("x-iso20022-signature", signature)
                 .header("Content-Type", "application/xml")
+                .header("x-iso20022-signature", signature)
                 .body(Body::from(xml_payload))
                 .unwrap(),
         )
@@ -390,7 +390,6 @@ async fn test_ingress_papss_authorized() {
     let mut mac = Hmac::<Sha256>::new_from_slice(TEST_SETTLEMENT_SECRET.as_bytes()).unwrap();
     mac.update(raw_payload.as_bytes());
     let signature = hex::encode(mac.finalize().into_bytes());
-
     let payload = serde_json::json!({
         "payload": inner_payload
     });
@@ -401,8 +400,8 @@ async fn test_ingress_papss_authorized() {
                 .uri("/api/v1/ingress/papss")
                 .method("POST")
                 .header("Authorization", format!("Bearer {}", TEST_TOKEN))
-                .header("x-papss-signature", signature)
                 .header("Content-Type", "application/json")
+                .header("x-papss-signature", signature)
                 .body(Body::from(serde_json::to_string(&payload).unwrap()))
                 .unwrap(),
         )
@@ -435,7 +434,6 @@ async fn test_ingress_brics_authorized() {
     let mut mac = Hmac::<Sha256>::new_from_slice(TEST_SETTLEMENT_SECRET.as_bytes()).unwrap();
     mac.update(raw_payload.as_bytes());
     let signature = hex::encode(mac.finalize().into_bytes());
-
     let payload = serde_json::json!({
         "payload": inner_payload
     });
@@ -446,8 +444,8 @@ async fn test_ingress_brics_authorized() {
                 .uri("/api/v1/ingress/brics")
                 .method("POST")
                 .header("Authorization", format!("Bearer {}", TEST_TOKEN))
-                .header("x-brics-signature", signature)
                 .header("Content-Type", "application/json")
+                .header("x-brics-signature", signature)
                 .body(Body::from(serde_json::to_string(&payload).unwrap()))
                 .unwrap(),
         )
