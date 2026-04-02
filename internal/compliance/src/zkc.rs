@@ -1,4 +1,5 @@
 use bitcoin::hashes::{sha256, Hash};
+use conxian_core::SETTLEMENT_ENVELOPE_VERSION_V2;
 pub use conxian_core::{
     Attestation, BitVmAttestation, ConxianError, ConxianJobCard, ConxianResult,
     NormalizedSettlement, SchnorrAttestation, SettlementEnvelope, SettlementSource,
@@ -12,8 +13,6 @@ use secp256k1::{ecdsa::Signature, Message, PublicKey, Secp256k1};
 use serde_json::Value;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{info, warn};
-
-const SETTLEMENT_ENVELOPE_VERSION: &str = "2.0.0";
 
 struct Iso20022Fields {
     source: SettlementSource,
@@ -212,7 +211,7 @@ impl ZkcVerifier {
         };
 
         Ok(SettlementEnvelope {
-            version: SETTLEMENT_ENVELOPE_VERSION.to_string(),
+            version: SETTLEMENT_ENVELOPE_VERSION_V2.to_string(),
             payload,
         })
     }
@@ -262,7 +261,7 @@ impl ZkcVerifier {
         };
 
         Ok(SettlementEnvelope {
-            version: SETTLEMENT_ENVELOPE_VERSION.to_string(),
+            version: SETTLEMENT_ENVELOPE_VERSION_V2.to_string(),
             payload,
         })
     }
@@ -312,7 +311,7 @@ impl ZkcVerifier {
         };
 
         Ok(SettlementEnvelope {
-            version: SETTLEMENT_ENVELOPE_VERSION.to_string(),
+            version: SETTLEMENT_ENVELOPE_VERSION_V2.to_string(),
             payload,
         })
     }

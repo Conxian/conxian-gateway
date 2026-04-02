@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+pub const SETTLEMENT_ENVELOPE_VERSION_V2: &str = "2.0.0";
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum SettlementSource {
     Iso20022Pacs008,
