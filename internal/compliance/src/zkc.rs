@@ -384,9 +384,9 @@ impl ZkcVerifier {
                     stack.pop();
                 }
                 Ok(Event::Text(e)) => {
-                    let text = e.unescape().map_err(|e| {
-                        ConxianError::Compliance(format!("Invalid XML text: {e}"))
-                    })?;
+                    let text = e
+                        .decode()
+                        .map_err(|e| ConxianError::Compliance(format!("Invalid XML text: {e}")))?;
                     let text = text.trim();
 
                     if text.is_empty() {
