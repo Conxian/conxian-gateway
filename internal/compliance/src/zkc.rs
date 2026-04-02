@@ -353,7 +353,12 @@ impl ZkcVerifier {
                                         "Invalid XML attribute value: {e}"
                                     ))
                                 })?;
-                                currency = Some(value.into_owned());
+                                let ccy = value.trim();
+                                if ccy.is_empty() {
+                                    continue;
+                                }
+
+                                currency = Some(ccy.to_string());
                                 break;
                             }
                         }
@@ -380,7 +385,12 @@ impl ZkcVerifier {
                                         "Invalid XML attribute value: {e}"
                                     ))
                                 })?;
-                                currency = Some(value.into_owned());
+                                let ccy = value.trim();
+                                if ccy.is_empty() {
+                                    continue;
+                                }
+
+                                currency = Some(ccy.to_string());
                                 break;
                             }
                         }
