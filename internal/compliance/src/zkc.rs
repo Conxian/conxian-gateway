@@ -13,6 +13,8 @@ use serde_json::Value;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{info, warn};
 
+const SETTLEMENT_ENVELOPE_VERSION: &str = "2.0.0";
+
 struct Iso20022Fields {
     source: SettlementSource,
     transaction_id: String,
@@ -210,7 +212,7 @@ impl ZkcVerifier {
         };
 
         Ok(SettlementEnvelope {
-            version: "2.0.0".to_string(),
+            version: SETTLEMENT_ENVELOPE_VERSION.to_string(),
             payload,
         })
     }
@@ -230,7 +232,7 @@ impl ZkcVerifier {
             .get("amount")
             .ok_or_else(|| ConxianError::Compliance("Missing amount".to_string()))?;
         let amount_str = amount_value.as_str().ok_or_else(|| {
-            ConxianError::Compliance("Invalid amount (must be a string decimal)".to_string())
+            ConxianError::Compliance("Invalid amount: must be a string decimal".to_string())
         })?;
         let (amount_minor, amount_scale) = Self::parse_amount_minor_scale(amount_str)?;
 
@@ -260,7 +262,7 @@ impl ZkcVerifier {
         };
 
         Ok(SettlementEnvelope {
-            version: "2.0.0".to_string(),
+            version: SETTLEMENT_ENVELOPE_VERSION.to_string(),
             payload,
         })
     }
@@ -280,7 +282,7 @@ impl ZkcVerifier {
             .get("amount")
             .ok_or_else(|| ConxianError::Compliance("Missing amount".to_string()))?;
         let amount_str = amount_value.as_str().ok_or_else(|| {
-            ConxianError::Compliance("Invalid amount (must be a string decimal)".to_string())
+            ConxianError::Compliance("Invalid amount: must be a string decimal".to_string())
         })?;
         let (amount_minor, amount_scale) = Self::parse_amount_minor_scale(amount_str)?;
 
@@ -310,7 +312,7 @@ impl ZkcVerifier {
         };
 
         Ok(SettlementEnvelope {
-            version: "2.0.0".to_string(),
+            version: SETTLEMENT_ENVELOPE_VERSION.to_string(),
             payload,
         })
     }
@@ -507,8 +509,17 @@ impl ZkcVerifier {
         }
 
         let amount = amount.strip_prefix('+').unwrap_or(amount);
-        let (int_part, frac_part) = amount.split_once('.').unwrap_or((amount, ""));
-        let int_part = if int_part.is_empty() { "0" } else { int_part };
+        let (int_part_raw, frac_part) = amount.split_once('.').unwrap_or((amount, ""));
+        if int_part_raw.is_empty() && frac_part.is_empty() {
+            return Err(ConxianError::Compliance(
+                "Invalid amount: must contain at least one digit".to_string(),
+            ));
+        }
+        let int_part = if int_part_raw.is_empty() {
+            "0"
+        } else {
+            int_part_raw
+        };
 
         let scale = frac_part.len();
         if scale > MAX_SCALE {
