@@ -226,16 +226,13 @@ impl ZkcVerifier {
             .as_str()
             .ok_or_else(|| ConxianError::Compliance("Missing transaction_id".to_string()))?;
 
-        let amount_str = match json.get("amount") {
-            Some(Value::String(s)) => s.clone(),
-            Some(Value::Number(n)) => n.to_string(),
-            _ => {
-                return Err(ConxianError::Compliance(
-                    "Missing amount (must be a string decimal or JSON number)".to_string(),
-                ));
-            }
-        };
-        let (amount_minor, amount_scale) = Self::parse_amount_minor_scale(&amount_str)?;
+        let amount_value = json
+            .get("amount")
+            .ok_or_else(|| ConxianError::Compliance("Missing amount".to_string()))?;
+        let amount_str = amount_value.as_str().ok_or_else(|| {
+            ConxianError::Compliance("Invalid amount (must be a string decimal)".to_string())
+        })?;
+        let (amount_minor, amount_scale) = Self::parse_amount_minor_scale(amount_str)?;
 
         let sender = json["sender_bic"]
             .as_str()
@@ -279,16 +276,13 @@ impl ZkcVerifier {
             .as_str()
             .ok_or_else(|| ConxianError::Compliance("Missing brics_tx_id".to_string()))?;
 
-        let amount_str = match json.get("amount") {
-            Some(Value::String(s)) => s.clone(),
-            Some(Value::Number(n)) => n.to_string(),
-            _ => {
-                return Err(ConxianError::Compliance(
-                    "Missing amount (must be a string decimal or JSON number)".to_string(),
-                ));
-            }
-        };
-        let (amount_minor, amount_scale) = Self::parse_amount_minor_scale(&amount_str)?;
+        let amount_value = json
+            .get("amount")
+            .ok_or_else(|| ConxianError::Compliance("Missing amount".to_string()))?;
+        let amount_str = amount_value.as_str().ok_or_else(|| {
+            ConxianError::Compliance("Invalid amount (must be a string decimal)".to_string())
+        })?;
+        let (amount_minor, amount_scale) = Self::parse_amount_minor_scale(amount_str)?;
 
         let sender = json["origin_bank"]
             .as_str()
