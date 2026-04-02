@@ -3,13 +3,17 @@ pub use conxian_core::{
     Attestation, BitVmAttestation, ConxianError, ConxianJobCard, ConxianResult,
     NormalizedSettlement, SchnorrAttestation, SettlementEnvelope, SettlementSource, ZkmlProof,
 };
+use hmac::{Hmac, Mac};
 use quick_xml::events::Event;
 use quick_xml::Reader;
 use secp256k1::schnorr::Signature as SchnorrSignature;
 use secp256k1::XOnlyPublicKey;
 use secp256k1::{ecdsa::Signature, Message, PublicKey, Secp256k1};
 use serde_json::Value;
+use sha2::Sha256;
 use tracing::{info, warn};
+
+type HmacSha256 = Hmac<Sha256>;
 
 #[derive(Debug)]
 struct Iso20022IngressFields {
@@ -126,7 +130,6 @@ impl ZkcVerifier {
         Ok(true)
     }
 
-    /// CON-75: Wire the BitVM2 verification floor for Job Card settlement.
     pub fn verify_job_card_settlement(
         &self,
         job_card: &ConxianJobCard,
@@ -211,6 +214,26 @@ impl ZkcVerifier {
         })
     }
 
+    pub fn verify_ingress_signature(
+        &self,
+        raw_payload: &str,
+        signature: &str,
+        secret: &str,
+    ) -> ConxianResult<bool> {
+        if signature.is_empty() {
+            return Ok(false);
+        }
+
+        let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
+            .map_err(|e| ConxianError::Security(format!("HMAC error: {}", e)))?;
+        mac.update(raw_payload.as_bytes());
+
+        let sig_bytes = hex::decode(signature)
+            .map_err(|e| ConxianError::Security(format!("Invalid signature hex: {}", e)))?;
+
+        Ok(mac.verify_slice(&sig_bytes).is_ok())
+    }
+
     pub fn normalize_papss_ingress(&self, json: &Value) -> ConxianResult<SettlementEnvelope> {
         info!("Normalizing PAPSS ingress message.");
 
@@ -229,7 +252,7 @@ impl ZkcVerifier {
             source: SettlementSource::Papss,
             transaction_id: tx_id.to_string(),
             amount,
-            currency: "USD".to_string(),
+            currency: json["currency"].as_str().unwrap_or("USD").to_string(),
             sender: sender.to_string(),
             receiver: receiver.to_string(),
             timestamp: std::time::SystemTime::now()
@@ -266,7 +289,7 @@ impl ZkcVerifier {
             source: SettlementSource::Brics,
             transaction_id: tx_id.to_string(),
             amount,
-            currency: "GOLD".to_string(),
+            currency: json["currency"].as_str().unwrap_or("GOLD").to_string(),
             sender: sender.to_string(),
             receiver: receiver.to_string(),
             timestamp: std::time::SystemTime::now()
@@ -348,7 +371,9 @@ impl ZkcVerifier {
                     if sender.is_none()
                         && (Self::stack_ends_with(&stack, &["DbtrAcct", "Id", "Othr", "Id"])
                             || Self::stack_ends_with(&stack, &["DbtrAcct", "Id", "IBAN"])
-                            || Self::stack_ends_with(&stack, &["DbtrAgt", "FinInstnId", "BICFI"]))
+                            || Self::stack_ends_with(&stack, &["DbtrAgt", "FinInstnId", "BICFI"])
+                            || Self::stack_ends_with(&stack, &["DbtrAgt", "FinInstnId", "BIC"])
+                            || Self::stack_ends_with(&stack, &["Dbtr", "Nm"]))
                     {
                         sender = Some(text.to_string());
                     }
@@ -356,7 +381,9 @@ impl ZkcVerifier {
                     if receiver.is_none()
                         && (Self::stack_ends_with(&stack, &["CdtrAcct", "Id", "Othr", "Id"])
                             || Self::stack_ends_with(&stack, &["CdtrAcct", "Id", "IBAN"])
-                            || Self::stack_ends_with(&stack, &["CdtrAgt", "FinInstnId", "BICFI"]))
+                            || Self::stack_ends_with(&stack, &["CdtrAgt", "FinInstnId", "BICFI"])
+                            || Self::stack_ends_with(&stack, &["CdtrAgt", "FinInstnId", "BIC"])
+                            || Self::stack_ends_with(&stack, &["Cdtr", "Nm"]))
                     {
                         receiver = Some(text.to_string());
                     }
@@ -583,5 +610,96 @@ impl ZkcVerifier {
             sender,
             receiver
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_normalize_papss_ingress_with_signature() {
+        let verifier = ZkcVerifier::new();
+        let secret = "test-secret";
+        let payload = json!({
+            "transaction_id": "papss-123",
+            "amount": 1000.50,
+            "currency": "USD",
+            "sender_bic": "SENDERBIC",
+            "receiver_bic": "RECEIVERBIC"
+        });
+        let raw_payload = serde_json::to_string(&payload).unwrap();
+
+        let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).unwrap();
+        mac.update(raw_payload.as_bytes());
+        let signature = hex::encode(mac.finalize().into_bytes());
+
+        let valid = verifier
+            .verify_ingress_signature(&raw_payload, &signature, secret)
+            .unwrap();
+        assert!(valid);
+
+        let envelope = verifier.normalize_papss_ingress(&payload).unwrap();
+        assert_eq!(envelope.payload.transaction_id, "papss-123");
+        assert_eq!(envelope.payload.amount, 1000.50);
+        assert_eq!(envelope.payload.currency, "USD");
+        assert_eq!(envelope.payload.sender, "SENDERBIC");
+    }
+
+    #[test]
+    fn test_normalize_brics_ingress_with_signature() {
+        let verifier = ZkcVerifier::new();
+        let secret = "brics-secret";
+        let payload = json!({
+            "brics_tx_id": "brics-999",
+            "amount": 50.0,
+            "currency": "CNY",
+            "origin_bank": "BANKA",
+            "target_bank": "BANKB"
+        });
+        let raw_payload = serde_json::to_string(&payload).unwrap();
+
+        let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).unwrap();
+        mac.update(raw_payload.as_bytes());
+        let signature = hex::encode(mac.finalize().into_bytes());
+
+        let valid = verifier
+            .verify_ingress_signature(&raw_payload, &signature, secret)
+            .unwrap();
+        assert!(valid);
+
+        let envelope = verifier.normalize_brics_ingress(&payload).unwrap();
+        assert_eq!(envelope.payload.transaction_id, "brics-999");
+        assert_eq!(envelope.payload.amount, 50.0);
+        assert_eq!(envelope.payload.currency, "CNY");
+    }
+
+    #[test]
+    fn test_normalize_iso20022_pacs008_ingress() {
+        let verifier = ZkcVerifier::new();
+        let xml = r#"<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pacs.008.001.08">
+            <FIToFICstmrCdtTrf>
+                <GrpHdr>
+                    <MsgId>ISO-MSG-001</MsgId>
+                </GrpHdr>
+                <CdtTrfTxInf>
+                    <IntrBkSttlmAmt Ccy="EUR">123.45</IntrBkSttlmAmt>
+                    <Dbtr>
+                        <Nm>John Doe</Nm>
+                    </Dbtr>
+                    <Cdtr>
+                        <Nm>Jane Smith</Nm>
+                    </Cdtr>
+                </CdtTrfTxInf>
+            </FIToFICstmrCdtTrf>
+        </Document>"#;
+
+        let envelope = verifier.normalize_iso20022_ingress(xml).unwrap();
+        assert_eq!(envelope.payload.transaction_id, "ISO-MSG-001");
+        assert_eq!(envelope.payload.amount, 123.45);
+        assert_eq!(envelope.payload.currency, "EUR");
+        assert_eq!(envelope.payload.sender, "John Doe");
+        assert_eq!(envelope.payload.receiver, "Jane Smith");
     }
 }
