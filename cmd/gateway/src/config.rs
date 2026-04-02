@@ -1,5 +1,8 @@
 use std::env;
 
+const FIAT_WEBHOOK_SECRET_SENTINEL: &str = "CHANGEME_FIAT_WEBHOOK_SECRET";
+const SETTLEMENT_INGRESS_SECRET_SENTINEL: &str = "CHANGEME_SETTLEMENT_INGRESS_SECRET";
+
 #[allow(dead_code)]
 pub struct Config {
     pub bitcoin_rpc_url: String,
@@ -26,10 +29,30 @@ pub struct Config {
 
 impl Config {
     pub fn from_env() -> Self {
-        let fiat_webhook_secret =
-            env::var("FIAT_WEBHOOK_SECRET").unwrap_or_else(|_| "default-fiat-secret".to_string());
-        let settlement_ingress_secret =
-            env::var("SETTLEMENT_INGRESS_SECRET").unwrap_or_else(|_| fiat_webhook_secret.clone());
+        let fiat_webhook_secret = env::var("FIAT_WEBHOOK_SECRET")
+            .expect("FIAT_WEBHOOK_SECRET must be set (and should be a strong random secret)");
+        let settlement_ingress_secret = env::var("SETTLEMENT_INGRESS_SECRET")
+            .expect("SETTLEMENT_INGRESS_SECRET must be set (and should be a strong random secret)");
+
+        if fiat_webhook_secret.trim().is_empty()
+            || fiat_webhook_secret == FIAT_WEBHOOK_SECRET_SENTINEL
+        {
+            panic!(
+                "FIAT_WEBHOOK_SECRET must be a non-empty secret (not {FIAT_WEBHOOK_SECRET_SENTINEL})"
+            );
+        }
+
+        if settlement_ingress_secret.trim().is_empty()
+            || settlement_ingress_secret == SETTLEMENT_INGRESS_SECRET_SENTINEL
+        {
+            panic!(
+                "SETTLEMENT_INGRESS_SECRET must be a non-empty secret (not {SETTLEMENT_INGRESS_SECRET_SENTINEL})"
+            );
+        }
+
+        if settlement_ingress_secret == fiat_webhook_secret {
+            panic!("SETTLEMENT_INGRESS_SECRET must be distinct from FIAT_WEBHOOK_SECRET");
+        }
 
         Self {
             bitcoin_rpc_url: env::var("BITCOIN_RPC_URL")
