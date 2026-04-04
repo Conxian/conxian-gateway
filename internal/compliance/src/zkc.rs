@@ -342,9 +342,8 @@ impl ZkcVerifier {
         }
 
         if Self::is_even_len_hex(encoded) {
-            return Err(ConxianError::Compliance(format!(
-                "Invalid {label}: hex must be prefixed with 0x"
-            )));
+            return hex::decode(encoded)
+                .map_err(|e| ConxianError::Compliance(format!("Invalid {label} hex: {e}")));
         }
 
         BASE64_STANDARD
