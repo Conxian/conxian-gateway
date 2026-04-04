@@ -61,12 +61,11 @@ fn is_xml_content_type(headers: &HeaderMap) -> bool {
 
 async fn record_settlement(state: &AppState, envelope: &SettlementEnvelope) {
     let mut log = state.settlement_log.write().await;
+    log.push_back(envelope.clone());
 
-    while log.len() >= SETTLEMENT_LOG_MAX_ENTRIES {
+    while log.len() > SETTLEMENT_LOG_MAX_ENTRIES {
         log.pop_front();
     }
-
-    log.push_back(envelope.clone());
 }
 
 pub async fn get_external_settlements(
