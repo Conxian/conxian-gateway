@@ -22,7 +22,7 @@ use secp256k1::{ecdsa::Signature, Message, PublicKey, Secp256k1};
 use serde_json::Value;
 use sha2::Sha256;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tracing::info;
+use tracing::{debug, info};
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -117,7 +117,10 @@ impl ZkcVerifier {
 
                 self.verify_schnorr(attestation)
             }
-            _ => Ok(false),
+            _ => {
+                debug!("Unsupported TEE attestation type for settlement triggers");
+                Ok(false)
+            }
         }
     }
 
