@@ -1,5 +1,5 @@
 use bitcoin::hashes::{sha256, Hash};
-use conxian_core::SETTLEMENT_ENVELOPE_VERSION_V2;
+use conxian_core::SETTLEMENT_ENVELOPE_VERSION_CURRENT;
 pub use conxian_core::{
     Attestation, BitVmAttestation, ConxianError, ConxianJobCard, ConxianResult,
     NormalizedSettlement, SchnorrAttestation, SettlementEnvelope, SettlementSource,
@@ -211,7 +211,7 @@ impl ZkcVerifier {
         };
 
         Ok(SettlementEnvelope {
-            version: SETTLEMENT_ENVELOPE_VERSION_V2.to_string(),
+            version: SETTLEMENT_ENVELOPE_VERSION_CURRENT.to_string(),
             payload,
         })
     }
@@ -261,7 +261,7 @@ impl ZkcVerifier {
         };
 
         Ok(SettlementEnvelope {
-            version: SETTLEMENT_ENVELOPE_VERSION_V2.to_string(),
+            version: SETTLEMENT_ENVELOPE_VERSION_CURRENT.to_string(),
             payload,
         })
     }
@@ -311,7 +311,7 @@ impl ZkcVerifier {
         };
 
         Ok(SettlementEnvelope {
-            version: SETTLEMENT_ENVELOPE_VERSION_V2.to_string(),
+            version: SETTLEMENT_ENVELOPE_VERSION_CURRENT.to_string(),
             payload,
         })
     }
