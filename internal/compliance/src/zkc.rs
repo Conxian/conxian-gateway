@@ -194,7 +194,6 @@ impl ZkcVerifier {
         }
 
         let receipt_journal_digest = sha256::Hash::hash(&receipt.journal.bytes);
-
         let raw_journal_bytes = proof.journal.as_bytes();
         let raw_journal_digest = sha256::Hash::hash(raw_journal_bytes);
         if receipt_journal_digest != raw_journal_digest {
@@ -210,13 +209,37 @@ impl ZkcVerifier {
             }
         }
 
-        let public_inputs_bytes = proof.public_inputs.as_bytes();
-        let public_inputs_hash = sha256::Hash::hash(public_inputs_bytes);
-        let public_inputs_hash_hex = hex::encode(public_inputs_hash.to_byte_array());
+        let receipt_journal = receipt.journal.bytes.as_slice();
+        let public_inputs_raw = proof.public_inputs.as_bytes();
+        let public_inputs_raw_hash_hex =
+            hex::encode(sha256::Hash::hash(public_inputs_raw).to_byte_array());
 
-        if !Self::contains_subslice(&receipt.journal.bytes, public_inputs_bytes)
-            && !Self::contains_subslice(&receipt.journal.bytes, public_inputs_hash_hex.as_bytes())
-        {
+        let mut public_inputs_ok = Self::contains_subslice(receipt_journal, public_inputs_raw)
+            || Self::contains_subslice(receipt_journal, public_inputs_raw_hash_hex.as_bytes());
+
+        if !public_inputs_ok {
+            let public_inputs_decoded = if proof.public_inputs.trim().starts_with("0x") {
+                Some(Self::decode_base64_or_hex(
+                    "public_inputs",
+                    &proof.public_inputs,
+                )?)
+            } else {
+                Self::decode_base64_or_hex("public_inputs", &proof.public_inputs).ok()
+            };
+
+            if let Some(public_inputs_decoded) = public_inputs_decoded {
+                let public_inputs_decoded_hash_hex =
+                    hex::encode(sha256::Hash::hash(&public_inputs_decoded).to_byte_array());
+                public_inputs_ok =
+                    Self::contains_subslice(receipt_journal, public_inputs_decoded.as_slice())
+                        || Self::contains_subslice(
+                            receipt_journal,
+                            public_inputs_decoded_hash_hex.as_bytes(),
+                        );
+            }
+        }
+
+        if !public_inputs_ok {
             return Err(ConxianError::Compliance(
                 "ZKML verification failed: journal missing public input commitment".to_string(),
             ));
@@ -267,7 +290,6 @@ impl ZkcVerifier {
                     "Invalid {label} hex: expected even-length hex string"
                 )));
             }
-
             return hex::decode(hex_with_prefix)
                 .map_err(|e| ConxianError::Compliance(format!("Invalid {label} hex: {e}")));
         }
@@ -303,13 +325,7 @@ impl ZkcVerifier {
         if needle.is_empty() {
             return true;
         }
-        if needle.len() > haystack.len() {
-            return false;
-        }
-
-        haystack
-            .windows(needle.len())
-            .any(|window| window == needle)
+        memchr::memmem::find(haystack, needle).is_some()
     }
 
     fn is_even_len_hex(value: &str) -> bool {
