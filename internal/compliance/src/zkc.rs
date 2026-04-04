@@ -153,24 +153,14 @@ impl ZkcVerifier {
         }
 
         let receipt_hash = proof.receipt_hash.trim();
-        if receipt_hash.len() != 64
-            || !receipt_hash
-                .as_bytes()
-                .iter()
-                .all(|b| b.is_ascii_hexdigit())
-        {
+        if !Self::is_32_byte_hex(receipt_hash) {
             return Err(ConxianError::Compliance(
                 "Invalid receipt_hash: expected 32-byte hex string".to_string(),
             ));
         }
 
         let image_id_hex = proof.image_id.trim().trim_start_matches("0x");
-        if image_id_hex.len() != 64
-            || !image_id_hex
-                .as_bytes()
-                .iter()
-                .all(|b| b.is_ascii_hexdigit())
-        {
+        if !Self::is_32_byte_hex(image_id_hex) {
             return Err(ConxianError::Compliance(
                 "Invalid image_id: expected 32-byte hex string".to_string(),
             ));
@@ -310,6 +300,10 @@ impl ZkcVerifier {
         haystack
             .windows(needle.len())
             .any(|window| window == needle)
+    }
+
+    fn is_32_byte_hex(value: &str) -> bool {
+        value.len() == 64 && value.as_bytes().iter().all(|b| b.is_ascii_hexdigit())
     }
 
     pub fn verify_job_card_settlement(
