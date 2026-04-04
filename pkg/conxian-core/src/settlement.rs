@@ -140,17 +140,13 @@ impl NormalizedSettlement {
             return false;
         };
 
-        (self.amount_minor as u128) >= threshold_minor
+        u128::from(self.amount_minor) >= threshold_minor
     }
 }
 
 fn institutional_threshold_minor(scale: u32) -> Option<u128> {
-    if scale > 38 {
-        return None;
-    }
-
-    let factor = 10u128.pow(scale);
-    Some((INSTITUTIONAL_ZAR_THRESHOLD_MAJOR as u128) * factor)
+    let factor = 10u128.checked_pow(scale)?;
+    (INSTITUTIONAL_ZAR_THRESHOLD_MAJOR as u128).checked_mul(factor)
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
