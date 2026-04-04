@@ -239,7 +239,10 @@ impl ZkcVerifier {
             hex::encode(sha256::Hash::hash(public_inputs_raw).to_byte_array());
 
         let mut public_inputs_ok = Self::contains_subslice(receipt_journal, public_inputs_raw)
-            || Self::contains_subslice(receipt_journal, public_inputs_raw_hash_hex.as_bytes());
+            || Self::contains_subslice_ascii_case_insensitive(
+                receipt_journal,
+                public_inputs_raw_hash_hex.as_bytes(),
+            );
 
         if !public_inputs_ok {
             let public_inputs_decoded =
@@ -250,7 +253,7 @@ impl ZkcVerifier {
                     hex::encode(sha256::Hash::hash(&public_inputs_decoded).to_byte_array());
                 public_inputs_ok =
                     Self::contains_subslice(receipt_journal, public_inputs_decoded.as_slice())
-                        || Self::contains_subslice(
+                        || Self::contains_subslice_ascii_case_insensitive(
                             receipt_journal,
                             public_inputs_decoded_hash_hex.as_bytes(),
                         );
@@ -336,6 +339,37 @@ impl ZkcVerifier {
             return true;
         }
         memchr::memmem::find(haystack, needle).is_some()
+    }
+
+    fn contains_subslice_ascii_case_insensitive(haystack: &[u8], needle: &[u8]) -> bool {
+        if needle.is_empty() {
+            return true;
+        }
+
+        if needle.len() > haystack.len() {
+            return false;
+        }
+
+        let first = needle[0];
+        let first_lower = first.to_ascii_lowercase();
+        let first_upper = first.to_ascii_uppercase();
+
+        let max_start = haystack.len() - needle.len();
+        let mut i = 0;
+        while i <= max_start {
+            let Some(rel) = memchr::memchr2(first_lower, first_upper, &haystack[i..=max_start])
+            else {
+                return false;
+            };
+            let pos = i + rel;
+
+            if haystack[pos..pos + needle.len()].eq_ignore_ascii_case(needle) {
+                return true;
+            }
+            i = pos + 1;
+        }
+
+        false
     }
 
     fn is_even_len_hex(value: &str) -> bool {
