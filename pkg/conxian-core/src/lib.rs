@@ -128,6 +128,12 @@ pub enum AttestationRequest {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ZkmlProof {
     pub device_id: String,
+    /// The RISC Zero image ID (program digest) the receipt must verify against.
+    /// Hex encoded (32 bytes / 64 hex chars).
+    pub image_id: String,
+    /// The zkVM receipt containing the proof/seal + journal.
+    /// Encoded as base64 (preferred) or hex.
+    pub receipt: String,
     pub receipt_hash: String,
     pub public_inputs: String,
     pub journal: String,

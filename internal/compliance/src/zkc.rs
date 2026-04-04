@@ -1,20 +1,26 @@
 use bitcoin::hashes::{sha256, Hash};
+use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
+use base64::Engine;
+use borsh::BorshDeserialize;
 use conxian_core::SETTLEMENT_ENVELOPE_VERSION_CURRENT;
 pub use conxian_core::{
     Attestation, BitVmAttestation, ConxianError, ConxianJobCard, ConxianResult,
     NormalizedSettlement, SchnorrAttestation, SettlementEnvelope, SettlementSource,
     SettlementStatus, ZkmlProof,
 };
+use hex::FromHex;
 use hmac::{Hmac, Mac};
 use quick_xml::events::Event;
 use quick_xml::Reader;
+use risc0_zkvm::sha::Digest as Risc0Digest;
+use risc0_zkvm::Receipt;
 use secp256k1::schnorr::Signature as SchnorrSignature;
 use secp256k1::XOnlyPublicKey;
 use secp256k1::{ecdsa::Signature, Message, PublicKey, Secp256k1};
 use serde_json::Value;
 use sha2::Sha256;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tracing::{info, warn};
+use tracing::info;
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -146,23 +152,137 @@ impl ZkcVerifier {
             ));
         }
 
-        let combined = format!(
-            "{}:{}:{}",
-            proof.public_inputs, proof.journal, proof.device_id
-        );
-        let computed_hash = hex::encode(sha256::Hash::hash(combined.as_bytes()).to_byte_array());
-
-        if computed_hash != proof.receipt_hash {
-            warn!(
-                "ZKML mismatch: expected {}, got {}",
-                computed_hash, proof.receipt_hash
-            );
+        if proof.receipt_hash.len() != 64
+            || !proof.receipt_hash.as_bytes().iter().all(|b| b.is_ascii_hexdigit())
+        {
             return Err(ConxianError::Compliance(
-                "ZKML verification failed: receipt hash mismatch".to_string(),
+                "Invalid receipt_hash: expected 32-byte hex string".to_string(),
+            ));
+        }
+
+        let image_id_hex = proof.image_id.trim().trim_start_matches("0x");
+        let image_id = Risc0Digest::from_hex(image_id_hex).map_err(|e| {
+            ConxianError::Compliance(format!("Invalid image_id hex: {e}"))
+        })?;
+
+        let receipt_bytes = Self::decode_base64_or_hex("receipt", &proof.receipt)?;
+        let computed_receipt_hash =
+            hex::encode(sha256::Hash::hash(&receipt_bytes).to_byte_array());
+        if computed_receipt_hash != proof.receipt_hash {
+            return Err(ConxianError::Compliance(
+                "ZKML verification failed: receipt_hash mismatch".to_string(),
+            ));
+        }
+
+        let receipt = Self::decode_risc0_receipt(&receipt_bytes)?;
+        receipt
+            .verify(image_id)
+            .map_err(|e| ConxianError::Compliance(format!("ZKML receipt verify failed: {e}")))?;
+
+        if proof.public_inputs.is_empty() {
+            return Err(ConxianError::Compliance(
+                "ZKML verification failed: public_inputs cannot be empty".to_string(),
+            ));
+        }
+
+        if proof.journal.is_empty() {
+            return Err(ConxianError::Compliance(
+                "ZKML verification failed: journal cannot be empty".to_string(),
+            ));
+        }
+
+        let claimed_journal_bytes = Self::decode_base64_or_hex("journal", &proof.journal)
+            .unwrap_or_else(|_| proof.journal.as_bytes().to_vec());
+
+        let receipt_journal_digest = sha256::Hash::hash(&receipt.journal.bytes);
+        let claimed_journal_digest = sha256::Hash::hash(&claimed_journal_bytes);
+        if receipt_journal_digest != claimed_journal_digest {
+            return Err(ConxianError::Compliance(
+                "ZKML verification failed: journal mismatch".to_string(),
+            ));
+        }
+
+        let public_inputs_bytes = proof.public_inputs.as_bytes();
+        let public_inputs_hash = sha256::Hash::hash(public_inputs_bytes);
+        let public_inputs_hash_hex = hex::encode(public_inputs_hash.to_byte_array());
+
+        if !Self::contains_subslice(&receipt.journal.bytes, public_inputs_bytes)
+            && !Self::contains_subslice(&receipt.journal.bytes, public_inputs_hash_hex.as_bytes())
+        {
+            return Err(ConxianError::Compliance(
+                "ZKML verification failed: journal missing public input commitment".to_string(),
             ));
         }
 
         Ok(true)
+    }
+
+    fn decode_base64_or_hex(label: &str, encoded: &str) -> ConxianResult<Vec<u8>> {
+        const MAX_ENCODED_LEN: usize = 4 * 1024 * 1024;
+
+        let encoded = encoded.trim();
+        if encoded.is_empty() {
+            return Err(ConxianError::Compliance(format!(
+                "Invalid {label}: cannot be empty"
+            )));
+        }
+
+        if encoded.len() > MAX_ENCODED_LEN {
+            return Err(ConxianError::Compliance(format!(
+                "Invalid {label}: payload too large"
+            )));
+        }
+
+        let maybe_hex = encoded.trim_start_matches("0x");
+        if maybe_hex.len() % 2 == 0 && maybe_hex.as_bytes().iter().all(|b| b.is_ascii_hexdigit()) {
+            return hex::decode(maybe_hex).map_err(|e| {
+                ConxianError::Compliance(format!("Invalid {label} hex: {e}"))
+            });
+        }
+
+        BASE64_STANDARD
+            .decode(encoded)
+            .map_err(|e| ConxianError::Compliance(format!("Invalid {label} base64: {e}")))
+    }
+
+    fn decode_risc0_receipt(bytes: &[u8]) -> ConxianResult<Receipt> {
+        if let Ok(receipt) = Receipt::try_from_slice(bytes) {
+            return Ok(receipt);
+        }
+
+        let words = Self::bytes_to_words_le(bytes)?;
+        risc0_zkvm::serde::from_slice::<Receipt, u32>(&words).map_err(|e| {
+            ConxianError::Compliance(format!("Invalid receipt encoding: {e}"))
+        })
+    }
+
+    fn bytes_to_words_le(bytes: &[u8]) -> ConxianResult<Vec<u32>> {
+        if bytes.len() % 4 != 0 {
+            return Err(ConxianError::Compliance(
+                "Invalid receipt encoding: expected 4-byte word alignment".to_string(),
+            ));
+        }
+
+        let mut words = Vec::with_capacity(bytes.len() / 4);
+        for chunk in bytes.chunks_exact(4) {
+            words.push(u32::from_le_bytes([
+                chunk[0], chunk[1], chunk[2], chunk[3],
+            ]));
+        }
+        Ok(words)
+    }
+
+    fn contains_subslice(haystack: &[u8], needle: &[u8]) -> bool {
+        if needle.is_empty() {
+            return true;
+        }
+        if needle.len() > haystack.len() {
+            return false;
+        }
+
+        haystack
+            .windows(needle.len())
+            .any(|window| window == needle)
     }
 
     pub fn verify_job_card_settlement(
