@@ -61,20 +61,25 @@ fn is_xml_content_type(headers: &HeaderMap) -> bool {
 }
 
 async fn record_settlement(state: &AppState, proposal: &SettlementProposal) {
+    let proposal = proposal.clone();
     let mut log = state.settlement_log.write().await;
+    log.push_back(proposal);
 
-    while log.len() >= SETTLEMENT_LOG_MAX_ENTRIES {
+    while log.len() > SETTLEMENT_LOG_MAX_ENTRIES {
         log.pop_front();
     }
-
-    log.push_back(proposal.clone());
 }
 
 pub async fn get_external_settlements(
     State(state): State<AppState>,
 ) -> Json<Vec<SettlementProposal>> {
-    let log = state.settlement_log.read().await;
-    Json(log.iter().cloned().collect())
+) -> Json<Vec<SettlementProposal>> {
+    let items = {
+        let log = state.settlement_log.read().await;
+        log.iter().cloned().collect()
+    };
+
+    Json(items)
 }
 
 fn extract_tee_attestation(
