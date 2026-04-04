@@ -94,36 +94,30 @@ impl ZkcVerifier {
         attestation: &AttestationRequest,
         raw_payload_hash: &str,
     ) -> ConxianResult<bool> {
+        fn is_tee_device_id(device_id: &str) -> bool {
+            device_id.starts_with("conxius-tee-")
+        }
+
         match attestation {
             AttestationRequest::Ecdsa(attestation) => {
-                if !attestation.device_id.starts_with("conxius-tee-") {
-                    return Err(ConxianError::Compliance(
-                        "Invalid TEE device ID: must start with 'conxius-tee-'".to_string(),
-                    ));
-                }
-
-                if attestation.payload != raw_payload_hash {
+                if !is_tee_device_id(&attestation.device_id)
+                    || attestation.payload != raw_payload_hash
+                {
                     return Ok(false);
                 }
 
                 self.verify(attestation)
             }
             AttestationRequest::Schnorr(attestation) => {
-                if !attestation.device_id.starts_with("conxius-tee-") {
-                    return Err(ConxianError::Compliance(
-                        "Invalid TEE device ID: must start with 'conxius-tee-'".to_string(),
-                    ));
-                }
-
-                if attestation.payload != raw_payload_hash {
+                if !is_tee_device_id(&attestation.device_id)
+                    || attestation.payload != raw_payload_hash
+                {
                     return Ok(false);
                 }
 
                 self.verify_schnorr(attestation)
             }
-            _ => Err(ConxianError::Compliance(
-                "Unsupported TEE attestation type for settlement triggers".to_string(),
-            )),
+            _ => Ok(false),
         }
     }
 
