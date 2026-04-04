@@ -19,3 +19,7 @@ tokio = { workspace = true, features = ["full"] }
 quick-xml = "0.38.1"
 hmac = "0.12.1"
 sha2 = "0.10.8"
+risc0-zkvm = { version = "5.0.0-rc.1", default-features = false, features = ["std"] }
+base64 = "0.22.1"
+borsh = "1.5.5"
+memchr = "2.8.0"
