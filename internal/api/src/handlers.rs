@@ -6,13 +6,13 @@ use axum::{
 };
 use conxian_core::{
     AttestationRequest, BitVmAttestation, ConxianJobCard, GcpTokenRequest,
-    IdentityResolutionRequest, IdentityResolutionResponse, SettlementProposal,
+    IdentityResolutionRequest, IdentityResolutionResponse, SettlementEnvelope, SettlementProposal,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use crate::a2p::{OtpRequest, OtpVerificationRequest};
 use crate::fiat::{OnRampSessionRequest, OnRampSessionResponse, WebhookPayload};
@@ -151,6 +151,38 @@ fn get_stacks_burn_block_height(state: &AppState) -> Result<u64, (StatusCode, Js
         (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(json!({ "error": "Stacks burn block height unavailable" })),
+        )
+    })
+}
+
+fn current_unix_timestamp() -> Result<u64, std::time::SystemTimeError> {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+}
+
+fn current_unix_timestamp_http() -> Result<u64, (StatusCode, Json<Value>)> {
+    current_unix_timestamp().map_err(|e| {
+        error!("System clock error: {e}");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": "System clock error" })),
+        )
+    })
+}
+
+fn build_settlement_proposal(
+    state: &AppState,
+    envelope: SettlementEnvelope,
+    tee_attestation: AttestationRequest,
+) -> Result<SettlementProposal, (StatusCode, Json<Value>)> {
+    let stacks_burn_block_height = get_stacks_burn_block_height(state)?;
+    let now = current_unix_timestamp_http()?;
+    SettlementProposal::new(envelope, tee_attestation, stacks_burn_block_height, now).map_err(|e| {
+        error!("Failed to create settlement proposal: {e}");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": "Failed to create settlement proposal" })),
         )
     })
 }
@@ -534,25 +566,7 @@ pub async fn ingress_iso20022(
         .normalize_iso20022_ingress(xml, raw_payload_hash)
     {
         Ok(envelope) => {
-            let stacks_burn_block_height = get_stacks_burn_block_height(&state)?;
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map_err(|_| {
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(json!({ "error": "System clock error" })),
-                    )
-                })?
-                .as_secs();
-            let proposal =
-                SettlementProposal::new(envelope, tee_attestation, stacks_burn_block_height, now)
-                    .map_err(|e| {
-                    warn!("Failed to create settlement proposal: {e}");
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(json!({ "error": "Failed to create settlement proposal" })),
-                    )
-                })?;
+            let proposal = build_settlement_proposal(&state, envelope, tee_attestation)?;
             info!(
                 "Successfully ingested ISO 20022 settlement: {}",
                 proposal.envelope.payload.transaction_id
@@ -626,25 +640,7 @@ pub async fn ingress_papss(
         .normalize_papss_ingress(payload.get("payload").unwrap_or(&payload), raw_payload_hash)
     {
         Ok(envelope) => {
-            let stacks_burn_block_height = get_stacks_burn_block_height(&state)?;
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map_err(|_| {
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(json!({ "error": "System clock error" })),
-                    )
-                })?
-                .as_secs();
-            let proposal =
-                SettlementProposal::new(envelope, tee_attestation, stacks_burn_block_height, now)
-                    .map_err(|e| {
-                    warn!("Failed to create settlement proposal: {e}");
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(json!({ "error": "Failed to create settlement proposal" })),
-                    )
-                })?;
+            let proposal = build_settlement_proposal(&state, envelope, tee_attestation)?;
             info!(
                 "Successfully ingested PAPSS settlement: {}",
                 proposal.envelope.payload.transaction_id
@@ -718,25 +714,7 @@ pub async fn ingress_brics(
         .normalize_brics_ingress(payload.get("payload").unwrap_or(&payload), raw_payload_hash)
     {
         Ok(envelope) => {
-            let stacks_burn_block_height = get_stacks_burn_block_height(&state)?;
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map_err(|_| {
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(json!({ "error": "System clock error" })),
-                    )
-                })?
-                .as_secs();
-            let proposal =
-                SettlementProposal::new(envelope, tee_attestation, stacks_burn_block_height, now)
-                    .map_err(|e| {
-                    warn!("Failed to create settlement proposal: {e}");
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(json!({ "error": "Failed to create settlement proposal" })),
-                    )
-                })?;
+            let proposal = build_settlement_proposal(&state, envelope, tee_attestation)?;
             info!(
                 "Successfully ingested BRICS settlement: {}",
                 proposal.envelope.payload.transaction_id

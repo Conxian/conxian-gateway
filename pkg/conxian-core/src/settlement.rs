@@ -208,20 +208,22 @@ impl SettlementProposal {
         stacks_burn_block_height: u64,
         created_at: u64,
     ) -> ConxianResult<Self> {
-        let timelock_release_burn_block_height =
-            if envelope.payload.requires_institutional_timelock() {
-                Some(
+        let timelock_release_burn_block_height = if envelope
+            .payload
+            .requires_institutional_timelock()
+        {
+            Some(
                     stacks_burn_block_height
                         .checked_add(INSTITUTIONAL_TIMELOCK_BURN_BLOCKS)
                         .ok_or_else(|| {
-                            ConxianError::Internal(
-                                "Burn-block timelock release height overflow".to_string(),
-                            )
+                            ConxianError::Internal(format!(
+                                "Burn-block timelock release height overflow (base={stacks_burn_block_height}, delta={INSTITUTIONAL_TIMELOCK_BURN_BLOCKS})"
+                            ))
                         })?,
                 )
-            } else {
-                None
-            };
+        } else {
+            None
+        };
 
         let state = if timelock_release_burn_block_height.is_some() {
             SettlementProposalState::Timelocked
