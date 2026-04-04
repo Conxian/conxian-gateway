@@ -217,8 +217,7 @@ impl ZkcVerifier {
         let raw_journal_bytes = journal_str.as_bytes();
         let raw_journal_digest = sha256::Hash::hash(raw_journal_bytes);
         if receipt_journal_digest != raw_journal_digest {
-            let decoded_journal_bytes =
-                Self::decode_base64_or_hex_strict_0x("journal", journal_str)?;
+            let decoded_journal_bytes = Self::decode_base64_or_hex("journal", journal_str)?;
             let decoded_journal_digest = sha256::Hash::hash(&decoded_journal_bytes);
 
             if receipt_journal_digest != decoded_journal_digest {
@@ -294,10 +293,6 @@ impl ZkcVerifier {
         BASE64_STANDARD
             .decode(encoded)
             .map_err(|e| ConxianError::Compliance(format!("Invalid {label} base64: {e}")))
-    }
-
-    fn decode_base64_or_hex_strict_0x(label: &str, encoded: &str) -> ConxianResult<Vec<u8>> {
-        Self::decode_base64_or_hex(label, encoded)
     }
 
     fn decode_risc0_receipt(bytes: &[u8]) -> ConxianResult<Receipt> {
