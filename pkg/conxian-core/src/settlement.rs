@@ -137,7 +137,7 @@ impl NormalizedSettlement {
         }
 
         let Some(threshold_minor) = institutional_threshold_minor(self.amount_scale) else {
-            return false;
+            return true;
         };
 
         u128::from(self.amount_minor) >= threshold_minor

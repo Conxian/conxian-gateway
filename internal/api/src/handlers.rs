@@ -99,7 +99,12 @@ fn extract_tee_attestation(
 }
 
 fn get_stacks_burn_block_height(state: &AppState) -> Result<u64, (StatusCode, Json<Value>)> {
-    let s = state.shared.read().unwrap();
+    let s = state.shared.read().map_err(|_| {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "Gateway state unavailable" })),
+        )
+    })?;
     s.stacks.burn_block_height.ok_or((
         StatusCode::SERVICE_UNAVAILABLE,
         Json(json!({ "error": "Stacks burn block height unavailable" })),
