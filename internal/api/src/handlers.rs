@@ -102,6 +102,38 @@ fn extract_tee_attestation(
     })
 }
 
+fn verify_tee_settlement_attestation(
+    state: &AppState,
+    headers: &HeaderMap,
+    raw_payload_hash: &str,
+) -> Result<AttestationRequest, (StatusCode, Json<Value>)> {
+    let tee_attestation = extract_tee_attestation(headers)?;
+    match state
+        .compliance
+        .verify_settlement_trigger_attestation(&tee_attestation, raw_payload_hash)
+    {
+        Ok(true) => Ok(tee_attestation),
+        Ok(false) => {
+            warn!("TEE settlement attestation verification failed");
+            Err((
+                StatusCode::UNAUTHORIZED,
+                Json(json!({ "error": "Invalid TEE attestation" })),
+            ))
+        }
+        Err(e) => {
+            warn!("TEE settlement attestation verification error: {e}");
+            Err((
+                StatusCode::UNAUTHORIZED,
+                Json(json!({ "error": "Invalid TEE attestation" })),
+            ))
+        }
+    }
+}
+
+/// Returns the current Stacks burn block height.
+///
+/// Rejects settlement ingress with `503 SERVICE_UNAVAILABLE` if the burn block height is not yet
+/// known. This intentionally fails closed rather than falling back to the chain tip height.
 fn get_stacks_burn_block_height(state: &AppState) -> Result<u64, (StatusCode, Json<Value>)> {
     let s = state.shared.read().map_err(|_| {
         warn!("Failed to acquire read lock on shared gateway state");
@@ -112,7 +144,7 @@ fn get_stacks_burn_block_height(state: &AppState) -> Result<u64, (StatusCode, Js
     })?;
 
     s.stacks.burn_block_height.ok_or_else(|| {
-        warn!("Stacks burn block height unavailable in shared state");
+        warn!("Stacks burn block height unavailable; rejecting settlement ingress");
         (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(json!({ "error": "Stacks burn block height unavailable" })),
@@ -492,27 +524,7 @@ pub async fn ingress_iso20022(
         }
     }
 
-    let tee_attestation = extract_tee_attestation(&headers)?;
-    match state
-        .compliance
-        .verify_settlement_trigger_attestation(&tee_attestation, &raw_payload_hash)
-    {
-        Ok(true) => (),
-        Ok(false) => {
-            warn!("TEE settlement attestation verification failed");
-            return Err((
-                StatusCode::UNAUTHORIZED,
-                Json(json!({ "error": "Invalid TEE attestation" })),
-            ));
-        }
-        Err(e) => {
-            warn!("TEE settlement attestation verification error: {e}");
-            return Err((
-                StatusCode::UNAUTHORIZED,
-                Json(json!({ "error": "Invalid TEE attestation" })),
-            ));
-        }
-    }
+    let tee_attestation = verify_tee_settlement_attestation(&state, &headers, &raw_payload_hash)?;
 
     match state
         .compliance
@@ -585,27 +597,7 @@ pub async fn ingress_papss(
         }
     }
 
-    let tee_attestation = extract_tee_attestation(&headers)?;
-    match state
-        .compliance
-        .verify_settlement_trigger_attestation(&tee_attestation, &raw_payload_hash)
-    {
-        Ok(true) => (),
-        Ok(false) => {
-            warn!("TEE settlement attestation verification failed");
-            return Err((
-                StatusCode::UNAUTHORIZED,
-                Json(json!({ "error": "Invalid TEE attestation" })),
-            ));
-        }
-        Err(e) => {
-            warn!("TEE settlement attestation verification error: {e}");
-            return Err((
-                StatusCode::UNAUTHORIZED,
-                Json(json!({ "error": "Invalid TEE attestation" })),
-            ));
-        }
-    }
+    let tee_attestation = verify_tee_settlement_attestation(&state, &headers, &raw_payload_hash)?;
 
     let payload: Value = serde_json::from_slice(&bytes).map_err(|e| {
         (
@@ -685,27 +677,7 @@ pub async fn ingress_brics(
         }
     }
 
-    let tee_attestation = extract_tee_attestation(&headers)?;
-    match state
-        .compliance
-        .verify_settlement_trigger_attestation(&tee_attestation, &raw_payload_hash)
-    {
-        Ok(true) => (),
-        Ok(false) => {
-            warn!("TEE settlement attestation verification failed");
-            return Err((
-                StatusCode::UNAUTHORIZED,
-                Json(json!({ "error": "Invalid TEE attestation" })),
-            ));
-        }
-        Err(e) => {
-            warn!("TEE settlement attestation verification error: {e}");
-            return Err((
-                StatusCode::UNAUTHORIZED,
-                Json(json!({ "error": "Invalid TEE attestation" })),
-            ));
-        }
-    }
+    let tee_attestation = verify_tee_settlement_attestation(&state, &headers, &raw_payload_hash)?;
 
     let payload: Value = serde_json::from_slice(&bytes).map_err(|e| {
         (
