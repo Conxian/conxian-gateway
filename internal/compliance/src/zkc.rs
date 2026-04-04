@@ -275,6 +275,19 @@ impl ZkcVerifier {
             .as_str()
             .ok_or_else(|| ConxianError::Compliance("Missing receiver_bic".to_string()))?;
 
+        let currency = json
+            .get("currency")
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|ccy| !ccy.is_empty())
+            .unwrap_or("USD");
+
+        if currency != "USD" {
+            return Err(ConxianError::Compliance(format!(
+                "Unsupported PAPSS currency: {currency}",
+            )));
+        }
+
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_err(|e| ConxianError::Compliance(format!("Invalid system time: {e}")))?
@@ -285,7 +298,7 @@ impl ZkcVerifier {
             transaction_id: tx_id.to_string(),
             amount_minor,
             amount_scale,
-            currency: "USD".to_string(),
+            currency: currency.to_string(),
             sender: sender.to_string(),
             receiver: receiver.to_string(),
             timestamp,
@@ -322,6 +335,19 @@ impl ZkcVerifier {
             .as_str()
             .ok_or_else(|| ConxianError::Compliance("Missing target_bank".to_string()))?;
 
+        let currency = json
+            .get("currency")
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|ccy| !ccy.is_empty())
+            .unwrap_or("GOLD");
+
+        if currency != "GOLD" {
+            return Err(ConxianError::Compliance(format!(
+                "Unsupported BRICS currency: {currency}",
+            )));
+        }
+
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_err(|e| ConxianError::Compliance(format!("Invalid system time: {e}")))?
@@ -332,7 +358,7 @@ impl ZkcVerifier {
             transaction_id: tx_id.to_string(),
             amount_minor,
             amount_scale,
-            currency: "GOLD".to_string(),
+            currency: currency.to_string(),
             sender: sender.to_string(),
             receiver: receiver.to_string(),
             timestamp,
