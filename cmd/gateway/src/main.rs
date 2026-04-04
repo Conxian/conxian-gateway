@@ -2,7 +2,7 @@ mod config;
 
 use api::a2p::A2pRouter;
 use api::fiat::FiatRouter;
-use api::{configure_routes, AppState};
+use api::{configure_routes, new_settlement_log, AppState};
 use compliance::{IdentityManager, ZkcVerifier};
 use config::Config;
 use conxian_core::persistence::FilePersistence;
@@ -13,7 +13,6 @@ use engine::{
 use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
 use tokio::signal;
-use tokio::sync::RwLock as TokioRwLock;
 use tracing::{error, info};
 
 #[tokio::main]
@@ -100,7 +99,7 @@ async fn main() -> anyhow::Result<()> {
         compliance: zkc_verifier,
         fiat_webhook_secret: config.fiat_webhook_secret.clone(),
         settlement_ingress_secret: config.settlement_ingress_secret.clone(),
-        settlement_log: Arc::new(TokioRwLock::new(std::collections::VecDeque::new())),
+        settlement_log: new_settlement_log(),
     };
 
     // Create a cancellation token for graceful shutdown of listeners

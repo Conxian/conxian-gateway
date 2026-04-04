@@ -60,8 +60,9 @@ fn is_xml_content_type(headers: &HeaderMap) -> bool {
 }
 
 async fn record_settlement(state: &AppState, envelope: &SettlementEnvelope) {
+    let envelope = envelope.clone();
     let mut log = state.settlement_log.write().await;
-    log.push_back(envelope.clone());
+    log.push_back(envelope);
 
     while log.len() > SETTLEMENT_LOG_MAX_ENTRIES {
         log.pop_front();
@@ -71,8 +72,12 @@ async fn record_settlement(state: &AppState, envelope: &SettlementEnvelope) {
 pub async fn get_external_settlements(
     State(state): State<AppState>,
 ) -> Json<Vec<SettlementEnvelope>> {
-    let log = state.settlement_log.read().await;
-    Json(log.iter().cloned().collect())
+    let items = {
+        let log = state.settlement_log.read().await;
+        log.iter().cloned().collect()
+    };
+
+    Json(items)
 }
 
 pub async fn health_check(State(state): State<AppState>) -> Json<Value> {

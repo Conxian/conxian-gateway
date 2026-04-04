@@ -26,3 +26,7 @@ pub struct AppState {
     pub settlement_ingress_secret: String,
     pub settlement_log: Arc<RwLock<VecDeque<SettlementEnvelope>>>,
 }
+
+pub fn new_settlement_log() -> Arc<RwLock<VecDeque<SettlementEnvelope>>> {
+    Arc::new(RwLock::new(VecDeque::new()))
+}

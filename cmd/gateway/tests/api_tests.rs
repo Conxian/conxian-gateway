@@ -1,6 +1,6 @@
 use api::a2p::A2pRouter;
 use api::fiat::FiatRouter;
-use api::{configure_routes, AppState};
+use api::{configure_routes, new_settlement_log, AppState};
 use axum::{
     body::Body,
     http::{Request, StatusCode},
@@ -11,7 +11,6 @@ use hmac::{Hmac, Mac};
 use serde_json::Value;
 use sha2::Sha256;
 use std::sync::{Arc, RwLock};
-use tokio::sync::RwLock as TokioRwLock;
 use tower::ServiceExt;
 
 const TEST_TOKEN: &str = "test-token";
@@ -39,7 +38,7 @@ fn setup_app(state: SharedState) -> axum::Router {
         compliance: Arc::new(ZkcVerifier::new()),
         fiat_webhook_secret: TEST_FIAT_SECRET.to_string(),
         settlement_ingress_secret: TEST_SETTLEMENT_SECRET.to_string(),
-        settlement_log: Arc::new(TokioRwLock::new(std::collections::VecDeque::new())),
+        settlement_log: new_settlement_log(),
     };
     configure_routes(app_state, TEST_TOKEN.to_string())
 }
