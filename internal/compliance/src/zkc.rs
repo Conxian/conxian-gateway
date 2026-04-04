@@ -152,8 +152,9 @@ impl ZkcVerifier {
             ));
         }
 
-        if proof.receipt_hash.len() != 64
-            || !proof.receipt_hash.as_bytes().iter().all(|b| b.is_ascii_hexdigit())
+        let receipt_hash = proof.receipt_hash.trim();
+        if receipt_hash.len() != 64
+            || !receipt_hash.as_bytes().iter().all(|b| b.is_ascii_hexdigit())
         {
             return Err(ConxianError::Compliance(
                 "Invalid receipt_hash: expected 32-byte hex string".to_string(),
@@ -161,6 +162,13 @@ impl ZkcVerifier {
         }
 
         let image_id_hex = proof.image_id.trim().trim_start_matches("0x");
+        if image_id_hex.len() != 64
+            || !image_id_hex.as_bytes().iter().all(|b| b.is_ascii_hexdigit())
+        {
+            return Err(ConxianError::Compliance(
+                "Invalid image_id: expected 32-byte hex string".to_string(),
+            ));
+        }
         let image_id = Risc0Digest::from_hex(image_id_hex).map_err(|e| {
             ConxianError::Compliance(format!("Invalid image_id hex: {e}"))
         })?;
@@ -168,7 +176,7 @@ impl ZkcVerifier {
         let receipt_bytes = Self::decode_base64_or_hex("receipt", &proof.receipt)?;
         let computed_receipt_hash =
             hex::encode(sha256::Hash::hash(&receipt_bytes).to_byte_array());
-        if computed_receipt_hash != proof.receipt_hash {
+        if !computed_receipt_hash.eq_ignore_ascii_case(receipt_hash) {
             return Err(ConxianError::Compliance(
                 "ZKML verification failed: receipt_hash mismatch".to_string(),
             ));
