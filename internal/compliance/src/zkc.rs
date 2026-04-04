@@ -200,19 +200,14 @@ impl ZkcVerifier {
         if receipt_journal_digest != raw_journal_digest {
             let encoded_journal = proof.journal.trim();
             if let Some(hex_with_prefix) = encoded_journal.strip_prefix("0x") {
-                if hex_with_prefix.len() % 2 != 0
-                    || !hex_with_prefix
-                        .as_bytes()
-                        .iter()
-                        .all(|b| b.is_ascii_hexdigit())
-                {
+                if !Self::is_even_len_hex(hex_with_prefix) {
                     return Err(ConxianError::Compliance(
                         "Invalid journal hex: expected even-length hex string".to_string(),
                     ));
                 }
             }
 
-            let decoded_journal_bytes = Self::decode_base64_or_hex("journal", &proof.journal)?;
+            let decoded_journal_bytes = Self::decode_base64_or_hex("journal", encoded_journal)?;
             let decoded_journal_digest = sha256::Hash::hash(&decoded_journal_bytes);
 
             if receipt_journal_digest != decoded_journal_digest {
@@ -254,18 +249,13 @@ impl ZkcVerifier {
         }
 
         if let Some(hex_with_prefix) = encoded.strip_prefix("0x") {
-            if hex_with_prefix.len() % 2 == 0
-                && hex_with_prefix
-                    .as_bytes()
-                    .iter()
-                    .all(|b| b.is_ascii_hexdigit())
-            {
+            if Self::is_even_len_hex(hex_with_prefix) {
                 return hex::decode(hex_with_prefix)
                     .map_err(|e| ConxianError::Compliance(format!("Invalid {label} hex: {e}")));
             }
         }
 
-        if encoded.len() % 2 == 0 && encoded.as_bytes().iter().all(|b| b.is_ascii_hexdigit()) {
+        if Self::is_even_len_hex(encoded) {
             return hex::decode(encoded)
                 .map_err(|e| ConxianError::Compliance(format!("Invalid {label} hex: {e}")));
         }
@@ -312,8 +302,12 @@ impl ZkcVerifier {
             .any(|window| window == needle)
     }
 
+    fn is_even_len_hex(value: &str) -> bool {
+        value.len() % 2 == 0 && value.as_bytes().iter().all(|b| b.is_ascii_hexdigit())
+    }
+
     fn is_32_byte_hex(value: &str) -> bool {
-        value.len() == 64 && value.as_bytes().iter().all(|b| b.is_ascii_hexdigit())
+        value.len() == 64 && Self::is_even_len_hex(value)
     }
 
     pub fn verify_job_card_settlement(
