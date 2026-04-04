@@ -8,7 +8,7 @@ pub const SETTLEMENT_ENVELOPE_VERSION_CURRENT: &str = "2.0.0";
 
 /// Deprecated alias for the settlement envelope protocol v2.
 #[deprecated(note = "Use SETTLEMENT_ENVELOPE_VERSION_CURRENT instead")]
-pub const SETTLEMENT_ENVELOPE_VERSION_V2: &str = SETTLEMENT_ENVELOPE_VERSION_CURRENT;
+pub const SETTLEMENT_ENVELOPE_VERSION_V2: &str = "2.0.0";
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum SettlementSource {
