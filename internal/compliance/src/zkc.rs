@@ -260,6 +260,11 @@ impl ZkcVerifier {
         Ok(true)
     }
 
+    /// Decode an encoded payload as either:
+    /// - Hex, when prefixed with `0x` or `0X`.
+    /// - Base64 otherwise.
+    ///
+    /// To avoid ambiguous decoding, even-length hex-looking strings without a prefix are rejected.
     fn decode_base64_or_hex(label: &str, encoded: &str) -> ConxianResult<Vec<u8>> {
         const MAX_ENCODED_LEN: usize = 4 * 1024 * 1024;
 
@@ -976,6 +981,29 @@ impl ZkcVerifier {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn test_decode_base64_or_hex_accepts_prefixed_hex() {
+        let bytes = ZkcVerifier::decode_base64_or_hex("test", "0xdeadbeef").unwrap();
+        assert_eq!(bytes, vec![0xde, 0xad, 0xbe, 0xef]);
+    }
+
+    #[test]
+    fn test_decode_base64_or_hex_rejects_unprefixed_hex() {
+        let err = ZkcVerifier::decode_base64_or_hex("test", "deadbeef").unwrap_err();
+        match err {
+            ConxianError::Compliance(message) => {
+                assert!(message.contains("prefixed with 0x"));
+            }
+            other => panic!("expected compliance error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_decode_base64_or_hex_accepts_base64() {
+        let bytes = ZkcVerifier::decode_base64_or_hex("test", "Zm9v").unwrap();
+        assert_eq!(bytes, b"foo");
+    }
 
     #[test]
     fn test_verify_ingress_signature_rejects_invalid_signatures() {
