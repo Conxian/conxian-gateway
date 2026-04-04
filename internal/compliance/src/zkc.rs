@@ -5,7 +5,7 @@ use borsh::BorshDeserialize;
 use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
 use conxian_core::SETTLEMENT_ENVELOPE_VERSION_CURRENT;
 pub use conxian_core::{
-    Attestation, BitVmAttestation, ConxianError, ConxianJobCard, ConxianResult,
+    Attestation, AttestationRequest, BitVmAttestation, ConxianError, ConxianJobCard, ConxianResult,
     NormalizedSettlement, SchnorrAttestation, SettlementEnvelope, SettlementFinality,
     SettlementIdentifiers, SettlementRail, SettlementRailFamily, SettlementSource,
     SettlementStatus, ZkmlProof,
@@ -87,6 +87,44 @@ impl ZkcVerifier {
             .map_err(|e| ConxianError::Security(format!("Invalid signature hex: {e}")))?;
 
         Ok(mac.verify_slice(&sig_bytes).is_ok())
+    }
+
+    pub fn verify_settlement_trigger_attestation(
+        &self,
+        attestation: &AttestationRequest,
+        raw_payload_hash: &str,
+    ) -> ConxianResult<bool> {
+        match attestation {
+            AttestationRequest::Ecdsa(attestation) => {
+                if !attestation.device_id.starts_with("conxius-tee-") {
+                    return Err(ConxianError::Compliance(
+                        "Invalid TEE device ID: must start with 'conxius-tee-'".to_string(),
+                    ));
+                }
+
+                if attestation.payload != raw_payload_hash {
+                    return Ok(false);
+                }
+
+                self.verify(attestation)
+            }
+            AttestationRequest::Schnorr(attestation) => {
+                if !attestation.device_id.starts_with("conxius-tee-") {
+                    return Err(ConxianError::Compliance(
+                        "Invalid TEE device ID: must start with 'conxius-tee-'".to_string(),
+                    ));
+                }
+
+                if attestation.payload != raw_payload_hash {
+                    return Ok(false);
+                }
+
+                self.verify_schnorr(attestation)
+            }
+            _ => Err(ConxianError::Compliance(
+                "Unsupported TEE attestation type for settlement triggers".to_string(),
+            )),
+        }
     }
 
     pub fn verify(&self, attestation: &Attestation) -> ConxianResult<bool> {

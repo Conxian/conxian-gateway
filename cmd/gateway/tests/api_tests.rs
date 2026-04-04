@@ -6,10 +6,13 @@ use axum::{
     http::{Request, StatusCode},
 };
 use compliance::{IdentityManager, ZkcVerifier};
-use conxian_core::{GatewayState, SharedState};
+use conxian_core::{
+    Attestation, AttestationRequest, GatewayState, SettlementProposal, SharedState,
+};
 use hmac::{Hmac, Mac};
+use secp256k1::{Message, Secp256k1, SecretKey};
 use serde_json::Value;
-use sha2::Sha256;
+use sha2::{Digest, Sha256};
 use std::sync::{Arc, RwLock};
 use tokio::sync::RwLock as TokioRwLock;
 use tower::ServiceExt;
@@ -17,6 +20,27 @@ use tower::ServiceExt;
 const TEST_TOKEN: &str = "test-token";
 const TEST_FIAT_SECRET: &str = "test-fiat-secret";
 const TEST_SETTLEMENT_SECRET: &str = "test-settlement-secret";
+
+fn make_tee_attestation_header(raw_payload_hash: &str) -> String {
+    let secp = Secp256k1::new();
+    let secret_key = SecretKey::from_slice(&[1u8; 32]).unwrap();
+    let public_key = secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
+
+    let digest = Sha256::digest(raw_payload_hash.as_bytes());
+    let message = Message::from_digest_slice(&digest).unwrap();
+    let signature = secp.sign_ecdsa(&message, &secret_key);
+    let signature_der = signature.serialize_der();
+
+    let attestation = Attestation {
+        device_id: "conxius-tee-test".to_string(),
+        signature: hex::encode(signature_der),
+        payload: raw_payload_hash.to_string(),
+        public_key: hex::encode(public_key.serialize()),
+    };
+
+    let request = AttestationRequest::Ecdsa(attestation);
+    serde_json::to_string(&request).unwrap()
+}
 
 fn setup_app(state: SharedState) -> axum::Router {
     let app_state = AppState {
@@ -39,7 +63,9 @@ fn setup_app(state: SharedState) -> axum::Router {
         compliance: Arc::new(ZkcVerifier::new()),
         fiat_webhook_secret: TEST_FIAT_SECRET.to_string(),
         settlement_ingress_secret: TEST_SETTLEMENT_SECRET.to_string(),
-        settlement_log: Arc::new(TokioRwLock::new(std::collections::VecDeque::new())),
+        settlement_log: Arc::new(TokioRwLock::new(std::collections::VecDeque::<
+            SettlementProposal,
+        >::new())),
     };
     configure_routes(app_state, TEST_TOKEN.to_string())
 }
@@ -342,6 +368,11 @@ async fn test_iso_payment_v8_authorized() {
 #[tokio::test]
 async fn test_ingress_iso20022_authorized() {
     let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
+    {
+        let mut s = state.write().unwrap();
+        s.stacks.height = 100;
+        s.stacks.burn_block_height = Some(55);
+    }
     let app = setup_app(state);
 
     let xml_payload = r#"<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pacs.008.001.08"><FIToFICstmrCdtTrf><GrpHdr><MsgId>TX-123</MsgId></GrpHdr><CdtTrfTxInf><IntrBkSttlmAmt Ccy="sBTC">0.5</IntrBkSttlmAmt><DbtrAcct><Id><Othr><Id>SENDER-AC-1</Id></Othr></Id></DbtrAcct><CdtrAcct><Id><Othr><Id>RECEIVER-AC-1</Id></Othr></Id></CdtrAcct></CdtTrfTxInf></FIToFICstmrCdtTrf></Document>"#;
@@ -349,6 +380,9 @@ async fn test_ingress_iso20022_authorized() {
     let mut mac = Hmac::<Sha256>::new_from_slice(TEST_SETTLEMENT_SECRET.as_bytes()).unwrap();
     mac.update(xml_payload.as_bytes());
     let signature = hex::encode(mac.finalize().into_bytes());
+
+    let raw_payload_hash = hex::encode(Sha256::digest(xml_payload.as_bytes()));
+    let tee_attestation = make_tee_attestation_header(&raw_payload_hash);
 
     let response = app
         .oneshot(
@@ -358,6 +392,7 @@ async fn test_ingress_iso20022_authorized() {
                 .header("Authorization", format!("Bearer {}", TEST_TOKEN))
                 .header("Content-Type", "application/xml")
                 .header("x-iso20022-signature", signature)
+                .header("x-tee-attestation", tee_attestation)
                 .body(Body::from(xml_payload))
                 .unwrap(),
         )
@@ -369,16 +404,68 @@ async fn test_ingress_iso20022_authorized() {
         .await
         .unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(json["payload"]["transaction_id"], "TX-123");
-    assert_eq!(json["payload"]["amount_minor"], 5);
-    assert_eq!(json["payload"]["amount_scale"], 1);
-    assert_eq!(json["payload"]["sender"], "SENDER-AC-1");
-    assert_eq!(json["payload"]["receiver"], "RECEIVER-AC-1");
+    assert_eq!(json["envelope"]["payload"]["transaction_id"], "TX-123");
+    assert_eq!(json["envelope"]["payload"]["amount_minor"], 5);
+    assert_eq!(json["envelope"]["payload"]["amount_scale"], 1);
+    assert_eq!(json["envelope"]["payload"]["sender"], "SENDER-AC-1");
+    assert_eq!(json["envelope"]["payload"]["receiver"], "RECEIVER-AC-1");
+    assert_eq!(json["stacks_burn_block_height"], 55);
+}
+
+#[tokio::test]
+async fn test_ingress_iso20022_institutional_timelock() {
+    let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
+    {
+        let mut s = state.write().unwrap();
+        s.stacks.height = 100;
+        s.stacks.burn_block_height = Some(55);
+    }
+    let app = setup_app(state);
+
+    let xml_payload = r#"<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pacs.008.001.08"><FIToFICstmrCdtTrf><GrpHdr><MsgId>TX-999</MsgId></GrpHdr><CdtTrfTxInf><IntrBkSttlmAmt Ccy="ZAR">100000000.00</IntrBkSttlmAmt><DbtrAcct><Id><Othr><Id>SENDER-AC-1</Id></Othr></Id></DbtrAcct><CdtrAcct><Id><Othr><Id>RECEIVER-AC-1</Id></Othr></Id></CdtrAcct></CdtTrfTxInf></FIToFICstmrCdtTrf></Document>"#;
+
+    let mut mac = Hmac::<Sha256>::new_from_slice(TEST_SETTLEMENT_SECRET.as_bytes()).unwrap();
+    mac.update(xml_payload.as_bytes());
+    let signature = hex::encode(mac.finalize().into_bytes());
+
+    let raw_payload_hash = hex::encode(Sha256::digest(xml_payload.as_bytes()));
+    let tee_attestation = make_tee_attestation_header(&raw_payload_hash);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/ingress/iso20022")
+                .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("Content-Type", "application/xml")
+                .header("x-iso20022-signature", signature)
+                .header("x-tee-attestation", tee_attestation)
+                .body(Body::from(xml_payload))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["envelope"]["payload"]["transaction_id"], "TX-999");
+    assert_eq!(json["envelope"]["payload"]["currency"], "ZAR");
+    assert_eq!(json["stacks_burn_block_height"], 55);
+    assert_eq!(json["timelock_release_burn_block_height"], 199);
+    assert_eq!(json["state"], "TIMELOCKED");
 }
 
 #[tokio::test]
 async fn test_ingress_papss_authorized() {
     let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
+    {
+        let mut s = state.write().unwrap();
+        s.stacks.height = 100;
+        s.stacks.burn_block_height = Some(55);
+    }
     let app = setup_app(state);
 
     let inner_payload = serde_json::json!({
@@ -394,6 +481,9 @@ async fn test_ingress_papss_authorized() {
     mac.update(raw_payload.as_bytes());
     let signature = hex::encode(mac.finalize().into_bytes());
 
+    let raw_payload_hash = hex::encode(Sha256::digest(raw_payload.as_bytes()));
+    let tee_attestation = make_tee_attestation_header(&raw_payload_hash);
+
     let response = app
         .oneshot(
             Request::builder()
@@ -402,6 +492,7 @@ async fn test_ingress_papss_authorized() {
                 .header("Authorization", format!("Bearer {}", TEST_TOKEN))
                 .header("Content-Type", "application/json")
                 .header("x-papss-signature", signature)
+                .header("x-tee-attestation", tee_attestation)
                 .body(Body::from(raw_payload))
                 .unwrap(),
         )
@@ -413,14 +504,20 @@ async fn test_ingress_papss_authorized() {
         .await
         .unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(json["payload"]["transaction_id"], "PAPSS-456");
-    assert_eq!(json["payload"]["amount_minor"], 100000);
-    assert_eq!(json["payload"]["amount_scale"], 2);
+    assert_eq!(json["envelope"]["payload"]["transaction_id"], "PAPSS-456");
+    assert_eq!(json["envelope"]["payload"]["amount_minor"], 100000);
+    assert_eq!(json["envelope"]["payload"]["amount_scale"], 2);
+    assert_eq!(json["stacks_burn_block_height"], 55);
 }
 
 #[tokio::test]
 async fn test_ingress_brics_authorized() {
     let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
+    {
+        let mut s = state.write().unwrap();
+        s.stacks.height = 100;
+        s.stacks.burn_block_height = Some(55);
+    }
     let app = setup_app(state);
 
     let inner_payload = serde_json::json!({
@@ -436,6 +533,9 @@ async fn test_ingress_brics_authorized() {
     mac.update(raw_payload.as_bytes());
     let signature = hex::encode(mac.finalize().into_bytes());
 
+    let raw_payload_hash = hex::encode(Sha256::digest(raw_payload.as_bytes()));
+    let tee_attestation = make_tee_attestation_header(&raw_payload_hash);
+
     let response = app
         .oneshot(
             Request::builder()
@@ -444,6 +544,7 @@ async fn test_ingress_brics_authorized() {
                 .header("Authorization", format!("Bearer {}", TEST_TOKEN))
                 .header("Content-Type", "application/json")
                 .header("x-brics-signature", signature)
+                .header("x-tee-attestation", tee_attestation)
                 .body(Body::from(raw_payload))
                 .unwrap(),
         )
@@ -455,6 +556,7 @@ async fn test_ingress_brics_authorized() {
         .await
         .unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(json["payload"]["transaction_id"], "BRICS-789");
-    assert_eq!(json["payload"]["currency"], "GOLD");
+    assert_eq!(json["envelope"]["payload"]["transaction_id"], "BRICS-789");
+    assert_eq!(json["envelope"]["payload"]["currency"], "GOLD");
+    assert_eq!(json["stacks_burn_block_height"], 55);
 }

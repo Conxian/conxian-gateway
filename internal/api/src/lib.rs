@@ -10,7 +10,7 @@ pub use routes::configure_routes;
 use crate::a2p::A2pRouter;
 use crate::fiat::FiatRouter;
 use compliance::{IdentityManager, ZkcVerifier};
-use conxian_core::{SettlementEnvelope, SharedState};
+use conxian_core::{SettlementProposal, SharedState};
 use std::{collections::VecDeque, sync::Arc};
 use tokio::sync::RwLock;
 
@@ -24,5 +24,5 @@ pub struct AppState {
     pub compliance: Arc<ZkcVerifier>,
     pub fiat_webhook_secret: String,
     pub settlement_ingress_secret: String,
-    pub settlement_log: Arc<RwLock<VecDeque<SettlementEnvelope>>>,
+    pub settlement_log: Arc<RwLock<VecDeque<SettlementProposal>>>,
 }
