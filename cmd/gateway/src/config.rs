@@ -133,7 +133,7 @@ mod tests {
 
     #[test]
     fn from_env_trims_secret_whitespace() {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = ENV_MUTEX.lock().unwrap();
 
         let _env_restore = SecretsEnvRestore {
             old_fiat_webhook_secret: env::var("FIAT_WEBHOOK_SECRET").ok(),
@@ -150,7 +150,7 @@ mod tests {
 
     #[test]
     fn from_env_checks_distinct_secrets_after_trimming() {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = ENV_MUTEX.lock().unwrap();
 
         let _env_restore = SecretsEnvRestore {
             old_fiat_webhook_secret: env::var("FIAT_WEBHOOK_SECRET").ok(),
@@ -160,10 +160,7 @@ mod tests {
         env::set_var("FIAT_WEBHOOK_SECRET", "shared-secret");
         env::set_var("SETTLEMENT_INGRESS_SECRET", " shared-secret ");
 
-        let result = std::panic::catch_unwind(Config::from_env);
-        assert!(result.is_err());
-
-        let err = match result {
+        let err = match std::panic::catch_unwind(Config::from_env) {
             Ok(_) => panic!("expected Config::from_env to panic"),
             Err(err) => err,
         };
