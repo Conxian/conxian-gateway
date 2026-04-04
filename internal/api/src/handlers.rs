@@ -98,6 +98,14 @@ fn extract_tee_attestation(
     })
 }
 
+fn stacks_burn_block_height(state: &AppState) -> Result<u64, (StatusCode, Json<Value>)> {
+    let s = state.shared.read().unwrap();
+    s.stacks.burn_block_height.ok_or((
+        StatusCode::SERVICE_UNAVAILABLE,
+        Json(json!({ "error": "Stacks burn block height unavailable" })),
+    ))
+}
+
 pub async fn health_check(State(state): State<AppState>) -> Json<Value> {
     let s = state.shared.read().unwrap();
     let mut status = "healthy";
@@ -497,10 +505,7 @@ pub async fn ingress_iso20022(
         .normalize_iso20022_ingress(xml, raw_payload_hash)
     {
         Ok(envelope) => {
-            let stacks_burn_block_height = {
-                let s = state.shared.read().unwrap();
-                s.stacks.burn_block_height.unwrap_or(s.stacks.height)
-            };
+            let stacks_burn_block_height = stacks_burn_block_height(&state)?;
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
@@ -600,10 +605,7 @@ pub async fn ingress_papss(
         .normalize_papss_ingress(payload.get("payload").unwrap_or(&payload), raw_payload_hash)
     {
         Ok(envelope) => {
-            let stacks_burn_block_height = {
-                let s = state.shared.read().unwrap();
-                s.stacks.burn_block_height.unwrap_or(s.stacks.height)
-            };
+            let stacks_burn_block_height = stacks_burn_block_height(&state)?;
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
@@ -703,10 +705,7 @@ pub async fn ingress_brics(
         .normalize_brics_ingress(payload.get("payload").unwrap_or(&payload), raw_payload_hash)
     {
         Ok(envelope) => {
-            let stacks_burn_block_height = {
-                let s = state.shared.read().unwrap();
-                s.stacks.burn_block_height.unwrap_or(s.stacks.height)
-            };
+            let stacks_burn_block_height = stacks_burn_block_height(&state)?;
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
