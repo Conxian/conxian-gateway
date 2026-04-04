@@ -345,9 +345,30 @@ impl ZkcVerifier {
             return true;
         }
 
-        haystack
-            .windows(needle.len())
-            .any(|window| window.eq_ignore_ascii_case(needle))
+        if needle.len() > haystack.len() {
+            return false;
+        }
+
+        let first = needle[0];
+        let first_lower = first.to_ascii_lowercase();
+        let first_upper = first.to_ascii_uppercase();
+
+        let max_start = haystack.len() - needle.len();
+        let mut i = 0;
+        while i <= max_start {
+            let Some(rel) = memchr::memchr2(first_lower, first_upper, &haystack[i..=max_start])
+            else {
+                return false;
+            };
+            let pos = i + rel;
+
+            if haystack[pos..pos + needle.len()].eq_ignore_ascii_case(needle) {
+                return true;
+            }
+            i = pos + 1;
+        }
+
+        false
     }
 
     fn is_even_len_hex(value: &str) -> bool {
