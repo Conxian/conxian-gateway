@@ -219,14 +219,8 @@ impl ZkcVerifier {
             || Self::contains_subslice(receipt_journal, public_inputs_raw_hash_hex.as_bytes());
 
         if !public_inputs_ok {
-            let public_inputs_decoded = if public_inputs_str.starts_with("0x") {
-                Some(Self::decode_base64_or_hex(
-                    "public_inputs",
-                    public_inputs_str,
-                )?)
-            } else {
-                Self::decode_base64_or_hex("public_inputs", public_inputs_str).ok()
-            };
+            let public_inputs_decoded =
+                Self::decode_base64_or_hex("public_inputs", public_inputs_str).ok();
 
             if let Some(public_inputs_decoded) = public_inputs_decoded {
                 let public_inputs_decoded_hash_hex =
