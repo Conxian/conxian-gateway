@@ -276,22 +276,24 @@ impl ZkcVerifier {
             )));
         }
 
-        let hex_with_prefix = encoded
+        if let Some(hex_with_prefix) = encoded
             .strip_prefix("0x")
-            .or_else(|| encoded.strip_prefix("0X"));
-        let maybe_hex = hex_with_prefix.unwrap_or(encoded);
-
-        if let Some(hex_with_prefix) = hex_with_prefix {
+            .or_else(|| encoded.strip_prefix("0X"))
+        {
             if !Self::is_even_len_hex(hex_with_prefix) {
                 return Err(ConxianError::Compliance(format!(
                     "Invalid {label} hex: expected even-length hex string"
                 )));
             }
+
+            return hex::decode(hex_with_prefix)
+                .map_err(|e| ConxianError::Compliance(format!("Invalid {label} hex: {e}")));
         }
 
-        if Self::is_even_len_hex(maybe_hex) {
-            return hex::decode(maybe_hex)
-                .map_err(|e| ConxianError::Compliance(format!("Invalid {label} hex: {e}")));
+        if Self::is_even_len_hex(encoded) {
+            return Err(ConxianError::Compliance(format!(
+                "Invalid {label}: hex must be prefixed with 0x"
+            )));
         }
 
         BASE64_STANDARD
