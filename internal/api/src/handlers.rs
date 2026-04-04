@@ -405,6 +405,30 @@ pub async fn ingress_iso20022(
         )
     })?;
 
+    let signature = headers
+        .get("x-iso20022-signature")
+        .and_then(|h| h.to_str().ok())
+        .filter(|s| !s.is_empty())
+        .ok_or((
+            StatusCode::UNAUTHORIZED,
+            Json(json!({ "error": "Missing signature" })),
+        ))?;
+
+    match state.compliance.verify_ingress_signature(
+        xml,
+        signature,
+        &state.settlement_ingress_secret,
+    ) {
+        Ok(true) => (),
+        _ => {
+            warn!("ISO 20022 ingress signature verification failed");
+            return Err((
+                StatusCode::UNAUTHORIZED,
+                Json(json!({ "error": "Invalid signature" })),
+            ));
+        }
+    }
+
     match state
         .compliance
         .normalize_iso20022_ingress(xml, raw_payload_hash)
@@ -423,12 +447,6 @@ pub async fn ingress_iso20022(
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct IngressRequest {
-    pub payload: Box<RawValue>,
-    pub signature: Option<String>,
-}
-
 pub async fn ingress_papss(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -442,6 +460,38 @@ pub async fn ingress_papss(
     }
 
     let raw_payload_hash = sha256_hex(&bytes);
+
+    let signature = headers
+        .get("x-papss-signature")
+        .and_then(|h| h.to_str().ok())
+        .filter(|s| !s.is_empty())
+        .ok_or((
+            StatusCode::UNAUTHORIZED,
+            Json(json!({ "error": "Missing signature" })),
+        ))?;
+
+    let raw_payload = std::str::from_utf8(&bytes).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": format!("Invalid UTF-8 body: {e}") })),
+        )
+    })?;
+
+    match state.compliance.verify_ingress_signature(
+        raw_payload,
+        signature,
+        &state.settlement_ingress_secret,
+    ) {
+        Ok(true) => (),
+        _ => {
+            warn!("PAPSS ingress signature verification failed");
+            return Err((
+                StatusCode::UNAUTHORIZED,
+                Json(json!({ "error": "Invalid signature" })),
+            ));
+        }
+    }
+
     let payload: Value = serde_json::from_slice(&bytes).map_err(|e| {
         (
             StatusCode::BAD_REQUEST,
@@ -451,7 +501,7 @@ pub async fn ingress_papss(
 
     match state
         .compliance
-        .normalize_papss_ingress(&payload, raw_payload_hash)
+        .normalize_papss_ingress(payload.get("payload").unwrap_or(&payload), raw_payload_hash)
     {
         Ok(envelope) => {
             info!(
@@ -460,6 +510,10 @@ pub async fn ingress_papss(
             );
             Ok(Json(envelope))
         }
+        Err(e) => Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": e.to_string() })),
+        )),
     }
 }
 
@@ -476,6 +530,38 @@ pub async fn ingress_brics(
     }
 
     let raw_payload_hash = sha256_hex(&bytes);
+
+    let signature = headers
+        .get("x-brics-signature")
+        .and_then(|h| h.to_str().ok())
+        .filter(|s| !s.is_empty())
+        .ok_or((
+            StatusCode::UNAUTHORIZED,
+            Json(json!({ "error": "Missing signature" })),
+        ))?;
+
+    let raw_payload = std::str::from_utf8(&bytes).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": format!("Invalid UTF-8 body: {e}") })),
+        )
+    })?;
+
+    match state.compliance.verify_ingress_signature(
+        raw_payload,
+        signature,
+        &state.settlement_ingress_secret,
+    ) {
+        Ok(true) => (),
+        _ => {
+            warn!("BRICS ingress signature verification failed");
+            return Err((
+                StatusCode::UNAUTHORIZED,
+                Json(json!({ "error": "Invalid signature" })),
+            ));
+        }
+    }
+
     let payload: Value = serde_json::from_slice(&bytes).map_err(|e| {
         (
             StatusCode::BAD_REQUEST,
@@ -485,7 +571,7 @@ pub async fn ingress_brics(
 
     match state
         .compliance
-        .normalize_brics_ingress(&payload, raw_payload_hash)
+        .normalize_brics_ingress(payload.get("payload").unwrap_or(&payload), raw_payload_hash)
     {
         Ok(envelope) => {
             info!(
@@ -494,5 +580,9 @@ pub async fn ingress_brics(
             );
             Ok(Json(envelope))
         }
+        Err(e) => Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": e.to_string() })),
+        )),
     }
 }

@@ -12,8 +12,13 @@ use secp256k1::schnorr::Signature as SchnorrSignature;
 use secp256k1::XOnlyPublicKey;
 use secp256k1::{ecdsa::Signature, Message, PublicKey, Secp256k1};
 use serde_json::Value;
+use sha2::Sha256;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{info, warn};
+
+type HmacSha256 = Hmac<Sha256>;
+
+const INGRESS_SIGNATURE_HEX_LEN: usize = 64;
 
 struct Iso20022Fields {
     source: SettlementSource,
@@ -46,6 +51,30 @@ impl ZkcVerifier {
             version: SETTLEMENT_ENVELOPE_VERSION_CURRENT.to_string(),
             payload,
         }
+    }
+
+    pub fn verify_ingress_signature(
+        &self,
+        raw_payload: &str,
+        signature: &str,
+        secret: &str,
+    ) -> ConxianResult<bool> {
+        if signature.len() != INGRESS_SIGNATURE_HEX_LEN {
+            return Ok(false);
+        }
+
+        if !signature.as_bytes().iter().all(|b| b.is_ascii_hexdigit()) {
+            return Ok(false);
+        }
+
+        let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
+            .map_err(|e| ConxianError::Security(format!("HMAC error: {e}")))?;
+        mac.update(raw_payload.as_bytes());
+
+        let sig_bytes = hex::decode(signature)
+            .map_err(|e| ConxianError::Security(format!("Invalid signature hex: {e}")))?;
+
+        Ok(mac.verify_slice(&sig_bytes).is_ok())
     }
 
     pub fn verify(&self, attestation: &Attestation) -> ConxianResult<bool> {
@@ -421,23 +450,52 @@ impl ZkcVerifier {
                         && Self::stack_ends_with(&stack, &[b"IntrBkSttlmAmt"])
                     {
                         amount = Some(text.to_string());
-                    } else if sender.is_none()
-                        && (Self::stack_ends_with(&stack, &[b"DbtrAcct", b"Id", b"Othr", b"Id"])
+                    }
+
+                    let next_sender_rank =
+                        if Self::stack_ends_with(&stack, &[b"DbtrAcct", b"Id", b"Othr", b"Id"])
                             || Self::stack_ends_with(&stack, &[b"DbtrAcct", b"Id", b"IBAN"])
-                            || Self::stack_ends_with(
-                                &stack,
-                                &[b"DbtrAgt", b"FinInstnId", b"BICFI"],
-                            ))
-                    {
+                        {
+                            3
+                        } else if Self::stack_ends_with(
+                            &stack,
+                            &[b"DbtrAgt", b"FinInstnId", b"BICFI"],
+                        ) || Self::stack_ends_with(
+                            &stack,
+                            &[b"DbtrAgt", b"FinInstnId", b"BIC"],
+                        ) {
+                            2
+                        } else if Self::stack_ends_with(&stack, &[b"Dbtr", b"Nm"]) {
+                            1
+                        } else {
+                            0
+                        };
+
+                    if next_sender_rank > sender_rank {
                         sender = Some(text.to_string());
-                    } else if receiver.is_none()
-                        && (Self::stack_ends_with(&stack, &[b"CdtrAcct", b"Id", b"Othr", b"Id"])
+                        sender_rank = next_sender_rank;
+                    }
+
+                    let next_receiver_rank =
+                        if Self::stack_ends_with(&stack, &[b"CdtrAcct", b"Id", b"Othr", b"Id"])
                             || Self::stack_ends_with(&stack, &[b"CdtrAcct", b"Id", b"IBAN"])
-                            || Self::stack_ends_with(
-                                &stack,
-                                &[b"CdtrAgt", b"FinInstnId", b"BICFI"],
-                            ))
-                    {
+                        {
+                            3
+                        } else if Self::stack_ends_with(
+                            &stack,
+                            &[b"CdtrAgt", b"FinInstnId", b"BICFI"],
+                        ) || Self::stack_ends_with(
+                            &stack,
+                            &[b"CdtrAgt", b"FinInstnId", b"BIC"],
+                        ) {
+                            2
+                        } else if Self::stack_ends_with(&stack, &[b"Cdtr", b"Nm"]) {
+                            1
+                        } else {
+                            0
+                        };
+
+                    if next_receiver_rank > receiver_rank {
                         receiver = Some(text.to_string());
                         receiver_rank = next_receiver_rank;
                     }
@@ -741,12 +799,14 @@ mod tests {
         let secret = "test-secret";
         let payload = json!({
             "transaction_id": "papss-123",
-            "amount": 1000.50,
+            "amount": "1000.50",
             "currency": "USD",
             "sender_bic": "SENDERBIC",
             "receiver_bic": "RECEIVERBIC"
         });
         let raw_payload = serde_json::to_string(&payload).unwrap();
+        let raw_payload_hash =
+            hex::encode(sha256::Hash::hash(raw_payload.as_bytes()).to_byte_array());
 
         let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).unwrap();
         mac.update(raw_payload.as_bytes());
@@ -757,11 +817,16 @@ mod tests {
             .unwrap();
         assert!(valid);
 
-        let envelope = verifier.normalize_papss_ingress(&payload).unwrap();
+        let envelope = verifier
+            .normalize_papss_ingress(&payload, raw_payload_hash.clone())
+            .unwrap();
         assert_eq!(envelope.payload.transaction_id, "papss-123");
-        assert_eq!(envelope.payload.amount, 1000.50);
+        assert_eq!(envelope.payload.amount_minor, 100_050);
+        assert_eq!(envelope.payload.amount_scale, 2);
         assert_eq!(envelope.payload.currency, "USD");
         assert_eq!(envelope.payload.sender, "SENDERBIC");
+        assert_eq!(envelope.payload.receiver, "RECEIVERBIC");
+        assert_eq!(envelope.payload.raw_payload_hash, raw_payload_hash);
     }
 
     #[test]
@@ -770,12 +835,14 @@ mod tests {
         let secret = "brics-secret";
         let payload = json!({
             "brics_tx_id": "brics-999",
-            "amount": 50.0,
-            "currency": "CNY",
+            "amount": "50",
+            "currency": "GOLD",
             "origin_bank": "BANKA",
             "target_bank": "BANKB"
         });
         let raw_payload = serde_json::to_string(&payload).unwrap();
+        let raw_payload_hash =
+            hex::encode(sha256::Hash::hash(raw_payload.as_bytes()).to_byte_array());
 
         let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).unwrap();
         mac.update(raw_payload.as_bytes());
@@ -786,10 +853,16 @@ mod tests {
             .unwrap();
         assert!(valid);
 
-        let envelope = verifier.normalize_brics_ingress(&payload).unwrap();
+        let envelope = verifier
+            .normalize_brics_ingress(&payload, raw_payload_hash.clone())
+            .unwrap();
         assert_eq!(envelope.payload.transaction_id, "brics-999");
-        assert_eq!(envelope.payload.amount, 50.0);
-        assert_eq!(envelope.payload.currency, "CNY");
+        assert_eq!(envelope.payload.amount_minor, 50);
+        assert_eq!(envelope.payload.amount_scale, 0);
+        assert_eq!(envelope.payload.currency, "GOLD");
+        assert_eq!(envelope.payload.sender, "BANKA");
+        assert_eq!(envelope.payload.receiver, "BANKB");
+        assert_eq!(envelope.payload.raw_payload_hash, raw_payload_hash);
     }
 
     #[test]
@@ -812,12 +885,18 @@ mod tests {
             </FIToFICstmrCdtTrf>
         </Document>"#;
 
-        let envelope = verifier.normalize_iso20022_ingress(xml).unwrap();
+        let raw_payload_hash = hex::encode(sha256::Hash::hash(xml.as_bytes()).to_byte_array());
+
+        let envelope = verifier
+            .normalize_iso20022_ingress(xml, raw_payload_hash.clone())
+            .unwrap();
         assert_eq!(envelope.payload.transaction_id, "ISO-MSG-001");
-        assert_eq!(envelope.payload.amount, 123.45);
+        assert_eq!(envelope.payload.amount_minor, 12_345);
+        assert_eq!(envelope.payload.amount_scale, 2);
         assert_eq!(envelope.payload.currency, "EUR");
         assert_eq!(envelope.payload.sender, "John Doe");
         assert_eq!(envelope.payload.receiver, "Jane Smith");
+        assert_eq!(envelope.payload.raw_payload_hash, raw_payload_hash);
     }
 
     #[test]
@@ -850,7 +929,10 @@ mod tests {
             </FIToFICstmrCdtTrf>
         </Document>"#;
 
-        let envelope = verifier.normalize_iso20022_ingress(xml).unwrap();
+        let raw_payload_hash = hex::encode(sha256::Hash::hash(xml.as_bytes()).to_byte_array());
+        let envelope = verifier
+            .normalize_iso20022_ingress(xml, raw_payload_hash)
+            .unwrap();
         assert_eq!(envelope.payload.transaction_id, "ISO-MSG-002");
         assert_eq!(envelope.payload.currency, "EUR");
         assert_eq!(envelope.payload.sender, "DE123");

@@ -391,9 +391,6 @@ async fn test_ingress_papss_authorized() {
     let mut mac = Hmac::<Sha256>::new_from_slice(TEST_SETTLEMENT_SECRET.as_bytes()).unwrap();
     mac.update(raw_payload.as_bytes());
     let signature = hex::encode(mac.finalize().into_bytes());
-    let payload = serde_json::json!({
-        "payload": inner_payload
-    });
 
     let response = app
         .oneshot(
@@ -403,7 +400,7 @@ async fn test_ingress_papss_authorized() {
                 .header("Authorization", format!("Bearer {}", TEST_TOKEN))
                 .header("Content-Type", "application/json")
                 .header("x-papss-signature", signature)
-                .body(Body::from(serde_json::to_string(&payload).unwrap()))
+                .body(Body::from(raw_payload))
                 .unwrap(),
         )
         .await
@@ -436,9 +433,6 @@ async fn test_ingress_brics_authorized() {
     let mut mac = Hmac::<Sha256>::new_from_slice(TEST_SETTLEMENT_SECRET.as_bytes()).unwrap();
     mac.update(raw_payload.as_bytes());
     let signature = hex::encode(mac.finalize().into_bytes());
-    let payload = serde_json::json!({
-        "payload": inner_payload
-    });
 
     let response = app
         .oneshot(
@@ -448,7 +442,7 @@ async fn test_ingress_brics_authorized() {
                 .header("Authorization", format!("Bearer {}", TEST_TOKEN))
                 .header("Content-Type", "application/json")
                 .header("x-brics-signature", signature)
-                .body(Body::from(serde_json::to_string(&payload).unwrap()))
+                .body(Body::from(raw_payload))
                 .unwrap(),
         )
         .await
