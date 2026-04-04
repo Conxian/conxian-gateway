@@ -40,6 +40,13 @@ impl ZkcVerifier {
         }
     }
 
+    fn wrap_envelope(payload: NormalizedSettlement) -> SettlementEnvelope {
+        SettlementEnvelope {
+            version: SETTLEMENT_ENVELOPE_VERSION_CURRENT.to_string(),
+            payload,
+        }
+    }
+
     pub fn verify(&self, attestation: &Attestation) -> ConxianResult<bool> {
         if !attestation.device_id.starts_with("conxius-") {
             return Err(ConxianError::Compliance(
@@ -210,10 +217,7 @@ impl ZkcVerifier {
             raw_payload_hash,
         };
 
-        Ok(SettlementEnvelope {
-            version: SETTLEMENT_ENVELOPE_VERSION_CURRENT.to_string(),
-            payload,
-        })
+        Ok(Self::wrap_envelope(payload))
     }
 
     pub fn normalize_papss_ingress(
@@ -260,10 +264,7 @@ impl ZkcVerifier {
             raw_payload_hash,
         };
 
-        Ok(SettlementEnvelope {
-            version: SETTLEMENT_ENVELOPE_VERSION_CURRENT.to_string(),
-            payload,
-        })
+        Ok(Self::wrap_envelope(payload))
     }
 
     pub fn normalize_brics_ingress(
@@ -310,10 +311,7 @@ impl ZkcVerifier {
             raw_payload_hash,
         };
 
-        Ok(SettlementEnvelope {
-            version: SETTLEMENT_ENVELOPE_VERSION_CURRENT.to_string(),
-            payload,
-        })
+        Ok(Self::wrap_envelope(payload))
     }
 
     fn parse_iso20022_fields(&self, xml: &str) -> ConxianResult<Iso20022Fields> {
