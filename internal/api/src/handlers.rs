@@ -6,7 +6,7 @@ use axum::{
 };
 use conxian_core::{
     AttestationRequest, BitVmAttestation, ConxianJobCard, GcpTokenRequest,
-    IdentityResolutionRequest, IdentityResolutionResponse, SettlementEnvelope,
+    IdentityResolutionRequest, IdentityResolutionResponse, SettlementProposal,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -18,6 +18,7 @@ use crate::a2p::{OtpRequest, OtpVerificationRequest};
 use crate::fiat::{OnRampSessionRequest, OnRampSessionResponse, WebhookPayload};
 
 const SETTLEMENT_LOG_MAX_ENTRIES: usize = 1_000;
+const TEE_ATTESTATION_HEADER: &str = "x-tee-attestation";
 
 fn sha256_hex(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
@@ -59,10 +60,10 @@ fn is_xml_content_type(headers: &HeaderMap) -> bool {
             .is_some_and(|(_, suffix)| suffix.eq_ignore_ascii_case("xml"))
 }
 
-async fn record_settlement(state: &AppState, envelope: &SettlementEnvelope) {
-    let envelope = envelope.clone();
+async fn record_settlement(state: &AppState, proposal: &SettlementProposal) {
+    let proposal = proposal.clone();
     let mut log = state.settlement_log.write().await;
-    log.push_back(envelope);
+    log.push_back(proposal);
 
     while log.len() > SETTLEMENT_LOG_MAX_ENTRIES {
         log.pop_front();
@@ -71,13 +72,87 @@ async fn record_settlement(state: &AppState, envelope: &SettlementEnvelope) {
 
 pub async fn get_external_settlements(
     State(state): State<AppState>,
-) -> Json<Vec<SettlementEnvelope>> {
+) -> Json<Vec<SettlementProposal>> {
     let items = {
         let log = state.settlement_log.read().await;
         log.iter().cloned().collect()
     };
 
     Json(items)
+}
+
+fn extract_tee_attestation(
+    headers: &HeaderMap,
+) -> Result<AttestationRequest, (StatusCode, Json<Value>)> {
+    let value = headers
+        .get(TEE_ATTESTATION_HEADER)
+        .and_then(|h| h.to_str().ok())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or((
+            StatusCode::UNAUTHORIZED,
+            Json(json!({ "error": "Missing TEE attestation" })),
+        ))?;
+
+    serde_json::from_str::<AttestationRequest>(value).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": format!("Invalid TEE attestation JSON: {e}") })),
+        )
+    })
+}
+
+fn verify_tee_settlement_attestation(
+    state: &AppState,
+    headers: &HeaderMap,
+    raw_payload_hash: &str,
+) -> Result<AttestationRequest, (StatusCode, Json<Value>)> {
+    fn invalid_tee_attestation_response() -> (StatusCode, Json<Value>) {
+        (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({ "error": "Invalid TEE attestation" })),
+        )
+    }
+
+    let tee_attestation = extract_tee_attestation(headers)?;
+    match state
+        .compliance
+        .verify_settlement_trigger_attestation(&tee_attestation, raw_payload_hash)
+    {
+        Ok(true) => Ok(tee_attestation),
+        Ok(false) => {
+            warn!("TEE settlement attestation verification failed");
+            Err(invalid_tee_attestation_response())
+        }
+        Err(e) => {
+            // We intentionally collapse all verifier errors into a stable client-facing response.
+            // Detailed failure reasons are logged but not returned to callers.
+            warn!("TEE settlement attestation verification error: {e}");
+            Err(invalid_tee_attestation_response())
+        }
+    }
+}
+
+/// Returns the current Stacks burn block height.
+///
+/// Rejects settlement ingress with `503 SERVICE_UNAVAILABLE` if the burn block height is not yet
+/// known. This intentionally fails closed rather than falling back to the chain tip height.
+fn get_stacks_burn_block_height(state: &AppState) -> Result<u64, (StatusCode, Json<Value>)> {
+    let s = state.shared.read().map_err(|_| {
+        warn!("Failed to acquire read lock on shared gateway state");
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "Gateway state unavailable" })),
+        )
+    })?;
+
+    s.stacks.burn_block_height.ok_or_else(|| {
+        warn!("Stacks burn block height unavailable; rejecting settlement ingress");
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "Stacks burn block height unavailable" })),
+        )
+    })
 }
 
 pub async fn health_check(State(state): State<AppState>) -> Json<Value> {
@@ -412,7 +487,7 @@ pub async fn ingress_iso20022(
     State(state): State<AppState>,
     headers: HeaderMap,
     bytes: Bytes,
-) -> Result<Json<conxian_core::SettlementEnvelope>, (StatusCode, Json<Value>)> {
+) -> Result<Json<conxian_core::SettlementProposal>, (StatusCode, Json<Value>)> {
     if !is_xml_content_type(&headers) {
         return Err((
             StatusCode::UNSUPPORTED_MEDIA_TYPE,
@@ -452,17 +527,26 @@ pub async fn ingress_iso20022(
         }
     }
 
+    let tee_attestation = verify_tee_settlement_attestation(&state, &headers, &raw_payload_hash)?;
+
     match state
         .compliance
         .normalize_iso20022_ingress(xml, raw_payload_hash)
     {
         Ok(envelope) => {
+            let stacks_burn_block_height = get_stacks_burn_block_height(&state)?;
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            let proposal =
+                SettlementProposal::new(envelope, tee_attestation, stacks_burn_block_height, now);
             info!(
                 "Successfully ingested ISO 20022 settlement: {}",
-                envelope.payload.transaction_id
+                proposal.envelope.payload.transaction_id
             );
-            record_settlement(&state, &envelope).await;
-            Ok(Json(envelope))
+            record_settlement(&state, &proposal).await;
+            Ok(Json(proposal))
         }
         Err(e) => Err((
             StatusCode::BAD_REQUEST,
@@ -475,7 +559,7 @@ pub async fn ingress_papss(
     State(state): State<AppState>,
     headers: HeaderMap,
     bytes: Bytes,
-) -> Result<Json<conxian_core::SettlementEnvelope>, (StatusCode, Json<Value>)> {
+) -> Result<Json<conxian_core::SettlementProposal>, (StatusCode, Json<Value>)> {
     if !is_json_content_type(&headers) {
         return Err((
             StatusCode::UNSUPPORTED_MEDIA_TYPE,
@@ -516,6 +600,8 @@ pub async fn ingress_papss(
         }
     }
 
+    let tee_attestation = verify_tee_settlement_attestation(&state, &headers, &raw_payload_hash)?;
+
     let payload: Value = serde_json::from_slice(&bytes).map_err(|e| {
         (
             StatusCode::BAD_REQUEST,
@@ -528,12 +614,19 @@ pub async fn ingress_papss(
         .normalize_papss_ingress(payload.get("payload").unwrap_or(&payload), raw_payload_hash)
     {
         Ok(envelope) => {
+            let stacks_burn_block_height = get_stacks_burn_block_height(&state)?;
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            let proposal =
+                SettlementProposal::new(envelope, tee_attestation, stacks_burn_block_height, now);
             info!(
                 "Successfully ingested PAPSS settlement: {}",
-                envelope.payload.transaction_id
+                proposal.envelope.payload.transaction_id
             );
-            record_settlement(&state, &envelope).await;
-            Ok(Json(envelope))
+            record_settlement(&state, &proposal).await;
+            Ok(Json(proposal))
         }
         Err(e) => Err((
             StatusCode::BAD_REQUEST,
@@ -546,7 +639,7 @@ pub async fn ingress_brics(
     State(state): State<AppState>,
     headers: HeaderMap,
     bytes: Bytes,
-) -> Result<Json<conxian_core::SettlementEnvelope>, (StatusCode, Json<Value>)> {
+) -> Result<Json<conxian_core::SettlementProposal>, (StatusCode, Json<Value>)> {
     if !is_json_content_type(&headers) {
         return Err((
             StatusCode::UNSUPPORTED_MEDIA_TYPE,
@@ -587,6 +680,8 @@ pub async fn ingress_brics(
         }
     }
 
+    let tee_attestation = verify_tee_settlement_attestation(&state, &headers, &raw_payload_hash)?;
+
     let payload: Value = serde_json::from_slice(&bytes).map_err(|e| {
         (
             StatusCode::BAD_REQUEST,
@@ -599,12 +694,19 @@ pub async fn ingress_brics(
         .normalize_brics_ingress(payload.get("payload").unwrap_or(&payload), raw_payload_hash)
     {
         Ok(envelope) => {
+            let stacks_burn_block_height = get_stacks_burn_block_height(&state)?;
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            let proposal =
+                SettlementProposal::new(envelope, tee_attestation, stacks_burn_block_height, now);
             info!(
                 "Successfully ingested BRICS settlement: {}",
-                envelope.payload.transaction_id
+                proposal.envelope.payload.transaction_id
             );
-            record_settlement(&state, &envelope).await;
-            Ok(Json(envelope))
+            record_settlement(&state, &proposal).await;
+            Ok(Json(proposal))
         }
         Err(e) => Err((
             StatusCode::BAD_REQUEST,
