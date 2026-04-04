@@ -193,7 +193,11 @@ impl ZkcVerifier {
             ));
         }
 
-        let image_id_hex = proof.image_id.trim().trim_start_matches("0x");
+        let image_id_hex = proof.image_id.trim();
+        let image_id_hex = image_id_hex
+            .strip_prefix("0x")
+            .or_else(|| image_id_hex.strip_prefix("0X"))
+            .unwrap_or(image_id_hex);
         if !Self::is_32_byte_hex(image_id_hex) {
             return Err(ConxianError::Compliance(
                 "Invalid image_id: expected 32-byte hex string".to_string(),
@@ -219,8 +223,7 @@ impl ZkcVerifier {
         let raw_journal_bytes = journal_str.as_bytes();
         let raw_journal_digest = sha256::Hash::hash(raw_journal_bytes);
         if receipt_journal_digest != raw_journal_digest {
-            let decoded_journal_bytes =
-                Self::decode_base64_or_hex_strict_0x("journal", journal_str)?;
+            let decoded_journal_bytes = Self::decode_base64_or_hex("journal", journal_str)?;
             let decoded_journal_digest = sha256::Hash::hash(&decoded_journal_bytes);
 
             if receipt_journal_digest != decoded_journal_digest {
@@ -279,37 +282,29 @@ impl ZkcVerifier {
             )));
         }
 
-        if let Some(hex_with_prefix) = encoded.strip_prefix("0x") {
-            if Self::is_even_len_hex(hex_with_prefix) {
-                return hex::decode(hex_with_prefix)
-                    .map_err(|e| ConxianError::Compliance(format!("Invalid {label} hex: {e}")));
-            }
-        }
-
-        if Self::is_even_len_hex(encoded) {
-            return hex::decode(encoded)
-                .map_err(|e| ConxianError::Compliance(format!("Invalid {label} hex: {e}")));
-        }
-
-        BASE64_STANDARD
-            .decode(encoded)
-            .map_err(|e| ConxianError::Compliance(format!("Invalid {label} base64: {e}")))
-    }
-
-    fn decode_base64_or_hex_strict_0x(label: &str, encoded: &str) -> ConxianResult<Vec<u8>> {
-        let encoded = encoded.trim();
-
-        if let Some(hex_with_prefix) = encoded.strip_prefix("0x") {
+        if let Some(hex_with_prefix) = encoded
+            .strip_prefix("0x")
+            .or_else(|| encoded.strip_prefix("0X"))
+        {
             if !Self::is_even_len_hex(hex_with_prefix) {
                 return Err(ConxianError::Compliance(format!(
                     "Invalid {label} hex: expected even-length hex string"
                 )));
             }
+
             return hex::decode(hex_with_prefix)
                 .map_err(|e| ConxianError::Compliance(format!("Invalid {label} hex: {e}")));
         }
 
-        Self::decode_base64_or_hex(label, encoded)
+        if Self::is_even_len_hex(encoded) {
+            return Err(ConxianError::Compliance(format!(
+                "Invalid {label}: hex must be prefixed with 0x"
+            )));
+        }
+
+        BASE64_STANDARD
+            .decode(encoded)
+            .map_err(|e| ConxianError::Compliance(format!("Invalid {label} base64: {e}")))
     }
 
     fn decode_risc0_receipt(bytes: &[u8]) -> ConxianResult<Receipt> {
