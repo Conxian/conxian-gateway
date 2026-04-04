@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::{ConxianError, ConxianResult};
+
 const SETTLEMENT_ENVELOPE_VERSION_V2_LITERAL: &str = "2.0.0";
 
 /// Institutional settlements above the regulatory threshold must be held in a burn-block timelock
@@ -205,11 +207,21 @@ impl SettlementProposal {
         tee_attestation: crate::AttestationRequest,
         stacks_burn_block_height: u64,
         created_at: u64,
-    ) -> Self {
-        let timelock_release_burn_block_height = envelope
-            .payload
-            .requires_institutional_timelock()
-            .then(|| stacks_burn_block_height.saturating_add(INSTITUTIONAL_TIMELOCK_BURN_BLOCKS));
+    ) -> ConxianResult<Self> {
+        let timelock_release_burn_block_height =
+            if envelope.payload.requires_institutional_timelock() {
+                Some(
+                    stacks_burn_block_height
+                        .checked_add(INSTITUTIONAL_TIMELOCK_BURN_BLOCKS)
+                        .ok_or_else(|| {
+                            ConxianError::Internal(
+                                "Burn-block timelock release height overflow".to_string(),
+                            )
+                        })?,
+                )
+            } else {
+                None
+            };
 
         let state = if timelock_release_burn_block_height.is_some() {
             SettlementProposalState::Timelocked
@@ -217,7 +229,7 @@ impl SettlementProposal {
             SettlementProposalState::Proposed
         };
 
-        Self {
+        Ok(Self {
             proposal_id: envelope.payload.raw_payload_hash.clone(),
             envelope,
             tee_attestation,
@@ -225,6 +237,6 @@ impl SettlementProposal {
             timelock_release_burn_block_height,
             created_at,
             state,
-        }
+        })
     }
 }
