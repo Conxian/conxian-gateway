@@ -64,9 +64,8 @@ async fn record_settlement(state: &AppState, envelope: &SettlementEnvelope) {
     let mut log = state.settlement_log.write().await;
     log.push_back(envelope);
 
-    if log.len() > SETTLEMENT_LOG_MAX_ENTRIES {
-        let excess = log.len() - SETTLEMENT_LOG_MAX_ENTRIES;
-        log.drain(..excess);
+    while log.len() > SETTLEMENT_LOG_MAX_ENTRIES {
+        log.pop_front();
     }
 }
 
