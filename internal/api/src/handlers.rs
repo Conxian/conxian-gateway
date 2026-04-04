@@ -100,15 +100,20 @@ fn extract_tee_attestation(
 
 fn get_stacks_burn_block_height(state: &AppState) -> Result<u64, (StatusCode, Json<Value>)> {
     let s = state.shared.read().map_err(|_| {
+        warn!("Failed to acquire read lock on shared gateway state");
         (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(json!({ "error": "Gateway state unavailable" })),
         )
     })?;
-    s.stacks.burn_block_height.ok_or((
-        StatusCode::SERVICE_UNAVAILABLE,
-        Json(json!({ "error": "Stacks burn block height unavailable" })),
-    ))
+
+    s.stacks.burn_block_height.ok_or_else(|| {
+        warn!("Stacks burn block height unavailable in shared state");
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "Stacks burn block height unavailable" })),
+        )
+    })
 }
 
 pub async fn health_check(State(state): State<AppState>) -> Json<Value> {
