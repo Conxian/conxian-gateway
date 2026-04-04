@@ -181,25 +181,26 @@ impl ZkcVerifier {
             .verify(image_id)
             .map_err(|e| ConxianError::Compliance(format!("ZKML receipt verify failed: {e}")))?;
 
-        if proof.public_inputs.is_empty() {
+        let public_inputs_str = proof.public_inputs.trim();
+        if public_inputs_str.is_empty() {
             return Err(ConxianError::Compliance(
                 "ZKML verification failed: public_inputs cannot be empty".to_string(),
             ));
         }
 
-        if proof.journal.is_empty() {
+        let journal_str = proof.journal.trim();
+        if journal_str.is_empty() {
             return Err(ConxianError::Compliance(
                 "ZKML verification failed: journal cannot be empty".to_string(),
             ));
         }
 
         let receipt_journal_digest = sha256::Hash::hash(&receipt.journal.bytes);
-        let raw_journal_bytes = proof.journal.as_bytes();
+        let raw_journal_bytes = journal_str.as_bytes();
         let raw_journal_digest = sha256::Hash::hash(raw_journal_bytes);
         if receipt_journal_digest != raw_journal_digest {
-            let encoded_journal = proof.journal.trim();
             let decoded_journal_bytes =
-                Self::decode_base64_or_hex_strict_0x("journal", encoded_journal)?;
+                Self::decode_base64_or_hex_strict_0x("journal", journal_str)?;
             let decoded_journal_digest = sha256::Hash::hash(&decoded_journal_bytes);
 
             if receipt_journal_digest != decoded_journal_digest {
@@ -210,7 +211,7 @@ impl ZkcVerifier {
         }
 
         let receipt_journal = receipt.journal.bytes.as_slice();
-        let public_inputs_raw = proof.public_inputs.as_bytes();
+        let public_inputs_raw = public_inputs_str.as_bytes();
         let public_inputs_raw_hash_hex =
             hex::encode(sha256::Hash::hash(public_inputs_raw).to_byte_array());
 
@@ -218,13 +219,13 @@ impl ZkcVerifier {
             || Self::contains_subslice(receipt_journal, public_inputs_raw_hash_hex.as_bytes());
 
         if !public_inputs_ok {
-            let public_inputs_decoded = if proof.public_inputs.trim().starts_with("0x") {
+            let public_inputs_decoded = if public_inputs_str.starts_with("0x") {
                 Some(Self::decode_base64_or_hex(
                     "public_inputs",
-                    &proof.public_inputs,
+                    public_inputs_str,
                 )?)
             } else {
-                Self::decode_base64_or_hex("public_inputs", &proof.public_inputs).ok()
+                Self::decode_base64_or_hex("public_inputs", public_inputs_str).ok()
             };
 
             if let Some(public_inputs_decoded) = public_inputs_decoded {
