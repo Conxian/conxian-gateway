@@ -203,15 +203,19 @@ impl ZkcVerifier {
             ));
         }
 
-        let claimed_journal_bytes = Self::decode_base64_or_hex("journal", &proof.journal)
-            .unwrap_or_else(|_| proof.journal.as_bytes().to_vec());
-
         let receipt_journal_digest = sha256::Hash::hash(&receipt.journal.bytes);
-        let claimed_journal_digest = sha256::Hash::hash(&claimed_journal_bytes);
-        if receipt_journal_digest != claimed_journal_digest {
-            return Err(ConxianError::Compliance(
-                "ZKML verification failed: journal mismatch".to_string(),
-            ));
+
+        let raw_journal_bytes = proof.journal.as_bytes();
+        let raw_journal_digest = sha256::Hash::hash(raw_journal_bytes);
+        if receipt_journal_digest != raw_journal_digest {
+            let decoded_journal_bytes = Self::decode_base64_or_hex("journal", &proof.journal)?;
+            let decoded_journal_digest = sha256::Hash::hash(&decoded_journal_bytes);
+
+            if receipt_journal_digest != decoded_journal_digest {
+                return Err(ConxianError::Compliance(
+                    "ZKML verification failed: journal mismatch".to_string(),
+                ));
+            }
         }
 
         let public_inputs_bytes = proof.public_inputs.as_bytes();
@@ -245,9 +249,24 @@ impl ZkcVerifier {
             )));
         }
 
-        let maybe_hex = encoded.trim_start_matches("0x");
-        if maybe_hex.len() % 2 == 0 && maybe_hex.as_bytes().iter().all(|b| b.is_ascii_hexdigit()) {
-            return hex::decode(maybe_hex)
+        if let Some(hex_with_prefix) = encoded.strip_prefix("0x") {
+            if hex_with_prefix.len() % 2 != 0
+                || !hex_with_prefix
+                    .as_bytes()
+                    .iter()
+                    .all(|b| b.is_ascii_hexdigit())
+            {
+                return Err(ConxianError::Compliance(format!(
+                    "Invalid {label} hex: expected even-length hex string"
+                )));
+            }
+
+            return hex::decode(hex_with_prefix)
+                .map_err(|e| ConxianError::Compliance(format!("Invalid {label} hex: {e}")));
+        }
+
+        if encoded.len() % 2 == 0 && encoded.as_bytes().iter().all(|b| b.is_ascii_hexdigit()) {
+            return hex::decode(encoded)
                 .map_err(|e| ConxianError::Compliance(format!("Invalid {label} hex: {e}")));
         }
 
