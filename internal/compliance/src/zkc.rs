@@ -146,9 +146,37 @@ impl ZkcVerifier {
     }
 
     pub fn verify_zkml(&self, proof: &ZkmlProof) -> ConxianResult<bool> {
+        const MAX_ZKML_FIELD_LEN: usize = 4 * 1024 * 1024;
+
         if !proof.device_id.starts_with("conxius-zkml-") {
             return Err(ConxianError::Compliance(
                 "Invalid device ID: must start with 'conxius-zkml-'".to_string(),
+            ));
+        }
+
+        let public_inputs_str = proof.public_inputs.trim();
+        if public_inputs_str.is_empty() {
+            return Err(ConxianError::Compliance(
+                "ZKML verification failed: public_inputs cannot be empty".to_string(),
+            ));
+        }
+
+        if public_inputs_str.len() > MAX_ZKML_FIELD_LEN {
+            return Err(ConxianError::Compliance(
+                "Invalid public_inputs: payload too large".to_string(),
+            ));
+        }
+
+        let journal_str = proof.journal.trim();
+        if journal_str.is_empty() {
+            return Err(ConxianError::Compliance(
+                "ZKML verification failed: journal cannot be empty".to_string(),
+            ));
+        }
+
+        if journal_str.len() > MAX_ZKML_FIELD_LEN {
+            return Err(ConxianError::Compliance(
+                "Invalid journal: payload too large".to_string(),
             ));
         }
 
@@ -180,20 +208,6 @@ impl ZkcVerifier {
         receipt
             .verify(image_id)
             .map_err(|e| ConxianError::Compliance(format!("ZKML receipt verify failed: {e}")))?;
-
-        let public_inputs_str = proof.public_inputs.trim();
-        if public_inputs_str.is_empty() {
-            return Err(ConxianError::Compliance(
-                "ZKML verification failed: public_inputs cannot be empty".to_string(),
-            ));
-        }
-
-        let journal_str = proof.journal.trim();
-        if journal_str.is_empty() {
-            return Err(ConxianError::Compliance(
-                "ZKML verification failed: journal cannot be empty".to_string(),
-            ));
-        }
 
         let receipt_journal_digest = sha256::Hash::hash(&receipt.journal.bytes);
         let raw_journal_bytes = journal_str.as_bytes();
