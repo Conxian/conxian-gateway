@@ -6,7 +6,7 @@ use axum::{
 };
 use conxian_core::{
     AttestationRequest, BitVmAttestation, ConxianJobCard, GcpTokenRequest,
-    IdentityResolutionRequest, IdentityResolutionResponse,
+    IdentityResolutionRequest, IdentityResolutionResponse, SettlementEnvelope,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -16,6 +16,8 @@ use tracing::{info, warn};
 
 use crate::a2p::{OtpRequest, OtpVerificationRequest};
 use crate::fiat::{OnRampSessionRequest, OnRampSessionResponse, WebhookPayload};
+
+const SETTLEMENT_LOG_MAX_ENTRIES: usize = 1_000;
 
 fn sha256_hex(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
@@ -55,6 +57,29 @@ fn is_xml_content_type(headers: &HeaderMap) -> bool {
         || content_type
             .rsplit_once('+')
             .is_some_and(|(_, suffix)| suffix.eq_ignore_ascii_case("xml"))
+}
+
+fn record_settlement(state: &AppState, envelope: &SettlementEnvelope) {
+    let mut log = state
+        .settlement_log
+        .write()
+        .expect("settlement log lock poisoned");
+    log.push(envelope.clone());
+
+    if log.len() > SETTLEMENT_LOG_MAX_ENTRIES {
+        let excess = log.len() - SETTLEMENT_LOG_MAX_ENTRIES;
+        log.drain(0..excess);
+    }
+}
+
+pub async fn get_external_settlements(
+    State(state): State<AppState>,
+) -> Json<Vec<SettlementEnvelope>> {
+    let log = state
+        .settlement_log
+        .read()
+        .expect("settlement log lock poisoned");
+    Json(log.clone())
 }
 
 pub async fn health_check(State(state): State<AppState>) -> Json<Value> {
@@ -438,6 +463,7 @@ pub async fn ingress_iso20022(
                 "Successfully ingested ISO 20022 settlement: {}",
                 envelope.payload.transaction_id
             );
+            record_settlement(&state, &envelope);
             Ok(Json(envelope))
         }
         Err(e) => Err((
@@ -508,6 +534,7 @@ pub async fn ingress_papss(
                 "Successfully ingested PAPSS settlement: {}",
                 envelope.payload.transaction_id
             );
+            record_settlement(&state, &envelope);
             Ok(Json(envelope))
         }
         Err(e) => Err((
@@ -578,6 +605,7 @@ pub async fn ingress_brics(
                 "Successfully ingested BRICS settlement: {}",
                 envelope.payload.transaction_id
             );
+            record_settlement(&state, &envelope);
             Ok(Json(envelope))
         }
         Err(e) => Err((

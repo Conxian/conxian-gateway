@@ -99,6 +99,7 @@ async fn main() -> anyhow::Result<()> {
         compliance: zkc_verifier,
         fiat_webhook_secret: config.fiat_webhook_secret.clone(),
         settlement_ingress_secret: config.settlement_ingress_secret.clone(),
+        settlement_log: Arc::new(RwLock::new(Vec::new())),
     };
 
     // Create a cancellation token for graceful shutdown of listeners

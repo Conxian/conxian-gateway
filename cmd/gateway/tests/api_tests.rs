@@ -38,6 +38,7 @@ fn setup_app(state: SharedState) -> axum::Router {
         compliance: Arc::new(ZkcVerifier::new()),
         fiat_webhook_secret: TEST_FIAT_SECRET.to_string(),
         settlement_ingress_secret: TEST_SETTLEMENT_SECRET.to_string(),
+        settlement_log: Arc::new(RwLock::new(Vec::new())),
     };
     configure_routes(app_state, TEST_TOKEN.to_string())
 }
