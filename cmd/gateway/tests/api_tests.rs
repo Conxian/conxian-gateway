@@ -7,11 +7,15 @@ use axum::{
 };
 use compliance::{IdentityManager, ZkcVerifier};
 use conxian_core::{GatewayState, SharedState};
+use hmac::{Hmac, Mac};
 use serde_json::Value;
+use sha2::Sha256;
 use std::sync::{Arc, RwLock};
-use tower::ServiceExt; // for `oneshot` and `ready`
+use tower::ServiceExt;
 
 const TEST_TOKEN: &str = "test-token";
+const TEST_FIAT_SECRET: &str = "test-fiat-secret";
+const TEST_SETTLEMENT_SECRET: &str = "test-settlement-secret";
 
 fn setup_app(state: SharedState) -> axum::Router {
     let app_state = AppState {
@@ -32,7 +36,8 @@ fn setup_app(state: SharedState) -> axum::Router {
         )),
         identity: Arc::new(IdentityManager::new()),
         compliance: Arc::new(ZkcVerifier::new()),
-        fiat_webhook_secret: "test-fiat-secret".to_string(),
+        fiat_webhook_secret: TEST_FIAT_SECRET.to_string(),
+        settlement_ingress_secret: TEST_SETTLEMENT_SECRET.to_string(),
     };
     configure_routes(app_state, TEST_TOKEN.to_string())
 }
@@ -53,6 +58,12 @@ async fn test_health_check() {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["status"], "healthy");
 }
 
 #[tokio::test]
@@ -333,6 +344,10 @@ async fn test_ingress_iso20022_authorized() {
 
     let xml_payload = r#"<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pacs.008.001.08"><FIToFICstmrCdtTrf><GrpHdr><MsgId>TX-123</MsgId></GrpHdr><CdtTrfTxInf><IntrBkSttlmAmt Ccy="sBTC">0.5</IntrBkSttlmAmt><DbtrAcct><Id><Othr><Id>SENDER-AC-1</Id></Othr></Id></DbtrAcct><CdtrAcct><Id><Othr><Id>RECEIVER-AC-1</Id></Othr></Id></CdtrAcct></CdtTrfTxInf></FIToFICstmrCdtTrf></Document>"#;
 
+    let mut mac = Hmac::<Sha256>::new_from_slice(TEST_SETTLEMENT_SECRET.as_bytes()).unwrap();
+    mac.update(xml_payload.as_bytes());
+    let signature = hex::encode(mac.finalize().into_bytes());
+
     let response = app
         .oneshot(
             Request::builder()
@@ -340,6 +355,7 @@ async fn test_ingress_iso20022_authorized() {
                 .method("POST")
                 .header("Authorization", format!("Bearer {}", TEST_TOKEN))
                 .header("Content-Type", "application/xml")
+                .header("x-iso20022-signature", signature)
                 .body(Body::from(xml_payload))
                 .unwrap(),
         )
@@ -355,6 +371,7 @@ async fn test_ingress_iso20022_authorized() {
     assert_eq!(json["payload"]["amount_minor"], 5);
     assert_eq!(json["payload"]["amount_scale"], 1);
     assert_eq!(json["payload"]["sender"], "SENDER-AC-1");
+    assert_eq!(json["payload"]["receiver"], "RECEIVER-AC-1");
 }
 
 #[tokio::test]
@@ -362,11 +379,20 @@ async fn test_ingress_papss_authorized() {
     let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
     let app = setup_app(state);
 
-    let payload = serde_json::json!({
+    let inner_payload = serde_json::json!({
         "transaction_id": "PAPSS-456",
         "amount": "1000.00",
         "sender_bic": "BANK-ZA-1",
-        "receiver_bic": "BANK-NG-1"
+        "receiver_bic": "BANK-NG-1",
+        "currency": "USD"
+    });
+
+    let raw_payload = serde_json::to_string(&inner_payload).unwrap();
+    let mut mac = Hmac::<Sha256>::new_from_slice(TEST_SETTLEMENT_SECRET.as_bytes()).unwrap();
+    mac.update(raw_payload.as_bytes());
+    let signature = hex::encode(mac.finalize().into_bytes());
+    let payload = serde_json::json!({
+        "payload": inner_payload
     });
 
     let response = app
@@ -376,6 +402,7 @@ async fn test_ingress_papss_authorized() {
                 .method("POST")
                 .header("Authorization", format!("Bearer {}", TEST_TOKEN))
                 .header("Content-Type", "application/json")
+                .header("x-papss-signature", signature)
                 .body(Body::from(serde_json::to_string(&payload).unwrap()))
                 .unwrap(),
         )
@@ -397,11 +424,20 @@ async fn test_ingress_brics_authorized() {
     let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
     let app = setup_app(state);
 
-    let payload = serde_json::json!({
+    let inner_payload = serde_json::json!({
         "brics_tx_id": "BRICS-789",
         "amount": "50",
         "origin_bank": "RUB-BANK",
-        "target_bank": "CNY-BANK"
+        "target_bank": "CNY-BANK",
+        "currency": "GOLD"
+    });
+
+    let raw_payload = serde_json::to_string(&inner_payload).unwrap();
+    let mut mac = Hmac::<Sha256>::new_from_slice(TEST_SETTLEMENT_SECRET.as_bytes()).unwrap();
+    mac.update(raw_payload.as_bytes());
+    let signature = hex::encode(mac.finalize().into_bytes());
+    let payload = serde_json::json!({
+        "payload": inner_payload
     });
 
     let response = app
@@ -411,6 +447,7 @@ async fn test_ingress_brics_authorized() {
                 .method("POST")
                 .header("Authorization", format!("Bearer {}", TEST_TOKEN))
                 .header("Content-Type", "application/json")
+                .header("x-brics-signature", signature)
                 .body(Body::from(serde_json::to_string(&payload).unwrap()))
                 .unwrap(),
         )

@@ -98,6 +98,7 @@ async fn main() -> anyhow::Result<()> {
         identity: identity_manager,
         compliance: zkc_verifier,
         fiat_webhook_secret: config.fiat_webhook_secret.clone(),
+        settlement_ingress_secret: config.settlement_ingress_secret.clone(),
     };
 
     // Create a cancellation token for graceful shutdown of listeners

@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::a2p::{OtpRequest, OtpVerificationRequest};
 use crate::fiat::{OnRampSessionRequest, OnRampSessionResponse, WebhookPayload};
@@ -423,6 +423,12 @@ pub async fn ingress_iso20022(
     }
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct IngressRequest {
+    pub payload: Box<RawValue>,
+    pub signature: Option<String>,
+}
+
 pub async fn ingress_papss(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -454,10 +460,6 @@ pub async fn ingress_papss(
             );
             Ok(Json(envelope))
         }
-        Err(e) => Err((
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": e.to_string() })),
-        )),
     }
 }
 
@@ -492,9 +494,5 @@ pub async fn ingress_brics(
             );
             Ok(Json(envelope))
         }
-        Err(e) => Err((
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": e.to_string() })),
-        )),
     }
 }

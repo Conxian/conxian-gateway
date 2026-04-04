@@ -22,4 +22,5 @@ pub struct AppState {
     pub identity: Arc<IdentityManager>,
     pub compliance: Arc<ZkcVerifier>,
     pub fiat_webhook_secret: String,
+    pub settlement_ingress_secret: String,
 }

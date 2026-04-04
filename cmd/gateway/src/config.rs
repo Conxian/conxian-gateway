@@ -1,5 +1,8 @@
 use std::env;
 
+const FIAT_WEBHOOK_SECRET_SENTINEL: &str = "CHANGEME_FIAT_WEBHOOK_SECRET";
+const SETTLEMENT_INGRESS_SECRET_SENTINEL: &str = "CHANGEME_SETTLEMENT_INGRESS_SECRET";
+
 #[allow(dead_code)]
 pub struct Config {
     pub bitcoin_rpc_url: String,
@@ -21,10 +24,36 @@ pub struct Config {
     pub infobip_base_url: String,
     pub hmac_secret: String,
     pub fiat_webhook_secret: String,
+    pub settlement_ingress_secret: String,
 }
 
 impl Config {
     pub fn from_env() -> Self {
+        let fiat_webhook_secret = env::var("FIAT_WEBHOOK_SECRET")
+            .expect("FIAT_WEBHOOK_SECRET must be set (and should be a strong random secret)");
+        let fiat_webhook_secret = fiat_webhook_secret.trim().to_string();
+        let settlement_ingress_secret = env::var("SETTLEMENT_INGRESS_SECRET")
+            .expect("SETTLEMENT_INGRESS_SECRET must be set (and should be a strong random secret)");
+        let settlement_ingress_secret = settlement_ingress_secret.trim().to_string();
+
+        if fiat_webhook_secret.is_empty() || fiat_webhook_secret == FIAT_WEBHOOK_SECRET_SENTINEL {
+            panic!(
+                "FIAT_WEBHOOK_SECRET must be a non-empty secret (not {FIAT_WEBHOOK_SECRET_SENTINEL})"
+            );
+        }
+
+        if settlement_ingress_secret.is_empty()
+            || settlement_ingress_secret == SETTLEMENT_INGRESS_SECRET_SENTINEL
+        {
+            panic!(
+                "SETTLEMENT_INGRESS_SECRET must be a non-empty secret (not {SETTLEMENT_INGRESS_SECRET_SENTINEL})"
+            );
+        }
+
+        if settlement_ingress_secret == fiat_webhook_secret {
+            panic!("SETTLEMENT_INGRESS_SECRET must be distinct from FIAT_WEBHOOK_SECRET");
+        }
+
         Self {
             bitcoin_rpc_url: env::var("BITCOIN_RPC_URL")
                 .unwrap_or_else(|_| "http://localhost:18332".to_string()),
@@ -66,8 +95,80 @@ impl Config {
                 .unwrap_or_else(|_| "https://api.infobip.com".to_string()),
             hmac_secret: env::var("HMAC_SECRET")
                 .unwrap_or_else(|_| "default-hmac-secret".to_string()),
-            fiat_webhook_secret: env::var("FIAT_WEBHOOK_SECRET")
-                .unwrap_or_else(|_| "default-fiat-secret".to_string()),
+            fiat_webhook_secret,
+            settlement_ingress_secret,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::sync::Mutex;
+
+    static ENV_MUTEX: Mutex<()> = Mutex::new(());
+
+    fn restore_env(key: &str, value: Option<String>) {
+        match value {
+            Some(value) => env::set_var(key, value),
+            None => env::remove_var(key),
+        }
+    }
+
+    struct SecretsEnvRestore {
+        old_fiat_webhook_secret: Option<String>,
+        old_settlement_ingress_secret: Option<String>,
+    }
+
+    impl Drop for SecretsEnvRestore {
+        fn drop(&mut self) {
+            restore_env("FIAT_WEBHOOK_SECRET", self.old_fiat_webhook_secret.clone());
+            restore_env(
+                "SETTLEMENT_INGRESS_SECRET",
+                self.old_settlement_ingress_secret.clone(),
+            );
+        }
+    }
+
+    #[test]
+    fn from_env_trims_secret_whitespace() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+
+        let _env_restore = SecretsEnvRestore {
+            old_fiat_webhook_secret: env::var("FIAT_WEBHOOK_SECRET").ok(),
+            old_settlement_ingress_secret: env::var("SETTLEMENT_INGRESS_SECRET").ok(),
+        };
+
+        env::set_var("FIAT_WEBHOOK_SECRET", "  fiat-secret  ");
+        env::set_var("SETTLEMENT_INGRESS_SECRET", "\tsettlement-secret\n");
+
+        let config = Config::from_env();
+        assert_eq!(config.fiat_webhook_secret, "fiat-secret");
+        assert_eq!(config.settlement_ingress_secret, "settlement-secret");
+    }
+
+    #[test]
+    fn from_env_checks_distinct_secrets_after_trimming() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+
+        let _env_restore = SecretsEnvRestore {
+            old_fiat_webhook_secret: env::var("FIAT_WEBHOOK_SECRET").ok(),
+            old_settlement_ingress_secret: env::var("SETTLEMENT_INGRESS_SECRET").ok(),
+        };
+
+        env::set_var("FIAT_WEBHOOK_SECRET", "shared-secret");
+        env::set_var("SETTLEMENT_INGRESS_SECRET", " shared-secret ");
+
+        let err = match std::panic::catch_unwind(Config::from_env) {
+            Ok(_) => panic!("expected Config::from_env to panic"),
+            Err(err) => err,
+        };
+        let message = err
+            .downcast_ref::<String>()
+            .cloned()
+            .or_else(|| err.downcast_ref::<&str>().map(|s| s.to_string()))
+            .unwrap_or_default();
+        assert!(message.contains("must be distinct"));
     }
 }
