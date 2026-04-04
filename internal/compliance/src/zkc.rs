@@ -198,6 +198,20 @@ impl ZkcVerifier {
         let raw_journal_bytes = proof.journal.as_bytes();
         let raw_journal_digest = sha256::Hash::hash(raw_journal_bytes);
         if receipt_journal_digest != raw_journal_digest {
+            let encoded_journal = proof.journal.trim();
+            if let Some(hex_with_prefix) = encoded_journal.strip_prefix("0x") {
+                if hex_with_prefix.len() % 2 != 0
+                    || !hex_with_prefix
+                        .as_bytes()
+                        .iter()
+                        .all(|b| b.is_ascii_hexdigit())
+                {
+                    return Err(ConxianError::Compliance(
+                        "Invalid journal hex: expected even-length hex string".to_string(),
+                    ));
+                }
+            }
+
             let decoded_journal_bytes = Self::decode_base64_or_hex("journal", &proof.journal)?;
             let decoded_journal_digest = sha256::Hash::hash(&decoded_journal_bytes);
 
@@ -240,19 +254,15 @@ impl ZkcVerifier {
         }
 
         if let Some(hex_with_prefix) = encoded.strip_prefix("0x") {
-            if hex_with_prefix.len() % 2 != 0
-                || !hex_with_prefix
+            if hex_with_prefix.len() % 2 == 0
+                && hex_with_prefix
                     .as_bytes()
                     .iter()
                     .all(|b| b.is_ascii_hexdigit())
             {
-                return Err(ConxianError::Compliance(format!(
-                    "Invalid {label} hex: expected even-length hex string"
-                )));
+                return hex::decode(hex_with_prefix)
+                    .map_err(|e| ConxianError::Compliance(format!("Invalid {label} hex: {e}")));
             }
-
-            return hex::decode(hex_with_prefix)
-                .map_err(|e| ConxianError::Compliance(format!("Invalid {label} hex: {e}")));
         }
 
         if encoded.len() % 2 == 0 && encoded.as_bytes().iter().all(|b| b.is_ascii_hexdigit()) {
