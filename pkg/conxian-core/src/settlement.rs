@@ -131,16 +131,21 @@ pub struct NormalizedSettlement {
 }
 
 impl NormalizedSettlement {
+    /// Returns `true` when the settlement should be treated as requiring the institutional
+    /// timelock guardrail.
+    ///
+    /// For ZAR settlements this fails closed: if the institutional threshold cannot be computed
+    /// (for example due to extremely large `amount_scale` values causing checked arithmetic to
+    /// overflow), this returns `true`.
     pub fn requires_institutional_timelock(&self) -> bool {
         if !self.currency.eq_ignore_ascii_case("ZAR") {
             return false;
         }
 
-        let Some(threshold_minor) = institutional_threshold_minor(self.amount_scale) else {
-            return true;
-        };
-
-        u128::from(self.amount_minor) >= threshold_minor
+        match institutional_threshold_minor(self.amount_scale) {
+            Some(threshold_minor) => u128::from(self.amount_minor) >= threshold_minor,
+            None => true,
+        }
     }
 }
 
