@@ -1,6 +1,6 @@
-use bitcoin::hashes::{sha256, Hash};
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use base64::Engine;
+use bitcoin::hashes::{sha256, Hash};
 use borsh::BorshDeserialize;
 use conxian_core::SETTLEMENT_ENVELOPE_VERSION_CURRENT;
 pub use conxian_core::{
@@ -154,7 +154,10 @@ impl ZkcVerifier {
 
         let receipt_hash = proof.receipt_hash.trim();
         if receipt_hash.len() != 64
-            || !receipt_hash.as_bytes().iter().all(|b| b.is_ascii_hexdigit())
+            || !receipt_hash
+                .as_bytes()
+                .iter()
+                .all(|b| b.is_ascii_hexdigit())
         {
             return Err(ConxianError::Compliance(
                 "Invalid receipt_hash: expected 32-byte hex string".to_string(),
@@ -163,19 +166,20 @@ impl ZkcVerifier {
 
         let image_id_hex = proof.image_id.trim().trim_start_matches("0x");
         if image_id_hex.len() != 64
-            || !image_id_hex.as_bytes().iter().all(|b| b.is_ascii_hexdigit())
+            || !image_id_hex
+                .as_bytes()
+                .iter()
+                .all(|b| b.is_ascii_hexdigit())
         {
             return Err(ConxianError::Compliance(
                 "Invalid image_id: expected 32-byte hex string".to_string(),
             ));
         }
-        let image_id = Risc0Digest::from_hex(image_id_hex).map_err(|e| {
-            ConxianError::Compliance(format!("Invalid image_id hex: {e}"))
-        })?;
+        let image_id = Risc0Digest::from_hex(image_id_hex)
+            .map_err(|e| ConxianError::Compliance(format!("Invalid image_id hex: {e}")))?;
 
         let receipt_bytes = Self::decode_base64_or_hex("receipt", &proof.receipt)?;
-        let computed_receipt_hash =
-            hex::encode(sha256::Hash::hash(&receipt_bytes).to_byte_array());
+        let computed_receipt_hash = hex::encode(sha256::Hash::hash(&receipt_bytes).to_byte_array());
         if !computed_receipt_hash.eq_ignore_ascii_case(receipt_hash) {
             return Err(ConxianError::Compliance(
                 "ZKML verification failed: receipt_hash mismatch".to_string(),
@@ -243,9 +247,8 @@ impl ZkcVerifier {
 
         let maybe_hex = encoded.trim_start_matches("0x");
         if maybe_hex.len() % 2 == 0 && maybe_hex.as_bytes().iter().all(|b| b.is_ascii_hexdigit()) {
-            return hex::decode(maybe_hex).map_err(|e| {
-                ConxianError::Compliance(format!("Invalid {label} hex: {e}"))
-            });
+            return hex::decode(maybe_hex)
+                .map_err(|e| ConxianError::Compliance(format!("Invalid {label} hex: {e}")));
         }
 
         BASE64_STANDARD
@@ -259,9 +262,8 @@ impl ZkcVerifier {
         }
 
         let words = Self::bytes_to_words_le(bytes)?;
-        risc0_zkvm::serde::from_slice::<Receipt, u32>(&words).map_err(|e| {
-            ConxianError::Compliance(format!("Invalid receipt encoding: {e}"))
-        })
+        risc0_zkvm::serde::from_slice::<Receipt, u32>(&words)
+            .map_err(|e| ConxianError::Compliance(format!("Invalid receipt encoding: {e}")))
     }
 
     fn bytes_to_words_le(bytes: &[u8]) -> ConxianResult<Vec<u32>> {
@@ -273,9 +275,7 @@ impl ZkcVerifier {
 
         let mut words = Vec::with_capacity(bytes.len() / 4);
         for chunk in bytes.chunks_exact(4) {
-            words.push(u32::from_le_bytes([
-                chunk[0], chunk[1], chunk[2], chunk[3],
-            ]));
+            words.push(u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
         }
         Ok(words)
     }
