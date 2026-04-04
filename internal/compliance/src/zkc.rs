@@ -226,24 +226,39 @@ impl ZkcVerifier {
 
         let receipt_journal = receipt.journal.bytes.as_slice();
         let public_inputs_raw = public_inputs_str.as_bytes();
-        let public_inputs_raw_hash_hex =
+        let public_inputs_raw_hash_hex_lower =
             hex::encode(sha256::Hash::hash(public_inputs_raw).to_byte_array());
+        let public_inputs_raw_hash_hex_upper =
+            public_inputs_raw_hash_hex_lower.to_ascii_uppercase();
 
         let mut public_inputs_ok = Self::contains_subslice(receipt_journal, public_inputs_raw)
-            || Self::contains_subslice(receipt_journal, public_inputs_raw_hash_hex.as_bytes());
+            || Self::contains_subslice(
+                receipt_journal,
+                public_inputs_raw_hash_hex_lower.as_bytes(),
+            )
+            || Self::contains_subslice(
+                receipt_journal,
+                public_inputs_raw_hash_hex_upper.as_bytes(),
+            );
 
         if !public_inputs_ok {
             let public_inputs_decoded =
                 Self::decode_base64_or_hex("public_inputs", public_inputs_str).ok();
 
             if let Some(public_inputs_decoded) = public_inputs_decoded {
-                let public_inputs_decoded_hash_hex =
+                let public_inputs_decoded_hash_hex_lower =
                     hex::encode(sha256::Hash::hash(&public_inputs_decoded).to_byte_array());
+                let public_inputs_decoded_hash_hex_upper =
+                    public_inputs_decoded_hash_hex_lower.to_ascii_uppercase();
                 public_inputs_ok =
                     Self::contains_subslice(receipt_journal, public_inputs_decoded.as_slice())
                         || Self::contains_subslice(
                             receipt_journal,
-                            public_inputs_decoded_hash_hex.as_bytes(),
+                            public_inputs_decoded_hash_hex_lower.as_bytes(),
+                        )
+                        || Self::contains_subslice(
+                            receipt_journal,
+                            public_inputs_decoded_hash_hex_upper.as_bytes(),
                         );
             }
         }
