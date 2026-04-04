@@ -6,9 +6,7 @@ use axum::{
     http::{Request, StatusCode},
 };
 use compliance::{IdentityManager, ZkcVerifier};
-use conxian_core::{
-    Attestation, AttestationRequest, GatewayState, SettlementProposal, SharedState,
-};
+use conxian_core::{Attestation, AttestationRequest, GatewayState, SharedState};
 use hmac::{Hmac, Mac};
 use secp256k1::{Message, Secp256k1, SecretKey};
 use serde_json::Value;

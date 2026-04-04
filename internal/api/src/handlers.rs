@@ -73,7 +73,6 @@ async fn record_settlement(state: &AppState, proposal: &SettlementProposal) {
 pub async fn get_external_settlements(
     State(state): State<AppState>,
 ) -> Json<Vec<SettlementProposal>> {
-) -> Json<Vec<SettlementProposal>> {
     let items = {
         let log = state.settlement_log.read().await;
         log.iter().cloned().collect()
