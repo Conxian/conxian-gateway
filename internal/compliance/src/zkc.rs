@@ -22,7 +22,7 @@ use secp256k1::{ecdsa::Signature, Message, PublicKey, Secp256k1};
 use serde_json::Value;
 use sha2::Sha256;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tracing::{debug, info};
+use tracing::info;
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -100,27 +100,34 @@ impl ZkcVerifier {
 
         match attestation {
             AttestationRequest::Ecdsa(attestation) => {
-                if !is_tee_device_id(&attestation.device_id)
-                    || attestation.payload != raw_payload_hash
-                {
+                if !is_tee_device_id(&attestation.device_id) {
+                    return Err(ConxianError::Compliance(
+                        "Invalid TEE device ID: must start with 'conxius-tee-'".to_string(),
+                    ));
+                }
+
+                if attestation.payload != raw_payload_hash {
                     return Ok(false);
                 }
 
                 self.verify(attestation)
             }
             AttestationRequest::Schnorr(attestation) => {
-                if !is_tee_device_id(&attestation.device_id)
-                    || attestation.payload != raw_payload_hash
-                {
+                if !is_tee_device_id(&attestation.device_id) {
+                    return Err(ConxianError::Compliance(
+                        "Invalid TEE device ID: must start with 'conxius-tee-'".to_string(),
+                    ));
+                }
+
+                if attestation.payload != raw_payload_hash {
                     return Ok(false);
                 }
 
                 self.verify_schnorr(attestation)
             }
-            _ => {
-                debug!("Unsupported TEE attestation type for settlement triggers");
-                Ok(false)
-            }
+            _ => Err(ConxianError::Compliance(
+                "Unsupported TEE attestation type for settlement triggers".to_string(),
+            )),
         }
     }
 

@@ -107,6 +107,13 @@ fn verify_tee_settlement_attestation(
     headers: &HeaderMap,
     raw_payload_hash: &str,
 ) -> Result<AttestationRequest, (StatusCode, Json<Value>)> {
+    fn invalid_tee_attestation_response() -> (StatusCode, Json<Value>) {
+        (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({ "error": "Invalid TEE attestation" })),
+        )
+    }
+
     let tee_attestation = extract_tee_attestation(headers)?;
     match state
         .compliance
@@ -115,17 +122,13 @@ fn verify_tee_settlement_attestation(
         Ok(true) => Ok(tee_attestation),
         Ok(false) => {
             warn!("TEE settlement attestation verification failed");
-            Err((
-                StatusCode::UNAUTHORIZED,
-                Json(json!({ "error": "Invalid TEE attestation" })),
-            ))
+            Err(invalid_tee_attestation_response())
         }
         Err(e) => {
+            // We intentionally collapse all verifier errors into a stable client-facing response.
+            // Detailed failure reasons are logged but not returned to callers.
             warn!("TEE settlement attestation verification error: {e}");
-            Err((
-                StatusCode::UNAUTHORIZED,
-                Json(json!({ "error": "Invalid TEE attestation" })),
-            ))
+            Err(invalid_tee_attestation_response())
         }
     }
 }
