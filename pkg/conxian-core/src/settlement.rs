@@ -150,22 +150,14 @@ impl NormalizedSettlement {
 }
 
 fn institutional_threshold_minor(scale: u32) -> Option<u128> {
-    let Some(factor) = 10u128.checked_pow(scale) else {
-        debug_assert!(false, "overflow computing 10^scale for scale={}", scale);
+    // 10^38 < u128::MAX; 10^39 would overflow.
+    const MAX_SCALE: u32 = 38;
+    if scale > MAX_SCALE {
         return None;
-    };
+    }
 
-    let Some(threshold_minor) = u128::from(INSTITUTIONAL_ZAR_THRESHOLD_MAJOR).checked_mul(factor)
-    else {
-        debug_assert!(
-            false,
-            "overflow computing institutional ZAR threshold for scale={}",
-            scale
-        );
-        return None;
-    };
-
-    Some(threshold_minor)
+    let factor = 10u128.checked_pow(scale)?;
+    u128::from(INSTITUTIONAL_ZAR_THRESHOLD_MAJOR).checked_mul(factor)
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
