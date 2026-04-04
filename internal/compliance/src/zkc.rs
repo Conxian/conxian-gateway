@@ -276,17 +276,17 @@ impl ZkcVerifier {
             )));
         }
 
-        if let Some(hex_with_prefix) = encoded
+        if let Some(hex_body) = encoded
             .strip_prefix("0x")
             .or_else(|| encoded.strip_prefix("0X"))
         {
-            if !Self::is_even_len_hex(hex_with_prefix) {
+            if !Self::is_even_len_hex(hex_body) {
                 return Err(ConxianError::Compliance(format!(
                     "Invalid {label} hex: expected even-length hex string"
                 )));
             }
 
-            return hex::decode(hex_with_prefix)
+            return hex::decode(hex_body)
                 .map_err(|e| ConxianError::Compliance(format!("Invalid {label} hex: {e}")));
         }
 
