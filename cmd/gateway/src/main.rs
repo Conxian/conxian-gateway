@@ -13,6 +13,7 @@ use engine::{
 use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
 use tokio::signal;
+use tokio::sync::RwLock as TokioRwLock;
 use tracing::{error, info};
 
 #[tokio::main]
@@ -99,6 +100,7 @@ async fn main() -> anyhow::Result<()> {
         compliance: zkc_verifier,
         fiat_webhook_secret: config.fiat_webhook_secret.clone(),
         settlement_ingress_secret: config.settlement_ingress_secret.clone(),
+        settlement_log: Arc::new(TokioRwLock::new(std::collections::VecDeque::new())),
     };
 
     // Create a cancellation token for graceful shutdown of listeners

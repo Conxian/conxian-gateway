@@ -2,10 +2,12 @@ use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use base64::Engine;
 use bitcoin::hashes::{sha256, Hash};
 use borsh::BorshDeserialize;
+use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
 use conxian_core::SETTLEMENT_ENVELOPE_VERSION_CURRENT;
 pub use conxian_core::{
     Attestation, BitVmAttestation, ConxianError, ConxianJobCard, ConxianResult,
-    NormalizedSettlement, SchnorrAttestation, SettlementEnvelope, SettlementSource,
+    NormalizedSettlement, SchnorrAttestation, SettlementEnvelope, SettlementFinality,
+    SettlementIdentifiers, SettlementRail, SettlementRailFamily, SettlementSource,
     SettlementStatus, ZkmlProof,
 };
 use hex::FromHex;
@@ -29,10 +31,14 @@ const INGRESS_SIGNATURE_HEX_LEN: usize = 64;
 struct Iso20022Fields {
     source: SettlementSource,
     transaction_id: String,
+    instruction_id: Option<String>,
+    end_to_end_id: Option<String>,
+    uetr: Option<String>,
     amount: String,
     currency: String,
     sender: String,
     receiver: String,
+    settled_at: Option<u64>,
 }
 
 pub struct ZkcVerifier {
@@ -397,7 +403,7 @@ impl ZkcVerifier {
         Ok(true)
     }
 
-    /// CON-163: Add global settlement ingress normalization logic.
+    /// CON-160: Add global settlement ingress normalization logic.
     pub fn normalize_iso20022_ingress(
         &self,
         xml: &str,
@@ -423,6 +429,19 @@ impl ZkcVerifier {
             receiver: fields.receiver,
             timestamp,
             status: SettlementStatus::Ingested,
+            rail: Some(SettlementRail {
+                family: SettlementRailFamily::Rtgs,
+                name: "ISO20022".to_string(),
+                region: "GLOBAL".to_string(),
+            }),
+            finality: SettlementFinality::Unknown,
+            settled_at: fields.settled_at,
+            identifiers: SettlementIdentifiers {
+                msg_id: None,
+                instruction_id: fields.instruction_id,
+                end_to_end_id: fields.end_to_end_id,
+                uetr: fields.uetr,
+            },
             raw_payload_hash,
         };
 
@@ -473,6 +492,23 @@ impl ZkcVerifier {
             .map_err(|e| ConxianError::Compliance(format!("Invalid system time: {e}")))?
             .as_secs();
 
+        let status = json
+            .get("status")
+            .and_then(|value| value.as_str())
+            .and_then(SettlementStatus::parse)
+            .unwrap_or(SettlementStatus::Ingested);
+        let finality = json
+            .get("finality")
+            .and_then(|value| value.as_str())
+            .and_then(|value| match value.trim().to_ascii_uppercase().as_str() {
+                "FINAL" => Some(SettlementFinality::Final),
+                "PROVISIONAL" => Some(SettlementFinality::Provisional),
+                "UNKNOWN" => Some(SettlementFinality::Unknown),
+                _ => None,
+            })
+            .unwrap_or(SettlementFinality::Unknown);
+        let settled_at = json.get("settled_at").and_then(|value| value.as_u64());
+
         let payload = NormalizedSettlement {
             source: SettlementSource::Papss,
             transaction_id: tx_id.to_string(),
@@ -482,7 +518,29 @@ impl ZkcVerifier {
             sender: sender.to_string(),
             receiver: receiver.to_string(),
             timestamp,
-            status: SettlementStatus::Ingested,
+            status,
+            rail: Some(SettlementRail {
+                family: SettlementRailFamily::Instant,
+                name: "PAPSS".to_string(),
+                region: "AFR".to_string(),
+            }),
+            finality,
+            settled_at,
+            identifiers: SettlementIdentifiers {
+                msg_id: None,
+                instruction_id: json
+                    .get("instruction_id")
+                    .and_then(|value| value.as_str())
+                    .map(str::to_string),
+                end_to_end_id: json
+                    .get("end_to_end_id")
+                    .and_then(|value| value.as_str())
+                    .map(str::to_string),
+                uetr: json
+                    .get("uetr")
+                    .and_then(|value| value.as_str())
+                    .map(str::to_string),
+            },
             raw_payload_hash,
         };
 
@@ -533,6 +591,30 @@ impl ZkcVerifier {
             .map_err(|e| ConxianError::Compliance(format!("Invalid system time: {e}")))?
             .as_secs();
 
+        let status = json
+            .get("status")
+            .and_then(|value| value.as_str())
+            .and_then(SettlementStatus::parse)
+            .unwrap_or(SettlementStatus::Ingested);
+        let finality = json
+            .get("finality")
+            .and_then(|value| value.as_str())
+            .and_then(|value| match value.trim().to_ascii_uppercase().as_str() {
+                "FINAL" => Some(SettlementFinality::Final),
+                "PROVISIONAL" => Some(SettlementFinality::Provisional),
+                "UNKNOWN" => Some(SettlementFinality::Unknown),
+                _ => None,
+            })
+            .unwrap_or(SettlementFinality::Unknown);
+        let settled_at = json.get("settled_at").and_then(|value| value.as_u64());
+        let rail_name = json
+            .get("rail_name")
+            .or_else(|| json.get("rail"))
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .unwrap_or("BRICS");
+
         let payload = NormalizedSettlement {
             source: SettlementSource::Brics,
             transaction_id: tx_id.to_string(),
@@ -542,7 +624,29 @@ impl ZkcVerifier {
             sender: sender.to_string(),
             receiver: receiver.to_string(),
             timestamp,
-            status: SettlementStatus::Ingested,
+            status,
+            rail: Some(SettlementRail {
+                family: SettlementRailFamily::Other,
+                name: rail_name.to_string(),
+                region: "GLOBAL".to_string(),
+            }),
+            finality,
+            settled_at,
+            identifiers: SettlementIdentifiers {
+                msg_id: None,
+                instruction_id: json
+                    .get("instruction_id")
+                    .and_then(|value| value.as_str())
+                    .map(str::to_string),
+                end_to_end_id: json
+                    .get("end_to_end_id")
+                    .and_then(|value| value.as_str())
+                    .map(str::to_string),
+                uetr: json
+                    .get("uetr")
+                    .and_then(|value| value.as_str())
+                    .map(str::to_string),
+            },
             raw_payload_hash,
         };
 
@@ -558,12 +662,16 @@ impl ZkcVerifier {
 
         let mut source: Option<SettlementSource> = None;
         let mut transaction_id: Option<String> = None;
+        let mut instruction_id: Option<String> = None;
+        let mut end_to_end_id: Option<String> = None;
+        let mut uetr: Option<String> = None;
         let mut amount: Option<String> = None;
         let mut currency: Option<String> = None;
         let mut sender: Option<String> = None;
         let mut sender_rank: u8 = 0;
         let mut receiver: Option<String> = None;
         let mut receiver_rank: u8 = 0;
+        let mut settled_at: Option<u64> = None;
 
         loop {
             match reader.read_event_into(&mut buf) {
@@ -652,10 +760,25 @@ impl ZkcVerifier {
 
                     if transaction_id.is_none() && Self::stack_ends_with(&stack, &[b"MsgId"]) {
                         transaction_id = Some(text.to_string());
+                    } else if instruction_id.is_none()
+                        && Self::stack_ends_with(&stack, &[b"InstrId"])
+                    {
+                        instruction_id = Some(text.to_string());
+                    } else if end_to_end_id.is_none()
+                        && Self::stack_ends_with(&stack, &[b"EndToEndId"])
+                    {
+                        end_to_end_id = Some(text.to_string());
+                    } else if uetr.is_none() && Self::stack_ends_with(&stack, &[b"UETR"]) {
+                        uetr = Some(text.to_string());
                     } else if amount.is_none()
                         && Self::stack_ends_with(&stack, &[b"IntrBkSttlmAmt"])
                     {
                         amount = Some(text.to_string());
+                    } else if settled_at.is_none()
+                        && (Self::stack_ends_with(&stack, &[b"IntrBkSttlmDtTm"])
+                            || Self::stack_ends_with(&stack, &[b"IntrBkSttlmDt"]))
+                    {
+                        settled_at = Self::parse_iso20022_timestamp(text);
                     }
 
                     let next_sender_rank =
@@ -722,6 +845,9 @@ impl ZkcVerifier {
             })?,
             transaction_id: transaction_id
                 .ok_or_else(|| ConxianError::Compliance("Missing MsgId".to_string()))?,
+            instruction_id,
+            end_to_end_id,
+            uetr,
             amount: amount
                 .ok_or_else(|| ConxianError::Compliance("Missing IntrBkSttlmAmt".to_string()))?,
             currency: currency.unwrap_or_else(|| "sBTC".to_string()),
@@ -731,7 +857,29 @@ impl ZkcVerifier {
             receiver: receiver.ok_or_else(|| {
                 ConxianError::Compliance("Missing creditor account identifier".to_string())
             })?,
+            settled_at,
         })
+    }
+
+    fn parse_iso20022_timestamp(value: &str) -> Option<u64> {
+        let value = value.trim();
+        if value.is_empty() {
+            return None;
+        }
+
+        if let Ok(dt) = DateTime::parse_from_rfc3339(value) {
+            return u64::try_from(dt.with_timezone(&Utc).timestamp()).ok();
+        }
+
+        if let Ok(dt) = NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S") {
+            return u64::try_from(dt.and_utc().timestamp()).ok();
+        }
+
+        if let Ok(date) = NaiveDate::parse_from_str(value, "%Y-%m-%d") {
+            return u64::try_from(date.and_hms_opt(0, 0, 0)?.and_utc().timestamp()).ok();
+        }
+
+        None
     }
 
     fn iso20022_source_from_attributes(

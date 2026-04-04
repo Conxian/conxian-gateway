@@ -10,8 +10,9 @@ pub use routes::configure_routes;
 use crate::a2p::A2pRouter;
 use crate::fiat::FiatRouter;
 use compliance::{IdentityManager, ZkcVerifier};
-use conxian_core::SharedState;
-use std::sync::Arc;
+use conxian_core::{SettlementEnvelope, SharedState};
+use std::{collections::VecDeque, sync::Arc};
+use tokio::sync::RwLock;
 
 /// Global application state for the Conxian Gateway API.
 #[derive(Clone)]
@@ -23,4 +24,5 @@ pub struct AppState {
     pub compliance: Arc<ZkcVerifier>,
     pub fiat_webhook_secret: String,
     pub settlement_ingress_secret: String,
+    pub settlement_log: Arc<RwLock<VecDeque<SettlementEnvelope>>>,
 }

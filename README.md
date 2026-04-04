@@ -42,6 +42,11 @@ Active development. Interfaces and module boundaries may evolve as protocol, wal
 - `POST /api/v1/verify`: Verify cryptographic attestations (ECDSA, Schnorr, ZKML, BitVM) (Authorized).
 - `POST /api/v1/identity/exchange`: Exchange OIDC token for GCP access token (WIF) (Authorized).
 - `POST /api/v1/iso20022/payment`: Generate standardized ISO 20022 egress messages (Authorized).
+- `POST /api/v1/iso20022/pacs008`: Ingest ISO 20022 pacs.008 settlement signals (Authorized).
+- `POST /api/v1/iso20022/pacs009`: Ingest ISO 20022 pacs.009 settlement signals (Authorized).
+- `POST /api/v1/settlement/papss`: Ingest PAPSS settlement signals (Authorized).
+- `POST /api/v1/settlement/brics`: Ingest BRICS settlement signals (Authorized).
+- `GET /api/v1/settlements/external`: View the in-memory, normalized settlement log (Authorized).
 
 ## Configuration
 The following environment variables can be used to configure the gateway:
@@ -61,6 +66,7 @@ The following environment variables can be used to configure the gateway:
 - `INFOBIP_BASE_URL`: Base URL for Infobip API.
 - `HMAC_SECRET`: Secret used for stateless OTP HMAC generation.
 - `FIAT_WEBHOOK_SECRET`: Secret used for verifying fiat provider webhooks.
+- `SETTLEMENT_INGRESS_SECRET`: Secret used for verifying settlement ingress payloads.
 
 ## Getting Started
 ```bash
