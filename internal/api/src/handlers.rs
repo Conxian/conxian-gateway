@@ -59,27 +59,21 @@ fn is_xml_content_type(headers: &HeaderMap) -> bool {
             .is_some_and(|(_, suffix)| suffix.eq_ignore_ascii_case("xml"))
 }
 
-fn record_settlement(state: &AppState, envelope: &SettlementEnvelope) {
-    let mut log = state
-        .settlement_log
-        .write()
-        .expect("settlement log lock poisoned");
-    log.push(envelope.clone());
+async fn record_settlement(state: &AppState, envelope: &SettlementEnvelope) {
+    let mut log = state.settlement_log.write().await;
 
-    if log.len() > SETTLEMENT_LOG_MAX_ENTRIES {
-        let excess = log.len() - SETTLEMENT_LOG_MAX_ENTRIES;
-        log.drain(0..excess);
+    while log.len() >= SETTLEMENT_LOG_MAX_ENTRIES {
+        log.pop_front();
     }
+
+    log.push_back(envelope.clone());
 }
 
 pub async fn get_external_settlements(
     State(state): State<AppState>,
 ) -> Json<Vec<SettlementEnvelope>> {
-    let log = state
-        .settlement_log
-        .read()
-        .expect("settlement log lock poisoned");
-    Json(log.clone())
+    let log = state.settlement_log.read().await;
+    Json(log.iter().cloned().collect())
 }
 
 pub async fn health_check(State(state): State<AppState>) -> Json<Value> {
@@ -463,7 +457,7 @@ pub async fn ingress_iso20022(
                 "Successfully ingested ISO 20022 settlement: {}",
                 envelope.payload.transaction_id
             );
-            record_settlement(&state, &envelope);
+            record_settlement(&state, &envelope).await;
             Ok(Json(envelope))
         }
         Err(e) => Err((
@@ -534,7 +528,7 @@ pub async fn ingress_papss(
                 "Successfully ingested PAPSS settlement: {}",
                 envelope.payload.transaction_id
             );
-            record_settlement(&state, &envelope);
+            record_settlement(&state, &envelope).await;
             Ok(Json(envelope))
         }
         Err(e) => Err((
@@ -605,7 +599,7 @@ pub async fn ingress_brics(
                 "Successfully ingested BRICS settlement: {}",
                 envelope.payload.transaction_id
             );
-            record_settlement(&state, &envelope);
+            record_settlement(&state, &envelope).await;
             Ok(Json(envelope))
         }
         Err(e) => Err((

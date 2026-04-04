@@ -11,6 +11,7 @@ use hmac::{Hmac, Mac};
 use serde_json::Value;
 use sha2::Sha256;
 use std::sync::{Arc, RwLock};
+use tokio::sync::RwLock as TokioRwLock;
 use tower::ServiceExt;
 
 const TEST_TOKEN: &str = "test-token";
@@ -38,7 +39,7 @@ fn setup_app(state: SharedState) -> axum::Router {
         compliance: Arc::new(ZkcVerifier::new()),
         fiat_webhook_secret: TEST_FIAT_SECRET.to_string(),
         settlement_ingress_secret: TEST_SETTLEMENT_SECRET.to_string(),
-        settlement_log: Arc::new(RwLock::new(Vec::new())),
+        settlement_log: Arc::new(TokioRwLock::new(std::collections::VecDeque::new())),
     };
     configure_routes(app_state, TEST_TOKEN.to_string())
 }
