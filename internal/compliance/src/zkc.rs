@@ -269,6 +269,11 @@ impl ZkcVerifier {
         Ok(true)
     }
 
+    /// Decode an encoded payload as either:
+    /// - Hex, when prefixed with `0x` or `0X`.
+    /// - Base64 otherwise.
+    ///
+    /// To avoid ambiguous decoding, even-length hex-looking strings without a prefix are rejected.
     fn decode_base64_or_hex(label: &str, encoded: &str) -> ConxianResult<Vec<u8>> {
         const MAX_ENCODED_LEN: usize = 4 * 1024 * 1024;
 
@@ -285,23 +290,29 @@ impl ZkcVerifier {
             )));
         }
 
-        if let Some(hex_with_prefix) = encoded
+        if let Some(hex_body) = encoded
             .strip_prefix("0x")
             .or_else(|| encoded.strip_prefix("0X"))
         {
-            if !Self::is_even_len_hex(hex_with_prefix) {
+            if hex_body.is_empty() {
+                return Err(ConxianError::Compliance(format!(
+                    "Invalid {label} hex: cannot be empty"
+                )));
+            }
+
+            if !Self::is_even_len_hex(hex_body) {
                 return Err(ConxianError::Compliance(format!(
                     "Invalid {label} hex: expected even-length hex string"
                 )));
             }
 
-            return hex::decode(hex_with_prefix)
+            return hex::decode(hex_body)
                 .map_err(|e| ConxianError::Compliance(format!("Invalid {label} hex: {e}")));
         }
 
         if Self::is_even_len_hex(encoded) {
             return Err(ConxianError::Compliance(format!(
-                "Invalid {label}: hex must be prefixed with 0x"
+                "Invalid {label}: hex must be prefixed with 0x or 0X"
             )));
         }
 
@@ -1158,6 +1169,55 @@ impl ZkcVerifier {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn test_decode_base64_or_hex_accepts_prefixed_hex() {
+        let bytes = ZkcVerifier::decode_base64_or_hex("test", "0xdeadbeef").unwrap();
+        assert_eq!(bytes, vec![0xde, 0xad, 0xbe, 0xef]);
+    }
+
+    #[test]
+    fn test_decode_base64_or_hex_accepts_uppercase_prefixed_hex() {
+        let bytes = ZkcVerifier::decode_base64_or_hex("test", "0Xdeadbeef").unwrap();
+        assert_eq!(bytes, vec![0xde, 0xad, 0xbe, 0xef]);
+    }
+
+    #[test]
+    fn test_decode_base64_or_hex_trims_whitespace() {
+        let bytes = ZkcVerifier::decode_base64_or_hex("test", "  0xdeadbeef  ").unwrap();
+        assert_eq!(bytes, vec![0xde, 0xad, 0xbe, 0xef]);
+
+        let bytes = ZkcVerifier::decode_base64_or_hex("test", "  Zm9v  ").unwrap();
+        assert_eq!(bytes, b"foo");
+    }
+
+    #[test]
+    fn test_decode_base64_or_hex_rejects_unprefixed_hex() {
+        let err = ZkcVerifier::decode_base64_or_hex("test", "deadbeef").unwrap_err();
+        match err {
+            ConxianError::Compliance(message) => {
+                assert!(message.contains("prefixed with 0x"));
+            }
+            other => panic!("expected compliance error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_decode_base64_or_hex_rejects_empty_hex_body() {
+        let err = ZkcVerifier::decode_base64_or_hex("test", "0x").unwrap_err();
+        match err {
+            ConxianError::Compliance(message) => {
+                assert!(message.contains("hex: cannot be empty"));
+            }
+            other => panic!("expected compliance error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_decode_base64_or_hex_accepts_base64() {
+        let bytes = ZkcVerifier::decode_base64_or_hex("test", "Zm9v").unwrap();
+        assert_eq!(bytes, b"foo");
+    }
 
     #[test]
     fn test_verify_ingress_signature_rejects_invalid_signatures() {
