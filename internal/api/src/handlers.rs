@@ -495,7 +495,7 @@ pub async fn ingress_iso20022(
             warn!("TEE settlement attestation verification error: {e}");
             return Err((
                 StatusCode::UNAUTHORIZED,
-                Json(json!({ "error": e.to_string() })),
+                Json(json!({ "error": "Invalid TEE attestation" })),
             ));
         }
     }
@@ -588,7 +588,7 @@ pub async fn ingress_papss(
             warn!("TEE settlement attestation verification error: {e}");
             return Err((
                 StatusCode::UNAUTHORIZED,
-                Json(json!({ "error": e.to_string() })),
+                Json(json!({ "error": "Invalid TEE attestation" })),
             ));
         }
     }
@@ -688,7 +688,7 @@ pub async fn ingress_brics(
             warn!("TEE settlement attestation verification error: {e}");
             return Err((
                 StatusCode::UNAUTHORIZED,
-                Json(json!({ "error": e.to_string() })),
+                Json(json!({ "error": "Invalid TEE attestation" })),
             ));
         }
     }
