@@ -55,9 +55,13 @@ impl A2pRouter {
     /// implemented. To run stateless OTP flows in development or unit tests, enable the
     /// `mock-integrations` feature.
     #[cfg(not(any(test, feature = "mock-integrations")))]
-    pub async fn send_otp(&self, request: OtpRequest) -> ConxianResult<(OtpResponse, String, u64)> {
+    pub async fn send_otp(
+        &self,
+        request: OtpRequest,
+    ) -> ConxianResult<(OtpResponse, String, u64)> {
+        let phone_tail = phone_tail(&request.phone_number);
         info!(
-            phone_number = %request.phone_number,
+            phone_tail = %phone_tail,
             channel = %request.channel,
             "A2P OTP sending is disabled in this build"
         );
@@ -68,9 +72,13 @@ impl A2pRouter {
     }
 
     #[cfg(any(test, feature = "mock-integrations"))]
-    pub async fn send_otp(&self, request: OtpRequest) -> ConxianResult<(OtpResponse, String, u64)> {
+    pub async fn send_otp(
+        &self,
+        request: OtpRequest,
+    ) -> ConxianResult<(OtpResponse, String, u64)> {
+        let phone_tail = phone_tail(&request.phone_number);
         info!(
-            phone_number = %request.phone_number,
+            phone_tail = %phone_tail,
             channel = %request.channel,
             "Sending OTP via mock A2P provider"
         );
@@ -128,9 +136,21 @@ impl A2pRouter {
     }
 }
 
-#[cfg(any(test, feature = "mock-integrations"))]
+fn phone_tail(phone_number: &str) -> String {
+    let tail: String = phone_number.chars().rev().take(4).collect();
+    tail.chars().rev().collect()
+}
+
+#[cfg(test)]
 fn generate_otp_code() -> String {
-    format!("{:06}", uuid::Uuid::new_v4().as_u128() % 1_000_000)
+    "000001".to_string()
+}
+
+#[cfg(all(feature = "mock-integrations", not(test)))]
+fn generate_otp_code() -> String {
+    use rand::{rngs::OsRng, Rng};
+
+    format!("{:06}", OsRng.gen_range(0..1_000_000))
 }
 
 #[cfg(test)]
@@ -156,13 +176,12 @@ mod tests {
         assert_eq!(hmac.len(), 64);
 
         let otp_code = "000001".to_string();
-        let expected_hmac = router.generate_hmac(&phone, &otp_code, ts).unwrap();
 
         let verify_req = OtpVerificationRequest {
             session_id: res.session_id,
             otp_code,
             phone_number: phone.clone(),
-            hmac: expected_hmac,
+            hmac,
             timestamp: ts,
         };
 
