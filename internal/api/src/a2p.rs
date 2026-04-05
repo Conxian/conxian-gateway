@@ -31,6 +31,7 @@ pub struct OtpVerificationRequest {
 pub struct A2pRouter {
     #[allow(dead_code)]
     infobip_api_key: String,
+    #[allow(dead_code)]
     infobip_base_url: String,
     hmac_secret: String,
 }
@@ -48,31 +49,48 @@ impl A2pRouter {
         }
     }
 
-    /// Sends an OTP via Infobip and returns a stateless session.
-    pub async fn send_otp(&self, request: OtpRequest) -> ConxianResult<(OtpResponse, String, u64)> {
+    /// Sends an OTP and returns a stateless session.
+    ///
+    /// This is intentionally disabled in production builds until the Infobip integration is
+    /// implemented. To run stateless OTP flows in development or unit tests, enable the
+    /// `mock-integrations` feature.
+    #[cfg(not(any(test, feature = "mock-integrations")))]
+    pub async fn send_otp(
+        &self,
+        request: OtpRequest,
+    ) -> ConxianResult<(OtpResponse, String, u64)> {
         info!(
-            "Sending OTP to {} via {} using Infobip",
-            request.phone_number, request.channel
+            phone_number = %request.phone_number,
+            channel = %request.channel,
+            "A2P OTP sending is disabled in this build"
         );
 
-        // In a real implementation, we would call Infobip API here.
-        // Simulation: generate a 6-digit OTP code (normally Infobip handles this, but for stateless we might generate it)
-        let otp_code = "123456"; // Mock OTP
+        Err(ConxianError::Security(
+            "A2P OTP sending is disabled (requires Infobip integration)".to_string(),
+        ))
+    }
+
+    #[cfg(any(test, feature = "mock-integrations"))]
+    pub async fn send_otp(
+        &self,
+        request: OtpRequest,
+    ) -> ConxianResult<(OtpResponse, String, u64)> {
+        info!(
+            phone_number = %request.phone_number,
+            channel = %request.channel,
+            "Sending OTP via mock A2P provider"
+        );
+
+        let otp_code = generate_otp_code();
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs();
 
-        // Generate HMAC for stateless verification (CON-40)
-        let hmac_value = self.generate_hmac(&request.phone_number, otp_code, timestamp)?;
-
+        let hmac_value = self.generate_hmac(&request.phone_number, &otp_code, timestamp)?;
         let session_id = uuid::Uuid::new_v4().to_string();
 
-        // Mock Infobip API call
-        info!(
-            "Infobip API call to {}: sending {} to {}",
-            self.infobip_base_url, otp_code, request.phone_number
-        );
+        info!(base_url = %self.infobip_base_url, "Mock A2P delivery completed");
 
         Ok((
             OtpResponse {
@@ -116,6 +134,11 @@ impl A2pRouter {
     }
 }
 
+#[cfg(any(test, feature = "mock-integrations"))]
+fn generate_otp_code() -> String {
+    format!("{:06}", uuid::Uuid::new_v4().as_u128() % 1_000_000)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -136,12 +159,16 @@ mod tests {
 
         let (res, hmac, ts) = router.send_otp(req).await.unwrap();
         assert_eq!(res.status, "sent");
+        assert_eq!(hmac.len(), 64);
+
+        let otp_code = "000001".to_string();
+        let expected_hmac = router.generate_hmac(&phone, &otp_code, ts).unwrap();
 
         let verify_req = OtpVerificationRequest {
             session_id: res.session_id,
-            otp_code: "123456".to_string(),
-            phone_number: phone,
-            hmac,
+            otp_code,
+            phone_number: phone.clone(),
+            hmac: expected_hmac,
             timestamp: ts,
         };
 
