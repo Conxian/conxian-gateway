@@ -142,8 +142,11 @@ fn phone_tail(phone_number: &str) -> String {
 }
 
 #[cfg(test)]
+const TEST_OTP_CODE: &str = "000001";
+
+#[cfg(test)]
 fn generate_otp_code() -> String {
-    "000001".to_string()
+    TEST_OTP_CODE.to_string()
 }
 
 #[cfg(all(feature = "mock-integrations", not(test)))]
@@ -175,7 +178,7 @@ mod tests {
         assert_eq!(res.status, "sent");
         assert_eq!(hmac.len(), 64);
 
-        let otp_code = "000001".to_string();
+        let otp_code = TEST_OTP_CODE.to_string();
 
         let verify_req = OtpVerificationRequest {
             session_id: res.session_id,
