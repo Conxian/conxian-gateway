@@ -136,9 +136,15 @@ impl A2pRouter {
     }
 }
 
-fn phone_tail(phone_number: &str) -> String {
-    let tail: String = phone_number.chars().rev().take(4).collect();
-    tail.chars().rev().collect()
+fn phone_tail(phone_number: &str) -> &str {
+    let start = phone_number
+        .char_indices()
+        .rev()
+        .nth(3)
+        .map(|(idx, _)| idx)
+        .unwrap_or(0);
+
+    &phone_number[start..]
 }
 
 #[cfg(test)]
