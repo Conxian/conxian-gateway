@@ -56,9 +56,9 @@ impl Config {
 
         Self {
             bitcoin_rpc_url: env::var("BITCOIN_RPC_URL")
-                .unwrap_or_else(|_| "http://localhost:18332".to_string()),
-            bitcoin_rpc_user: env::var("BITCOIN_RPC_USER").unwrap_or_else(|_| "user".to_string()),
-            bitcoin_rpc_pass: env::var("BITCOIN_RPC_PASS").unwrap_or_else(|_| "pass".to_string()),
+                .unwrap_or_else(|_| "https://bitcoin-rpc.publicnode.com".to_string()),
+            bitcoin_rpc_user: env::var("BITCOIN_RPC_USER").unwrap_or_default(),
+            bitcoin_rpc_pass: env::var("BITCOIN_RPC_PASS").unwrap_or_default(),
             bitcoin_sync_interval: env::var("BITCOIN_SYNC_INTERVAL")
                 .unwrap_or_else(|_| "10".to_string())
                 .parse()
