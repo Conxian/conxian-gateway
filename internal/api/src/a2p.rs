@@ -136,6 +136,9 @@ impl A2pRouter {
     }
 }
 
+/// Returns up to the last 4 characters of a phone number for logging.
+///
+/// This avoids panics on short or non-ASCII inputs.
 fn phone_tail(phone_number: &str) -> &str {
     let start = phone_number
         .char_indices()
@@ -165,6 +168,12 @@ fn generate_otp_code() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn phone_tail_returns_tail() {
+        assert_eq!(phone_tail("+1234567890"), "7890");
+        assert_eq!(phone_tail("123"), "123");
+    }
 
     #[tokio::test]
     async fn test_stateless_otp_flow() {
