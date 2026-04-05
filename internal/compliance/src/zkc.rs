@@ -449,8 +449,7 @@ impl ZkcVerifier {
             serde_json::to_string(job_card).map_err(|e| ConxianError::Internal(e.to_string()))?;
         let job_hash = hex::encode(sha256::Hash::hash(job_card_json.as_bytes()).to_byte_array());
 
-        if !bitvm_proof.state_root.contains(&job_hash) && bitvm_proof.state_root != "PROTOTYPE_ROOT"
-        {
+        if !bitvm_proof.state_root.contains(&job_hash) {
             return Err(ConxianError::Compliance(
                 "Job Card hash not found in BitVM state root".to_string(),
             ));
@@ -474,9 +473,7 @@ impl ZkcVerifier {
 
         let expected_hash =
             hex::encode(sha256::Hash::hash(attestation.state_root.as_bytes()).to_byte_array());
-        if expected_hash != attestation.commitment_hash
-            && attestation.commitment_hash != "MOCK_COMMITMENT"
-        {
+        if expected_hash != attestation.commitment_hash {
             return Err(ConxianError::Compliance(
                 "BitVM verification failed: state root mismatch".to_string(),
             ));

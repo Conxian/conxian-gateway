@@ -3,6 +3,9 @@ name = "compliance"
 version.workspace = true
 edition.workspace = true
 
+[features]
+mock-integrations = []
+
 [dependencies]
 conxian-core.workspace = true
 serde.workspace = true

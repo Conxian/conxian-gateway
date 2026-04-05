@@ -3,6 +3,9 @@ name = "api"
 version.workspace = true
 edition.workspace = true
 
+[features]
+mock-integrations = []
+
 [dependencies]
 compliance.workspace = true
 conxian-core.workspace = true

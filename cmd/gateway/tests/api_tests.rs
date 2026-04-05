@@ -284,6 +284,24 @@ async fn test_settle_job_card_authorized() {
     let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
     let app = setup_app(state);
 
+    let job_card = conxian_core::ConxianJobCard {
+        context: "https://conxian.com/contexts/job-card/v2.0".to_string(),
+        r#type: "ConxianJobCard".to_string(),
+        work_intent: conxian_core::WorkIntent {
+            sender_address: "ST123".to_string(),
+            receiver_address: "ST456".to_string(),
+            amount_sbtc: 0.1,
+            town_name: Some("Joburg".to_string()),
+            country_code: Some("ZA".to_string()),
+        },
+    };
+
+    let job_card_json = serde_json::to_string(&job_card).unwrap();
+    let job_hash = hex::encode(Sha256::digest(job_card_json.as_bytes()));
+
+    let state_root = job_hash;
+    let commitment_hash = hex::encode(Sha256::digest(state_root.as_bytes()));
+
     let response = app
         .oneshot(
             Request::builder()
@@ -293,21 +311,11 @@ async fn test_settle_job_card_authorized() {
                 .header("Content-Type", "application/json")
                 .body(Body::from(
                     serde_json::to_string(&serde_json::json!({
-                        "job_card": {
-                            "@context": "https://conxian.com/contexts/job-card/v2.0",
-                            "@type": "ConxianJobCard",
-                            "work_intent": {
-                                "sender_address": "ST123",
-                                "receiver_address": "ST456",
-                                "amount_sbtc": 0.1,
-                                "town_name": "Joburg",
-                                "country_code": "ZA"
-                            }
-                        },
+                        "job_card": job_card,
                         "bitvm_proof": {
                             "prover_id": "prover-1",
-                            "commitment_hash": "MOCK_COMMITMENT",
-                            "state_root": "PROTOTYPE_ROOT"
+                            "commitment_hash": commitment_hash,
+                            "state_root": state_root
                         }
                     }))
                     .unwrap(),
