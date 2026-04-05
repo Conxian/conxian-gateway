@@ -55,10 +55,7 @@ impl A2pRouter {
     /// implemented. To run stateless OTP flows in development or unit tests, enable the
     /// `mock-integrations` feature.
     #[cfg(not(any(test, feature = "mock-integrations")))]
-    pub async fn send_otp(
-        &self,
-        request: OtpRequest,
-    ) -> ConxianResult<(OtpResponse, String, u64)> {
+    pub async fn send_otp(&self, request: OtpRequest) -> ConxianResult<(OtpResponse, String, u64)> {
         let phone_tail = phone_tail(&request.phone_number);
         info!(
             phone_tail = %phone_tail,
@@ -72,10 +69,7 @@ impl A2pRouter {
     }
 
     #[cfg(any(test, feature = "mock-integrations"))]
-    pub async fn send_otp(
-        &self,
-        request: OtpRequest,
-    ) -> ConxianResult<(OtpResponse, String, u64)> {
+    pub async fn send_otp(&self, request: OtpRequest) -> ConxianResult<(OtpResponse, String, u64)> {
         let phone_tail = phone_tail(&request.phone_number);
         info!(
             phone_tail = %phone_tail,
