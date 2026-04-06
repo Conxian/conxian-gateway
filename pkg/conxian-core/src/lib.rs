@@ -275,11 +275,11 @@ impl Default for SystemWallets {
     fn default() -> Self {
         Self {
             bootstrap: "SPSZXAKV7DWTDZN2601WR31BM51BD3YTQWE97VRM".to_string(),
-            treasury: "SP3T...SAB-TREASURY".to_string(),
-            payout: "SP2P...SAB-PAYOUT".to_string(),
-            deployment: "SP1D...SAB-DEPLOY".to_string(),
-            emergency: "SP4E...SAB-EMERGENCY".to_string(),
-            dao_handoff: "SP0DAO...HANDOFF".to_string(),
+            treasury: "SP...SAB-TREASURY".to_string(),
+            payout: "SP...SAB-PAYOUT".to_string(),
+            deployment: "SP...SAB-DEPLOY".to_string(),
+            emergency: "SP...SAB-EMERGENCY".to_string(),
+            dao_handoff: "SP...HANDOFF".to_string(),
         }
     }
 }

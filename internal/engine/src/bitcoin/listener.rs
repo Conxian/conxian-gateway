@@ -138,7 +138,7 @@ mod tests {
             })
         }
         async fn get_network_info(&self) -> ConxianResult<String> {
-            Ok("testnet".to_string())
+            Ok("mainnet".to_string())
         }
     }
 
@@ -165,7 +165,7 @@ mod tests {
             let s = state.read().unwrap();
             assert_eq!(s.bitcoin.height, 100);
             assert_eq!(s.bitcoin.status, "synced");
-            assert_eq!(s.bitcoin.network, "testnet");
+            assert_eq!(s.bitcoin.network, "mainnet");
             assert_eq!(s.bitcoin.best_block_hash, "hash-100");
             assert!(s.bitcoin.last_sync_time > 0);
         }
