@@ -196,7 +196,7 @@ async fn test_verify_schnorr_attestation_authorized() {
 }
 
 #[tokio::test]
-async fn test_metrics_endpoint() {
+async fn test_metrics_endpoint_unauthorized() {
     let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
     let app = setup_app(state);
 
@@ -204,6 +204,25 @@ async fn test_metrics_endpoint() {
         .oneshot(
             Request::builder()
                 .uri("/api/v1/metrics")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn test_metrics_endpoint_authorized() {
+    let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/metrics")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
                 .body(Body::empty())
                 .unwrap(),
         )

@@ -38,6 +38,7 @@ hyper = { version = "1.6.0", features = ["full"] }
 
 # Utilities & Error Handling
 anyhow = { version = "1.0.98" }
+subtle = { version = "2.6.1" }
 thiserror = { version = "1.0.69" }
 chrono = { version = "0.4.34", features = ["serde"] }
 uuid = { version = "1.17.0", features = ["v4", "serde"] }
