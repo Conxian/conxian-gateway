@@ -8,24 +8,25 @@ pub const INSTITUTIONAL_TIMELOCK_BURN_BLOCKS: u64 = 144;
 pub const INSTITUTIONAL_ZAR_THRESHOLD_MAJOR: u64 = 100_000_000;
 
 /// Current settlement envelope protocol version.
-///
-/// Serialized into `SettlementEnvelope::version` when the gateway constructs a new settlement
-/// envelope.
 pub const SETTLEMENT_ENVELOPE_VERSION_CURRENT: &str = SETTLEMENT_ENVELOPE_VERSION_V2_LITERAL;
 
-/// Deprecated alias for the settlement envelope protocol v2.
-#[deprecated(
-    since = "0.1.0",
-    note = "Use SETTLEMENT_ENVELOPE_VERSION_CURRENT instead"
-)]
-pub const SETTLEMENT_ENVELOPE_VERSION_V2: &str = SETTLEMENT_ENVELOPE_VERSION_V2_LITERAL;
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum SettlementSource {
     Iso20022Pacs008,
     Iso20022Pacs009,
     Papss,
     Brics,
+}
+
+impl SettlementSource {
+    pub fn as_rail_name(&self) -> &'static str {
+        match self {
+            Self::Iso20022Pacs008 | Self::Iso20022Pacs009 => "ISO20022",
+            Self::Papss => "PAPSS",
+            Self::Brics => "BRICS",
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
@@ -45,24 +46,18 @@ pub struct SettlementRail {
     pub region: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum SettlementFinality {
     Final,
     Provisional,
+    #[default]
     Unknown,
-}
-
-impl Default for SettlementFinality {
-    fn default() -> Self {
-        Self::Unknown
-    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum SettlementStatus {
-    #[serde(alias = "Ingested")]
     Ingested,
     Accepted,
     Rejected,
@@ -89,23 +84,17 @@ impl SettlementStatus {
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct SettlementIdentifiers {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub msg_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub instruction_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transaction_reference: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub settlement_reference: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub end_to_end_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub uetr: Option<String>,
-}
-
-impl SettlementIdentifiers {
-    fn is_empty(&self) -> bool {
-        self.msg_id.is_none()
-            && self.instruction_id.is_none()
-            && self.end_to_end_id.is_none()
-            && self.uetr.is_none()
-    }
+    pub settlement_amount: String,
+    pub settlement_currency: String,
+    pub settlement_date: String, // YYYY-MM-DD
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -125,39 +114,8 @@ pub struct NormalizedSettlement {
     pub finality: SettlementFinality,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub settled_at: Option<u64>,
-    #[serde(default, skip_serializing_if = "SettlementIdentifiers::is_empty")]
     pub identifiers: SettlementIdentifiers,
     pub raw_payload_hash: String,
-}
-
-impl NormalizedSettlement {
-    /// Returns `true` when the settlement should be treated as requiring the institutional
-    /// timelock guardrail.
-    ///
-    /// For ZAR settlements this fails closed: if the institutional threshold cannot be computed
-    /// (for example due to extremely large `amount_scale` values causing checked arithmetic to
-    /// overflow), this returns `true`.
-    pub fn requires_institutional_timelock(&self) -> bool {
-        if !self.currency.eq_ignore_ascii_case("ZAR") {
-            return false;
-        }
-
-        match institutional_threshold_minor(self.amount_scale) {
-            Some(threshold_minor) => u128::from(self.amount_minor) >= threshold_minor,
-            None => true,
-        }
-    }
-}
-
-fn institutional_threshold_minor(scale: u32) -> Option<u128> {
-    // 10^38 < u128::MAX; 10^39 would overflow.
-    const MAX_SCALE: u32 = 38;
-    if scale > MAX_SCALE {
-        return None;
-    }
-
-    let factor = 10u128.checked_pow(scale)?;
-    u128::from(INSTITUTIONAL_ZAR_THRESHOLD_MAJOR).checked_mul(factor)
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -176,55 +134,57 @@ pub enum SettlementProposalState {
     Rejected,
 }
 
-impl Default for SettlementProposalState {
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ProductiveStreaming {
+    pub founder_royalty_bps: u16,   // 5% (500 bps)
+    pub ecosystem_reserve_bps: u16, // 5% (500 bps)
+    pub productive_yield_bps: u16,  // 90% (9000 bps)
+    pub is_active: bool,
+}
+
+impl Default for ProductiveStreaming {
     fn default() -> Self {
-        Self::Proposed
+        Self {
+            founder_royalty_bps: 500,
+            ecosystem_reserve_bps: 500,
+            productive_yield_bps: 9000,
+            is_active: true,
+        }
     }
 }
 
-/// A proposal-only representation of an external settlement signal.
-///
-/// This is intentionally separate from any execution path: consuming services are expected to map
-/// proposals into the existing multi-sig + timelock executor when/if the proposal is approved.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SettlementProposal {
-    pub proposal_id: String,
+    pub proposal_id: String, // trigger_id
     pub envelope: SettlementEnvelope,
     pub tee_attestation: crate::AttestationRequest,
     pub stacks_burn_block_height: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub timelock_release_burn_block_height: Option<u64>,
+    pub timelock_release_burn_block_height: u64,
     pub created_at: u64,
-    #[serde(default)]
     pub state: SettlementProposalState,
+    pub streaming: ProductiveStreaming,
 }
 
 impl SettlementProposal {
     pub fn new(
+        proposal_id: String,
         envelope: SettlementEnvelope,
         tee_attestation: crate::AttestationRequest,
         stacks_burn_block_height: u64,
         created_at: u64,
     ) -> Self {
-        let timelock_release_burn_block_height = envelope
-            .payload
-            .requires_institutional_timelock()
-            .then(|| stacks_burn_block_height.saturating_add(INSTITUTIONAL_TIMELOCK_BURN_BLOCKS));
-
-        let state = if timelock_release_burn_block_height.is_some() {
-            SettlementProposalState::Timelocked
-        } else {
-            SettlementProposalState::Proposed
-        };
+        let timelock_release_burn_block_height =
+            stacks_burn_block_height.saturating_add(INSTITUTIONAL_TIMELOCK_BURN_BLOCKS);
 
         Self {
-            proposal_id: envelope.payload.raw_payload_hash.clone(),
+            proposal_id,
             envelope,
             tee_attestation,
             stacks_burn_block_height,
             timelock_release_burn_block_height,
             created_at,
-            state,
+            state: SettlementProposalState::Timelocked,
+            streaming: ProductiveStreaming::default(),
         }
     }
 }

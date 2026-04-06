@@ -19,8 +19,8 @@ use risc0_zkvm::Receipt;
 use secp256k1::schnorr::Signature as SchnorrSignature;
 use secp256k1::XOnlyPublicKey;
 use secp256k1::{ecdsa::Signature, Message, PublicKey, Secp256k1};
-use serde_json::Value;
-use sha2::Sha256;
+use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::info;
 
@@ -31,9 +31,7 @@ const INGRESS_SIGNATURE_HEX_LEN: usize = 64;
 struct Iso20022Fields {
     source: SettlementSource,
     transaction_id: String,
-    instruction_id: Option<String>,
     end_to_end_id: Option<String>,
-    uetr: Option<String>,
     amount: String,
     currency: String,
     sender: String,
@@ -87,6 +85,31 @@ impl ZkcVerifier {
             .map_err(|e| ConxianError::Security(format!("Invalid signature hex: {e}")))?;
 
         Ok(mac.verify_slice(&sig_bytes).is_ok())
+    }
+
+    /// CON-162: Compute a deterministic trigger_id for replay protection.
+    pub fn compute_trigger_id(
+        &self,
+        rail: &str,
+        raw_payload_hash: &str,
+        identifiers: &SettlementIdentifiers,
+    ) -> ConxianResult<String> {
+        let domain_separator = "external-settlement-trigger:v1";
+
+        // Deterministic JSON Canonical Serialization (JCS) simulation via sorted keys
+        let jcs_value = json!({
+            "rail": rail,
+            "raw_payload_hash": raw_payload_hash,
+            "settlement_identifiers": identifiers
+        });
+
+        let jcs_string = serde_json::to_string(&jcs_value)
+            .map_err(|e| ConxianError::Internal(format!("JCS serialization error: {e}")))?;
+
+        let mut hasher = Sha256::new();
+        hasher.update(domain_separator.as_bytes());
+        hasher.update(jcs_string.as_bytes());
+        Ok(hex::encode(hasher.finalize()))
     }
 
     pub fn verify_settlement_trigger_attestation(
@@ -314,8 +337,6 @@ impl ZkcVerifier {
     /// Decode an encoded payload as either:
     /// - Hex, when prefixed with `0x` or `0X`.
     /// - Base64 otherwise.
-    ///
-    /// To avoid ambiguous decoding, even-length hex-looking strings without a prefix are rejected.
     fn decode_base64_or_hex(label: &str, encoded: &str) -> ConxianResult<Vec<u8>> {
         const MAX_ENCODED_LEN: usize = 4 * 1024 * 1024;
 
@@ -374,7 +395,7 @@ impl ZkcVerifier {
     }
 
     fn bytes_to_words_le(bytes: &[u8]) -> ConxianResult<Vec<u32>> {
-        if bytes.len() % 4 != 0 {
+        if !bytes.len().is_multiple_of(4) {
             return Err(ConxianError::Compliance(
                 "Invalid receipt encoding: expected 4-byte word alignment".to_string(),
             ));
@@ -426,7 +447,7 @@ impl ZkcVerifier {
     }
 
     fn is_even_len_hex(value: &str) -> bool {
-        value.len() % 2 == 0 && value.as_bytes().iter().all(|b| b.is_ascii_hexdigit())
+        value.len().is_multiple_of(2) && value.as_bytes().iter().all(|b| b.is_ascii_hexdigit())
     }
 
     fn is_32_byte_hex(value: &str) -> bool {
@@ -482,6 +503,20 @@ impl ZkcVerifier {
         Ok(true)
     }
 
+    fn normalize_amount_string(amount: &str) -> ConxianResult<String> {
+        let (minor, scale) = Self::parse_amount_minor_scale(amount)?;
+        let minor_str = minor.to_string();
+        if scale == 0 {
+            Ok(minor_str)
+        } else if minor_str.len() > scale as usize {
+            let split_at = minor_str.len() - scale as usize;
+            let (int_part, frac_part) = minor_str.split_at(split_at);
+            Ok(format!("{}.{}", int_part, frac_part))
+        } else {
+            Ok(format!("0.{:0>width$}", minor_str, width = scale as usize))
+        }
+    }
+
     /// CON-160: Add global settlement ingress normalization logic.
     pub fn normalize_iso20022_ingress(
         &self,
@@ -492,11 +527,32 @@ impl ZkcVerifier {
 
         let fields = self.parse_iso20022_fields(xml)?;
         let (amount_minor, amount_scale) = Self::parse_amount_minor_scale(&fields.amount)?;
+        let settlement_amount = Self::normalize_amount_string(&fields.amount)?;
 
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_err(|e| ConxianError::Compliance(format!("Invalid system time: {e}")))?
             .as_secs();
+
+        let settlement_date = fields
+            .settled_at
+            .map(|ts| {
+                DateTime::from_timestamp(ts as i64, 0)
+                    .unwrap_or_default()
+                    .format("%Y-%m-%d")
+                    .to_string()
+            })
+            .unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
+
+        let identifiers = SettlementIdentifiers {
+            message_id: Some(fields.transaction_id.clone()),
+            transaction_reference: None,
+            settlement_reference: None,
+            end_to_end_id: fields.end_to_end_id,
+            settlement_amount,
+            settlement_currency: fields.currency.to_uppercase(),
+            settlement_date,
+        };
 
         let payload = NormalizedSettlement {
             source: fields.source,
@@ -515,12 +571,7 @@ impl ZkcVerifier {
             }),
             finality: SettlementFinality::Unknown,
             settled_at: fields.settled_at,
-            identifiers: SettlementIdentifiers {
-                msg_id: None,
-                instruction_id: fields.instruction_id,
-                end_to_end_id: fields.end_to_end_id,
-                uetr: fields.uetr,
-            },
+            identifiers,
             raw_payload_hash,
         };
 
@@ -545,6 +596,7 @@ impl ZkcVerifier {
             ConxianError::Compliance("Invalid amount: must be a string decimal".to_string())
         })?;
         let (amount_minor, amount_scale) = Self::parse_amount_minor_scale(amount_str)?;
+        let settlement_amount = Self::normalize_amount_string(amount_str)?;
 
         let sender = json["sender_bic"]
             .as_str()
@@ -588,6 +640,31 @@ impl ZkcVerifier {
             .unwrap_or(SettlementFinality::Unknown);
         let settled_at = json.get("settled_at").and_then(|value| value.as_u64());
 
+        let settlement_date = settled_at
+            .map(|ts| {
+                DateTime::from_timestamp(ts as i64, 0)
+                    .unwrap_or_default()
+                    .format("%Y-%m-%d")
+                    .to_string()
+            })
+            .unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
+
+        let identifiers = SettlementIdentifiers {
+            message_id: json
+                .get("message_id")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+            transaction_reference: Some(tx_id.to_string()),
+            settlement_reference: None,
+            end_to_end_id: json
+                .get("end_to_end_id")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+            settlement_amount,
+            settlement_currency: currency.to_uppercase(),
+            settlement_date,
+        };
+
         let payload = NormalizedSettlement {
             source: SettlementSource::Papss,
             transaction_id: tx_id.to_string(),
@@ -605,21 +682,7 @@ impl ZkcVerifier {
             }),
             finality,
             settled_at,
-            identifiers: SettlementIdentifiers {
-                msg_id: None,
-                instruction_id: json
-                    .get("instruction_id")
-                    .and_then(|value| value.as_str())
-                    .map(str::to_string),
-                end_to_end_id: json
-                    .get("end_to_end_id")
-                    .and_then(|value| value.as_str())
-                    .map(str::to_string),
-                uetr: json
-                    .get("uetr")
-                    .and_then(|value| value.as_str())
-                    .map(str::to_string),
-            },
+            identifiers,
             raw_payload_hash,
         };
 
@@ -644,6 +707,7 @@ impl ZkcVerifier {
             ConxianError::Compliance("Invalid amount: must be a string decimal".to_string())
         })?;
         let (amount_minor, amount_scale) = Self::parse_amount_minor_scale(amount_str)?;
+        let settlement_amount = Self::normalize_amount_string(amount_str)?;
 
         let sender = json["origin_bank"]
             .as_str()
@@ -686,6 +750,29 @@ impl ZkcVerifier {
             })
             .unwrap_or(SettlementFinality::Unknown);
         let settled_at = json.get("settled_at").and_then(|value| value.as_u64());
+
+        let settlement_date = settled_at
+            .map(|ts| {
+                DateTime::from_timestamp(ts as i64, 0)
+                    .unwrap_or_default()
+                    .format("%Y-%m-%d")
+                    .to_string()
+            })
+            .unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
+
+        let identifiers = SettlementIdentifiers {
+            message_id: json
+                .get("message_id")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+            transaction_reference: None,
+            settlement_reference: Some(tx_id.to_string()),
+            end_to_end_id: None,
+            settlement_amount,
+            settlement_currency: currency.to_uppercase(),
+            settlement_date,
+        };
+
         let rail_name = json
             .get("rail_name")
             .or_else(|| json.get("rail"))
@@ -711,21 +798,7 @@ impl ZkcVerifier {
             }),
             finality,
             settled_at,
-            identifiers: SettlementIdentifiers {
-                msg_id: None,
-                instruction_id: json
-                    .get("instruction_id")
-                    .and_then(|value| value.as_str())
-                    .map(str::to_string),
-                end_to_end_id: json
-                    .get("end_to_end_id")
-                    .and_then(|value| value.as_str())
-                    .map(str::to_string),
-                uetr: json
-                    .get("uetr")
-                    .and_then(|value| value.as_str())
-                    .map(str::to_string),
-            },
+            identifiers,
             raw_payload_hash,
         };
 
@@ -743,7 +816,6 @@ impl ZkcVerifier {
         let mut transaction_id: Option<String> = None;
         let mut instruction_id: Option<String> = None;
         let mut end_to_end_id: Option<String> = None;
-        let mut uetr: Option<String> = None;
         let mut amount: Option<String> = None;
         let mut currency: Option<String> = None;
         let mut sender: Option<String> = None;
@@ -847,8 +919,6 @@ impl ZkcVerifier {
                         && Self::stack_ends_with(&stack, &[b"EndToEndId"])
                     {
                         end_to_end_id = Some(text.to_string());
-                    } else if uetr.is_none() && Self::stack_ends_with(&stack, &[b"UETR"]) {
-                        uetr = Some(text.to_string());
                     } else if amount.is_none()
                         && Self::stack_ends_with(&stack, &[b"IntrBkSttlmAmt"])
                     {
@@ -924,9 +994,7 @@ impl ZkcVerifier {
             })?,
             transaction_id: transaction_id
                 .ok_or_else(|| ConxianError::Compliance("Missing MsgId".to_string()))?,
-            instruction_id,
             end_to_end_id,
-            uetr,
             amount: amount
                 .ok_or_else(|| ConxianError::Compliance("Missing IntrBkSttlmAmt".to_string()))?,
             currency: currency.unwrap_or_else(|| "sBTC".to_string()),
@@ -1051,7 +1119,7 @@ impl ZkcVerifier {
             minor_u128 = minor_u128
                 .checked_mul(10)
                 .and_then(|n| n.checked_add((digit - b'0') as u128))
-                .ok_or_else(|| ConxianError::Compliance("Invalid amount: overflow".to_string()))?;
+                .ok_or_else(|| ConxianError::Compliance("Invalid_amount: overflow".to_string()))?;
         }
 
         let minor = u64::try_from(minor_u128)
@@ -1419,5 +1487,27 @@ mod tests {
         assert_eq!(envelope.payload.currency, "EUR");
         assert_eq!(envelope.payload.sender, "DE123");
         assert_eq!(envelope.payload.receiver, "FR456");
+    }
+
+    #[test]
+    fn test_compute_trigger_id_determinism() {
+        let verifier = ZkcVerifier::new();
+        let rail = "ISO20022";
+        let raw_payload_hash = "00".repeat(32);
+        let identifiers = SettlementIdentifiers {
+            message_id: Some("msg-1".to_string()),
+            settlement_amount: "100.00".to_string(),
+            settlement_currency: "USD".to_string(),
+            settlement_date: "2026-04-06".to_string(),
+            ..Default::default()
+        };
+
+        let id1 = verifier
+            .compute_trigger_id(rail, &raw_payload_hash, &identifiers)
+            .unwrap();
+        let id2 = verifier
+            .compute_trigger_id(rail, &raw_payload_hash, &identifiers)
+            .unwrap();
+        assert_eq!(id1, id2);
     }
 }

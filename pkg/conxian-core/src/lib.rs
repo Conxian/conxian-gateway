@@ -60,6 +60,7 @@ pub struct GatewayState {
     pub bitcoin: ChainState,
     pub stacks: ChainState,
     pub metrics: Metrics,
+    pub wallets: SystemWallets,
     pub start_time: u64,
 }
 
@@ -69,6 +70,7 @@ impl Default for GatewayState {
             bitcoin: ChainState::default(),
             stacks: ChainState::default(),
             metrics: Metrics::default(),
+            wallets: SystemWallets::default(),
             start_time: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
@@ -250,4 +252,34 @@ pub struct IdentityResolutionResponse {
 pub trait DlcOrchestrator: Send + Sync {
     fn create_dlc_bond(&self, bond: &DlcBond) -> ConxianResult<String>;
     fn settle_coupon(&self, bond_id: &str, amount_sbtc: f64) -> ConxianResult<bool>;
+}
+
+/// CON-423: SAB-owned system wallets for BOS operations.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SystemWallets {
+    /// Initial bootstrap wallet (operator controlled).
+    pub bootstrap: String,
+    /// Canonical SAB treasury wallet.
+    pub treasury: String,
+    /// Automated payout execution wallet.
+    pub payout: String,
+    /// Mainnet deployment authority wallet.
+    pub deployment: String,
+    /// Emergency multi-sig / circuit-breaker wallet.
+    pub emergency: String,
+    /// DAO-controlled governance handover target.
+    pub dao_handoff: String,
+}
+
+impl Default for SystemWallets {
+    fn default() -> Self {
+        Self {
+            bootstrap: "SPSZXAKV7DWTDZN2601WR31BM51BD3YTQWE97VRM".to_string(),
+            treasury: "SP3T...SAB-TREASURY".to_string(),
+            payout: "SP2P...SAB-PAYOUT".to_string(),
+            deployment: "SP1D...SAB-DEPLOY".to_string(),
+            emergency: "SP4E...SAB-EMERGENCY".to_string(),
+            dao_handoff: "SP0DAO...HANDOFF".to_string(),
+        }
+    }
 }
