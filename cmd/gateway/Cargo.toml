@@ -3,6 +3,14 @@ name = "gateway"
 version.workspace = true
 edition.workspace = true
 
+[lib]
+name = "gateway_lib"
+path = "src/config.rs"
+
+[[bin]]
+name = "gateway"
+path = "src/main.rs"
+
 [dependencies]
 engine.workspace = true
 api.workspace = true
