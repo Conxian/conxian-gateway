@@ -52,7 +52,10 @@ impl IdentityManager {
             ));
         }
 
-        Ok(format!("dev-gcp-access-token-{}", &request.subject_token[..8]))
+        Ok(format!(
+            "dev-gcp-access-token-{}",
+            &request.subject_token[..8]
+        ))
     }
 
     /// CON-66: Resolve identities across ENS, BNS, World ID, and Web3.bio.
