@@ -51,8 +51,8 @@ Active development. Interfaces and module boundaries may evolve as protocol, wal
 ## Configuration
 The following environment variables can be used to configure the gateway:
 - `BITCOIN_RPC_URL`: URL of the Bitcoin node RPC (default: https://bitcoin-rpc.publicnode.com)
-- `BITCOIN_RPC_USER`: Bitcoin RPC username (optional; default: empty)
-- `BITCOIN_RPC_PASS`: Bitcoin RPC password (optional; default: empty)
+- `BITCOIN_RPC_USER`: Bitcoin RPC username (optional; set both user+pass, or leave both empty)
+- `BITCOIN_RPC_PASS`: Bitcoin RPC password (optional; set both user+pass, or leave both empty)
 - `STACKS_RPC_URL`: URL of the Stacks node API (default: https://api.mainnet.hiro.so)
 - `API_TOKEN`: Bearer token for institutional API access (default: institutional-default-token)
 - `BITCOIN_SYNC_INTERVAL`: Sync interval for Bitcoin (default: 10s)
