@@ -4,6 +4,7 @@ use axum::{
     middleware::Next,
     response::Response,
 };
+use subtle::ConstantTimeEq;
 use tracing::warn;
 
 pub async fn auth_middleware(
@@ -23,11 +24,23 @@ pub async fn auth_middleware(
         .and_then(|h| h.to_str().ok());
 
     match auth_header {
-        Some(auth) if auth.starts_with("Bearer ") && auth[7..] == expected_token => {
-            Ok(next.run(req).await)
+        Some(auth) if auth.starts_with("Bearer ") => {
+            let provided_token = &auth[7..];
+            // Cryptographic constant-time comparison to prevent timing attacks
+            if provided_token
+                .as_bytes()
+                .ct_eq(expected_token.as_bytes())
+                .unwrap_u8()
+                == 1
+            {
+                Ok(next.run(req).await)
+            } else {
+                warn!("Unauthorized request: Invalid Bearer token");
+                Err(StatusCode::UNAUTHORIZED)
+            }
         }
         _ => {
-            warn!("Unauthorized request: Invalid or missing Bearer token");
+            warn!("Unauthorized request: Missing or malformed Bearer token");
             Err(StatusCode::UNAUTHORIZED)
         }
     }
