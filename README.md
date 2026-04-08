@@ -10,6 +10,10 @@ Provide a unified, authenticated `/api/v1` interface for chain state, compliance
 
 Active development. Interfaces and module boundaries may evolve as protocol, wallet, and platform requirements converge.
 
+## Ownership
+
+Ownership and review requirements are defined in [`CODEOWNERS`](./CODEOWNERS).
+
 ## Audience
 
 - Backend engineers integrating chain-state monitoring and institutional egress.
