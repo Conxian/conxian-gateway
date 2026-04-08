@@ -16,16 +16,26 @@ pub struct BitcoinRpcClient {
 
 impl BitcoinRpcClient {
     pub fn new(url: &str, user: &str, pass: &str) -> ConxianResult<Self> {
+        let url = url.trim();
         let user = user.trim();
-        let pass = pass.trim();
+
+        if url.is_empty() {
+            return Err(ConxianError::Bitcoin(
+                "Invalid Bitcoin RPC URL: URL is empty".to_string(),
+            ));
+        }
 
         let auth = match (user.is_empty(), pass.is_empty()) {
             (true, true) => Auth::None,
             (false, false) => Auth::UserPass(user.to_string(), pass.to_string()),
-            _ => {
+            (true, false) => {
                 return Err(ConxianError::Bitcoin(
-                    "Invalid Bitcoin RPC auth: set both BITCOIN_RPC_USER and BITCOIN_RPC_PASS, or leave both empty"
-                        .to_string(),
+                    "Invalid Bitcoin RPC auth: password set but username is empty".to_string(),
+                ));
+            }
+            (false, true) => {
+                return Err(ConxianError::Bitcoin(
+                    "Invalid Bitcoin RPC auth: username set but password is empty".to_string(),
                 ));
             }
         };
