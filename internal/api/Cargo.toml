@@ -21,4 +21,5 @@ hex = "0.4.3"
 uuid = { workspace = true, features = ["v4", "serde"] }
 hmac = "0.12.1"
 sha2 = "0.10.8"
+rand = "0.8"
 subtle = { workspace = true }
