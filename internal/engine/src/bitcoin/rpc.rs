@@ -19,6 +19,12 @@ impl BitcoinRpcClient {
         let url = url.trim();
         let user = user.trim();
 
+        if url.is_empty() {
+            return Err(ConxianError::Bitcoin(
+                "Invalid Bitcoin RPC URL: URL is empty".to_string(),
+            ));
+        }
+
         let auth = match (user.is_empty(), pass.is_empty()) {
             (true, true) => Auth::None,
             (false, false) => Auth::UserPass(user.to_string(), pass.to_string()),
