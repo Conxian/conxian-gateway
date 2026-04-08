@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::{ConxianError, ConxianResult};
+
 const SETTLEMENT_ENVELOPE_VERSION_V2_LITERAL: &str = "2.0.0";
 
 /// Institutional settlements above the regulatory threshold must be held in a burn-block timelock
@@ -118,6 +120,34 @@ pub struct NormalizedSettlement {
     pub raw_payload_hash: String,
 }
 
+impl NormalizedSettlement {
+    /// Returns `true` when this settlement requires an institutional timelock window.
+    ///
+    /// If the threshold calculation cannot be performed (for example due to extremely large
+    /// `amount_scale` values causing checked arithmetic to overflow), this returns `true`.
+    pub fn requires_institutional_timelock(&self) -> bool {
+        if !self.currency.eq_ignore_ascii_case("ZAR") {
+            return false;
+        }
+
+        match institutional_threshold_minor(self.amount_scale) {
+            Some(threshold_minor) => u128::from(self.amount_minor) >= threshold_minor,
+            None => true,
+        }
+    }
+}
+
+fn institutional_threshold_minor(scale: u32) -> Option<u128> {
+    // 10^38 < u128::MAX; 10^39 would overflow.
+    const MAX_SCALE: u32 = 38;
+    if scale > MAX_SCALE {
+        return None;
+    }
+
+    let factor = 10u128.checked_pow(scale)?;
+    u128::from(INSTITUTIONAL_ZAR_THRESHOLD_MAJOR).checked_mul(factor)
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SettlementEnvelope {
     pub version: String,
@@ -172,19 +202,38 @@ impl SettlementProposal {
         tee_attestation: crate::AttestationRequest,
         stacks_burn_block_height: u64,
         created_at: u64,
-    ) -> Self {
-        let timelock_release_burn_block_height =
-            stacks_burn_block_height.saturating_add(INSTITUTIONAL_TIMELOCK_BURN_BLOCKS);
+    ) -> ConxianResult<Self> {
+        let requires_timelock = envelope.payload.requires_institutional_timelock();
 
-        Self {
+        let timelock_release_burn_block_height = if requires_timelock {
+            stacks_burn_block_height
+                .checked_add(INSTITUTIONAL_TIMELOCK_BURN_BLOCKS)
+                .ok_or_else(|| {
+                    ConxianError::Internal(format!(
+                        "Burn-block timelock release height overflow (proposal_id={proposal_id}, transaction_id={}, raw_payload_hash={}, base={stacks_burn_block_height}, delta={INSTITUTIONAL_TIMELOCK_BURN_BLOCKS})",
+                        envelope.payload.transaction_id,
+                        envelope.payload.raw_payload_hash
+                    ))
+                })?
+        } else {
+            stacks_burn_block_height
+        };
+
+        let state = if requires_timelock {
+            SettlementProposalState::Timelocked
+        } else {
+            SettlementProposalState::Proposed
+        };
+
+        Ok(Self {
             proposal_id,
             envelope,
             tee_attestation,
             stacks_burn_block_height,
             timelock_release_burn_block_height,
             created_at,
-            state: SettlementProposalState::Timelocked,
+            state,
             streaming: ProductiveStreaming::default(),
-        }
+        })
     }
 }
