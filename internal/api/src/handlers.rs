@@ -125,18 +125,12 @@ fn verify_tee_settlement_attestation(
             Err(invalid_tee_attestation_response())
         }
         Err(e) => {
-            // We intentionally collapse all verifier errors into a stable client-facing response.
-            // Detailed failure reasons are logged but not returned to callers.
             warn!("TEE settlement attestation verification error: {e}");
             Err(invalid_tee_attestation_response())
         }
     }
 }
 
-/// Returns the current Stacks burn block height.
-///
-/// Rejects settlement ingress with `503 SERVICE_UNAVAILABLE` if the burn block height is not yet
-/// known. This intentionally fails closed rather than falling back to the chain tip height.
 fn get_stacks_burn_block_height(state: &AppState) -> Result<u64, (StatusCode, Json<Value>)> {
     let s = state.shared.read().map_err(|_| {
         warn!("Failed to acquire read lock on shared gateway state");
@@ -323,7 +317,6 @@ pub async fn exchange_identity(
     }
 }
 
-/// CON-66: Resolve identities across ENS, BNS, World ID, and Web3.bio.
 pub async fn resolve_identity_v1(
     State(state): State<AppState>,
     Json(request): Json<IdentityResolutionRequest>,
@@ -531,16 +524,35 @@ pub async fn ingress_iso20022(
 
     match state
         .compliance
-        .normalize_iso20022_ingress(xml, raw_payload_hash)
+        .normalize_iso20022_ingress(xml, raw_payload_hash.clone())
     {
         Ok(envelope) => {
+            let trigger_id = state
+                .compliance
+                .compute_trigger_id(
+                    envelope.payload.source.as_rail_name(),
+                    &raw_payload_hash,
+                    &envelope.payload.identifiers,
+                )
+                .map_err(|e| {
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(json!({"error": e.to_string()})),
+                    )
+                })?;
+
             let stacks_burn_block_height = get_stacks_burn_block_height(&state)?;
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs();
-            let proposal =
-                SettlementProposal::new(envelope, tee_attestation, stacks_burn_block_height, now);
+            let proposal = SettlementProposal::new(
+                trigger_id,
+                envelope,
+                tee_attestation,
+                stacks_burn_block_height,
+                now,
+            );
             info!(
                 "Successfully ingested ISO 20022 settlement: {}",
                 proposal.envelope.payload.transaction_id
@@ -609,18 +621,37 @@ pub async fn ingress_papss(
         )
     })?;
 
-    match state
-        .compliance
-        .normalize_papss_ingress(payload.get("payload").unwrap_or(&payload), raw_payload_hash)
-    {
+    match state.compliance.normalize_papss_ingress(
+        payload.get("payload").unwrap_or(&payload),
+        raw_payload_hash.clone(),
+    ) {
         Ok(envelope) => {
+            let trigger_id = state
+                .compliance
+                .compute_trigger_id(
+                    envelope.payload.source.as_rail_name(),
+                    &raw_payload_hash,
+                    &envelope.payload.identifiers,
+                )
+                .map_err(|e| {
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(json!({"error": e.to_string()})),
+                    )
+                })?;
+
             let stacks_burn_block_height = get_stacks_burn_block_height(&state)?;
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs();
-            let proposal =
-                SettlementProposal::new(envelope, tee_attestation, stacks_burn_block_height, now);
+            let proposal = SettlementProposal::new(
+                trigger_id,
+                envelope,
+                tee_attestation,
+                stacks_burn_block_height,
+                now,
+            );
             info!(
                 "Successfully ingested PAPSS settlement: {}",
                 proposal.envelope.payload.transaction_id
@@ -689,18 +720,37 @@ pub async fn ingress_brics(
         )
     })?;
 
-    match state
-        .compliance
-        .normalize_brics_ingress(payload.get("payload").unwrap_or(&payload), raw_payload_hash)
-    {
+    match state.compliance.normalize_brics_ingress(
+        payload.get("payload").unwrap_or(&payload),
+        raw_payload_hash.clone(),
+    ) {
         Ok(envelope) => {
+            let trigger_id = state
+                .compliance
+                .compute_trigger_id(
+                    envelope.payload.source.as_rail_name(),
+                    &raw_payload_hash,
+                    &envelope.payload.identifiers,
+                )
+                .map_err(|e| {
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(json!({"error": e.to_string()})),
+                    )
+                })?;
+
             let stacks_burn_block_height = get_stacks_burn_block_height(&state)?;
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs();
-            let proposal =
-                SettlementProposal::new(envelope, tee_attestation, stacks_burn_block_height, now);
+            let proposal = SettlementProposal::new(
+                trigger_id,
+                envelope,
+                tee_attestation,
+                stacks_burn_block_height,
+                now,
+            );
             info!(
                 "Successfully ingested BRICS settlement: {}",
                 proposal.envelope.payload.transaction_id

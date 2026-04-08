@@ -196,7 +196,7 @@ async fn test_verify_schnorr_attestation_authorized() {
 }
 
 #[tokio::test]
-async fn test_metrics_endpoint() {
+async fn test_metrics_endpoint_unauthorized() {
     let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
     let app = setup_app(state);
 
@@ -204,6 +204,25 @@ async fn test_metrics_endpoint() {
         .oneshot(
             Request::builder()
                 .uri("/api/v1/metrics")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn test_metrics_endpoint_authorized() {
+    let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/metrics")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -288,8 +307,8 @@ async fn test_settle_job_card_authorized() {
         context: "https://conxian.com/contexts/job-card/v2.0".to_string(),
         r#type: "ConxianJobCard".to_string(),
         work_intent: conxian_core::WorkIntent {
-            sender_address: "ST123".to_string(),
-            receiver_address: "ST456".to_string(),
+            sender_address: "SP123".to_string(),
+            receiver_address: "SP456".to_string(),
             amount_sbtc: 0.1,
             town_name: Some("Joburg".to_string()),
             country_code: Some("ZA".to_string()),
@@ -345,8 +364,8 @@ async fn test_iso_payment_v8_authorized() {
                         "@context": "https://conxian.com/contexts/job-card/v2.0",
                         "@type": "ConxianJobCard",
                         "work_intent": {
-                            "sender_address": "ST12345678",
-                            "receiver_address": "ST87654321",
+                            "sender_address": "SP12345678",
+                            "receiver_address": "SP87654321",
                             "amount_sbtc": 0.05,
                             "town_name": "Johannesburg",
                             "country_code": "ZA"

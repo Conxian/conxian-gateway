@@ -3,6 +3,7 @@ use crate::handlers;
 use crate::middleware::latency_tracker;
 use crate::AppState;
 use axum::{
+    extract::DefaultBodyLimit,
     middleware,
     routing::{get, post},
     Router,
@@ -13,10 +14,10 @@ pub fn configure_routes(state: AppState, api_token: String) -> Router {
 
     let public_routes = Router::new()
         .route("/health", get(handlers::health_check))
-        .route("/metrics", get(handlers::get_metrics))
         .with_state(state.clone());
 
     let private_routes = Router::new()
+        .route("/metrics", get(handlers::get_metrics))
         .route("/state", get(handlers::get_state))
         .route("/verify", post(handlers::verify_attestation))
         .route("/identity/exchange", post(handlers::exchange_identity))
@@ -52,4 +53,5 @@ pub fn configure_routes(state: AppState, api_token: String) -> Router {
             latency_tracker,
         ))
         .nest("/api/v1", public_routes.merge(private_routes))
+        .layer(DefaultBodyLimit::max(10 * 1024 * 1024)) // 10MB global body limit
 }
