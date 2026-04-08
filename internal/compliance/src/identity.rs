@@ -52,10 +52,8 @@ impl IdentityManager {
             ));
         }
 
-        Ok(format!(
-            "dev-gcp-access-token-{}",
-            &request.subject_token[..8]
-        ))
+        let prefix: String = request.subject_token.chars().take(8).collect();
+        Ok(format!("dev-gcp-access-token-{prefix}",))
     }
 
     /// CON-66: Resolve identities across ENS, BNS, World ID, and Web3.bio.
