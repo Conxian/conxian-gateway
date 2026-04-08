@@ -56,8 +56,9 @@ impl A2pRouter {
     /// `mock-integrations` feature.
     #[cfg(not(any(test, feature = "mock-integrations")))]
     pub async fn send_otp(&self, request: OtpRequest) -> ConxianResult<(OtpResponse, String, u64)> {
+        let phone_tail = phone_tail(&request.phone_number);
         info!(
-            phone_number = %request.phone_number,
+            phone_tail = %phone_tail,
             channel = %request.channel,
             "A2P OTP sending is disabled in this build"
         );
@@ -69,8 +70,9 @@ impl A2pRouter {
 
     #[cfg(any(test, feature = "mock-integrations"))]
     pub async fn send_otp(&self, request: OtpRequest) -> ConxianResult<(OtpResponse, String, u64)> {
+        let phone_tail = phone_tail(&request.phone_number);
         info!(
-            phone_number = %request.phone_number,
+            phone_tail = %phone_tail,
             channel = %request.channel,
             "Sending OTP via mock A2P provider"
         );
@@ -128,14 +130,44 @@ impl A2pRouter {
     }
 }
 
-#[cfg(any(test, feature = "mock-integrations"))]
+/// Returns up to the last 4 characters of a phone number for logging.
+///
+/// This avoids panics on short or non-ASCII inputs.
+fn phone_tail(phone_number: &str) -> &str {
+    let start = phone_number
+        .char_indices()
+        .rev()
+        .nth(3)
+        .map(|(idx, _)| idx)
+        .unwrap_or(0);
+
+    &phone_number[start..]
+}
+
+#[cfg(test)]
+const TEST_OTP_CODE: &str = "000001";
+
+#[cfg(test)]
 fn generate_otp_code() -> String {
-    format!("{:06}", uuid::Uuid::new_v4().as_u128() % 1_000_000)
+    TEST_OTP_CODE.to_string()
+}
+
+#[cfg(all(feature = "mock-integrations", not(test)))]
+fn generate_otp_code() -> String {
+    use rand::{rngs::OsRng, Rng};
+
+    format!("{:06}", OsRng.gen_range(0..1_000_000))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn phone_tail_returns_tail() {
+        assert_eq!(phone_tail("+1234567890"), "7890");
+        assert_eq!(phone_tail("123"), "123");
+    }
 
     #[tokio::test]
     async fn test_stateless_otp_flow() {
@@ -155,14 +187,13 @@ mod tests {
         assert_eq!(res.status, "sent");
         assert_eq!(hmac.len(), 64);
 
-        let otp_code = "000001".to_string();
-        let expected_hmac = router.generate_hmac(&phone, &otp_code, ts).unwrap();
+        let otp_code = TEST_OTP_CODE.to_string();
 
         let verify_req = OtpVerificationRequest {
             session_id: res.session_id,
             otp_code,
             phone_number: phone.clone(),
-            hmac: expected_hmac,
+            hmac,
             timestamp: ts,
         };
 
