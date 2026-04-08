@@ -16,7 +16,11 @@ pub struct BitcoinRpcClient {
 
 impl BitcoinRpcClient {
     pub fn new(url: &str, user: &str, pass: &str) -> ConxianResult<Self> {
-        let auth = Auth::UserPass(user.to_string(), pass.to_string());
+        let auth = if user.is_empty() && pass.is_empty() {
+            Auth::None
+        } else {
+            Auth::UserPass(user.to_string(), pass.to_string())
+        };
         let client = Client::new(url, auth)
             .map_err(|e: bitcoincore_rpc::Error| ConxianError::Bitcoin(e.to_string()))?;
         Ok(Self {

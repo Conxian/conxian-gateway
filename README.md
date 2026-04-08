@@ -23,9 +23,9 @@ Active development. Interfaces and module boundaries may evolve as protocol, wal
 
 ## Features
 - **Engine**: Nakamoto-ready indexing and state monitoring for Bitcoin and Stacks. Enhanced with the sBTC "Suction" pattern and Sovereign Yield Index (SYI) tracking.
-- **API**: SLA-grade B2B interface with secure authentication. Supports ISO 20022 banking egress and identity exchange (WIF).
+- **API**: SLA-grade B2B interface with hardened authentication (constant-time comparison) and DoS protection. Supports ISO 20022 banking egress and identity exchange (WIF).
 - **Compliance**: Zero-Knowledge Compliance (ZKC) module for Conxius Wallet attestation with cryptographic verification (ECDSA, Schnorr, ZKML, and BitVM).
-- **Metrics**: Built-in Prometheus-compatible metrics endpoint with detailed chain state and treasury telemetry.
+- **Metrics**: Built-in Prometheus-compatible metrics endpoint with detailed chain state and treasury telemetry (Protected).
 - **Persistence**: Atomic file-based persistence for reliable state monitoring across restarts.
 
 ## Architecture
@@ -37,7 +37,7 @@ Active development. Interfaces and module boundaries may evolve as protocol, wal
 
 ## API Endpoints
 - `GET /api/v1/health`: Service health check.
-- `GET /api/v1/metrics`: Prometheus-compatible metrics (includes uptime, treasury, and SYI).
+- `GET /api/v1/metrics`: Prometheus-compatible metrics (includes uptime, treasury, and SYI) (Authorized).
 - `GET /api/v1/state`: Current chain state and gateway metrics (Authorized).
 - `POST /api/v1/verify`: Verify cryptographic attestations (ECDSA, Schnorr, ZKML, BitVM) (Authorized).
 - `POST /api/v1/identity/exchange`: Exchange OIDC token for GCP access token (WIF) (Authorized).
@@ -50,7 +50,9 @@ Active development. Interfaces and module boundaries may evolve as protocol, wal
 
 ## Configuration
 The following environment variables can be used to configure the gateway:
-- `BITCOIN_RPC_URL`: URL of the Bitcoin node RPC (default: http://localhost:18332)
+- `BITCOIN_RPC_URL`: URL of the Bitcoin node RPC (default: https://bitcoin-rpc.publicnode.com)
+- `BITCOIN_RPC_USER`: Bitcoin RPC username (optional; default: empty)
+- `BITCOIN_RPC_PASS`: Bitcoin RPC password (optional; default: empty)
 - `STACKS_RPC_URL`: URL of the Stacks node API (default: https://api.mainnet.hiro.so)
 - `API_TOKEN`: Bearer token for institutional API access (default: institutional-default-token)
 - `BITCOIN_SYNC_INTERVAL`: Sync interval for Bitcoin (default: 10s)

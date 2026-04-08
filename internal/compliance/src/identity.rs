@@ -1,6 +1,7 @@
 use conxian_core::{
     ConxianResult, GcpTokenRequest, IdentityResolutionRequest, IdentityResolutionResponse,
 };
+#[cfg(any(test, feature = "mock-integrations"))]
 use serde_json::json;
 use tracing::info;
 
@@ -19,6 +20,7 @@ impl IdentityManager {
 
     /// Industry Enhancement: Exchange an Enclave-signed OIDC token for a temporary GCP access token.
     /// This follows the Workload Identity Federation (WIF) pattern.
+    #[cfg(not(any(test, feature = "mock-integrations")))]
     pub async fn exchange_token(&self, request: &GcpTokenRequest) -> ConxianResult<String> {
         info!(
             "Exchanging OIDC token for GCP access token. Audience: {}",
@@ -31,9 +33,29 @@ impl IdentityManager {
             ));
         }
 
-        // Mocking the STS response for institutional proxy
-        let mock_gcp_token = format!("mock-gcp-access-token-{}", &request.subject_token[..8]);
-        Ok(mock_gcp_token)
+        Err(conxian_core::ConxianError::Compliance(
+            "GCP STS exchange is disabled in this build (requires Workload Identity Federation integration)"
+                .to_string(),
+        ))
+    }
+
+    #[cfg(any(test, feature = "mock-integrations"))]
+    pub async fn exchange_token(&self, request: &GcpTokenRequest) -> ConxianResult<String> {
+        info!(
+            "Exchanging OIDC token for GCP access token. Audience: {}",
+            request.audience
+        );
+
+        if request.subject_token.is_empty() {
+            return Err(conxian_core::ConxianError::Security(
+                "Subject token cannot be empty".to_string(),
+            ));
+        }
+
+        Ok(format!(
+            "dev-gcp-access-token-{}",
+            &request.subject_token[..8]
+        ))
     }
 
     /// CON-66: Resolve identities across ENS, BNS, World ID, and Web3.bio.
@@ -58,6 +80,18 @@ impl IdentityManager {
         }
     }
 
+    #[cfg(not(any(test, feature = "mock-integrations")))]
+    async fn resolve_ens(
+        &self,
+        _request: &IdentityResolutionRequest,
+    ) -> ConxianResult<IdentityResolutionResponse> {
+        Err(conxian_core::ConxianError::Compliance(
+            "ENS resolution is disabled in this build (requires an explicit resolver integration)"
+                .to_string(),
+        ))
+    }
+
+    #[cfg(any(test, feature = "mock-integrations"))]
     async fn resolve_ens(
         &self,
         request: &IdentityResolutionRequest,
@@ -72,6 +106,18 @@ impl IdentityManager {
         })
     }
 
+    #[cfg(not(any(test, feature = "mock-integrations")))]
+    async fn resolve_bns(
+        &self,
+        _request: &IdentityResolutionRequest,
+    ) -> ConxianResult<IdentityResolutionResponse> {
+        Err(conxian_core::ConxianError::Compliance(
+            "BNS resolution is disabled in this build (requires an explicit resolver integration)"
+                .to_string(),
+        ))
+    }
+
+    #[cfg(any(test, feature = "mock-integrations"))]
     async fn resolve_bns(
         &self,
         request: &IdentityResolutionRequest,
@@ -86,6 +132,18 @@ impl IdentityManager {
         })
     }
 
+    #[cfg(not(any(test, feature = "mock-integrations")))]
+    async fn resolve_worldid(
+        &self,
+        _request: &IdentityResolutionRequest,
+    ) -> ConxianResult<IdentityResolutionResponse> {
+        Err(conxian_core::ConxianError::Compliance(
+            "World ID verification is disabled in this build (requires an explicit verifier integration)"
+                .to_string(),
+        ))
+    }
+
+    #[cfg(any(test, feature = "mock-integrations"))]
     async fn resolve_worldid(
         &self,
         request: &IdentityResolutionRequest,
@@ -101,6 +159,18 @@ impl IdentityManager {
         })
     }
 
+    #[cfg(not(any(test, feature = "mock-integrations")))]
+    async fn resolve_web3bio(
+        &self,
+        _request: &IdentityResolutionRequest,
+    ) -> ConxianResult<IdentityResolutionResponse> {
+        Err(conxian_core::ConxianError::Compliance(
+            "Web3.bio resolution is disabled in this build (requires an explicit resolver integration)"
+                .to_string(),
+        ))
+    }
+
+    #[cfg(any(test, feature = "mock-integrations"))]
     async fn resolve_web3bio(
         &self,
         request: &IdentityResolutionRequest,

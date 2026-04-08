@@ -196,7 +196,7 @@ async fn test_verify_schnorr_attestation_authorized() {
 }
 
 #[tokio::test]
-async fn test_metrics_endpoint() {
+async fn test_metrics_endpoint_unauthorized() {
     let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
     let app = setup_app(state);
 
@@ -204,6 +204,25 @@ async fn test_metrics_endpoint() {
         .oneshot(
             Request::builder()
                 .uri("/api/v1/metrics")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn test_metrics_endpoint_authorized() {
+    let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/metrics")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -284,6 +303,24 @@ async fn test_settle_job_card_authorized() {
     let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
     let app = setup_app(state);
 
+    let job_card = conxian_core::ConxianJobCard {
+        context: "https://conxian.com/contexts/job-card/v2.0".to_string(),
+        r#type: "ConxianJobCard".to_string(),
+        work_intent: conxian_core::WorkIntent {
+            sender_address: "SP123".to_string(),
+            receiver_address: "SP456".to_string(),
+            amount_sbtc: 0.1,
+            town_name: Some("Joburg".to_string()),
+            country_code: Some("ZA".to_string()),
+        },
+    };
+
+    let job_card_json = serde_json::to_string(&job_card).unwrap();
+    let job_hash = hex::encode(Sha256::digest(job_card_json.as_bytes()));
+
+    let state_root = job_hash;
+    let commitment_hash = hex::encode(Sha256::digest(state_root.as_bytes()));
+
     let response = app
         .oneshot(
             Request::builder()
@@ -293,21 +330,11 @@ async fn test_settle_job_card_authorized() {
                 .header("Content-Type", "application/json")
                 .body(Body::from(
                     serde_json::to_string(&serde_json::json!({
-                        "job_card": {
-                            "@context": "https://conxian.com/contexts/job-card/v2.0",
-                            "@type": "ConxianJobCard",
-                            "work_intent": {
-                                "sender_address": "ST123",
-                                "receiver_address": "ST456",
-                                "amount_sbtc": 0.1,
-                                "town_name": "Joburg",
-                                "country_code": "ZA"
-                            }
-                        },
+                        "job_card": job_card,
                         "bitvm_proof": {
                             "prover_id": "prover-1",
-                            "commitment_hash": "MOCK_COMMITMENT",
-                            "state_root": "PROTOTYPE_ROOT"
+                            "commitment_hash": commitment_hash,
+                            "state_root": state_root
                         }
                     }))
                     .unwrap(),
@@ -337,8 +364,8 @@ async fn test_iso_payment_v8_authorized() {
                         "@context": "https://conxian.com/contexts/job-card/v2.0",
                         "@type": "ConxianJobCard",
                         "work_intent": {
-                            "sender_address": "ST12345678",
-                            "receiver_address": "ST87654321",
+                            "sender_address": "SP12345678",
+                            "receiver_address": "SP87654321",
                             "amount_sbtc": 0.05,
                             "town_name": "Johannesburg",
                             "country_code": "ZA"
