@@ -7,6 +7,7 @@ use conxian_core::{
     SettlementRail, SettlementSource, SettlementStatus, ZkmlProof,
 };
 use hmac::{Hmac, Mac};
+use risc0_zkvm::Receipt;
 use sha2::{Digest, Sha256};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{info, warn};
