@@ -365,41 +365,46 @@ impl ZkcVerifier {
         payload_hash: &str,
     ) -> bool {
         match attestation {
-            AttestationRequest::Ecdsa(a) => {
-                if !a.device_id.starts_with("conxius-tee-") {
-                    return false;
-                }
-
-                if a.payload != payload_hash {
-                    return false;
-                }
-
-                match self.verify(a) {
-                    Ok(valid) => valid,
-                    Err(e) => {
-                        debug!(error = %e, "TEE settlement attestation verifier error");
-                        false
-                    }
-                }
-            }
-            AttestationRequest::Schnorr(a) => {
-                if !a.device_id.starts_with("conxius-tee-") {
-                    return false;
-                }
-
-                if a.payload != payload_hash {
-                    return false;
-                }
-
-                match self.verify_schnorr(a) {
-                    Ok(valid) => valid,
-                    Err(e) => {
-                        debug!(error = %e, "TEE settlement attestation verifier error");
-                        false
-                    }
-                }
-            }
+            AttestationRequest::Ecdsa(a) => self.verify_settlement_trigger_attestation_payload(
+                &a.device_id,
+                &a.payload,
+                payload_hash,
+                || self.verify(a),
+            ),
+            AttestationRequest::Schnorr(a) => self.verify_settlement_trigger_attestation_payload(
+                &a.device_id,
+                &a.payload,
+                payload_hash,
+                || self.verify_schnorr(a),
+            ),
             _ => false,
+        }
+    }
+
+    fn verify_settlement_trigger_attestation_payload<F>(
+        &self,
+        device_id: &str,
+        signed_payload: &str,
+        payload_hash: &str,
+        verify: F,
+    ) -> bool
+    where
+        F: FnOnce() -> ConxianResult<bool>,
+    {
+        if !device_id.starts_with("conxius-tee-") {
+            return false;
+        }
+
+        if signed_payload != payload_hash {
+            return false;
+        }
+
+        match verify() {
+            Ok(valid) => valid,
+            Err(e) => {
+                debug!(error = %e, "TEE settlement attestation verifier error");
+                false
+            }
         }
     }
 

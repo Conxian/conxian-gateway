@@ -185,9 +185,12 @@ async fn test_ingress_iso20022_rejects_tampered_tee_device_id() {
     let raw_payload_hash = hex::encode(Sha256::digest(xml_payload.as_bytes()));
     let tee_attestation = make_tee_attestation_header(&raw_payload_hash);
 
-    let mut attestation_value: serde_json::Value = serde_json::from_str(&tee_attestation).unwrap();
-    attestation_value["data"]["device_id"] = json!("conxius-tee-tampered");
-    let tee_attestation = serde_json::to_string(&attestation_value).unwrap();
+    let mut attestation_req: AttestationRequest = serde_json::from_str(&tee_attestation).unwrap();
+    match &mut attestation_req {
+        AttestationRequest::Ecdsa(a) => a.device_id = "conxius-tee-tampered".to_string(),
+        _ => panic!("expected Ecdsa attestation in test"),
+    }
+    let tee_attestation = serde_json::to_string(&attestation_req).unwrap();
 
     let response = app
         .oneshot(
