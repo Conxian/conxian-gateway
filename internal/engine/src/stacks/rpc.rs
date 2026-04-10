@@ -36,6 +36,7 @@ impl StacksRpc for SimulatedStacksRpc {
     }
 }
 
+#[derive(Clone)]
 pub struct StacksRpcClient {
     url: String,
 }

@@ -1,21 +1,23 @@
 use crate::AppState;
 use axum::{
     body::Bytes,
-    extract::{Json, State},
+    extract::{Json, Query, State},
     http::{HeaderMap, StatusCode},
 };
 use conxian_core::{
     AttestationRequest, BitVmAttestation, ConxianJobCard, GcpTokenRequest,
-    IdentityResolutionRequest, IdentityResolutionResponse, SettlementEnvelope, SettlementProposal,
+    IdentityResolutionRequest, IdentityResolutionResponse, IndustrialIntent, SettlementEnvelope,
+    SettlementProposal,
 };
+use engine::stacks::alex::AlexSwapRequest;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 use crate::a2p::{OtpRequest, OtpVerificationRequest};
-use crate::fiat::{OnRampSessionRequest, OnRampSessionResponse, WebhookPayload};
+use crate::fiat::WebhookPayload;
 
 const SETTLEMENT_LOG_MAX_ENTRIES: usize = 1_000;
 const TEE_ATTESTATION_HEADER: &str = "x-tee-attestation";
@@ -60,246 +62,38 @@ fn is_xml_content_type(headers: &HeaderMap) -> bool {
             .is_some_and(|(_, suffix)| suffix.eq_ignore_ascii_case("xml"))
 }
 
-async fn record_settlement(state: &AppState, proposal: &SettlementProposal) {
-    let proposal = proposal.clone();
-    let mut log = state.settlement_log.write().await;
-    log.push_back(proposal);
-
-    while log.len() > SETTLEMENT_LOG_MAX_ENTRIES {
-        log.pop_front();
-    }
+pub async fn health_check() -> (StatusCode, Json<Value>) {
+    (StatusCode::OK, Json(json!({ "status": "healthy" })))
 }
 
-pub async fn get_external_settlements(
-    State(state): State<AppState>,
-) -> Json<Vec<SettlementProposal>> {
-    let items = {
-        let log = state.settlement_log.read().await;
-        log.iter().cloned().collect()
-    };
-
-    Json(items)
-}
-
-fn extract_tee_attestation(
-    headers: &HeaderMap,
-) -> Result<AttestationRequest, (StatusCode, Json<Value>)> {
-    let value = headers
-        .get(TEE_ATTESTATION_HEADER)
-        .and_then(|h| h.to_str().ok())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .ok_or((
-            StatusCode::UNAUTHORIZED,
-            Json(json!({ "error": "Missing TEE attestation" })),
-        ))?;
-
-    serde_json::from_str::<AttestationRequest>(value).map_err(|e| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": format!("Invalid TEE attestation JSON: {e}") })),
-        )
-    })
-}
-
-fn verify_tee_settlement_attestation(
-    state: &AppState,
-    headers: &HeaderMap,
-    raw_payload_hash: &str,
-) -> Result<AttestationRequest, (StatusCode, Json<Value>)> {
-    fn invalid_tee_attestation_response() -> (StatusCode, Json<Value>) {
-        (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({ "error": "Invalid TEE attestation" })),
-        )
-    }
-
-    let tee_attestation = extract_tee_attestation(headers)?;
-    match state
-        .compliance
-        .verify_settlement_trigger_attestation(&tee_attestation, raw_payload_hash)
-    {
-        Ok(true) => Ok(tee_attestation),
-        Ok(false) => {
-            warn!("TEE settlement attestation verification failed");
-            Err(invalid_tee_attestation_response())
-        }
-        Err(e) => {
-            warn!("TEE settlement attestation verification error: {e}");
-            Err(invalid_tee_attestation_response())
-        }
-    }
-}
-
-fn get_stacks_burn_block_height(state: &AppState) -> Result<u64, (StatusCode, Json<Value>)> {
-    let s = state.shared.read().map_err(|_| {
-        warn!("Failed to acquire read lock on shared gateway state");
-        (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(json!({ "error": "Gateway state unavailable" })),
-        )
-    })?;
-
-    s.stacks.burn_block_height.ok_or_else(|| {
-        warn!("Stacks burn block height unavailable; rejecting settlement ingress");
-        (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(json!({ "error": "Stacks burn block height unavailable" })),
-        )
-    })
-}
-
-fn current_unix_timestamp() -> Result<u64, std::time::SystemTimeError> {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_secs())
-}
-
-fn current_unix_timestamp_http() -> Result<u64, (StatusCode, Json<Value>)> {
-    current_unix_timestamp().map_err(|e| {
-        error!("System clock error: {e}");
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": "System clock error" })),
-        )
-    })
-}
-
-fn build_settlement_proposal(
-    state: &AppState,
-    envelope: SettlementEnvelope,
-    tee_attestation: AttestationRequest,
-    raw_payload_hash: &str,
-) -> Result<SettlementProposal, (StatusCode, Json<Value>)> {
-    let transaction_id = envelope.payload.transaction_id.clone();
-
-    let trigger_id = state
-        .compliance
-        .compute_trigger_id(
-            envelope.payload.source.as_rail_name(),
-            raw_payload_hash,
-            &envelope.payload.identifiers,
-        )
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
-            )
-        })?;
-
-    let stacks_burn_block_height = get_stacks_burn_block_height(state)?;
-    let now = current_unix_timestamp_http()?;
-    SettlementProposal::new(
-        trigger_id,
-        envelope,
-        tee_attestation,
-        stacks_burn_block_height,
-        now,
-    )
-    .map_err(|e| {
-        error!(
-            "Failed to create settlement proposal (transaction_id={transaction_id}, raw_payload_hash={raw_payload_hash}): {e}"
-        );
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": "Failed to create settlement proposal" })),
-        )
-    })
-}
-
-pub async fn health_check(State(state): State<AppState>) -> Json<Value> {
+pub async fn get_metrics(State(state): State<AppState>) -> (StatusCode, String) {
     let s = state.shared.read().unwrap();
-    let mut status = "healthy";
-    let mut details = Vec::new();
-
-    let now = SystemTime::now()
+    let uptime = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
-        .as_secs();
+        .as_secs()
+        - s.start_time;
 
-    if s.bitcoin.status.contains("error") {
-        status = "degraded";
-        details.push(format!("Bitcoin error: {}", s.bitcoin.status));
-    } else if s.bitcoin.last_sync_time > 0 && now.saturating_sub(s.bitcoin.last_sync_time) > 120 {
-        status = "degraded";
-        details.push(format!(
-            "Bitcoin sync is stale (last sync: {}s ago)",
-            now.saturating_sub(s.bitcoin.last_sync_time)
-        ));
-    }
-
-    if s.stacks.status.contains("error") {
-        status = "degraded";
-        details.push(format!("Stacks error: {}", s.stacks.status));
-    } else if s.stacks.last_sync_time > 0 && now.saturating_sub(s.stacks.last_sync_time) > 300 {
-        status = "degraded";
-        details.push(format!(
-            "Stacks sync is stale (last sync: {}s ago)",
-            now.saturating_sub(s.stacks.last_sync_time)
-        ));
-    }
-
-    Json(json!({
-        "status": status,
-        "details": details,
-        "version": conxian_core::VERSION,
-        "timestamp": now
-    }))
-}
-
-pub async fn get_state(State(state): State<AppState>) -> Json<GatewayStateResponse> {
-    let mut s_write = state.shared.write().unwrap();
-    s_write.metrics.total_requests += 1;
-    s_write.metrics.state_requests += 1;
-    drop(s_write);
-
-    let s = state.shared.read().unwrap();
-    Json(GatewayStateResponse {
-        bitcoin: s.bitcoin.clone(),
-        stacks: s.stacks.clone(),
-        metrics: s.metrics.clone(),
-    })
-}
-
-#[derive(Serialize)]
-pub struct GatewayStateResponse {
-    pub bitcoin: conxian_core::ChainState,
-    pub stacks: conxian_core::ChainState,
-    pub metrics: conxian_core::Metrics,
-}
-
-pub async fn get_metrics(State(state): State<AppState>) -> String {
-    let mut s_write = state.shared.write().unwrap();
-    s_write.metrics.total_requests += 1;
-    s_write.metrics.metrics_requests += 1;
-    drop(s_write);
-
-    let s = state.shared.read().unwrap();
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
-    let uptime = now.saturating_sub(s.start_time);
-
-    format!(
-        "# HELP gateway_total_requests The total number of API requests received.\n         # TYPE gateway_total_requests counter\n         gateway_total_requests {}\n         # HELP gateway_health_requests The number of health check requests.\n         # TYPE gateway_health_requests counter\n         gateway_health_requests {}\n         # HELP gateway_state_requests The number of state requests.\n         # TYPE gateway_state_requests counter\n         gateway_state_requests {}\n         # HELP gateway_metrics_requests The number of metrics requests.\n         # TYPE gateway_metrics_requests counter\n         gateway_metrics_requests {}\n         # HELP gateway_verification_requests The total number of attestation verifications attempted.\n         # TYPE gateway_verification_requests counter\n         gateway_verification_requests {}\n         # HELP gateway_verification_success The number of successful attestation verifications.\n         # TYPE gateway_verification_success counter\n         gateway_verification_success {}\n         # HELP gateway_verification_failure The number of failed attestation verifications.\n         # TYPE gateway_verification_failure counter\n         gateway_verification_failure {}\n         # HELP bitcoin_block_height The current block height of the Bitcoin chain.\n         # TYPE bitcoin_block_height gauge\n         bitcoin_block_height {}\n         # HELP stacks_block_height The current block height of the Stacks chain.\n         # TYPE stacks_block_height gauge\n         stacks_block_height {}\n         # HELP bitcoin_last_sync_timestamp The last successful sync timestamp for Bitcoin.\n         # TYPE bitcoin_last_sync_timestamp gauge\n         bitcoin_last_sync_timestamp {}\n         # HELP stacks_last_sync_timestamp The last successful sync timestamp for Stacks.\n         # TYPE stacks_last_sync_timestamp gauge\n         stacks_last_sync_timestamp {}\n         # HELP gateway_uptime_seconds The total uptime of the gateway in seconds.\n         # TYPE gateway_uptime_seconds counter\n         gateway_uptime_seconds {}\n         # HELP treasury_balance_stx Current STX balance in treasury.\n         # TYPE treasury_balance_stx gauge\n         treasury_balance_stx {}\n         # HELP treasury_balance_btc Current BTC balance in treasury.\n         # TYPE treasury_balance_btc gauge\n         treasury_balance_btc {}\n         # HELP sbtc_liquidity Current sBTC liquidity in $ (TAM Capture).\n         # TYPE sbtc_liquidity gauge\n         sbtc_liquidity {}\n         # HELP syi_index Current Sovereign Yield Index value.\n         # TYPE syi_index gauge\n         syi_index {}\n",
+    let prometheus_output = format!(
+        "# HELP gateway_uptime_seconds The service uptime in seconds\n         # TYPE gateway_uptime_seconds counter\n         gateway_uptime_seconds {}\n         # HELP gateway_total_requests Total requests processed\n         # TYPE gateway_total_requests counter\n         gateway_total_requests {}\n         # HELP gateway_verification_success_total Successful attestations\n         # TYPE gateway_verification_success_total counter\n         gateway_verification_success_total {}\n         # HELP gateway_verification_failure_total Failed attestations\n         # TYPE gateway_verification_failure_total counter\n         gateway_verification_failure_total {}\n         # HELP blockchain_height_bitcoin Bitcoin L1 tip height\n         # TYPE blockchain_height_bitcoin gauge\n         blockchain_height_bitcoin {}\n         # HELP blockchain_height_stacks Stacks L2 tip height\n         # TYPE blockchain_height_stacks gauge\n         blockchain_height_stacks {}\n",
+        uptime,
         s.metrics.total_requests,
-        s.metrics.health_requests,
-        s.metrics.state_requests,
-        s.metrics.metrics_requests,
-        s.metrics.verification_requests,
         s.metrics.verification_success,
         s.metrics.verification_failure,
         s.bitcoin.height,
-        s.stacks.height,
-        s.bitcoin.last_sync_time,
-        s.stacks.last_sync_time,
-        uptime,
-        s.metrics.treasury_balance_stx,
-        s.metrics.treasury_balance_btc,
-        s.metrics.sbtc_liquidity,
-        s.metrics.syi_index
-    )
+        s.stacks.height
+    );
+
+    (StatusCode::OK, prometheus_output)
+}
+
+pub async fn get_state(State(state): State<AppState>) -> Json<Value> {
+    let s = state.shared.read().unwrap();
+    Json(json!({
+        "bitcoin": s.bitcoin,
+        "stacks": s.stacks,
+        "wallets": s.wallets,
+    }))
 }
 
 pub async fn verify_attestation(
@@ -308,48 +102,26 @@ pub async fn verify_attestation(
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     {
         let mut s = state.shared.write().unwrap();
-        s.metrics.total_requests += 1;
         s.metrics.verification_requests += 1;
+        s.metrics.total_requests += 1;
     }
 
-    let (attestation_type, result) = match request {
-        AttestationRequest::Ecdsa(a) => ("ECDSA", state.compliance.verify(&a)),
-        AttestationRequest::Schnorr(a) => ("Schnorr", state.compliance.verify_schnorr(&a)),
-        AttestationRequest::Zkml(a) => ("ZKML", state.compliance.verify_zkml(&a)),
-        AttestationRequest::BitVm(a) => ("BitVM", state.compliance.verify_bitvm(&a)),
-    };
-
-    info!(
-        "Processing {} attestation verification request",
-        attestation_type
-    );
-
-    match result {
+    match state.compliance.verify_attestation(request) {
         Ok(valid) => {
-            {
-                let mut s = state.shared.write().unwrap();
-                if valid {
-                    s.metrics.verification_success += 1;
-                    info!("{} attestation verified successfully", attestation_type);
-                } else {
-                    s.metrics.verification_failure += 1;
-                    info!(
-                        "{} attestation verification failed: invalid signature",
-                        attestation_type
-                    );
-                }
-            }
-            Ok(Json(json!({ "valid": valid, "type": attestation_type })))
-        }
-        Err(e) => {
-            {
-                let mut s = state.shared.write().unwrap();
+            let mut s = state.shared.write().unwrap();
+            if valid {
+                s.metrics.verification_success += 1;
+            } else {
                 s.metrics.verification_failure += 1;
             }
-            info!("{} attestation verification error: {}", attestation_type, e);
+            Ok(Json(json!({ "valid": valid })))
+        }
+        Err(e) => {
+            let mut s = state.shared.write().unwrap();
+            s.metrics.verification_failure += 1;
             Err((
                 StatusCode::BAD_REQUEST,
-                Json(json!({ "error": e.to_string(), "type": attestation_type })),
+                Json(json!({ "error": e.to_string() })),
             ))
         }
     }
@@ -359,15 +131,8 @@ pub async fn exchange_identity(
     State(state): State<AppState>,
     Json(request): Json<GcpTokenRequest>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    {
-        let mut s = state.shared.write().unwrap();
-        s.metrics.total_requests += 1;
-    }
-
     match state.identity.exchange_token(&request).await {
-        Ok(token) => Ok(Json(
-            json!({ "access_token": token, "token_type": "Bearer", "expires_in": 3600 }),
-        )),
+        Ok(res) => Ok(Json(json!(res))),
         Err(e) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({ "error": e.to_string() })),
@@ -379,56 +144,10 @@ pub async fn resolve_identity_v1(
     State(state): State<AppState>,
     Json(request): Json<IdentityResolutionRequest>,
 ) -> Result<Json<IdentityResolutionResponse>, (StatusCode, Json<Value>)> {
-    {
-        let mut s = state.shared.write().unwrap();
-        s.metrics.total_requests += 1;
-    }
-
     match state.identity.resolve_identity(&request).await {
         Ok(res) => Ok(Json(res)),
         Err(e) => Err((
             StatusCode::BAD_REQUEST,
-            Json(json!({ "error": e.to_string() })),
-        )),
-    }
-}
-
-pub async fn generate_iso_payment(
-    State(state): State<AppState>,
-    Json(payload): Json<Value>,
-) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    if let Ok(job_card) = serde_json::from_value::<ConxianJobCard>(payload.clone()) {
-        match state.compliance.format_iso20022_pacs008_v8(&job_card) {
-            Ok(xml) => return Ok(Json(json!({ "xml": xml, "schema": "pacs.008.001.08" }))),
-            Err(e) => {
-                return Err((
-                    StatusCode::BAD_REQUEST,
-                    Json(json!({ "error": e.to_string(), "code": "ISO-404" })),
-                ))
-            }
-        }
-    }
-
-    let sender = payload["sender"].as_str().unwrap_or("CONXIAN-SENDER");
-    let receiver = payload["receiver"]
-        .as_str()
-        .unwrap_or("INSTITUTIONAL-RECEIVER");
-    let amount = payload["amount"].as_f64().unwrap_or(0.0);
-
-    let xml = state
-        .compliance
-        .format_iso20022_pacs008(sender, receiver, amount);
-    Ok(Json(json!({ "xml": xml, "schema": "pacs.008.001.07" })))
-}
-
-pub async fn create_fiat_session(
-    State(state): State<AppState>,
-    Json(request): Json<OnRampSessionRequest>,
-) -> Result<Json<OnRampSessionResponse>, (StatusCode, Json<Value>)> {
-    match state.fiat.create_session(request).await {
-        Ok(res) => Ok(Json(res)),
-        Err(e) => Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({ "error": e.to_string() })),
         )),
     }
@@ -534,6 +253,29 @@ pub async fn settle_job_card(
     }
 }
 
+fn extract_industrial_intent(headers: &HeaderMap) -> IndustrialIntent {
+    let x402 = headers
+        .get("x402-payment-required")
+        .map(|v| v.to_str().unwrap_or("false") == "true")
+        .unwrap_or(false);
+
+    let invoice_id = headers
+        .get("x-invoice-id")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+
+    let device_id = headers
+        .get("x-device-id")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+
+    IndustrialIntent {
+        x402_payment_required: x402,
+        invoice_id,
+        device_id,
+    }
+}
+
 pub async fn ingress_iso20022(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -579,12 +321,14 @@ pub async fn ingress_iso20022(
     }
 
     let tee_attestation = verify_tee_settlement_attestation(&state, &headers, &raw_payload_hash)?;
+    let industrial_intent = extract_industrial_intent(&headers);
 
     match state
         .compliance
         .normalize_iso20022_ingress(xml, raw_payload_hash.clone())
     {
-        Ok(envelope) => {
+        Ok(mut envelope) => {
+            envelope.payload.industrial_intent = industrial_intent;
             let proposal =
                 build_settlement_proposal(&state, envelope, tee_attestation, &raw_payload_hash)?;
             info!(
@@ -647,6 +391,7 @@ pub async fn ingress_papss(
     }
 
     let tee_attestation = verify_tee_settlement_attestation(&state, &headers, &raw_payload_hash)?;
+    let industrial_intent = extract_industrial_intent(&headers);
 
     let payload: Value = serde_json::from_slice(&bytes).map_err(|e| {
         (
@@ -659,7 +404,8 @@ pub async fn ingress_papss(
         payload.get("payload").unwrap_or(&payload),
         raw_payload_hash.clone(),
     ) {
-        Ok(envelope) => {
+        Ok(mut envelope) => {
+            envelope.payload.industrial_intent = industrial_intent;
             let proposal =
                 build_settlement_proposal(&state, envelope, tee_attestation, &raw_payload_hash)?;
             info!(
@@ -722,6 +468,7 @@ pub async fn ingress_brics(
     }
 
     let tee_attestation = verify_tee_settlement_attestation(&state, &headers, &raw_payload_hash)?;
+    let industrial_intent = extract_industrial_intent(&headers);
 
     let payload: Value = serde_json::from_slice(&bytes).map_err(|e| {
         (
@@ -734,7 +481,8 @@ pub async fn ingress_brics(
         payload.get("payload").unwrap_or(&payload),
         raw_payload_hash.clone(),
     ) {
-        Ok(envelope) => {
+        Ok(mut envelope) => {
+            envelope.payload.industrial_intent = industrial_intent;
             let proposal =
                 build_settlement_proposal(&state, envelope, tee_attestation, &raw_payload_hash)?;
             info!(
@@ -749,4 +497,157 @@ pub async fn ingress_brics(
             Json(json!({ "error": e.to_string() })),
         )),
     }
+}
+
+pub async fn get_external_settlements(
+    State(state): State<AppState>,
+) -> Json<Vec<SettlementProposal>> {
+    let log = state.settlement_log.read().await;
+    Json(log.iter().cloned().collect())
+}
+
+fn verify_tee_settlement_attestation(
+    state: &AppState,
+    headers: &HeaderMap,
+    payload_hash: &str,
+) -> Result<AttestationRequest, (StatusCode, Json<Value>)> {
+    let attestation_raw = headers
+        .get(TEE_ATTESTATION_HEADER)
+        .and_then(|h| h.to_str().ok())
+        .ok_or((
+            StatusCode::UNAUTHORIZED,
+            Json(json!({ "error": "Missing TEE attestation" })),
+        ))?;
+
+    let attestation: AttestationRequest = serde_json::from_str(attestation_raw).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": format!("Invalid TEE attestation format: {e}") })),
+        )
+    })?;
+
+    match state.compliance.verify_attestation(attestation.clone()) {
+        Ok(true) => (),
+        _ => {
+            return Err((
+                StatusCode::UNAUTHORIZED,
+                Json(json!({ "error": "Invalid TEE attestation" })),
+            ))
+        }
+    }
+
+    let signed_payload = match &attestation {
+        AttestationRequest::Ecdsa(a) => &a.payload,
+        AttestationRequest::Schnorr(a) => &a.payload,
+        _ => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "error": "Unsupported attestation type for settlement" })),
+            ))
+        }
+    };
+
+    if signed_payload != payload_hash {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            Json(json!({ "error": "TEE attestation payload hash mismatch" })),
+        ));
+    }
+
+    Ok(attestation)
+}
+
+fn build_settlement_proposal(
+    state: &AppState,
+    envelope: SettlementEnvelope,
+    tee_attestation: AttestationRequest,
+    raw_payload_hash: &str,
+) -> Result<SettlementProposal, (StatusCode, Json<Value>)> {
+    let s = state.shared.read().unwrap();
+    let burn_height = s.stacks.burn_block_height.unwrap_or(0);
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    let trigger_id = state
+        .compliance
+        .compute_trigger_id(
+            &format!("{:?}", envelope.payload.source),
+            raw_payload_hash,
+            &envelope.payload.identifiers,
+        )
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": e.to_string() })),
+            )
+        })?;
+
+    SettlementProposal::new(trigger_id, envelope, tee_attestation, burn_height, now).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        )
+    })
+}
+
+async fn record_settlement(state: &AppState, proposal: &SettlementProposal) {
+    let mut log = state.settlement_log.write().await;
+    log.push_back(proposal.clone());
+    if log.len() > SETTLEMENT_LOG_MAX_ENTRIES {
+        log.pop_front();
+    }
+}
+
+pub async fn generate_iso_payment(
+    State(state): State<AppState>,
+    Json(job_card): Json<ConxianJobCard>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    match state.compliance.format_iso20022_pacs008_v8(&job_card) {
+        Ok(xml) => Ok(Json(json!({ "xml": xml, "schema": "pacs.008.001.08" }))),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        )),
+    }
+}
+
+// ALEX DEX Handlers (CON-136)
+pub async fn get_alex_quote(
+    State(state): State<AppState>,
+    Query(request): Query<AlexSwapRequest>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    match state.alex.get_swap_quote(request).await {
+        Ok(amount) => Ok(Json(json!({ "dy": amount.to_string() }))),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        )),
+    }
+}
+
+pub async fn execute_alex_swap(
+    State(state): State<AppState>,
+    Json(request): Json<AlexSwapRequest>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let signer_key = "ENCLAVE_SIGNER_PROD";
+    match state.alex.execute_swap(request, signer_key).await {
+        Ok(txid) => Ok(Json(json!({ "txid": txid, "status": "broadcasted" }))),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        )),
+    }
+}
+
+// Bounty Handlers (CON-230)
+pub async fn toggle_bounty_payouts(
+    State(state): State<AppState>,
+    Json(enabled): Json<bool>,
+) -> Json<Value> {
+    let mut s = state.shared.write().unwrap();
+    s.metrics.bounty_payouts_enabled = enabled;
+    info!("Bounty payouts enabled: {}", enabled);
+    Json(json!({ "status": "success", "bounty_payouts_enabled": enabled }))
 }

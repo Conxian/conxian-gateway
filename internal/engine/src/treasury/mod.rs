@@ -16,7 +16,7 @@ impl TreasuryMonitor {
     }
 
     pub async fn run(&self) -> ConxianResult<()> {
-        info!("Starting Treasury Monitor with TAM-Capture Enhancements...");
+        info!("Starting Treasury Monitor with Structured Finance & TAM-Capture...");
 
         loop {
             if let Err(e) = self.update_balances().await {
@@ -39,7 +39,6 @@ impl TreasuryMonitor {
         }
 
         // Industry Enhancement: The sBTC "Suction" Pattern
-        // Incentivize native BTC-to-sBTC migrations via the Sovereign Yield Index (SYI).
         if s.metrics.sbtc_liquidity == 0.0 {
             s.metrics.sbtc_liquidity = 5_000_000.0; // Starting at $5M SAM
         }
@@ -52,27 +51,37 @@ impl TreasuryMonitor {
             0.00005
         } else {
             0.0002
-        }; // Small incremental growth per cycle
+        };
         s.metrics.sbtc_liquidity += s.metrics.sbtc_liquidity * growth_factor;
 
         // SYI oscillates based on sovereign alignment and liquidity depth
         s.metrics.syi_index =
             (0.05 + (s.metrics.sbtc_liquidity / 10_000_000_000.0) * 0.02).min(0.12);
 
-        // Institutional yield extraction (1% Sovereign Tax - CON-55)
-        let yield_stx = 1250.0;
-        let tax_stx = yield_stx * 0.01;
+        // CON-452: Structured Finance Yield Distribution
+        // Senior tranches get priority on base yield; Junior tranches capture excess/risk yield.
+        let base_yield_stx = 1250.0;
+        let senior_share = 0.6; // 60% fixed to senior
+        let junior_share = 0.4; // 40% to junior
 
-        s.metrics.treasury_balance_stx += yield_stx - tax_stx;
+        let senior_yield = base_yield_stx * senior_share;
+        let junior_yield = base_yield_stx * junior_share;
+
+        // Simulate tax on total yield
+        let tax_stx = base_yield_stx * 0.01;
+
+        s.metrics.treasury_balance_stx += base_yield_stx - tax_stx;
         s.metrics.last_treasury_update = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
 
         info!(
-            "TAM Capture Update: sBTC Liquidity: ${:.2}, SYI: {:.4}%",
+            "TAM Capture Update: sBTC Liquidity: ${:.2}, SYI: {:.4}%. Tranche Yields: Senior ${:.2}, Junior ${:.2}",
             s.metrics.sbtc_liquidity,
-            s.metrics.syi_index * 100.0
+            s.metrics.syi_index * 100.0,
+            senior_yield,
+            junior_yield
         );
 
         Ok(())

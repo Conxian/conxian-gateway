@@ -99,6 +99,14 @@ pub struct SettlementIdentifiers {
     pub settlement_date: String, // YYYY-MM-DD
 }
 
+/// CON-451: Industrial Intent Metadata for x402 alignment
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct IndustrialIntent {
+    pub x402_payment_required: bool,
+    pub invoice_id: Option<String>,
+    pub device_id: Option<String>,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct NormalizedSettlement {
     pub source: SettlementSource,
@@ -118,13 +126,12 @@ pub struct NormalizedSettlement {
     pub settled_at: Option<u64>,
     pub identifiers: SettlementIdentifiers,
     pub raw_payload_hash: String,
+    #[serde(default)]
+    pub industrial_intent: IndustrialIntent,
 }
 
 impl NormalizedSettlement {
     /// Returns `true` when this settlement requires an institutional timelock window.
-    ///
-    /// If the threshold calculation cannot be performed (for example due to extremely large
-    /// `amount_scale` values causing checked arithmetic to overflow), this returns `true`.
     pub fn requires_institutional_timelock(&self) -> bool {
         if !self.currency.eq_ignore_ascii_case("ZAR") {
             return false;
@@ -138,7 +145,6 @@ impl NormalizedSettlement {
 }
 
 fn institutional_threshold_minor(scale: u32) -> Option<u128> {
-    // 10^38 < u128::MAX; 10^39 would overflow.
     const MAX_SCALE: u32 = 38;
     if scale > MAX_SCALE {
         return None;
@@ -183,9 +189,27 @@ impl Default for ProductiveStreaming {
     }
 }
 
+/// CON-452: Structured Finance Tranches
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum FinanceTranche {
+    #[default]
+    Senior,
+    Junior,
+}
+
+/// CON-452: Operational Loan Metadata
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct OpsLoanMetadata {
+    pub loan_id: String,
+    pub tranche: FinanceTranche,
+    pub interest_accrued: f64,
+    pub principal_remaining: f64,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SettlementProposal {
-    pub proposal_id: String, // trigger_id
+    pub proposal_id: String,
     pub envelope: SettlementEnvelope,
     pub tee_attestation: crate::AttestationRequest,
     pub stacks_burn_block_height: u64,
@@ -193,6 +217,7 @@ pub struct SettlementProposal {
     pub created_at: u64,
     pub state: SettlementProposalState,
     pub streaming: ProductiveStreaming,
+    pub ops_loan: Option<OpsLoanMetadata>,
 }
 
 impl SettlementProposal {
@@ -234,6 +259,7 @@ impl SettlementProposal {
             created_at,
             state,
             streaming: ProductiveStreaming::default(),
+            ops_loan: None,
         })
     }
 }

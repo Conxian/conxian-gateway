@@ -14,6 +14,7 @@ use crate::a2p::A2pRouter;
 use crate::fiat::FiatRouter;
 use compliance::{IdentityManager, ZkcVerifier};
 use conxian_core::{SettlementProposal, SharedState};
+pub use engine::stacks::alex::AlexClient;
 use std::{collections::VecDeque, sync::Arc};
 use tokio::sync::RwLock;
 
@@ -25,6 +26,7 @@ pub struct AppState {
     pub a2p: Arc<A2pRouter>,
     pub identity: Arc<IdentityManager>,
     pub compliance: Arc<ZkcVerifier>,
+    pub alex: Arc<dyn AlexClient>,
     pub fiat_webhook_secret: String,
     pub settlement_ingress_secret: String,
     pub settlement_log: Arc<RwLock<VecDeque<SettlementProposal>>>,

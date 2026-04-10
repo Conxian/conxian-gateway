@@ -7,7 +7,8 @@ edition.workspace = true
 mock-integrations = ["dep:rand"]
 
 [dependencies]
-compliance.workspace = true
+compliance = { path = "../compliance" }
+engine = { path = "../engine" }
 conxian-core.workspace = true
 axum.workspace = true
 tower.workspace = true

@@ -1,0 +1,32 @@
+# SAB Infrastructure Migration Control Plane (CON-329 / CON-337)
+
+This document tracks the migration of Web2 infrastructure dependencies to a sovereign, SAB-owned target state.
+
+## 1. Current Dependency Inventory
+
+| Service Surface | Provider | Responsibility | Target State |
+| :--- | :--- | :--- | :--- |
+| **Institutional Ledger** | Neon | Serverless Postgres (Transactional) | Sovereign-hosted Postgres on SAB Node. |
+| **Identity & Auth** | Supabase | OIDC and User Metadata | TEE-backed Enclave Identity (WIF). |
+| **Job Card Storage** | Supabase | JSON-LD Persistence | Tableland (Decentralized SQL). |
+| **Financial Modeling** | Supabase | Real-time 3-Statement and ARR | Local Engine with TEE Verification. |
+| **API Gateway** | Render | High-availability Web Services | Docker Swarm on Sovereign Node. |
+
+## 2. Migration Waves
+
+### Wave 1: Data Decoupling
+- **Goal**: Move critical settlement logs and job cards from Supabase to Tableland.
+- **Status**: Researching Tableland commit logic in `ZkcVerifier`.
+
+### Wave 2: Identity Sovereignty
+- **Goal**: Implement Workload Identity Federation (WIF) to remove reliance on external OIDC providers.
+- **Status**: `IdentityManager` support for OIDC exchange implemented.
+
+### Wave 3: Execution Autonomy
+- **Goal**: Host the Conxian Gateway and Nexus engines on SAB-owned bare metal or sovereign nodes.
+- **Status**: Standardizing Docker Compose reference stacks.
+
+## 3. Readiness Gates for Cutover
+- [ ] **Data Integrity**: Verified parity between Neon and local Postgres snapshots.
+- [ ] **Secret Hygiene**: All `CHANGEME` sentinels replaced with production secrets in SAB vault.
+- [ ] **Connectivity**: Sovereign RPC endpoints for Bitcoin and Stacks verified as stable.

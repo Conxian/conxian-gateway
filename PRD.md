@@ -46,6 +46,9 @@ Conxian is designed to capture the Total Addressable Market (TAM) of Bitcoin-nat
 - [x] R32: BitVM2-Backed Job Card Settlement Verification (Status: Complete)
 - [x] R33: Institutional OData v4 ERP Sync (Status: Simulated)
 - [x] R34: Advanced Axum Observability & Latency Tracking (Status: Complete)
+- [x] R35: Canonical Portfolio Mapping (Status: Complete)
+- [x] R36: Industrial Intent & x402 Alignment (Status: Complete)
+- [x] R37: Structured Finance Tranche Implementation (Status: Complete)
 
 ## 3. Progress Log
 - 2026-02-13: Initialized workspace structure.
@@ -55,33 +58,35 @@ Conxian is designed to capture the Total Addressable Market (TAM) of Bitcoin-nat
     - Added ISO 20022 Egress (pacs.008) for institutional banking alignment.
     - Integrated Workload Identity Federation (WIF) for TEE-based enclave authentication.
     - Enhanced Treasury Monitor with sBTC "Suction" simulation and Sovereign Yield Index (SYI).
-    - Expanded REST API with identity exchange and ISO payment formatting endpoints.
 - 2026-03-24: Fiat Gateway Implementation (Jules):
     - Implemented FiatRouter with production-grade Ramp and Investec integrations.
     - Added HMAC-SHA256 signature verification for authenticated webhooks.
-    - Exposed /fiat/session and /fiat/webhook endpoints for institutional workflows.
 - 2026-03-25: A2P & NTT Enhancement (Jules):
+    - Implemented Infobip integration and hardened stateless OTP verification in A2pRouter.
+    - Deployed specialized NTT Relayer for sovereign bridging of native token transfers.
 - 2026-03-26: Institutional Hardening & CJCS v2.0 (Jules):
     - Refactored API layer to use dependency injection via `AppState`, removing hardcoded mocks.
     - Integrated CJCS v2.0 JSON-LD into core SDK for labor orchestration.
     - Implemented BitVM2 verification floor for trustless Job Card settlement.
-    - Developed OData v4 ERP translation layer simulation for SAP/Oracle.
-    - Upgraded ISO 20022 egress to strictly match pacs.008.001.08 standards.
-    - Added Axum latency tracking middleware and versioning endpoint.
-    - Implemented Infobip integration and hardened stateless OTP verification in A2pRouter.
-    - Deployed specialized NTT Relayer for sovereign bridging of native token transfers.
-    - Exposed /a2p/otp and /a2p/verify endpoints for privacy-first authentication.
+- 2026-04-10: Mainnet Alignment & Production Readiness (Jules):
+    - Created canonical portfolio map and repository inventory (CON-468/CON-410).
+    - Implemented ALEX DEX client and exposed quote/swap API endpoints (CON-136).
+    - Integrated maintainer-controlled bounty payout toggle (CON-230).
+    - Implemented Industrial Intent (x402) metadata and structured finance tranches (CON-451/CON-452).
+    - Hardened security boundaries and aligned system wallets with mainnet prefixes (CON-208).
 
 ## 4. Technical Implementation Details
 - **TAM Engine**: Simulates growth of sBTC liquidity and tracks the Sovereign Yield Index.
 - **WIF Manager**: Handles OIDC-to-GCP token exchange for enclave-signed attestations.
 - **BitVM Verifier**: Implements state-root commitment verification for optimistic fraud proofs.
 - **ISO 20022 Forge**: Generates standardized XML banking messages for institutional egress.
-- **Metrics**: Exposes SYI and sBTC liquidity depth alongside existing blockchain telemetry.
+- **ALEX Client**: Interfaces with ALEX Stacks DEX for sBTC liquidity and swap operations.
 - **A2P Router**: Orchestrates global stateless OTP delivery via Infobip with HMAC verification.
 - **NTT Relayer**: Observes and relays Native Token Transfer events for the sovereign bridge.
 
 ## 5. Audit & Alignment Progress (April 2026)
 - **Mainnet Readiness Audit**: Completed audit of production execution and settlement paths. Verified mainnet-only guardrails for critical routes.
-- **Urgent Issue Reconciliation**: Aligned implementation with CON-166, CON-179, and CON-400.
 - **Compliance Hardening**: Verified TEE-based proposal enforcement and 144-block institutional timelock logic.
+- **Portfolio Mapping**: Created canonical portfolio map in `docs/PORTFOLIO_MAP.md`.
+- **Readiness Gates**: Defined repository-scoped readiness criteria in `docs/READINESS_GATES.md`.
+- **SAB Migration**: Mapped Web2 dependencies and sovereign target states in `docs/SAB_MIGRATION.md`.

@@ -35,6 +35,7 @@ pub struct Config {
     pub hmac_secret: String,
     pub fiat_webhook_secret: String,
     pub settlement_ingress_secret: String,
+    pub alex_api_url: String,
 }
 
 impl Config {
@@ -105,6 +106,8 @@ impl Config {
             hmac_secret,
             fiat_webhook_secret,
             settlement_ingress_secret,
+            alex_api_url: env::var("ALEX_API_URL")
+                .unwrap_or_else(|_| "https://api.alexlab.co".to_string()),
         }
     }
 }

@@ -1,84 +1,52 @@
-# Conxian Gateway (The Pipe)
+# Conxian Gateway: Institutional Compliance Pipe
 
-Institutional-grade middleware bridging Bitcoin/Stacks state logic with enterprise compliance. The gateway is designed to capture the Total Addressable Market (TAM) of Bitcoin-native liquidity while maintaining sovereign alignment.
+Institutional-grade middleware bridging Bitcoin/Stacks state logic with enterprise compliance, featuring mathematically verifiable state proofs and ZK-compliant auditing.
 
-## Purpose
+## 1. Vision & Strategy
+Conxian is designed to capture the Total Addressable Market (TAM) of Bitcoin-native liquidity ($10B+), moving beyond the initial Stacks Serviceable Addressable Market (SAM).
 
-Provide a unified, authenticated `/api/v1` interface for chain state, compliance verification, and institutional integrations across the Conxian stack.
+### Industry Enhancement Pillars
+- **A. sBTC "Suction" Pattern**: Incentivize native BTC-to-sBTC migrations via the Sovereign Yield Index (SYI).
+- **B. BitVM & DLC Bonds**: Trustless cross-chain state verification and non-custodial Bitcoin debt.
+- **C. Institutional ISO 20022 Egress**: Banking-standard messaging (pacs.008) for legacy egress.
+- **D. Workload Identity Federation (WIF)**: TEE-based agent authentication without static keys.
 
-## Status
-
-Active development. Interfaces and module boundaries may evolve as protocol, wallet, and platform requirements converge.
-
-## Ownership
-
-Ownership and review requirements are defined in [`CODEOWNERS`](./CODEOWNERS).
-
-## Audience
-
-- Backend engineers integrating chain-state monitoring and institutional egress.
-- Platform operators running the stack locally or in production environments.
-- Wallet and UI engineers consuming Gateway APIs.
-
-## Relationship to the Conxian stack
-
-- Primary API surface for Conxian UI, Conxius Wallet, and the `conxius-platform` orchestration stack.
-- Core shared logic is centralized in `lib-conxian-core/`.
-
-## Features
-- **Engine**: Nakamoto-ready indexing and state monitoring for Bitcoin and Stacks. Enhanced with the sBTC "Suction" pattern and Sovereign Yield Index (SYI) tracking.
-- **API**: SLA-grade B2B interface with hardened authentication (constant-time comparison) and DoS protection. Supports ISO 20022 banking egress and identity exchange (WIF).
-- **Compliance**: Zero-Knowledge Compliance (ZKC) module for Conxius Wallet attestation with cryptographic verification (ECDSA, Schnorr, ZKML, and BitVM).
-- **Metrics**: Built-in Prometheus-compatible metrics endpoint with detailed chain state and treasury telemetry (Protected).
-- **Persistence**: Atomic file-based persistence for reliable state monitoring across restarts.
-
-## Architecture
+## 2. Architecture
 - `/cmd/gateway`: Entry point and wiring.
-- `/internal/engine`: Blockchain listeners and Treasury monitor.
+- `/internal/engine`: Blockchain listeners, Treasury monitor, and ALEX DEX client.
 - `/internal/api`: Institutional API, Auth middleware, and handlers.
 - `/internal/compliance`: ZKC attestation verifier, BitVM verifier, and Identity Manager (WIF).
 - `/pkg/conxian-core`: Shared models, error types, and persistence layer.
 
-## API Endpoints
+## 3. API Endpoints
 - `GET /api/v1/health`: Service health check.
 - `GET /api/v1/metrics`: Prometheus-compatible metrics (includes uptime, treasury, and SYI) (Authorized).
 - `GET /api/v1/state`: Current chain state and gateway metrics (Authorized).
 - `POST /api/v1/verify`: Verify cryptographic attestations (ECDSA, Schnorr, ZKML, BitVM) (Authorized).
 - `POST /api/v1/identity/exchange`: Exchange OIDC token for GCP access token (WIF) (Authorized).
+- `POST /api/v1/identity/resolve`: Resolve identity for ENS, BNS, or World ID (Authorized).
 - `POST /api/v1/iso20022/payment`: Generate standardized ISO 20022 egress messages (Authorized).
-- `POST /api/v1/iso20022/pacs008`: Ingest ISO 20022 pacs.008 settlement signals (Authorized).
-- `POST /api/v1/iso20022/pacs009`: Ingest ISO 20022 pacs.009 settlement signals (Authorized).
-- `POST /api/v1/settlement/papss`: Ingest PAPSS settlement signals (Authorized).
-- `POST /api/v1/settlement/brics`: Ingest BRICS settlement signals (Authorized).
-- `GET /api/v1/settlements/external`: View the in-memory, normalized settlement log (Authorized).
+- `POST /api/v1/alex/quote`: Fetch swap quote from ALEX DEX (Authorized).
+- `POST /api/v1/alex/swap`: Execute ALEX swap operation (Authorized).
+- `POST /api/v1/bounties/payouts/toggle`: Maintainer control for bounty activation (Authorized).
+- `POST /api/v1/ingress/iso20022`: Ingest ISO 20022 settlement signals (Authorized).
+- `POST /api/v1/ingress/papss`: Ingest PAPSS settlement signals (Authorized).
+- `POST /api/v1/ingress/brics`: Ingest BRICS settlement signals (Authorized).
 
-## Configuration
+## 4. Configuration
 The following environment variables can be used to configure the gateway:
-- `BITCOIN_RPC_URL`: URL of the Bitcoin node RPC (default: https://bitcoin-rpc.publicnode.com)
-- `BITCOIN_RPC_USER`: Bitcoin RPC username (optional; set both user+pass, or leave both empty)
-- `BITCOIN_RPC_PASS`: Bitcoin RPC password (optional; set both user+pass, or leave both empty)
-- `STACKS_RPC_URL`: URL of the Stacks node API (default: https://api.mainnet.hiro.so)
-- `API_TOKEN`: Bearer token for institutional API access (default: institutional-default-token)
-- `BITCOIN_SYNC_INTERVAL`: Sync interval for Bitcoin (default: 10s)
-- `STACKS_SYNC_INTERVAL`: Sync interval for Stacks (default: 30s)
-- `RAMP_API_KEY`: API key for Ramp Network integration.
-- `INVESTEC_CLIENT_ID`: Client ID for Investec Open Banking.
-- `INVESTEC_SECRET`: Client secret for Investec Open Banking.
-- `ALCHEMY_PAY_APP_ID`: App ID for Alchemy Pay.
-- `ALCHEMY_PAY_SECRET`: App secret for Alchemy Pay.
-- `BANXA_API_KEY`: API key for Banxa.
-- `BANXA_SECRET`: API secret for Banxa.
-- `INFOBIP_API_KEY`: API key for Infobip A2P messaging.
-- `INFOBIP_BASE_URL`: Base URL for Infobip API.
-- `HMAC_SECRET`: Secret used for stateless OTP HMAC generation.
-- `FIAT_WEBHOOK_SECRET`: Secret used for verifying fiat provider webhooks.
-- `SETTLEMENT_INGRESS_SECRET`: Secret used for verifying settlement ingress payloads.
+- `BITCOIN_RPC_URL`: URL of the Bitcoin node RPC.
+- `STACKS_RPC_URL`: URL of the Stacks node API.
+- `API_TOKEN`: Bearer token for institutional API access.
+- `FIAT_WEBHOOK_SECRET`: Secret for verifying fiat provider webhooks.
+- `SETTLEMENT_INGRESS_SECRET`: Secret for verifying settlement ingress payloads.
+- `ALEX_API_URL`: Base URL for ALEX API integration (default: https://api.alexlab.co).
 
-## Getting Started
+## 5. Development
 ```bash
 # Run the gateway
 cargo run --bin gateway
 
 # Run tests
-cargo test
+cargo test --all-features
 ```
