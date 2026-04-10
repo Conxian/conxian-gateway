@@ -163,12 +163,16 @@ impl ZkcVerifier {
 
         let image_id_bytes = Vec::from_hex(&proof.image_id)
             .map_err(|_| ConxianError::Compliance("Invalid proof image format".into()))?;
-        let image_id: [u32; 8] =
-            bytemuck::cast_slice(&image_id_bytes)
-                .try_into()
-                .map_err(|_| {
-                    ConxianError::Compliance("Internal verification length mismatch".into())
-                })?;
+        if image_id_bytes.len() != 32 {
+            return Err(ConxianError::Compliance(
+                "Invalid proof image format: image_id must be 32 bytes".into(),
+            ));
+        }
+
+        let mut image_id = [0u32; 8];
+        for (i, chunk) in image_id_bytes.chunks_exact(4).enumerate() {
+            image_id[i] = u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+        }
 
         receipt.verify(image_id).map_err(|e| {
             warn!(error = %e, "ZKML proof verification failed");
