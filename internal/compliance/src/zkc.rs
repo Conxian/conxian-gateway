@@ -463,7 +463,8 @@ impl ZkcVerifier {
 
         match self.verify_attestation(attestation) {
             Ok(valid) => Ok(valid),
-            Err(_) => Ok(false),
+            Err(ConxianError::Security(_)) => Ok(false),
+            Err(e) => Err(e),
         }
     }
 
