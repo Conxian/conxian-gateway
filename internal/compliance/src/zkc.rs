@@ -373,7 +373,10 @@ impl ZkcVerifier {
                 payload_hash,
                 || self.verify_schnorr(a),
             ),
-            _ => false,
+            _ => {
+                debug!("TEE settlement attestation rejected: unsupported attestation type");
+                false
+            }
         }
     }
 
