@@ -5,6 +5,7 @@ use axum::{
     body::Body,
     http::{header, Request, StatusCode},
 };
+use compliance::zkc::ATTESTATION_SIGNING_DOMAIN;
 use compliance::{IdentityManager, ZkcVerifier};
 use conxian_core::{Attestation, AttestationRequest, GatewayState, SharedState};
 use hmac::{Hmac, Mac};
@@ -26,7 +27,7 @@ fn make_tee_attestation_header(raw_payload_hash: &str) -> String {
     let device_id = "conxius-tee-test";
 
     let mut hasher = Sha256::new();
-    hasher.update(b"conxius-attestation:v1");
+    hasher.update(ATTESTATION_SIGNING_DOMAIN);
     hasher.update(device_id.as_bytes());
     hasher.update([0u8]);
     hasher.update(raw_payload_hash.as_bytes());

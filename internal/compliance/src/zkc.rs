@@ -15,7 +15,7 @@ use uuid;
 type HmacSha256 = Hmac<Sha256>;
 
 const INGRESS_SIGNATURE_HEX_LEN: usize = 64;
-const ATTESTATION_SIGNING_DOMAIN: &[u8] = b"conxius-attestation:v1";
+pub const ATTESTATION_SIGNING_DOMAIN: &[u8] = b"conxius-attestation:v1";
 
 pub struct ZkcVerifier {
     secp: Secp256k1<secp256k1::All>,
@@ -363,37 +363,31 @@ impl ZkcVerifier {
         &self,
         attestation: &AttestationRequest,
         payload_hash: &str,
-    ) -> ConxianResult<bool> {
+    ) -> bool {
         match attestation {
             AttestationRequest::Ecdsa(a) => {
                 if !a.device_id.starts_with("conxius-tee-") {
-                    return Ok(false);
+                    return false;
                 }
 
                 if a.payload != payload_hash {
-                    return Ok(false);
+                    return false;
                 }
 
-                match self.verify(a) {
-                    Ok(valid) => Ok(valid),
-                    Err(_) => Ok(false),
-                }
+                self.verify(a).unwrap_or(false)
             }
             AttestationRequest::Schnorr(a) => {
                 if !a.device_id.starts_with("conxius-tee-") {
-                    return Ok(false);
+                    return false;
                 }
 
                 if a.payload != payload_hash {
-                    return Ok(false);
+                    return false;
                 }
 
-                match self.verify_schnorr(a) {
-                    Ok(valid) => Ok(valid),
-                    Err(_) => Ok(false),
-                }
+                self.verify_schnorr(a).unwrap_or(false)
             }
-            _ => Ok(false),
+            _ => false,
         }
     }
 

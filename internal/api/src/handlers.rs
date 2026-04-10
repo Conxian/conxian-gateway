@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
 use crate::a2p::{OtpRequest, OtpVerificationRequest};
 use crate::fiat::WebhookPayload;
@@ -528,25 +528,15 @@ fn verify_tee_settlement_attestation(
         )
     })?;
 
-    match state
+    if !state
         .compliance
         .verify_settlement_trigger_attestation(&attestation, payload_hash)
     {
-        Ok(true) => (),
-        Ok(false) => {
-            warn!("TEE settlement attestation verification failed");
-            return Err((
-                StatusCode::UNAUTHORIZED,
-                Json(json!({ "error": "Invalid TEE attestation" })),
-            ));
-        }
-        Err(e) => {
-            debug!(error = %e, "TEE settlement attestation verification error");
-            return Err((
-                StatusCode::UNAUTHORIZED,
-                Json(json!({ "error": "Invalid TEE attestation" })),
-            ));
-        }
+        warn!("TEE settlement attestation verification failed");
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            Json(json!({ "error": "Invalid TEE attestation" })),
+        ));
     }
 
     Ok(attestation)
