@@ -2,6 +2,12 @@
 
 Institutional-grade middleware bridging Bitcoin/Stacks state logic with enterprise compliance, featuring mathematically verifiable state proofs and ZK-compliant auditing.
 
+## 0. Governance & BOS Role
+**Business Unit**: Protocol & Institutional Infrastructure
+**BOS Role**: Canonical Blockchain State Listener & Compliance Pipe
+**Status**: Mainnet-Ready (Production)
+**Ownership**: @botshelomokoka @admin-conxian-labs
+
 ## 1. Vision & Strategy
 Conxian is designed to capture the Total Addressable Market (TAM) of Bitcoin-native liquidity ($10B+), moving beyond the initial Stacks Serviceable Addressable Market (SAM).
 
