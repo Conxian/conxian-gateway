@@ -746,6 +746,36 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_zkml_image_id_trims_whitespace() {
+        let image_id = ZkcVerifier::parse_zkml_image_id(
+            "  000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f  ",
+        )
+        .unwrap();
+
+        assert_eq!(
+            image_id,
+            [
+                0x03020100, 0x07060504, 0x0b0a0908, 0x0f0e0d0c, 0x13121110, 0x17161514, 0x1b1a1918,
+                0x1f1e1d1c,
+            ]
+        );
+    }
+
+    #[test]
+    fn test_parse_zkml_image_id_rejects_non_hex_content() {
+        let err = ZkcVerifier::parse_zkml_image_id(
+            "zz0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+        )
+        .unwrap_err();
+        match err {
+            ConxianError::Compliance(message) => {
+                assert!(message.contains("Invalid proof image format"));
+            }
+            other => panic!("expected compliance error, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn test_parse_zkml_image_id_rejects_invalid_length() {
         let err = ZkcVerifier::parse_zkml_image_id("deadbeef").unwrap_err();
         match err {
