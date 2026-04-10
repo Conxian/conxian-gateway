@@ -621,13 +621,16 @@ impl ZkcVerifier {
     #[allow(dead_code)]
     fn decode_base64_or_hex(label: &str, value: &str) -> ConxianResult<Vec<u8>> {
         let value = value.trim();
-        if value.starts_with("0x") || value.starts_with("0X") {
-            if value.len() < 3 {
+        if let Some(hex_body) = value
+            .strip_prefix("0x")
+            .or_else(|| value.strip_prefix("0X"))
+        {
+            if hex_body.is_empty() {
                 return Err(ConxianError::Compliance(format!(
                     "Invalid hex format for {label}: too short"
                 )));
             }
-            Vec::from_hex(&value[2..]).map_err(|e| {
+            Vec::from_hex(hex_body).map_err(|e| {
                 ConxianError::Compliance(format!("Invalid hex format for {label}: {e}"))
             })
         } else if value.chars().all(|c| c.is_ascii_hexdigit()) {
