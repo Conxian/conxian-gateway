@@ -623,17 +623,17 @@ pub async fn get_alex_quote(
 }
 
 pub async fn execute_alex_swap(
-    State(state): State<AppState>,
-    Json(request): Json<AlexSwapRequest>,
+    State(_state): State<AppState>,
+    Json(_request): Json<AlexSwapRequest>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    let signer_key = "ENCLAVE_SIGNER_PROD";
-    match state.alex.execute_swap(request, signer_key).await {
-        Ok(txid) => Ok(Json(json!({ "txid": txid, "status": "broadcasted" }))),
-        Err(e) => Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": e.to_string() })),
-        )),
-    }
+    warn!("ALEX swap requested but signer integration is unavailable");
+    Err((
+        StatusCode::NOT_IMPLEMENTED,
+        Json(json!({
+            "error": "Swap execution not available: signer integration required",
+            "code": "alex_swap_signer_unavailable"
+        })),
+    ))
 }
 
 // Bounty Handlers (CON-230)
