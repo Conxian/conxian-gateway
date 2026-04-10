@@ -646,13 +646,14 @@ impl ZkcVerifier {
             let attr = attr
                 .map_err(|err| ConxianError::Compliance(format!("Invalid XML attribute: {err}")))?;
 
+            let key = attr.key.as_ref();
+            if !Self::is_relevant_iso20022_source_attr_key(key) {
+                continue;
+            }
+
             let value = attr.unescape_value().map_err(|err| {
                 ConxianError::Compliance(format!("Invalid XML attribute value: {err}"))
             })?;
-
-            if !Self::is_relevant_iso20022_source_attr_key(attr.key.as_ref()) {
-                continue;
-            }
 
             if value.contains("pacs.008") {
                 return Ok(Some(SettlementSource::Iso20022Pacs008));
