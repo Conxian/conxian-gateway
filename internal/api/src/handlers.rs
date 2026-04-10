@@ -514,6 +514,8 @@ fn verify_tee_settlement_attestation(
     let attestation_raw = headers
         .get(TEE_ATTESTATION_HEADER)
         .and_then(|h| h.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
         .ok_or((
             StatusCode::UNAUTHORIZED,
             Json(json!({ "error": "Missing TEE attestation" })),
@@ -526,32 +528,25 @@ fn verify_tee_settlement_attestation(
         )
     })?;
 
-    match state.compliance.verify_attestation(attestation.clone()) {
+    match state
+        .compliance
+        .verify_settlement_trigger_attestation(&attestation, payload_hash)
+    {
         Ok(true) => (),
-        _ => {
+        Ok(false) => {
+            warn!("TEE settlement attestation verification failed");
             return Err((
                 StatusCode::UNAUTHORIZED,
                 Json(json!({ "error": "Invalid TEE attestation" })),
-            ))
+            ));
         }
-    }
-
-    let signed_payload = match &attestation {
-        AttestationRequest::Ecdsa(a) => &a.payload,
-        AttestationRequest::Schnorr(a) => &a.payload,
-        _ => {
+        Err(e) => {
+            warn!("TEE settlement attestation verification error: {e}");
             return Err((
-                StatusCode::BAD_REQUEST,
-                Json(json!({ "error": "Unsupported attestation type for settlement" })),
-            ))
+                StatusCode::UNAUTHORIZED,
+                Json(json!({ "error": "Invalid TEE attestation" })),
+            ));
         }
-    };
-
-    if signed_payload != payload_hash {
-        return Err((
-            StatusCode::UNAUTHORIZED,
-            Json(json!({ "error": "TEE attestation payload hash mismatch" })),
-        ));
     }
 
     Ok(attestation)
@@ -628,17 +623,17 @@ pub async fn get_alex_quote(
 }
 
 pub async fn execute_alex_swap(
-    State(state): State<AppState>,
-    Json(request): Json<AlexSwapRequest>,
+    State(_state): State<AppState>,
+    Json(_request): Json<AlexSwapRequest>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    let signer_key = "ENCLAVE_SIGNER_PROD";
-    match state.alex.execute_swap(request, signer_key).await {
-        Ok(txid) => Ok(Json(json!({ "txid": txid, "status": "broadcasted" }))),
-        Err(e) => Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": e.to_string() })),
-        )),
-    }
+    warn!("ALEX swap requested but signer integration is unavailable");
+    Err((
+        StatusCode::NOT_IMPLEMENTED,
+        Json(json!({
+            "error": "Swap execution not available: signer integration required",
+            "code": "alex_swap_signer_unavailable"
+        })),
+    ))
 }
 
 // Bounty Handlers (CON-230)
