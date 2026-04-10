@@ -9,7 +9,7 @@ use conxian_core::{
 use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 use uuid;
 
 type HmacSha256 = Hmac<Sha256>;
@@ -374,7 +374,13 @@ impl ZkcVerifier {
                     return false;
                 }
 
-                self.verify(a).unwrap_or(false)
+                match self.verify(a) {
+                    Ok(valid) => valid,
+                    Err(e) => {
+                        debug!(error = %e, "TEE settlement attestation verifier error");
+                        false
+                    }
+                }
             }
             AttestationRequest::Schnorr(a) => {
                 if !a.device_id.starts_with("conxius-tee-") {
@@ -385,7 +391,13 @@ impl ZkcVerifier {
                     return false;
                 }
 
-                self.verify_schnorr(a).unwrap_or(false)
+                match self.verify_schnorr(a) {
+                    Ok(valid) => valid,
+                    Err(e) => {
+                        debug!(error = %e, "TEE settlement attestation verifier error");
+                        false
+                    }
+                }
             }
             _ => false,
         }
