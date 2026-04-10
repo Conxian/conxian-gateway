@@ -158,19 +158,20 @@ impl ZkcVerifier {
             ));
         }
 
-        let receipt_bytes = Self::decode_base64_or_hex("receipt", receipt_value)?;
-        if receipt_bytes.len() > MAX_PROOF_RECEIPT_BYTES {
-            return Err(ConxianError::Compliance(
-                "Invalid proof receipt format".into(),
-            ));
-        }
+        let receipt_bytes =
+            Self::decode_base64_or_hex_bounded("receipt", receipt_value, MAX_PROOF_RECEIPT_BYTES)
+                .map_err(|e| {
+                warn!(error = %e, "ZKML receipt decoding failed");
+                ConxianError::Compliance("Invalid proof receipt format".to_string())
+            })?;
 
         let receipt: Receipt = bincode::DefaultOptions::new()
             .with_limit(MAX_PROOF_RECEIPT_BYTES as u64)
+            .reject_trailing_bytes()
             .deserialize(&receipt_bytes)
             .map_err(|e| {
                 warn!(error = %e, "ZKML receipt deserialization failed");
-                ConxianError::Compliance("Internal cryptographic verification error".to_string())
+                ConxianError::Compliance("Invalid proof receipt format".to_string())
             })?;
 
         let image_id = Self::parse_zkml_image_id(&proof.image_id)?;
@@ -984,6 +985,10 @@ impl ZkcVerifier {
         const IMAGE_ID_HEX_LEN: usize = 64;
 
         let image_id_hex = image_id_hex.trim();
+        let image_id_hex = image_id_hex
+            .strip_prefix("0x")
+            .or_else(|| image_id_hex.strip_prefix("0X"))
+            .unwrap_or(image_id_hex);
         if image_id_hex.len() != IMAGE_ID_HEX_LEN {
             return Err(ConxianError::Compliance(
                 "Invalid proof image format: image_id must be 32 bytes".into(),
@@ -1001,6 +1006,56 @@ impl ZkcVerifier {
         }
 
         Ok(image_id)
+    }
+
+    fn decode_base64_or_hex_bounded(
+        label: &str,
+        value: &str,
+        max_decoded_len: usize,
+    ) -> ConxianResult<Vec<u8>> {
+        let value = value.trim();
+        if value.starts_with("0x") || value.starts_with("0X") {
+            if value.len() < 3 {
+                return Err(ConxianError::Compliance(format!(
+                    "Invalid hex format for {label}: too short"
+                )));
+            }
+
+            let hex_body = &value[2..];
+            if hex_body.len() % 2 != 0 {
+                return Err(ConxianError::Compliance(format!(
+                    "Invalid hex format for {label}: odd length"
+                )));
+            }
+
+            let decoded_len = hex_body.len() / 2;
+            if decoded_len > max_decoded_len {
+                return Err(ConxianError::Compliance(format!(
+                    "Invalid hex format for {label}: too large"
+                )));
+            }
+
+            let mut out = vec![0u8; decoded_len];
+            hex::decode_to_slice(hex_body, &mut out).map_err(|e| {
+                ConxianError::Compliance(format!("Invalid hex format for {label}: {e}"))
+            })?;
+            Ok(out)
+        } else if value.chars().all(|c| c.is_ascii_hexdigit()) {
+            Err(ConxianError::Compliance(format!(
+                "Ambiguous encoding for {label}: hex values must be prefixed with 0x"
+            )))
+        } else {
+            let max_possible_decoded_len = value.len().div_ceil(4).saturating_mul(3);
+            let mut out = vec![0u8; std::cmp::min(max_possible_decoded_len, max_decoded_len)];
+            let n = base64::Engine::decode_slice(
+                &base64::engine::general_purpose::STANDARD,
+                value,
+                &mut out,
+            )
+            .map_err(|e| ConxianError::Compliance(format!("Invalid base64 for {label}: {e}")))?;
+            out.truncate(n);
+            Ok(out)
+        }
     }
 }
 
@@ -1088,6 +1143,22 @@ mod tests {
     fn test_parse_zkml_image_id_trims_whitespace() {
         let image_id = ZkcVerifier::parse_zkml_image_id(
             "  000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f  ",
+        )
+        .unwrap();
+
+        assert_eq!(
+            image_id,
+            [
+                0x03020100, 0x07060504, 0x0b0a0908, 0x0f0e0d0c, 0x13121110, 0x17161514, 0x1b1a1918,
+                0x1f1e1d1c,
+            ]
+        );
+    }
+
+    #[test]
+    fn test_parse_zkml_image_id_accepts_prefixed_hex() {
+        let image_id = ZkcVerifier::parse_zkml_image_id(
+            "0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
         )
         .unwrap();
 
