@@ -1,5 +1,6 @@
 use bitcoin::hex::FromHex;
 use bitcoin::secp256k1::{self, ecdsa::Signature, Message, PublicKey, Secp256k1};
+use borsh::BorshDeserialize;
 use chrono;
 use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
 use conxian_core::{
@@ -8,6 +9,7 @@ use conxian_core::{
     SettlementRail, SettlementSource, SettlementStatus, ZkmlProof,
 };
 use hmac::{Hmac, Mac};
+use risc0_zkvm::Receipt;
 use sha2::{Digest, Sha256};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{info, warn};
@@ -16,6 +18,8 @@ use uuid;
 type HmacSha256 = Hmac<Sha256>;
 
 const INGRESS_SIGNATURE_HEX_LEN: usize = 64;
+const MAX_ZKML_FIELD_LEN: usize = 4 * 1024 * 1024;
+const MAX_INLINE_PUBLIC_INPUTS: usize = 8 * 1024;
 
 pub struct ZkcVerifier {
     secp: Secp256k1<secp256k1::All>,
@@ -145,6 +149,141 @@ impl ZkcVerifier {
         }
 
         info!("Verifying ZKML proof for device: {}", proof.device_id);
+
+        let receipt_hash = proof.receipt_hash.trim();
+        let receipt_hash = receipt_hash
+            .strip_prefix("0x")
+            .or_else(|| receipt_hash.strip_prefix("0X"))
+            .unwrap_or(receipt_hash);
+        if !Self::is_32_byte_hex(receipt_hash) {
+            return Err(ConxianError::Compliance(
+                "Invalid receipt_hash: expected 32-byte hex string".to_string(),
+            ));
+        }
+
+        let receipt_str = proof.receipt.trim();
+        if receipt_str.is_empty() {
+            return Err(ConxianError::Compliance(
+                "ZKML verification failed: receipt cannot be empty".to_string(),
+            ));
+        }
+        if receipt_str.len() > MAX_ZKML_FIELD_LEN {
+            return Err(ConxianError::Compliance(
+                "Invalid receipt: payload too large".to_string(),
+            ));
+        }
+
+        let public_inputs_str = proof.public_inputs.trim();
+        if public_inputs_str.is_empty() {
+            return Err(ConxianError::Compliance(
+                "ZKML verification failed: public_inputs cannot be empty".to_string(),
+            ));
+        }
+        if public_inputs_str.len() > MAX_ZKML_FIELD_LEN {
+            return Err(ConxianError::Compliance(
+                "Invalid public_inputs: payload too large".to_string(),
+            ));
+        }
+
+        let journal_str = proof.journal.trim();
+        if journal_str.is_empty() {
+            return Err(ConxianError::Compliance(
+                "ZKML verification failed: journal cannot be empty".to_string(),
+            ));
+        }
+        if journal_str.len() > MAX_ZKML_FIELD_LEN {
+            return Err(ConxianError::Compliance(
+                "Invalid journal: payload too large".to_string(),
+            ));
+        }
+
+        let image_id_hex = proof.image_id.trim();
+        let image_id_hex = image_id_hex
+            .strip_prefix("0x")
+            .or_else(|| image_id_hex.strip_prefix("0X"))
+            .unwrap_or(image_id_hex);
+        if !Self::is_32_byte_hex(image_id_hex) {
+            return Err(ConxianError::Compliance(
+                "Invalid image_id: expected 32-byte hex string".to_string(),
+            ));
+        }
+
+        let receipt_bytes = Self::decode_base64_or_hex("receipt", receipt_str)?;
+        let computed_receipt_hash = hex::encode(Sha256::digest(&receipt_bytes));
+        if !computed_receipt_hash.eq_ignore_ascii_case(receipt_hash) {
+            return Err(ConxianError::Security(
+                "ZKML verification failed: receipt_hash mismatch".to_string(),
+            ));
+        }
+
+        let receipt = Self::decode_risc0_receipt(&receipt_bytes)?;
+
+        let image_id_bytes = Vec::from_hex(image_id_hex)
+            .map_err(|_| ConxianError::Compliance("Invalid proof image format".into()))?;
+        let image_id = Self::bytes_to_digest_words_le(&image_id_bytes)?;
+
+        receipt.verify(image_id).map_err(|e| {
+            warn!(error = %e, "ZKML proof verification failed");
+            ConxianError::Security("Cryptographic proof verification failed".to_string())
+        })?;
+
+        let receipt_journal = receipt.journal.bytes.as_slice();
+
+        if receipt_journal != journal_str.as_bytes() {
+            let decoded_journal_bytes = Self::decode_base64_or_hex("journal", journal_str)?;
+            if receipt_journal != decoded_journal_bytes.as_slice() {
+                return Err(ConxianError::Security(
+                    "ZKML verification failed: journal mismatch".to_string(),
+                ));
+            }
+        }
+
+        let public_inputs_raw = public_inputs_str.as_bytes();
+        let public_inputs_raw_hash_hex = hex::encode(Sha256::digest(public_inputs_raw));
+        let public_inputs_raw_hash_hex_upper = public_inputs_raw_hash_hex.to_ascii_uppercase();
+
+        let mut public_inputs_ok =
+            Self::contains_subslice(receipt_journal, public_inputs_raw_hash_hex.as_bytes())
+                || Self::contains_subslice(
+                    receipt_journal,
+                    public_inputs_raw_hash_hex_upper.as_bytes(),
+                );
+
+        if !public_inputs_ok && public_inputs_raw.len() <= MAX_INLINE_PUBLIC_INPUTS {
+            public_inputs_ok = Self::contains_subslice(receipt_journal, public_inputs_raw);
+        }
+
+        if !public_inputs_ok {
+            let public_inputs_decoded =
+                Self::decode_base64_or_hex("public_inputs", public_inputs_str).ok();
+
+            if let Some(public_inputs_decoded) = public_inputs_decoded {
+                let public_inputs_decoded_hash_hex =
+                    hex::encode(Sha256::digest(&public_inputs_decoded));
+                let public_inputs_decoded_hash_hex_upper =
+                    public_inputs_decoded_hash_hex.to_ascii_uppercase();
+
+                public_inputs_ok = Self::contains_subslice(
+                    receipt_journal,
+                    public_inputs_decoded_hash_hex.as_bytes(),
+                ) || Self::contains_subslice(
+                    receipt_journal,
+                    public_inputs_decoded_hash_hex_upper.as_bytes(),
+                );
+
+                if !public_inputs_ok && public_inputs_decoded.len() <= MAX_INLINE_PUBLIC_INPUTS {
+                    public_inputs_ok =
+                        Self::contains_subslice(receipt_journal, public_inputs_decoded.as_slice());
+                }
+            }
+        }
+
+        if !public_inputs_ok {
+            return Err(ConxianError::Security(
+                "ZKML verification failed: journal missing public input commitment".to_string(),
+            ));
+        }
+
         Ok(true)
     }
 
@@ -944,6 +1083,69 @@ impl ZkcVerifier {
             base64::Engine::decode(&base64::engine::general_purpose::STANDARD, value)
                 .map_err(|e| ConxianError::Compliance(format!("Invalid base64 for {label}: {e}")))
         }
+    }
+
+    fn decode_risc0_receipt(bytes: &[u8]) -> ConxianResult<Receipt> {
+        if bytes.len() > MAX_ZKML_FIELD_LEN {
+            return Err(ConxianError::Compliance(
+                "Invalid receipt: payload too large".to_string(),
+            ));
+        }
+
+        if let Ok(receipt) = Receipt::try_from_slice(bytes) {
+            return Ok(receipt);
+        }
+
+        let words = Self::bytes_to_words_le(bytes)?;
+        risc0_zkvm::serde::from_slice::<Receipt, u32>(&words)
+            .map_err(|e| ConxianError::Compliance(format!("Invalid receipt encoding: {e}")))
+    }
+
+    fn bytes_to_words_le(bytes: &[u8]) -> ConxianResult<Vec<u32>> {
+        if !bytes.len().is_multiple_of(4) {
+            return Err(ConxianError::Compliance(
+                "Invalid receipt encoding: expected 4-byte word alignment".to_string(),
+            ));
+        }
+
+        let mut words = Vec::with_capacity(bytes.len() / 4);
+        for chunk in bytes.chunks_exact(4) {
+            words.push(u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
+        }
+        Ok(words)
+    }
+
+    fn bytes_to_digest_words_le(bytes: &[u8]) -> ConxianResult<[u32; 8]> {
+        const DIGEST_LEN: usize = 32;
+        if bytes.len() != DIGEST_LEN {
+            return Err(ConxianError::Compliance(
+                "Internal verification length mismatch".into(),
+            ));
+        }
+
+        let mut words = [0u32; 8];
+        for (idx, chunk) in bytes.chunks_exact(4).enumerate() {
+            words[idx] = u32::from_le_bytes(chunk.try_into().map_err(|_| {
+                ConxianError::Compliance("Internal verification length mismatch".into())
+            })?);
+        }
+        Ok(words)
+    }
+
+    fn contains_subslice(haystack: &[u8], needle: &[u8]) -> bool {
+        if needle.is_empty() {
+            return false;
+        }
+
+        memchr::memmem::find(haystack, needle).is_some()
+    }
+
+    fn is_even_len_hex(value: &str) -> bool {
+        value.len().is_multiple_of(2) && value.as_bytes().iter().all(|b| b.is_ascii_hexdigit())
+    }
+
+    fn is_32_byte_hex(value: &str) -> bool {
+        value.len() == 64 && Self::is_even_len_hex(value)
     }
 }
 
