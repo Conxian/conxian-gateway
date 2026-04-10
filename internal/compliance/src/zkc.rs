@@ -346,6 +346,34 @@ impl ZkcVerifier {
         Ok(hex::encode(hasher.finalize()))
     }
 
+    pub fn verify_settlement_trigger_attestation(
+        &self,
+        attestation: &AttestationRequest,
+        payload_hash: &str,
+    ) -> ConxianResult<bool> {
+        let (device_id, signed_payload) = match attestation {
+            AttestationRequest::Ecdsa(a) => (&a.device_id, &a.payload),
+            AttestationRequest::Schnorr(a) => (&a.device_id, &a.payload),
+            _ => {
+                return Err(ConxianError::Security(
+                    "Unsupported attestation type for settlement trigger".into(),
+                ))
+            }
+        };
+
+        if !device_id.starts_with("conxius-tee-") {
+            return Err(ConxianError::Security(
+                "Access denied: non-TEE device not allowed".into(),
+            ));
+        }
+
+        if signed_payload != payload_hash {
+            return Ok(false);
+        }
+
+        self.verify_attestation(attestation.clone())
+    }
+
     fn parse_pacs008_v8(&self, xml: &str) -> ConxianResult<Iso20022Fields> {
         use quick_xml::events::Event;
         use quick_xml::reader::Reader;
