@@ -80,3 +80,8 @@ Conxian is designed to capture the Total Addressable Market (TAM) of Bitcoin-nat
 - **Metrics**: Exposes SYI and sBTC liquidity depth alongside existing blockchain telemetry.
 - **A2P Router**: Orchestrates global stateless OTP delivery via Infobip with HMAC verification.
 - **NTT Relayer**: Observes and relays Native Token Transfer events for the sovereign bridge.
+
+## 5. Audit & Alignment Progress (April 2026)
+- **Mainnet Readiness Audit**: Completed audit of production execution and settlement paths. Verified mainnet-only guardrails for critical routes.
+- **Urgent Issue Reconciliation**: Aligned implementation with CON-166, CON-179, and CON-400.
+- **Compliance Hardening**: Verified TEE-based proposal enforcement and 144-block institutional timelock logic.
