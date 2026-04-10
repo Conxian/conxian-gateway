@@ -27,7 +27,7 @@ Conxian is designed to capture the Total Addressable Market (TAM) of Bitcoin-nat
 - `POST /api/v1/identity/resolve`: Resolve identity for ENS, BNS, or World ID (Authorized).
 - `POST /api/v1/iso20022/payment`: Generate standardized ISO 20022 egress messages (Authorized).
 - `POST /api/v1/alex/quote`: Fetch swap quote from ALEX DEX (Authorized).
-- `POST /api/v1/alex/swap`: Execute ALEX swap operation (Authorized).
+- `POST /api/v1/alex/swap`: Execute ALEX swap operation (Authorized; returns `501` until signer integration exists).
 - `POST /api/v1/bounties/payouts/toggle`: Maintainer control for bounty activation (Authorized).
 - `POST /api/v1/ingress/iso20022`: Ingest ISO 20022 settlement signals (Authorized).
 - `POST /api/v1/ingress/papss`: Ingest PAPSS settlement signals (Authorized).
