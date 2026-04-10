@@ -514,6 +514,8 @@ fn verify_tee_settlement_attestation(
     let attestation_raw = headers
         .get(TEE_ATTESTATION_HEADER)
         .and_then(|h| h.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
         .ok_or((
             StatusCode::UNAUTHORIZED,
             Json(json!({ "error": "Missing TEE attestation" })),
@@ -526,32 +528,25 @@ fn verify_tee_settlement_attestation(
         )
     })?;
 
-    match state.compliance.verify_attestation(attestation.clone()) {
+    match state
+        .compliance
+        .verify_settlement_trigger_attestation(&attestation, payload_hash)
+    {
         Ok(true) => (),
-        _ => {
+        Ok(false) => {
+            warn!("TEE settlement attestation verification failed");
             return Err((
                 StatusCode::UNAUTHORIZED,
                 Json(json!({ "error": "Invalid TEE attestation" })),
-            ))
+            ));
         }
-    }
-
-    let signed_payload = match &attestation {
-        AttestationRequest::Ecdsa(a) => &a.payload,
-        AttestationRequest::Schnorr(a) => &a.payload,
-        _ => {
+        Err(e) => {
+            warn!("TEE settlement attestation verification error: {e}");
             return Err((
-                StatusCode::BAD_REQUEST,
-                Json(json!({ "error": "Unsupported attestation type for settlement" })),
-            ))
+                StatusCode::UNAUTHORIZED,
+                Json(json!({ "error": "Invalid TEE attestation" })),
+            ));
         }
-    };
-
-    if signed_payload != payload_hash {
-        return Err((
-            StatusCode::UNAUTHORIZED,
-            Json(json!({ "error": "TEE attestation payload hash mismatch" })),
-        ));
     }
 
     Ok(attestation)
