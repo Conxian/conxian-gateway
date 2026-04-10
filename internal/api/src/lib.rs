@@ -30,8 +30,17 @@ pub struct AppState {
     pub fiat_webhook_secret: String,
     pub settlement_ingress_secret: String,
     pub settlement_log: Arc<RwLock<VecDeque<SettlementProposal>>>,
+    pub offline_queue: Arc<dyn conxian_core::OfflineQueue>,
 }
 
 pub fn new_settlement_log() -> Arc<RwLock<VecDeque<SettlementProposal>>> {
     Arc::new(RwLock::new(VecDeque::new()))
+}
+
+pub fn new_offline_queue() -> Arc<dyn conxian_core::OfflineQueue> {
+    let key = [0u8; 32]; // In production, this would be an enclave-wrapped key
+    Arc::new(
+        conxian_core::persistence::EncryptedOfflineQueue::new("offline_queue.db", key)
+            .expect("Failed to init offline queue"),
+    )
 }
