@@ -155,6 +155,84 @@ impl ZkcVerifier {
         Ok(!attestation.commitment_hash.is_empty())
     }
 
+    fn parse_amount_minor_scale(amount: &str) -> ConxianResult<(u64, u32)> {
+        const MAX_SCALE: usize = 18;
+        const MAX_LEN: usize = 128;
+
+        if amount.is_empty() {
+            return Err(ConxianError::Compliance("Invalid amount".to_string()));
+        }
+        if amount.len() > MAX_LEN {
+            return Err(ConxianError::Compliance(
+                "Invalid amount: too long".to_string(),
+            ));
+        }
+        if amount != amount.trim() {
+            return Err(ConxianError::Compliance(
+                "Invalid amount: must not contain leading/trailing whitespace".to_string(),
+            ));
+        }
+        if amount.starts_with('-') {
+            return Err(ConxianError::Compliance(
+                "Invalid amount: must be non-negative".to_string(),
+            ));
+        }
+        if amount.starts_with('+') {
+            return Err(ConxianError::Compliance(
+                "Invalid amount: must not include sign".to_string(),
+            ));
+        }
+
+        let (int_part_raw, frac_part_raw) = amount.split_once('.').unwrap_or((amount, ""));
+        if int_part_raw.is_empty() && frac_part_raw.is_empty() {
+            return Err(ConxianError::Compliance(
+                "Invalid amount: must contain at least one digit".to_string(),
+            ));
+        }
+        if frac_part_raw.contains('.') {
+            return Err(ConxianError::Compliance(
+                "Invalid amount: must contain at most one decimal point".to_string(),
+            ));
+        }
+
+        let scale = frac_part_raw.len();
+        if scale > MAX_SCALE {
+            return Err(ConxianError::Compliance(
+                "Invalid amount: too many decimal places".to_string(),
+            ));
+        }
+
+        if !int_part_raw.chars().all(|c| c.is_ascii_digit())
+            || !frac_part_raw.chars().all(|c| c.is_ascii_digit())
+        {
+            return Err(ConxianError::Compliance(
+                "Invalid amount: must be decimal digits only".to_string(),
+            ));
+        }
+
+        let int_part = if int_part_raw.is_empty() {
+            "0"
+        } else {
+            int_part_raw
+        };
+
+        let minor = int_part
+            .chars()
+            .chain(frac_part_raw.chars())
+            .try_fold(0u64, |acc, c| {
+                let digit = c
+                    .to_digit(10)
+                    .ok_or_else(|| ConxianError::Compliance("Invalid amount".to_string()))?;
+                acc.checked_mul(10)
+                    .and_then(|v| v.checked_add(digit as u64))
+                    .ok_or_else(|| {
+                        ConxianError::Compliance("Invalid amount: out of range".to_string())
+                    })
+            })?;
+
+        Ok((minor, scale as u32))
+    }
+
     pub fn normalize_iso20022_ingress(
         &self,
         xml_payload: &str,
@@ -169,11 +247,7 @@ impl ZkcVerifier {
             ..Default::default()
         };
 
-        let amount_float: f64 = fields
-            .amount
-            .parse()
-            .map_err(|_| ConxianError::Compliance("Invalid amount format".into()))?;
-        let amount_minor = (amount_float * 100.0) as u64;
+        let (amount_minor, amount_scale) = Self::parse_amount_minor_scale(&fields.amount)?;
 
         Ok(SettlementEnvelope {
             version: conxian_core::SETTLEMENT_ENVELOPE_VERSION_CURRENT.to_string(),
@@ -181,7 +255,7 @@ impl ZkcVerifier {
                 source: fields.source,
                 transaction_id: fields.transaction_id,
                 amount_minor,
-                amount_scale: 2,
+                amount_scale,
                 currency: fields.currency,
                 sender: fields.sender,
                 receiver: fields.receiver,
@@ -219,10 +293,7 @@ impl ZkcVerifier {
             .as_str()
             .ok_or_else(|| ConxianError::Compliance("Missing currency".into()))?;
 
-        let amount_float: f64 = amount_str
-            .parse()
-            .map_err(|_| ConxianError::Compliance("Invalid amount format".into()))?;
-        let amount_minor = (amount_float * 100.0) as u64;
+        let (amount_minor, amount_scale) = Self::parse_amount_minor_scale(amount_str)?;
 
         Ok(SettlementEnvelope {
             version: conxian_core::SETTLEMENT_ENVELOPE_VERSION_CURRENT.to_string(),
@@ -230,7 +301,7 @@ impl ZkcVerifier {
                 source: SettlementSource::Papss,
                 transaction_id: tx_id.to_string(),
                 amount_minor,
-                amount_scale: 2,
+                amount_scale,
                 currency: currency.to_string(),
                 sender: payload["sender_bic"]
                     .as_str()
@@ -280,10 +351,7 @@ impl ZkcVerifier {
             .as_str()
             .ok_or_else(|| ConxianError::Compliance("Missing currency".into()))?;
 
-        let amount_float: f64 = amount_str
-            .parse()
-            .map_err(|_| ConxianError::Compliance("Invalid amount format".into()))?;
-        let amount_minor = (amount_float * 100.0) as u64;
+        let (amount_minor, amount_scale) = Self::parse_amount_minor_scale(amount_str)?;
 
         Ok(SettlementEnvelope {
             version: conxian_core::SETTLEMENT_ENVELOPE_VERSION_CURRENT.to_string(),
@@ -291,7 +359,7 @@ impl ZkcVerifier {
                 source: SettlementSource::Brics,
                 transaction_id: tx_id.to_string(),
                 amount_minor,
-                amount_scale: 2,
+                amount_scale,
                 currency: currency.to_string(),
                 sender: payload["origin_bank"]
                     .as_str()
@@ -755,8 +823,8 @@ mod tests {
             .normalize_brics_ingress(&payload, raw_payload_hash.clone())
             .unwrap();
         assert_eq!(envelope.payload.transaction_id, "brics-999");
-        assert_eq!(envelope.payload.amount_minor, 5000);
-        assert_eq!(envelope.payload.amount_scale, 2);
+        assert_eq!(envelope.payload.amount_minor, 50);
+        assert_eq!(envelope.payload.amount_scale, 0);
         assert_eq!(envelope.payload.currency, "GOLD");
         assert_eq!(envelope.payload.sender, "BANKA");
         assert_eq!(envelope.payload.receiver, "BANKB");
