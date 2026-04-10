@@ -1,5 +1,6 @@
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use base64::Engine;
+use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
 pub use conxian_core::{
     Attestation, AttestationRequest, BitVmAttestation, ConxianError, ConxianJobCard, ConxianResult,
     IndustrialIntent, NormalizedSettlement, SchnorrAttestation, SettlementEnvelope,
@@ -430,87 +431,259 @@ impl ZkcVerifier {
 
     fn parse_iso20022_pacs008(&self, xml: &str) -> ConxianResult<Iso20022Fields> {
         let mut reader = Reader::from_str(xml);
-
-        let mut msg_id = String::new();
-        let mut amount = String::new();
-        let mut currency = String::new();
-        let mut dbtr_nm = String::new();
-        let mut cdtr_nm = String::new();
-        let mut dbtr_iban = String::new();
-        let mut cdtr_iban = String::new();
+        reader.config_mut().trim_text(true);
 
         let mut buf = Vec::new();
-        let mut current_tag = String::new();
-        let mut in_dbtr = false;
-        let mut in_cdtr = false;
+        let mut stack: Vec<Vec<u8>> = Vec::new();
+
+        let mut source: Option<SettlementSource> = None;
+        let mut transaction_id: Option<String> = None;
+        let mut amount: Option<String> = None;
+        let mut currency: Option<String> = None;
+        let mut sender: Option<String> = None;
+        let mut sender_rank: u8 = 0;
+        let mut receiver: Option<String> = None;
+        let mut receiver_rank: u8 = 0;
+        let mut settled_at: Option<u64> = None;
 
         loop {
             match reader.read_event_into(&mut buf) {
                 Ok(Event::Start(e)) => {
-                    current_tag = String::from_utf8_lossy(e.local_name().as_ref()).to_string();
-                    match current_tag.as_str() {
-                        "Dbtr" | "DbtrAcct" => in_dbtr = true,
-                        "Cdtr" | "CdtrAcct" => in_cdtr = true,
-                        "IntrBkSttlmAmt" => {
-                            for attr in e.attributes() {
-                                let attr =
-                                    attr.map_err(|e| ConxianError::Compliance(e.to_string()))?;
-                                if attr.key.local_name().as_ref() == b"Ccy" {
-                                    currency = String::from_utf8_lossy(&attr.value).to_string();
+                    if source.is_none() {
+                        source = Self::iso20022_source_from_attributes(&e)?;
+                    }
+
+                    let name = e.local_name().as_ref().to_vec();
+                    if name.as_slice() == b"IntrBkSttlmAmt" && currency.is_none() {
+                        for attr in e.attributes().with_checks(false) {
+                            let attr = attr.map_err(|e| {
+                                ConxianError::Compliance(format!("Invalid XML attribute: {e}"))
+                            })?;
+
+                            if attr.key.local_name().as_ref() == b"Ccy" {
+                                let value = attr.unescape_value().map_err(|e| {
+                                    ConxianError::Compliance(format!(
+                                        "Invalid XML attribute value: {e}"
+                                    ))
+                                })?;
+                                let ccy = value.trim();
+                                if ccy.is_empty() {
+                                    return Err(ConxianError::Compliance(
+                                        "Empty IntrBkSttlmAmt Ccy attribute".to_string(),
+                                    ));
                                 }
+
+                                currency = Some(ccy.to_string());
+                                break;
                             }
                         }
-                        _ => (),
                     }
+
+                    stack.push(name);
+                }
+                Ok(Event::Empty(e)) => {
+                    if source.is_none() {
+                        source = Self::iso20022_source_from_attributes(&e)?;
+                    }
+
+                    let name = e.local_name().as_ref();
+                    if name == b"IntrBkSttlmAmt" && currency.is_none() {
+                        for attr in e.attributes().with_checks(false) {
+                            let attr = attr.map_err(|e| {
+                                ConxianError::Compliance(format!("Invalid XML attribute: {e}"))
+                            })?;
+
+                            if attr.key.local_name().as_ref() == b"Ccy" {
+                                let value = attr.unescape_value().map_err(|e| {
+                                    ConxianError::Compliance(format!(
+                                        "Invalid XML attribute value: {e}"
+                                    ))
+                                })?;
+                                let ccy = value.trim();
+                                if ccy.is_empty() {
+                                    return Err(ConxianError::Compliance(
+                                        "Empty IntrBkSttlmAmt Ccy attribute".to_string(),
+                                    ));
+                                }
+
+                                currency = Some(ccy.to_string());
+                                break;
+                            }
+                        }
+                    }
+                }
+                Ok(Event::End(_)) => {
+                    stack.pop();
                 }
                 Ok(Event::Text(e)) => {
-                    let text = String::from_utf8_lossy(e.as_ref()).trim().to_string();
-                    match current_tag.as_str() {
-                        "MsgId" => msg_id = text,
-                        "IntrBkSttlmAmt" => amount = text,
-                        "Nm" if in_dbtr => dbtr_nm = text,
-                        "Nm" if in_cdtr => cdtr_nm = text,
-                        "IBAN" if in_dbtr => dbtr_iban = text,
-                        "IBAN" if in_cdtr => cdtr_iban = text,
-                        _ => (),
+                    let text = e
+                        .unescape()
+                        .map_err(|e| ConxianError::Compliance(format!("Invalid XML text: {e}")))?;
+                    let text = text.trim();
+
+                    if text.is_empty() {
+                        buf.clear();
+                        continue;
                     }
-                }
-                Ok(Event::End(e)) => {
-                    let tag = String::from_utf8_lossy(e.local_name().as_ref()).to_string();
-                    match tag.as_str() {
-                        "Dbtr" | "DbtrAcct" => in_dbtr = false,
-                        "Cdtr" | "CdtrAcct" => in_cdtr = false,
-                        _ => (),
+
+                    if transaction_id.is_none() && Self::stack_ends_with(&stack, &[b"MsgId"]) {
+                        transaction_id = Some(text.to_string());
+                    } else if amount.is_none()
+                        && Self::stack_ends_with(&stack, &[b"IntrBkSttlmAmt"])
+                    {
+                        amount = Some(text.to_string());
+                    } else if settled_at.is_none()
+                        && (Self::stack_ends_with(&stack, &[b"IntrBkSttlmDtTm"])
+                            || Self::stack_ends_with(&stack, &[b"IntrBkSttlmDt"]))
+                    {
+                        settled_at = Self::parse_iso20022_timestamp(text);
                     }
-                    current_tag.clear();
+
+                    let next_sender_rank =
+                        if Self::stack_ends_with(&stack, &[b"DbtrAcct", b"Id", b"Othr", b"Id"])
+                            || Self::stack_ends_with(&stack, &[b"DbtrAcct", b"Id", b"IBAN"])
+                        {
+                            3
+                        } else if Self::stack_ends_with(
+                            &stack,
+                            &[b"DbtrAgt", b"FinInstnId", b"BICFI"],
+                        ) || Self::stack_ends_with(
+                            &stack,
+                            &[b"DbtrAgt", b"FinInstnId", b"BIC"],
+                        ) {
+                            2
+                        } else if Self::stack_ends_with(&stack, &[b"Dbtr", b"Nm"]) {
+                            1
+                        } else {
+                            0
+                        };
+
+                    if next_sender_rank > sender_rank {
+                        sender = Some(text.to_string());
+                        sender_rank = next_sender_rank;
+                    }
+
+                    let next_receiver_rank =
+                        if Self::stack_ends_with(&stack, &[b"CdtrAcct", b"Id", b"Othr", b"Id"])
+                            || Self::stack_ends_with(&stack, &[b"CdtrAcct", b"Id", b"IBAN"])
+                        {
+                            3
+                        } else if Self::stack_ends_with(
+                            &stack,
+                            &[b"CdtrAgt", b"FinInstnId", b"BICFI"],
+                        ) || Self::stack_ends_with(
+                            &stack,
+                            &[b"CdtrAgt", b"FinInstnId", b"BIC"],
+                        ) {
+                            2
+                        } else if Self::stack_ends_with(&stack, &[b"Cdtr", b"Nm"]) {
+                            1
+                        } else {
+                            0
+                        };
+
+                    if next_receiver_rank > receiver_rank {
+                        receiver = Some(text.to_string());
+                        receiver_rank = next_receiver_rank;
+                    }
                 }
                 Ok(Event::Eof) => break,
-                Err(e) => return Err(ConxianError::Compliance(e.to_string())),
+                Err(e) => {
+                    return Err(ConxianError::Compliance(format!("Invalid XML: {e}")));
+                }
                 _ => (),
             }
+
             buf.clear();
         }
 
-        let sender = if !dbtr_iban.is_empty() {
-            dbtr_iban
-        } else {
-            dbtr_nm
-        };
-        let receiver = if !cdtr_iban.is_empty() {
-            cdtr_iban
-        } else {
-            cdtr_nm
-        };
-
         Ok(Iso20022Fields {
-            source: SettlementSource::Iso20022Pacs008,
-            transaction_id: msg_id,
-            amount,
-            currency,
-            sender,
-            receiver,
-            settled_at: None,
+            source: source.ok_or_else(|| {
+                ConxianError::Compliance("Unsupported ISO 20022 message".to_string())
+            })?,
+            transaction_id: transaction_id
+                .ok_or_else(|| ConxianError::Compliance("Missing MsgId".to_string()))?,
+            amount: amount
+                .ok_or_else(|| ConxianError::Compliance("Missing IntrBkSttlmAmt".to_string()))?,
+            currency: currency.ok_or_else(|| {
+                ConxianError::Compliance("Missing IntrBkSttlmAmt Ccy attribute".to_string())
+            })?,
+            sender: sender.ok_or_else(|| {
+                ConxianError::Compliance("Missing debtor account identifier".to_string())
+            })?,
+            receiver: receiver.ok_or_else(|| {
+                ConxianError::Compliance("Missing creditor account identifier".to_string())
+            })?,
+            settled_at,
         })
+    }
+
+    fn parse_iso20022_timestamp(value: &str) -> Option<u64> {
+        let value = value.trim();
+        if value.is_empty() {
+            return None;
+        }
+
+        if let Ok(dt) = DateTime::parse_from_rfc3339(value) {
+            return u64::try_from(dt.with_timezone(&Utc).timestamp()).ok();
+        }
+
+        if let Ok(dt) = NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S") {
+            return u64::try_from(dt.and_utc().timestamp()).ok();
+        }
+
+        if let Ok(date) = NaiveDate::parse_from_str(value, "%Y-%m-%d") {
+            return u64::try_from(date.and_hms_opt(0, 0, 0)?.and_utc().timestamp()).ok();
+        }
+
+        None
+    }
+
+    fn iso20022_source_from_attributes(
+        e: &quick_xml::events::BytesStart<'_>,
+    ) -> ConxianResult<Option<SettlementSource>> {
+        for attr in e.attributes().with_checks(false) {
+            let attr = attr
+                .map_err(|err| ConxianError::Compliance(format!("Invalid XML attribute: {err}")))?;
+
+            let value = attr.unescape_value().map_err(|err| {
+                ConxianError::Compliance(format!("Invalid XML attribute value: {err}"))
+            })?;
+
+            if !Self::is_relevant_iso20022_source_attr_key(attr.key.as_ref()) {
+                continue;
+            }
+
+            if value.contains("pacs.008") {
+                return Ok(Some(SettlementSource::Iso20022Pacs008));
+            }
+            if value.contains("pacs.009") {
+                return Ok(Some(SettlementSource::Iso20022Pacs009));
+            }
+        }
+
+        Ok(None)
+    }
+
+    fn is_relevant_iso20022_source_attr_key(key: &[u8]) -> bool {
+        let is_xmlns = key == b"xmlns" || key.starts_with(b"xmlns:");
+        let is_schema_location = key == b"schemaLocation"
+            || key.ends_with(b":schemaLocation")
+            || key == b"noNamespaceSchemaLocation"
+            || key.ends_with(b":noNamespaceSchemaLocation");
+
+        is_xmlns || is_schema_location
+    }
+
+    fn stack_ends_with(stack: &[Vec<u8>], suffix: &[&[u8]]) -> bool {
+        if stack.len() < suffix.len() {
+            return false;
+        }
+
+        stack[stack.len() - suffix.len()..]
+            .iter()
+            .zip(suffix)
+            .all(|(a, b)| a.as_slice() == *b)
     }
 
     pub fn format_iso20022_pacs008_v8(&self, job_card: &ConxianJobCard) -> ConxianResult<String> {
