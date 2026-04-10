@@ -486,8 +486,8 @@ impl ZkcVerifier {
                         source = Self::iso20022_source_from_attributes(&e)?;
                     }
 
-                    let name = e.local_name().as_ref();
-                    if name == b"IntrBkSttlmAmt" && currency.is_none() {
+                    let name = e.local_name().as_ref().to_vec();
+                    if name.as_slice() == b"IntrBkSttlmAmt" && currency.is_none() {
                         for attr in e.attributes().with_checks(false) {
                             let attr = attr.map_err(|e| {
                                 ConxianError::Compliance(format!("Invalid XML attribute: {e}"))
