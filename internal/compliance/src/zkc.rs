@@ -65,6 +65,18 @@ impl ZkcVerifier {
         }
     }
 
+    fn attestation_message(device_id: &str, payload: &str) -> ConxianResult<Message> {
+        let mut hasher = Sha256::new();
+        hasher.update(ATTESTATION_SIGNING_DOMAIN);
+        hasher.update(device_id.as_bytes());
+        hasher.update([0u8]);
+        hasher.update(payload.as_bytes());
+
+        let digest = hasher.finalize();
+        Message::from_digest_slice(&digest)
+            .map_err(|_| ConxianError::Security("Internal verification error".into()))
+    }
+
     pub fn verify(&self, attestation: &Attestation) -> ConxianResult<bool> {
         if !attestation.device_id.starts_with("conxius-") {
             warn!(device_id = %attestation.device_id, "Rejected attestation: missing conxius- prefix");
@@ -93,15 +105,7 @@ impl ZkcVerifier {
             ConxianError::Security("Attestation verification failed: invalid signature data".into())
         })?;
 
-        let mut hasher = Sha256::new();
-        hasher.update(ATTESTATION_SIGNING_DOMAIN);
-        hasher.update(attestation.device_id.as_bytes());
-        hasher.update([0u8]);
-        hasher.update(attestation.payload.as_bytes());
-
-        let digest = hasher.finalize();
-        let message = Message::from_digest_slice(&digest)
-            .map_err(|_| ConxianError::Security("Internal verification error".into()))?;
+        let message = Self::attestation_message(&attestation.device_id, &attestation.payload)?;
 
         Ok(self
             .secp
@@ -133,15 +137,7 @@ impl ZkcVerifier {
             ConxianError::Security("Attestation verification failed: invalid signature data".into())
         })?;
 
-        let mut hasher = Sha256::new();
-        hasher.update(ATTESTATION_SIGNING_DOMAIN);
-        hasher.update(attestation.device_id.as_bytes());
-        hasher.update([0u8]);
-        hasher.update(attestation.payload.as_bytes());
-
-        let digest = hasher.finalize();
-        let message = Message::from_digest_slice(&digest)
-            .map_err(|_| ConxianError::Security("Internal verification error".into()))?;
+        let message = Self::attestation_message(&attestation.device_id, &attestation.payload)?;
 
         Ok(self
             .secp
@@ -392,10 +388,12 @@ impl ZkcVerifier {
         F: FnOnce() -> ConxianResult<bool>,
     {
         if !device_id.starts_with("conxius-tee-") {
+            debug!("TEE settlement attestation rejected: non-TEE device");
             return false;
         }
 
         if signed_payload != payload_hash {
+            debug!("TEE settlement attestation rejected: payload hash mismatch");
             return false;
         }
 

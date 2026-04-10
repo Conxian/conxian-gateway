@@ -19,12 +19,10 @@ const TEST_TOKEN: &str = "test-token";
 const TEST_FIAT_SECRET: &str = "test-fiat-secret";
 const TEST_SETTLEMENT_SECRET: &str = "test-settlement-secret";
 
-fn make_tee_attestation_header(raw_payload_hash: &str) -> String {
+fn make_attestation_header(device_id: &str, raw_payload_hash: &str) -> String {
     let secp = Secp256k1::new();
     let secret_key = SecretKey::from_slice(&[1u8; 32]).unwrap();
     let public_key = secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
-
-    let device_id = "conxius-tee-test";
 
     let mut hasher = Sha256::new();
     hasher.update(ATTESTATION_SIGNING_DOMAIN);
@@ -46,6 +44,10 @@ fn make_tee_attestation_header(raw_payload_hash: &str) -> String {
 
     let request = AttestationRequest::Ecdsa(attestation);
     serde_json::to_string(&request).unwrap()
+}
+
+fn make_tee_attestation_header(raw_payload_hash: &str) -> String {
+    make_attestation_header("conxius-tee-test", raw_payload_hash)
 }
 
 fn setup_app(state: SharedState) -> axum::Router {
@@ -191,6 +193,42 @@ async fn test_ingress_iso20022_rejects_tampered_tee_device_id() {
         _ => panic!("expected Ecdsa attestation in test"),
     }
     let tee_attestation = serde_json::to_string(&attestation_req).unwrap();
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/ingress/iso20022")
+                .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("Content-Type", "application/xml")
+                .header("x-iso20022-signature", signature)
+                .header("x-tee-attestation", tee_attestation)
+                .body(Body::from(xml_payload))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn test_ingress_iso20022_rejects_non_tee_device_id() {
+    let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
+    {
+        let mut s = state.write().unwrap();
+        s.stacks.burn_block_height = Some(55);
+    }
+    let app = setup_app(state);
+
+    let xml_payload = r#"<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pacs.008.001.08"><FIToFICstmrCdtTrf><GrpHdr><MsgId>TX-123</MsgId></GrpHdr><CdtTrfTxInf><IntrBkSttlmAmt Ccy="sBTC">0.5</IntrBkSttlmAmt><DbtrAcct><Id><Othr><Id>SENDER-AC-1</Id></Othr></Id></DbtrAcct><CdtrAcct><Id><Othr><Id>RECEIVER-AC-1</Id></Othr></Id></CdtrAcct></CdtTrfTxInf></FIToFICstmrCdtTrf></Document>"#;
+
+    let mut mac = Hmac::<Sha256>::new_from_slice(TEST_SETTLEMENT_SECRET.as_bytes()).unwrap();
+    mac.update(xml_payload.as_bytes());
+    let signature = hex::encode(mac.finalize().into_bytes());
+
+    let raw_payload_hash = hex::encode(Sha256::digest(xml_payload.as_bytes()));
+    let tee_attestation = make_attestation_header("conxius-non-tee-test", &raw_payload_hash);
 
     let response = app
         .oneshot(
