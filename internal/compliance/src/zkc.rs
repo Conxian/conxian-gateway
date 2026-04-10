@@ -1053,7 +1053,14 @@ impl ZkcVerifier {
                 value,
                 &mut out,
             )
-            .map_err(|e| ConxianError::Compliance(format!("Invalid base64 for {label}: {e}")))?;
+            .map_err(|e| match e {
+                base64::DecodeSliceError::OutputSliceTooSmall => {
+                    ConxianError::Compliance(format!("Invalid base64 for {label}: too large"))
+                }
+                base64::DecodeSliceError::DecodeError(e) => {
+                    ConxianError::Compliance(format!("Invalid base64 for {label}: {e}"))
+                }
+            })?;
             out.truncate(n);
             Ok(out)
         }
@@ -1210,6 +1217,30 @@ mod tests {
             device_id: "conxius-test".to_string(),
             image_id: "".to_string(),
             receipt: "A".repeat(MAX_ZKML_RECEIPT_ENCODED_LEN + 1),
+            receipt_hash: "".to_string(),
+            public_inputs: "".to_string(),
+            journal: "".to_string(),
+        };
+
+        let err = verifier.verify_zkml(&proof).unwrap_err();
+        match err {
+            ConxianError::Compliance(message) => {
+                assert!(message.contains("Invalid proof receipt format"));
+            }
+            other => panic!("expected compliance error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_verify_zkml_rejects_oversized_receipt_decoded_len() {
+        let verifier = ZkcVerifier::new();
+        let receipt_bytes = vec![0u8; MAX_ZKML_RECEIPT_BYTES + 1];
+        let receipt =
+            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, receipt_bytes);
+        let proof = ZkmlProof {
+            device_id: "conxius-test".to_string(),
+            image_id: "".to_string(),
+            receipt,
             receipt_hash: "".to_string(),
             public_inputs: "".to_string(),
             journal: "".to_string(),
