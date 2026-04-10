@@ -295,3 +295,32 @@ pub struct AlexSwapRequest {
     pub amount: u128,
     pub min_dy: Option<u128>,
 }
+
+/// CON-78: Offline-First POS Receipt.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct OfflineReceipt {
+    pub receipt_id: String,
+    pub tx_hash: String,
+    pub amount_sbtc: f64,
+    pub timestamp: u64,
+    pub device_id: String,
+    pub tee_signature: String, // TEE-signed commitment
+    pub passkey_attestation: AttestationRequest,
+    pub status: OfflineReceiptStatus,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum OfflineReceiptStatus {
+    Pending,
+    Gossiped,
+    Broadcasted,
+    Reconciled,
+}
+
+/// CON-78: Local encrypted queue for offline transactions.
+pub trait OfflineQueue: Send + Sync {
+    fn enqueue(&self, receipt: &OfflineReceipt) -> ConxianResult<()>;
+    fn dequeue_pending(&self) -> ConxianResult<Vec<OfflineReceipt>>;
+    fn mark_broadcasted(&self, receipt_id: &str) -> ConxianResult<()>;
+}

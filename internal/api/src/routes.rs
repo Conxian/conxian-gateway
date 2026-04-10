@@ -45,6 +45,8 @@ pub fn configure_routes(state: AppState, api_token: String) -> Router {
             "/bounties/payouts/toggle",
             post(handlers::toggle_bounty_payouts),
         )
+        .route("/pos/offline", post(handlers::handle_offline_pos))
+        .route("/pos/sync", post(handlers::sync_offline_receipts))
         .layer(middleware::from_fn(move |req, next| {
             auth_middleware(req, next, token_for_auth.clone())
         }))
