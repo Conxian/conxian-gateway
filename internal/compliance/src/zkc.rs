@@ -183,30 +183,6 @@ impl ZkcVerifier {
         Ok(true)
     }
 
-    fn parse_zkml_image_id(image_id_hex: &str) -> ConxianResult<[u32; 8]> {
-        let image_id_hex = image_id_hex.trim();
-        let image_id_hex = image_id_hex
-            .strip_prefix("0x")
-            .or_else(|| image_id_hex.strip_prefix("0X"))
-            .unwrap_or(image_id_hex);
-        if image_id_hex.len() != ZKML_IMAGE_ID_HEX_LEN {
-            return Err(ConxianError::Compliance(
-                "Invalid proof image format: image_id must be 32 bytes".into(),
-            ));
-        }
-
-        let mut image_id_bytes = [0u8; 32];
-        hex::decode_to_slice(image_id_hex, &mut image_id_bytes)
-            .map_err(|_| ConxianError::Compliance("Invalid proof image format".into()))?;
-
-        let mut image_id = [0u32; 8];
-        for (word, chunk) in image_id.iter_mut().zip(image_id_bytes.chunks_exact(4)) {
-            *word = u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
-        }
-
-        Ok(image_id)
-    }
-
     pub fn verify_bitvm(&self, attestation: &BitVmAttestation) -> ConxianResult<bool> {
         info!(
             "Verifying BitVM attestation for prover: {}",
@@ -1009,14 +985,12 @@ impl ZkcVerifier {
     }
 
     fn parse_zkml_image_id(image_id_hex: &str) -> ConxianResult<[u32; 8]> {
-        const IMAGE_ID_HEX_LEN: usize = 64;
-
         let image_id_hex = image_id_hex.trim();
         let image_id_hex = image_id_hex
             .strip_prefix("0x")
             .or_else(|| image_id_hex.strip_prefix("0X"))
             .unwrap_or(image_id_hex);
-        if image_id_hex.len() != IMAGE_ID_HEX_LEN {
+        if image_id_hex.len() != ZKML_IMAGE_ID_HEX_LEN {
             return Err(ConxianError::Compliance(
                 "Invalid proof image format: image_id must be 32 bytes".into(),
             ));
