@@ -635,7 +635,7 @@ impl ZkcVerifier {
 
                     let name = e.local_name().as_ref().to_vec();
                     if name.as_slice() == b"IntrBkSttlmAmt" && currency.is_none() {
-                        for attr in e.attributes().with_checks(false) {
+                        for attr in e.attributes() {
                             let attr = attr.map_err(|e| {
                                 ConxianError::Compliance(format!("Invalid XML attribute: {e}"))
                             })?;
@@ -668,7 +668,7 @@ impl ZkcVerifier {
 
                     let name = e.local_name().as_ref().to_vec();
                     if name.as_slice() == b"IntrBkSttlmAmt" && currency.is_none() {
-                        for attr in e.attributes().with_checks(false) {
+                        for attr in e.attributes() {
                             let attr = attr.map_err(|e| {
                                 ConxianError::Compliance(format!("Invalid XML attribute: {e}"))
                             })?;
@@ -813,28 +813,20 @@ impl ZkcVerifier {
             return u64::try_from(dt.with_timezone(&Utc).timestamp()).ok();
         }
 
-        if let Ok(dt) = DateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S%.f%:z") {
-            return u64::try_from(dt.with_timezone(&Utc).timestamp()).ok();
+        const FIXED_OFFSET_FORMATS: [&str; 2] = ["%Y-%m-%dT%H:%M:%S%.f%z", "%Y-%m-%dT%H:%M:%S%z"];
+
+        for fmt in FIXED_OFFSET_FORMATS {
+            if let Ok(dt) = DateTime::parse_from_str(value, fmt) {
+                return u64::try_from(dt.with_timezone(&Utc).timestamp()).ok();
+            }
         }
 
-        if let Ok(dt) = DateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S%:z") {
-            return u64::try_from(dt.with_timezone(&Utc).timestamp()).ok();
-        }
+        const NAIVE_FORMATS: [&str; 2] = ["%Y-%m-%dT%H:%M:%S%.f", "%Y-%m-%dT%H:%M:%S"];
 
-        if let Ok(dt) = DateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S%.f%z") {
-            return u64::try_from(dt.with_timezone(&Utc).timestamp()).ok();
-        }
-
-        if let Ok(dt) = DateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S%z") {
-            return u64::try_from(dt.with_timezone(&Utc).timestamp()).ok();
-        }
-
-        if let Ok(dt) = NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S%.f") {
-            return u64::try_from(dt.and_utc().timestamp()).ok();
-        }
-
-        if let Ok(dt) = NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S") {
-            return u64::try_from(dt.and_utc().timestamp()).ok();
+        for fmt in NAIVE_FORMATS {
+            if let Ok(dt) = NaiveDateTime::parse_from_str(value, fmt) {
+                return u64::try_from(dt.and_utc().timestamp()).ok();
+            }
         }
 
         if let Ok(date) = NaiveDate::parse_from_str(value, "%Y-%m-%d") {
