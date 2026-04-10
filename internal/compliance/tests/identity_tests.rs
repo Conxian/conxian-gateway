@@ -9,7 +9,10 @@ async fn test_resolve_ens() {
         provider: "ens".to_string(),
     };
     let res = manager.resolve_identity(&req).await;
-    assert!(res.is_err());
+    assert!(res.is_ok());
+    let res = res.unwrap();
+    assert_eq!(res.provider, "ens");
+    assert!(res.verified);
 }
 
 #[tokio::test]
@@ -20,7 +23,10 @@ async fn test_resolve_bns() {
         provider: "bns".to_string(),
     };
     let res = manager.resolve_identity(&req).await;
-    assert!(res.is_err());
+    assert!(res.is_ok());
+    let res = res.unwrap();
+    assert_eq!(res.provider, "bns");
+    assert!(res.verified);
 }
 
 #[tokio::test]
@@ -31,5 +37,8 @@ async fn test_resolve_worldid() {
         provider: "worldid".to_string(),
     };
     let res = manager.resolve_identity(&req).await;
-    assert!(res.is_err());
+    assert!(res.is_ok());
+    let res = res.unwrap();
+    assert_eq!(res.provider, "worldid");
+    assert!(res.verified);
 }
