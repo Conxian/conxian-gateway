@@ -152,7 +152,34 @@ impl ZkcVerifier {
             "Verifying BitVM attestation for prover: {}",
             attestation.prover_id
         );
-        Ok(!attestation.commitment_hash.is_empty())
+
+        let commitment_hash = attestation.commitment_hash.trim();
+        if commitment_hash.is_empty() {
+            return Err(ConxianError::Security("BitVM proof missing fields".into()));
+        }
+
+        let state_root = attestation.state_root.trim();
+        if state_root.is_empty() {
+            return Err(ConxianError::Security("BitVM proof missing fields".into()));
+        }
+
+        let commitment_hash = commitment_hash
+            .strip_prefix("0x")
+            .or_else(|| commitment_hash.strip_prefix("0X"))
+            .unwrap_or(commitment_hash);
+
+        let commitment_bytes = Vec::from_hex(commitment_hash)
+            .map_err(|_| ConxianError::Security("BitVM commitment must be hex".into()))?;
+        let commitment_bytes: [u8; 32] = commitment_bytes
+            .try_into()
+            .map_err(|_| ConxianError::Security("BitVM commitment must be 32 bytes".into()))?;
+
+        let expected: [u8; 32] = Sha256::digest(state_root.as_bytes()).into();
+        if commitment_bytes != expected {
+            return Err(ConxianError::Security("BitVM commitment mismatch".into()));
+        }
+
+        Ok(true)
     }
 
     pub fn normalize_iso20022_ingress(
@@ -579,6 +606,21 @@ impl ZkcVerifier {
         // 2. Validate Job Card payload (simplified)
         if job_card.work_intent.amount_sbtc <= 0.0 {
             return Err(ConxianError::Compliance("Invalid settlement amount".into()));
+        }
+
+        let job_card_json =
+            serde_json::to_string(job_card).map_err(|e| ConxianError::Internal(e.to_string()))?;
+        let job_hash = hex::encode(Sha256::digest(job_card_json.as_bytes()));
+
+        let committed = bitvm_attestation
+            .state_root
+            .split(|c: char| !c.is_ascii_hexdigit())
+            .any(|token| token.len() == job_hash.len() && token.eq_ignore_ascii_case(&job_hash));
+
+        if !committed {
+            return Err(ConxianError::Security(
+                "Job card not committed by BitVM proof".into(),
+            ));
         }
 
         Ok(true)
