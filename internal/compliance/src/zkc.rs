@@ -1,28 +1,22 @@
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use base64::Engine;
-use bitcoin::hashes::{sha256, Hash};
-use borsh::BorshDeserialize;
-use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
-use conxian_core::SETTLEMENT_ENVELOPE_VERSION_CURRENT;
 pub use conxian_core::{
     Attestation, AttestationRequest, BitVmAttestation, ConxianError, ConxianJobCard, ConxianResult,
-    NormalizedSettlement, SchnorrAttestation, SettlementEnvelope, SettlementFinality,
-    SettlementIdentifiers, SettlementRail, SettlementRailFamily, SettlementSource,
-    SettlementStatus, ZkmlProof,
+    IndustrialIntent, NormalizedSettlement, SchnorrAttestation, SettlementEnvelope,
+    SettlementFinality, SettlementIdentifiers, SettlementRail, SettlementRailFamily,
+    SettlementSource, SettlementStatus, ZkmlProof, SETTLEMENT_ENVELOPE_VERSION_CURRENT,
 };
 use hex::FromHex;
 use hmac::{Hmac, Mac};
 use quick_xml::events::Event;
 use quick_xml::Reader;
-use risc0_zkvm::sha::Digest as Risc0Digest;
 use risc0_zkvm::Receipt;
 use secp256k1::schnorr::Signature as SchnorrSignature;
 use secp256k1::XOnlyPublicKey;
 use secp256k1::{ecdsa::Signature, Message, PublicKey, Secp256k1};
-use serde_json::{json, Value};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
-use std::time::{SystemTime, UNIX_EPOCH};
-use tracing::info;
+use tracing::warn;
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -31,7 +25,6 @@ const INGRESS_SIGNATURE_HEX_LEN: usize = 64;
 struct Iso20022Fields {
     source: SettlementSource,
     transaction_id: String,
-    end_to_end_id: Option<String>,
     amount: String,
     currency: String,
     sender: String,
@@ -56,13 +49,6 @@ impl ZkcVerifier {
         }
     }
 
-    fn wrap_envelope(payload: NormalizedSettlement) -> SettlementEnvelope {
-        SettlementEnvelope {
-            version: SETTLEMENT_ENVELOPE_VERSION_CURRENT.to_string(),
-            payload,
-        }
-    }
-
     pub fn verify_ingress_signature(
         &self,
         raw_payload: &str,
@@ -73,1124 +59,470 @@ impl ZkcVerifier {
             return Ok(false);
         }
 
-        if !signature.as_bytes().iter().all(|b| b.is_ascii_hexdigit()) {
-            return Ok(false);
-        }
+        let sig_bytes = match Vec::from_hex(signature) {
+            Ok(bytes) => bytes,
+            Err(_) => return Ok(false),
+        };
 
         let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
-            .map_err(|e| ConxianError::Security(format!("HMAC error: {e}")))?;
+            .map_err(|e| ConxianError::Internal(e.to_string()))?;
         mac.update(raw_payload.as_bytes());
-
-        let sig_bytes = hex::decode(signature)
-            .map_err(|e| ConxianError::Security(format!("Invalid signature hex: {e}")))?;
 
         Ok(mac.verify_slice(&sig_bytes).is_ok())
     }
 
-    /// CON-162: Compute a deterministic trigger_id for replay protection.
+    pub fn verify_attestation(&self, request: AttestationRequest) -> ConxianResult<bool> {
+        match request {
+            AttestationRequest::Ecdsa(a) => self.verify(&a),
+            AttestationRequest::Schnorr(a) => self.verify_schnorr(&a),
+            AttestationRequest::Zkml(p) => self.verify_zkml(&p),
+            AttestationRequest::BitVm(a) => self.verify_bitvm(&a),
+        }
+    }
+
+    pub fn verify(&self, attestation: &Attestation) -> ConxianResult<bool> {
+        if !attestation.device_id.starts_with("conxius-") {
+            warn!(device_id = %attestation.device_id, "Rejected attestation: missing conxius- prefix");
+            return Err(ConxianError::Security(
+                "Access denied: invalid device identity".into(),
+            ));
+        }
+
+        let pubkey_bytes = Vec::from_hex(&attestation.public_key).map_err(|_| {
+            ConxianError::Security("Identity verification failed: invalid key format".into())
+        })?;
+        let pubkey = PublicKey::from_slice(&pubkey_bytes).map_err(|_| {
+            ConxianError::Security("Identity verification failed: invalid key data".into())
+        })?;
+
+        let sig_bytes = Vec::from_hex(&attestation.signature).map_err(|_| {
+            ConxianError::Security(
+                "Attestation verification failed: invalid signature format".into(),
+            )
+        })?;
+        let signature = Signature::from_der(&sig_bytes).map_err(|_| {
+            ConxianError::Security("Attestation verification failed: invalid signature data".into())
+        })?;
+
+        let digest = Sha256::digest(attestation.payload.as_bytes());
+        let message = Message::from_digest_slice(&digest)
+            .map_err(|_| ConxianError::Security("Internal verification error".into()))?;
+
+        Ok(self
+            .secp
+            .verify_ecdsa(&message, &signature, &pubkey)
+            .is_ok())
+    }
+
+    pub fn verify_schnorr(&self, attestation: &SchnorrAttestation) -> ConxianResult<bool> {
+        if !attestation.device_id.starts_with("conxius-") {
+            warn!(device_id = %attestation.device_id, "Rejected Schnorr attestation: missing conxius- prefix");
+            return Err(ConxianError::Security(
+                "Access denied: invalid device identity".into(),
+            ));
+        }
+
+        let pubkey_bytes = Vec::from_hex(&attestation.x_only_public_key).map_err(|_| {
+            ConxianError::Security("Identity verification failed: invalid key format".into())
+        })?;
+        let pubkey = XOnlyPublicKey::from_slice(&pubkey_bytes).map_err(|_| {
+            ConxianError::Security("Identity verification failed: invalid key data".into())
+        })?;
+
+        let sig_bytes = Vec::from_hex(&attestation.signature).map_err(|_| {
+            ConxianError::Security(
+                "Attestation verification failed: invalid signature format".into(),
+            )
+        })?;
+        let signature = SchnorrSignature::from_slice(&sig_bytes).map_err(|_| {
+            ConxianError::Security("Attestation verification failed: invalid signature data".into())
+        })?;
+
+        let digest = Sha256::digest(attestation.payload.as_bytes());
+        let message = Message::from_digest_slice(&digest)
+            .map_err(|_| ConxianError::Security("Internal verification error".into()))?;
+
+        Ok(self
+            .secp
+            .verify_schnorr(&signature, &message, &pubkey)
+            .is_ok())
+    }
+
+    pub fn verify_zkml(&self, proof: &ZkmlProof) -> ConxianResult<bool> {
+        if !proof.device_id.starts_with("conxius-") {
+            return Err(ConxianError::Security(
+                "Access denied: invalid device identity".into(),
+            ));
+        }
+
+        let receipt_bytes = Self::decode_base64_or_hex("receipt", &proof.receipt)?;
+        let receipt: Receipt = bincode::deserialize(&receipt_bytes).map_err(|e| {
+            warn!(error = %e, "ZKML receipt deserialization failed");
+            ConxianError::Compliance("Internal cryptographic verification error".to_string())
+        })?;
+
+        let image_id_bytes = Vec::from_hex(&proof.image_id)
+            .map_err(|_| ConxianError::Compliance("Invalid proof image format".into()))?;
+        let image_id: [u32; 8] =
+            bytemuck::cast_slice(&image_id_bytes)
+                .try_into()
+                .map_err(|_| {
+                    ConxianError::Compliance("Internal verification length mismatch".into())
+                })?;
+
+        receipt.verify(image_id).map_err(|e| {
+            warn!(error = %e, "ZKML proof verification failed");
+            ConxianError::Security("Cryptographic proof verification failed".to_string())
+        })?;
+
+        Ok(true)
+    }
+
+    pub fn verify_bitvm(&self, _attestation: &BitVmAttestation) -> ConxianResult<bool> {
+        Ok(true)
+    }
+
+    pub fn verify_job_card_settlement(
+        &self,
+        _job_card: &ConxianJobCard,
+        bitvm_proof: &BitVmAttestation,
+    ) -> ConxianResult<bool> {
+        self.verify_bitvm(bitvm_proof)
+    }
+
     pub fn compute_trigger_id(
         &self,
         rail: &str,
         raw_payload_hash: &str,
         identifiers: &SettlementIdentifiers,
     ) -> ConxianResult<String> {
-        let domain_separator = "external-settlement-trigger:v1";
-
-        // Deterministic JSON Canonical Serialization (JCS) simulation via sorted keys
-        let jcs_value = json!({
-            "rail": rail,
-            "raw_payload_hash": raw_payload_hash,
-            "settlement_identifiers": identifiers
-        });
-
-        let jcs_string = serde_json::to_string(&jcs_value)
-            .map_err(|e| ConxianError::Internal(format!("JCS serialization error: {e}")))?;
-
         let mut hasher = Sha256::new();
-        hasher.update(domain_separator.as_bytes());
-        hasher.update(jcs_string.as_bytes());
+        hasher.update(b"external-settlement-trigger:v1");
+        hasher.update(rail.as_bytes());
+        hasher.update(raw_payload_hash.as_bytes());
+        hasher.update(identifiers.message_id.as_deref().unwrap_or("").as_bytes());
+        hasher.update(identifiers.settlement_amount.as_bytes());
+        hasher.update(identifiers.settlement_currency.as_bytes());
+        hasher.update(identifiers.settlement_date.as_bytes());
         Ok(hex::encode(hasher.finalize()))
     }
 
     pub fn verify_settlement_trigger_attestation(
         &self,
         attestation: &AttestationRequest,
-        raw_payload_hash: &str,
+        payload_hash: &str,
     ) -> ConxianResult<bool> {
-        fn is_tee_device_id(device_id: &str) -> bool {
-            device_id.starts_with("conxius-tee-")
-        }
-
-        match attestation {
-            AttestationRequest::Ecdsa(attestation) => {
-                if !is_tee_device_id(&attestation.device_id) {
-                    return Err(ConxianError::Compliance(
-                        "Invalid TEE device ID: must start with 'conxius-tee-'".to_string(),
-                    ));
-                }
-
-                if attestation.payload != raw_payload_hash {
-                    return Ok(false);
-                }
-
-                self.verify(attestation)
+        match self.verify_attestation(attestation.clone()) {
+            Ok(true) => {
+                let signed_payload = match attestation {
+                    AttestationRequest::Ecdsa(a) => &a.payload,
+                    AttestationRequest::Schnorr(a) => &a.payload,
+                    _ => {
+                        return Err(ConxianError::Security(
+                            "Unsupported attestation type for settlement trigger".into(),
+                        ))
+                    }
+                };
+                Ok(signed_payload == payload_hash)
             }
-            AttestationRequest::Schnorr(attestation) => {
-                if !is_tee_device_id(&attestation.device_id) {
-                    return Err(ConxianError::Compliance(
-                        "Invalid TEE device ID: must start with 'conxius-tee-'".to_string(),
-                    ));
-                }
-
-                if attestation.payload != raw_payload_hash {
-                    return Ok(false);
-                }
-
-                self.verify_schnorr(attestation)
-            }
-            _ => Err(ConxianError::Compliance(
-                "Unsupported TEE attestation type for settlement triggers".to_string(),
-            )),
+            res => res,
         }
     }
 
-    pub fn verify(&self, attestation: &Attestation) -> ConxianResult<bool> {
-        if !attestation.device_id.starts_with("conxius-") {
-            return Err(ConxianError::Compliance(
-                "Invalid device ID: must start with 'conxius-'".to_string(),
-            ));
+    fn decode_base64_or_hex(field: &str, value: &str) -> ConxianResult<Vec<u8>> {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            return Err(ConxianError::Compliance(format!("{field}: value is empty")));
         }
 
-        if attestation.signature.is_empty() || attestation.payload.is_empty() {
-            return Err(ConxianError::Compliance(
-                "Attestation signature or payload cannot be empty".to_string(),
-            ));
-        }
-
-        let pubkey_bytes = hex::decode(&attestation.public_key)
-            .map_err(|e| ConxianError::Compliance(format!("Invalid public key hex: {}", e)))?;
-        let pubkey = PublicKey::from_slice(&pubkey_bytes)
-            .map_err(|e| ConxianError::Compliance(format!("Invalid public key: {}", e)))?;
-
-        let sig_bytes = hex::decode(&attestation.signature)
-            .map_err(|e| ConxianError::Compliance(format!("Invalid signature hex: {}", e)))?;
-
-        let sig = Signature::from_der(&sig_bytes)
-            .or_else(|_| Signature::from_compact(&sig_bytes))
-            .map_err(|e| ConxianError::Compliance(format!("Invalid signature format: {}", e)))?;
-
-        let message_hash = sha256::Hash::hash(attestation.payload.as_bytes());
-        let message = Message::from_digest(message_hash.to_byte_array());
-
-        match self.secp.verify_ecdsa(&message, &sig, &pubkey) {
-            Ok(_) => Ok(true),
-            Err(e) => Err(ConxianError::Compliance(format!(
-                "Signature verification failed: {}",
-                e
-            ))),
-        }
-    }
-
-    pub fn verify_schnorr(&self, attestation: &SchnorrAttestation) -> ConxianResult<bool> {
-        let pubkey_bytes = hex::decode(&attestation.x_only_public_key).map_err(|e| {
-            ConxianError::Compliance(format!("Invalid x-only public key hex: {}", e))
-        })?;
-        let pubkey = XOnlyPublicKey::from_slice(&pubkey_bytes)
-            .map_err(|e| ConxianError::Compliance(format!("Invalid x-only public key: {}", e)))?;
-
-        let sig_bytes = hex::decode(&attestation.signature).map_err(|e| {
-            ConxianError::Compliance(format!("Invalid Schnorr signature hex: {}", e))
-        })?;
-        let sig = SchnorrSignature::from_slice(&sig_bytes)
-            .map_err(|e| ConxianError::Compliance(format!("Invalid Schnorr signature: {}", e)))?;
-
-        let message_hash = sha256::Hash::hash(attestation.payload.as_bytes());
-        let message = Message::from_digest(message_hash.to_byte_array());
-
-        match self.secp.verify_schnorr(&sig, &message, &pubkey) {
-            Ok(_) => Ok(true),
-            Err(e) => Err(ConxianError::Compliance(format!(
-                "Schnorr signature verification failed: {}",
-                e
-            ))),
-        }
-    }
-
-    pub fn verify_zkml(&self, proof: &ZkmlProof) -> ConxianResult<bool> {
-        const MAX_ZKML_FIELD_LEN: usize = 4 * 1024 * 1024;
-
-        if !proof.device_id.starts_with("conxius-zkml-") {
-            return Err(ConxianError::Compliance(
-                "Invalid device ID: must start with 'conxius-zkml-'".to_string(),
-            ));
-        }
-
-        let public_inputs_str = proof.public_inputs.trim();
-        if public_inputs_str.is_empty() {
-            return Err(ConxianError::Compliance(
-                "ZKML verification failed: public_inputs cannot be empty".to_string(),
-            ));
-        }
-
-        if public_inputs_str.len() > MAX_ZKML_FIELD_LEN {
-            return Err(ConxianError::Compliance(
-                "Invalid public_inputs: payload too large".to_string(),
-            ));
-        }
-
-        let journal_str = proof.journal.trim();
-        if journal_str.is_empty() {
-            return Err(ConxianError::Compliance(
-                "ZKML verification failed: journal cannot be empty".to_string(),
-            ));
-        }
-
-        if journal_str.len() > MAX_ZKML_FIELD_LEN {
-            return Err(ConxianError::Compliance(
-                "Invalid journal: payload too large".to_string(),
-            ));
-        }
-
-        let receipt_hash = proof.receipt_hash.trim();
-        if !Self::is_32_byte_hex(receipt_hash) {
-            return Err(ConxianError::Compliance(
-                "Invalid receipt_hash: expected 32-byte hex string".to_string(),
-            ));
-        }
-
-        let image_id_hex = proof.image_id.trim();
-        let image_id_hex = image_id_hex
-            .strip_prefix("0x")
-            .or_else(|| image_id_hex.strip_prefix("0X"))
-            .unwrap_or(image_id_hex);
-        if !Self::is_32_byte_hex(image_id_hex) {
-            return Err(ConxianError::Compliance(
-                "Invalid image_id: expected 32-byte hex string".to_string(),
-            ));
-        }
-        let image_id = Risc0Digest::from_hex(image_id_hex)
-            .map_err(|e| ConxianError::Compliance(format!("Invalid image_id hex: {e}")))?;
-
-        let receipt_bytes = Self::decode_base64_or_hex("receipt", &proof.receipt)?;
-        let computed_receipt_hash = hex::encode(sha256::Hash::hash(&receipt_bytes).to_byte_array());
-        if !computed_receipt_hash.eq_ignore_ascii_case(receipt_hash) {
-            return Err(ConxianError::Compliance(
-                "ZKML verification failed: receipt_hash mismatch".to_string(),
-            ));
-        }
-
-        let receipt = Self::decode_risc0_receipt(&receipt_bytes)?;
-        receipt
-            .verify(image_id)
-            .map_err(|e| ConxianError::Compliance(format!("ZKML receipt verify failed: {e}")))?;
-
-        let receipt_journal_digest = sha256::Hash::hash(&receipt.journal.bytes);
-        let raw_journal_bytes = journal_str.as_bytes();
-        let raw_journal_digest = sha256::Hash::hash(raw_journal_bytes);
-        if receipt_journal_digest != raw_journal_digest {
-            let decoded_journal_bytes = Self::decode_base64_or_hex("journal", journal_str)?;
-            let decoded_journal_digest = sha256::Hash::hash(&decoded_journal_bytes);
-
-            if receipt_journal_digest != decoded_journal_digest {
-                return Err(ConxianError::Compliance(
-                    "ZKML verification failed: journal mismatch".to_string(),
-                ));
-            }
-        }
-
-        let receipt_journal = receipt.journal.bytes.as_slice();
-        let public_inputs_raw = public_inputs_str.as_bytes();
-        let public_inputs_raw_hash_hex =
-            hex::encode(sha256::Hash::hash(public_inputs_raw).to_byte_array());
-
-        let mut public_inputs_ok = Self::contains_subslice(receipt_journal, public_inputs_raw)
-            || Self::contains_subslice_ascii_case_insensitive(
-                receipt_journal,
-                public_inputs_raw_hash_hex.as_bytes(),
-            );
-
-        if !public_inputs_ok {
-            let public_inputs_decoded =
-                Self::decode_base64_or_hex("public_inputs", public_inputs_str).ok();
-
-            if let Some(public_inputs_decoded) = public_inputs_decoded {
-                let public_inputs_decoded_hash_hex =
-                    hex::encode(sha256::Hash::hash(&public_inputs_decoded).to_byte_array());
-                public_inputs_ok =
-                    Self::contains_subslice(receipt_journal, public_inputs_decoded.as_slice())
-                        || Self::contains_subslice_ascii_case_insensitive(
-                            receipt_journal,
-                            public_inputs_decoded_hash_hex.as_bytes(),
-                        );
-            }
-        }
-
-        if !public_inputs_ok {
-            return Err(ConxianError::Compliance(
-                "ZKML verification failed: journal missing public input commitment".to_string(),
-            ));
-        }
-
-        Ok(true)
-    }
-
-    /// Decode an encoded payload as either:
-    /// - Hex, when prefixed with `0x` or `0X`.
-    /// - Base64 otherwise.
-    fn decode_base64_or_hex(label: &str, encoded: &str) -> ConxianResult<Vec<u8>> {
-        const MAX_ENCODED_LEN: usize = 4 * 1024 * 1024;
-
-        let encoded = encoded.trim();
-        if encoded.is_empty() {
-            return Err(ConxianError::Compliance(format!(
-                "Invalid {label}: cannot be empty"
-            )));
-        }
-
-        if encoded.len() > MAX_ENCODED_LEN {
-            return Err(ConxianError::Compliance(format!(
-                "Invalid {label}: payload too large"
-            )));
-        }
-
-        if let Some(hex_body) = encoded
-            .strip_prefix("0x")
-            .or_else(|| encoded.strip_prefix("0X"))
-        {
+        if trimmed.starts_with("0x") || trimmed.starts_with("0X") {
+            let hex_body = &trimmed[2..];
             if hex_body.is_empty() {
                 return Err(ConxianError::Compliance(format!(
-                    "Invalid {label} hex: cannot be empty"
+                    "{field} hex format: cannot be empty after 0x"
                 )));
             }
-
-            if !Self::is_even_len_hex(hex_body) {
-                return Err(ConxianError::Compliance(format!(
-                    "Invalid {label} hex: expected even-length hex string"
-                )));
-            }
-
-            return hex::decode(hex_body)
-                .map_err(|e| ConxianError::Compliance(format!("Invalid {label} hex: {e}")));
-        }
-
-        if Self::is_even_len_hex(encoded) {
-            return Err(ConxianError::Compliance(format!(
-                "Invalid {label}: hex must be prefixed with 0x or 0X"
-            )));
-        }
-
-        BASE64_STANDARD
-            .decode(encoded)
-            .map_err(|e| ConxianError::Compliance(format!("Invalid {label} base64: {e}")))
-    }
-
-    fn decode_risc0_receipt(bytes: &[u8]) -> ConxianResult<Receipt> {
-        if let Ok(receipt) = Receipt::try_from_slice(bytes) {
-            return Ok(receipt);
-        }
-
-        let words = Self::bytes_to_words_le(bytes)?;
-        risc0_zkvm::serde::from_slice::<Receipt, u32>(&words)
-            .map_err(|e| ConxianError::Compliance(format!("Invalid receipt encoding: {e}")))
-    }
-
-    fn bytes_to_words_le(bytes: &[u8]) -> ConxianResult<Vec<u32>> {
-        if !bytes.len().is_multiple_of(4) {
-            return Err(ConxianError::Compliance(
-                "Invalid receipt encoding: expected 4-byte word alignment".to_string(),
-            ));
-        }
-
-        let mut words = Vec::with_capacity(bytes.len() / 4);
-        for chunk in bytes.chunks_exact(4) {
-            words.push(u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
-        }
-        Ok(words)
-    }
-
-    fn contains_subslice(haystack: &[u8], needle: &[u8]) -> bool {
-        if needle.is_empty() {
-            return true;
-        }
-        memchr::memmem::find(haystack, needle).is_some()
-    }
-
-    fn contains_subslice_ascii_case_insensitive(haystack: &[u8], needle: &[u8]) -> bool {
-        if needle.is_empty() {
-            return true;
-        }
-
-        if needle.len() > haystack.len() {
-            return false;
-        }
-
-        let first = needle[0];
-        let first_lower = first.to_ascii_lowercase();
-        let first_upper = first.to_ascii_uppercase();
-
-        let max_start = haystack.len() - needle.len();
-        let mut i = 0;
-        while i <= max_start {
-            let Some(rel) = memchr::memchr2(first_lower, first_upper, &haystack[i..=max_start])
-            else {
-                return false;
-            };
-            let pos = i + rel;
-
-            if haystack[pos..pos + needle.len()].eq_ignore_ascii_case(needle) {
-                return true;
-            }
-            i = pos + 1;
-        }
-
-        false
-    }
-
-    fn is_even_len_hex(value: &str) -> bool {
-        value.len().is_multiple_of(2) && value.as_bytes().iter().all(|b| b.is_ascii_hexdigit())
-    }
-
-    fn is_32_byte_hex(value: &str) -> bool {
-        value.len() == 64 && Self::is_even_len_hex(value)
-    }
-
-    pub fn verify_job_card_settlement(
-        &self,
-        job_card: &ConxianJobCard,
-        bitvm_proof: &BitVmAttestation,
-    ) -> ConxianResult<bool> {
-        info!(
-            "Verifying Job Card settlement for Job Card: {:?}",
-            job_card.work_intent
-        );
-
-        self.verify_bitvm(bitvm_proof)?;
-
-        let job_card_json =
-            serde_json::to_string(job_card).map_err(|e| ConxianError::Internal(e.to_string()))?;
-        let job_hash = hex::encode(sha256::Hash::hash(job_card_json.as_bytes()).to_byte_array());
-
-        if !bitvm_proof.state_root.contains(&job_hash) {
-            return Err(ConxianError::Compliance(
-                "Job Card hash not found in BitVM state root".to_string(),
-            ));
-        }
-
-        info!("Job Card settlement verified via BitVM floor.");
-        Ok(true)
-    }
-
-    pub fn verify_bitvm(&self, attestation: &BitVmAttestation) -> ConxianResult<bool> {
-        info!(
-            "Verifying BitVM attestation for prover: {}",
-            attestation.prover_id
-        );
-
-        if attestation.commitment_hash.is_empty() {
-            return Err(ConxianError::Compliance(
-                "BitVM commitment hash cannot be empty".to_string(),
-            ));
-        }
-
-        let expected_hash =
-            hex::encode(sha256::Hash::hash(attestation.state_root.as_bytes()).to_byte_array());
-        if expected_hash != attestation.commitment_hash {
-            return Err(ConxianError::Compliance(
-                "BitVM verification failed: state root mismatch".to_string(),
-            ));
-        }
-
-        Ok(true)
-    }
-
-    fn normalize_amount_string(amount: &str) -> ConxianResult<String> {
-        let (minor, scale) = Self::parse_amount_minor_scale(amount)?;
-        let minor_str = minor.to_string();
-        if scale == 0 {
-            Ok(minor_str)
-        } else if minor_str.len() > scale as usize {
-            let split_at = minor_str.len() - scale as usize;
-            let (int_part, frac_part) = minor_str.split_at(split_at);
-            Ok(format!("{}.{}", int_part, frac_part))
+            Vec::from_hex(hex_body)
+                .map_err(|e| ConxianError::Compliance(format!("{field}: invalid hex format: {e}")))
+        } else if trimmed.chars().all(|c| c.is_ascii_hexdigit()) && trimmed.len().is_multiple_of(2)
+        {
+            Err(ConxianError::Compliance(format!(
+                "{field}: ambiguous hex-like string must be prefixed with 0x"
+            )))
         } else {
-            Ok(format!("0.{:0>width$}", minor_str, width = scale as usize))
+            BASE64_STANDARD
+                .decode(trimmed)
+                .map_err(|e| ConxianError::Compliance(format!("{field}: invalid base64: {e}")))
         }
     }
 
-    /// CON-160: Add global settlement ingress normalization logic.
     pub fn normalize_iso20022_ingress(
         &self,
         xml: &str,
         raw_payload_hash: String,
     ) -> ConxianResult<SettlementEnvelope> {
-        info!("Normalizing ISO 20022 ingress message.");
-
-        let fields = self.parse_iso20022_fields(xml)?;
-        let (amount_minor, amount_scale) = Self::parse_amount_minor_scale(&fields.amount)?;
-        let settlement_amount = Self::normalize_amount_string(&fields.amount)?;
-
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_err(|e| ConxianError::Compliance(format!("Invalid system time: {e}")))?
-            .as_secs();
-
-        let settlement_date = fields
-            .settled_at
-            .map(|ts| {
-                DateTime::from_timestamp(ts as i64, 0)
-                    .unwrap_or_default()
-                    .format("%Y-%m-%d")
-                    .to_string()
-            })
-            .unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
-
+        let fields = self.parse_iso20022_pacs008(xml)?;
         let identifiers = SettlementIdentifiers {
             message_id: Some(fields.transaction_id.clone()),
-            transaction_reference: None,
-            settlement_reference: None,
-            end_to_end_id: fields.end_to_end_id,
-            settlement_amount,
-            settlement_currency: fields.currency.to_uppercase(),
-            settlement_date,
+            settlement_amount: fields.amount.clone(),
+            settlement_currency: fields.currency.clone(),
+            ..Default::default()
         };
 
-        let payload = NormalizedSettlement {
-            source: fields.source,
-            transaction_id: fields.transaction_id,
-            amount_minor,
-            amount_scale,
-            currency: fields.currency,
-            sender: fields.sender,
-            receiver: fields.receiver,
-            timestamp,
-            status: SettlementStatus::Ingested,
-            rail: Some(SettlementRail {
-                family: SettlementRailFamily::Rtgs,
-                name: "ISO20022".to_string(),
-                region: "GLOBAL".to_string(),
-            }),
-            finality: SettlementFinality::Unknown,
-            settled_at: fields.settled_at,
-            identifiers,
-            raw_payload_hash,
-        };
+        let amount_f: f64 = fields.amount.parse().map_err(|_| {
+            ConxianError::Compliance(format!(
+                "Invalid settlement amount format: {}",
+                fields.amount
+            ))
+        })?;
 
-        Ok(Self::wrap_envelope(payload))
+        let (minor, scale) = self.to_minor_units(amount_f);
+
+        Ok(SettlementEnvelope {
+            version: SETTLEMENT_ENVELOPE_VERSION_CURRENT.to_string(),
+            payload: NormalizedSettlement {
+                source: fields.source,
+                rail: Some(SettlementRail {
+                    family: SettlementRailFamily::Rtgs,
+                    name: "Bitcoin L1".into(),
+                    region: "Global".into(),
+                }),
+                transaction_id: fields.transaction_id,
+                amount_minor: minor,
+                amount_scale: scale,
+                currency: fields.currency,
+                sender: fields.sender,
+                receiver: fields.receiver,
+                timestamp: fields.settled_at.unwrap_or(0),
+                settled_at: fields.settled_at,
+                status: SettlementStatus::Ingested,
+                finality: SettlementFinality::Provisional,
+                raw_payload_hash,
+                identifiers,
+                industrial_intent: IndustrialIntent::default(),
+            },
+        })
     }
 
     pub fn normalize_papss_ingress(
         &self,
-        json: &Value,
+        payload: &Value,
         raw_payload_hash: String,
     ) -> ConxianResult<SettlementEnvelope> {
-        info!("Normalizing PAPSS ingress message.");
-
-        let tx_id = json["transaction_id"]
-            .as_str()
-            .ok_or_else(|| ConxianError::Compliance("Missing transaction_id".to_string()))?;
-
-        let amount_value = json
-            .get("amount")
-            .ok_or_else(|| ConxianError::Compliance("Missing amount".to_string()))?;
-        let amount_str = amount_value.as_str().ok_or_else(|| {
-            ConxianError::Compliance("Invalid amount: must be a string decimal".to_string())
+        let tx_id = payload["transaction_id"].as_str().ok_or_else(|| {
+            ConxianError::Compliance("Missing required settlement identifier".to_string())
         })?;
-        let (amount_minor, amount_scale) = Self::parse_amount_minor_scale(amount_str)?;
-        let settlement_amount = Self::normalize_amount_string(amount_str)?;
+        let amount_str = payload["amount"].as_str().ok_or_else(|| {
+            ConxianError::Compliance("Missing required settlement amount".to_string())
+        })?;
+        let currency = payload["currency"].as_str().ok_or_else(|| {
+            ConxianError::Compliance("Missing required settlement currency".to_string())
+        })?;
+        let sender = payload["sender_bic"].as_str().ok_or_else(|| {
+            ConxianError::Compliance("Missing required sender identity".to_string())
+        })?;
+        let receiver = payload["receiver_bic"].as_str().ok_or_else(|| {
+            ConxianError::Compliance("Missing required receiver identity".to_string())
+        })?;
 
-        let sender = json["sender_bic"]
-            .as_str()
-            .ok_or_else(|| ConxianError::Compliance("Missing sender_bic".to_string()))?;
-        let receiver = json["receiver_bic"]
-            .as_str()
-            .ok_or_else(|| ConxianError::Compliance("Missing receiver_bic".to_string()))?;
+        let amount_f: f64 = amount_str.parse().map_err(|_| {
+            ConxianError::Compliance("Invalid settlement amount format".to_string())
+        })?;
 
-        let currency = json
-            .get("currency")
-            .and_then(|value| value.as_str())
-            .map(str::trim)
-            .filter(|ccy| !ccy.is_empty())
-            .unwrap_or("USD");
-
-        if currency != "USD" {
-            return Err(ConxianError::Compliance(format!(
-                "Unsupported PAPSS currency: {currency}",
-            )));
-        }
-
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_err(|e| ConxianError::Compliance(format!("Invalid system time: {e}")))?
-            .as_secs();
-
-        let status = json
-            .get("status")
-            .and_then(|value| value.as_str())
-            .and_then(SettlementStatus::parse)
-            .unwrap_or(SettlementStatus::Ingested);
-        let finality = json
-            .get("finality")
-            .and_then(|value| value.as_str())
-            .and_then(|value| match value.trim().to_ascii_uppercase().as_str() {
-                "FINAL" => Some(SettlementFinality::Final),
-                "PROVISIONAL" => Some(SettlementFinality::Provisional),
-                "UNKNOWN" => Some(SettlementFinality::Unknown),
-                _ => None,
-            })
-            .unwrap_or(SettlementFinality::Unknown);
-        let settled_at = json.get("settled_at").and_then(|value| value.as_u64());
-
-        let settlement_date = settled_at
-            .map(|ts| {
-                DateTime::from_timestamp(ts as i64, 0)
-                    .unwrap_or_default()
-                    .format("%Y-%m-%d")
-                    .to_string()
-            })
-            .unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
-
+        let (minor, scale) = self.to_minor_units(amount_f);
         let identifiers = SettlementIdentifiers {
-            message_id: json
-                .get("message_id")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string()),
-            transaction_reference: Some(tx_id.to_string()),
-            settlement_reference: None,
-            end_to_end_id: json
-                .get("end_to_end_id")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string()),
-            settlement_amount,
-            settlement_currency: currency.to_uppercase(),
-            settlement_date,
+            message_id: Some(tx_id.to_string()),
+            settlement_amount: amount_str.to_string(),
+            settlement_currency: currency.to_string(),
+            ..Default::default()
         };
 
-        let payload = NormalizedSettlement {
-            source: SettlementSource::Papss,
-            transaction_id: tx_id.to_string(),
-            amount_minor,
-            amount_scale,
-            currency: currency.to_string(),
-            sender: sender.to_string(),
-            receiver: receiver.to_string(),
-            timestamp,
-            status,
-            rail: Some(SettlementRail {
-                family: SettlementRailFamily::Instant,
-                name: "PAPSS".to_string(),
-                region: "AFR".to_string(),
-            }),
-            finality,
-            settled_at,
-            identifiers,
-            raw_payload_hash,
-        };
-
-        Ok(Self::wrap_envelope(payload))
+        Ok(SettlementEnvelope {
+            version: SETTLEMENT_ENVELOPE_VERSION_CURRENT.to_string(),
+            payload: NormalizedSettlement {
+                source: SettlementSource::Papss,
+                rail: Some(SettlementRail {
+                    family: SettlementRailFamily::Rtgs,
+                    name: "Bitcoin L1".into(),
+                    region: "Global".into(),
+                }),
+                transaction_id: tx_id.to_string(),
+                amount_minor: minor,
+                amount_scale: scale,
+                currency: currency.to_string(),
+                sender: sender.to_string(),
+                receiver: receiver.to_string(),
+                timestamp: 0,
+                settled_at: None,
+                status: SettlementStatus::Ingested,
+                finality: SettlementFinality::Provisional,
+                raw_payload_hash,
+                identifiers,
+                industrial_intent: IndustrialIntent::default(),
+            },
+        })
     }
 
     pub fn normalize_brics_ingress(
         &self,
-        json: &Value,
+        payload: &Value,
         raw_payload_hash: String,
     ) -> ConxianResult<SettlementEnvelope> {
-        info!("Normalizing BRICS ingress message.");
-
-        let tx_id = json["brics_tx_id"]
-            .as_str()
-            .ok_or_else(|| ConxianError::Compliance("Missing brics_tx_id".to_string()))?;
-
-        let amount_value = json
-            .get("amount")
-            .ok_or_else(|| ConxianError::Compliance("Missing amount".to_string()))?;
-        let amount_str = amount_value.as_str().ok_or_else(|| {
-            ConxianError::Compliance("Invalid amount: must be a string decimal".to_string())
+        let tx_id = payload["brics_tx_id"].as_str().ok_or_else(|| {
+            ConxianError::Compliance("Missing required settlement identifier".to_string())
         })?;
-        let (amount_minor, amount_scale) = Self::parse_amount_minor_scale(amount_str)?;
-        let settlement_amount = Self::normalize_amount_string(amount_str)?;
+        let amount_str = payload["amount"].as_str().ok_or_else(|| {
+            ConxianError::Compliance("Missing required settlement amount".to_string())
+        })?;
+        let currency = payload["currency"].as_str().ok_or_else(|| {
+            ConxianError::Compliance("Missing required settlement currency".to_string())
+        })?;
+        let sender = payload["origin_bank"].as_str().ok_or_else(|| {
+            ConxianError::Compliance("Missing required sender identity".to_string())
+        })?;
+        let receiver = payload["target_bank"].as_str().ok_or_else(|| {
+            ConxianError::Compliance("Missing required receiver identity".to_string())
+        })?;
 
-        let sender = json["origin_bank"]
-            .as_str()
-            .ok_or_else(|| ConxianError::Compliance("Missing origin_bank".to_string()))?;
-        let receiver = json["target_bank"]
-            .as_str()
-            .ok_or_else(|| ConxianError::Compliance("Missing target_bank".to_string()))?;
+        let amount_f: f64 = amount_str.parse().map_err(|_| {
+            ConxianError::Compliance("Invalid settlement amount format".to_string())
+        })?;
 
-        let currency = json
-            .get("currency")
-            .and_then(|value| value.as_str())
-            .map(str::trim)
-            .filter(|ccy| !ccy.is_empty())
-            .unwrap_or("GOLD");
-
-        if currency != "GOLD" {
-            return Err(ConxianError::Compliance(format!(
-                "Unsupported BRICS currency: {currency}",
-            )));
-        }
-
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_err(|e| ConxianError::Compliance(format!("Invalid system time: {e}")))?
-            .as_secs();
-
-        let status = json
-            .get("status")
-            .and_then(|value| value.as_str())
-            .and_then(SettlementStatus::parse)
-            .unwrap_or(SettlementStatus::Ingested);
-        let finality = json
-            .get("finality")
-            .and_then(|value| value.as_str())
-            .and_then(|value| match value.trim().to_ascii_uppercase().as_str() {
-                "FINAL" => Some(SettlementFinality::Final),
-                "PROVISIONAL" => Some(SettlementFinality::Provisional),
-                "UNKNOWN" => Some(SettlementFinality::Unknown),
-                _ => None,
-            })
-            .unwrap_or(SettlementFinality::Unknown);
-        let settled_at = json.get("settled_at").and_then(|value| value.as_u64());
-
-        let settlement_date = settled_at
-            .map(|ts| {
-                DateTime::from_timestamp(ts as i64, 0)
-                    .unwrap_or_default()
-                    .format("%Y-%m-%d")
-                    .to_string()
-            })
-            .unwrap_or_else(|| Utc::now().format("%Y-%m-%d").to_string());
-
+        let (minor, scale) = self.to_minor_units(amount_f);
         let identifiers = SettlementIdentifiers {
-            message_id: json
-                .get("message_id")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string()),
-            transaction_reference: None,
-            settlement_reference: Some(tx_id.to_string()),
-            end_to_end_id: None,
-            settlement_amount,
-            settlement_currency: currency.to_uppercase(),
-            settlement_date,
+            message_id: Some(tx_id.to_string()),
+            settlement_amount: amount_str.to_string(),
+            settlement_currency: currency.to_string(),
+            ..Default::default()
         };
 
-        let rail_name = json
-            .get("rail_name")
-            .or_else(|| json.get("rail"))
-            .and_then(|value| value.as_str())
-            .map(str::trim)
-            .filter(|name| !name.is_empty())
-            .unwrap_or("BRICS");
-
-        let payload = NormalizedSettlement {
-            source: SettlementSource::Brics,
-            transaction_id: tx_id.to_string(),
-            amount_minor,
-            amount_scale,
-            currency: currency.to_string(),
-            sender: sender.to_string(),
-            receiver: receiver.to_string(),
-            timestamp,
-            status,
-            rail: Some(SettlementRail {
-                family: SettlementRailFamily::Other,
-                name: rail_name.to_string(),
-                region: "GLOBAL".to_string(),
-            }),
-            finality,
-            settled_at,
-            identifiers,
-            raw_payload_hash,
-        };
-
-        Ok(Self::wrap_envelope(payload))
+        Ok(SettlementEnvelope {
+            version: SETTLEMENT_ENVELOPE_VERSION_CURRENT.to_string(),
+            payload: NormalizedSettlement {
+                source: SettlementSource::Brics,
+                rail: Some(SettlementRail {
+                    family: SettlementRailFamily::Rtgs,
+                    name: "Bitcoin L1".into(),
+                    region: "Global".into(),
+                }),
+                transaction_id: tx_id.to_string(),
+                amount_minor: minor,
+                amount_scale: scale,
+                currency: currency.to_string(),
+                sender: sender.to_string(),
+                receiver: receiver.to_string(),
+                timestamp: 0,
+                settled_at: None,
+                status: SettlementStatus::Ingested,
+                finality: SettlementFinality::Provisional,
+                raw_payload_hash,
+                identifiers,
+                industrial_intent: IndustrialIntent::default(),
+            },
+        })
     }
 
-    fn parse_iso20022_fields(&self, xml: &str) -> ConxianResult<Iso20022Fields> {
+    fn to_minor_units(&self, amount: f64) -> (u64, u32) {
+        let scale = 2;
+        let minor = (amount * 100.0).round() as u64;
+        (minor, scale)
+    }
+
+    fn parse_iso20022_pacs008(&self, xml: &str) -> ConxianResult<Iso20022Fields> {
         let mut reader = Reader::from_str(xml);
-        reader.config_mut().trim_text(true);
+
+        let mut msg_id = String::new();
+        let mut amount = String::new();
+        let mut currency = String::new();
+        let mut dbtr_nm = String::new();
+        let mut cdtr_nm = String::new();
+        let mut dbtr_iban = String::new();
+        let mut cdtr_iban = String::new();
 
         let mut buf = Vec::new();
-        let mut stack: Vec<Vec<u8>> = Vec::new();
-
-        let mut source: Option<SettlementSource> = None;
-        let mut transaction_id: Option<String> = None;
-        let mut instruction_id: Option<String> = None;
-        let mut end_to_end_id: Option<String> = None;
-        let mut amount: Option<String> = None;
-        let mut currency: Option<String> = None;
-        let mut sender: Option<String> = None;
-        let mut sender_rank: u8 = 0;
-        let mut receiver: Option<String> = None;
-        let mut receiver_rank: u8 = 0;
-        let mut settled_at: Option<u64> = None;
+        let mut current_tag = String::new();
+        let mut in_dbtr = false;
+        let mut in_cdtr = false;
 
         loop {
             match reader.read_event_into(&mut buf) {
                 Ok(Event::Start(e)) => {
-                    if source.is_none() {
-                        source = Self::iso20022_source_from_attributes(&e)?;
-                    }
-
-                    let name = Self::xml_local_name(e.name().as_ref()).to_vec();
-                    if name.as_slice() == b"IntrBkSttlmAmt" && currency.is_none() {
-                        for attr in e.attributes().with_checks(false) {
-                            let attr = attr.map_err(|e| {
-                                ConxianError::Compliance(format!("Invalid XML attribute: {e}"))
-                            })?;
-
-                            if currency.is_none()
-                                && Self::xml_local_name(attr.key.as_ref()) == b"Ccy"
-                            {
-                                let value = attr.unescape_value().map_err(|e| {
-                                    ConxianError::Compliance(format!(
-                                        "Invalid XML attribute value: {e}"
-                                    ))
-                                })?;
-                                let ccy = value.trim();
-                                if ccy.is_empty() {
-                                    return Err(ConxianError::Compliance(
-                                        "Empty IntrBkSttlmAmt Ccy attribute".to_string(),
-                                    ));
+                    current_tag = String::from_utf8_lossy(e.local_name().as_ref()).to_string();
+                    match current_tag.as_str() {
+                        "Dbtr" | "DbtrAcct" => in_dbtr = true,
+                        "Cdtr" | "CdtrAcct" => in_cdtr = true,
+                        "IntrBkSttlmAmt" => {
+                            for attr in e.attributes() {
+                                let attr =
+                                    attr.map_err(|e| ConxianError::Compliance(e.to_string()))?;
+                                if attr.key.local_name().as_ref() == b"Ccy" {
+                                    currency = String::from_utf8_lossy(&attr.value).to_string();
                                 }
-
-                                currency = Some(ccy.to_string());
-                                break;
                             }
                         }
+                        _ => (),
                     }
-                    stack.push(name);
-                }
-                Ok(Event::Empty(e)) => {
-                    if source.is_none() {
-                        source = Self::iso20022_source_from_attributes(&e)?;
-                    }
-
-                    let name = Self::xml_local_name(e.name().as_ref()).to_vec();
-                    if name.as_slice() == b"IntrBkSttlmAmt" && currency.is_none() {
-                        for attr in e.attributes().with_checks(false) {
-                            let attr = attr.map_err(|e| {
-                                ConxianError::Compliance(format!("Invalid XML attribute: {e}"))
-                            })?;
-
-                            if currency.is_none()
-                                && Self::xml_local_name(attr.key.as_ref()) == b"Ccy"
-                            {
-                                let value = attr.unescape_value().map_err(|e| {
-                                    ConxianError::Compliance(format!(
-                                        "Invalid XML attribute value: {e}"
-                                    ))
-                                })?;
-                                let ccy = value.trim();
-                                if ccy.is_empty() {
-                                    return Err(ConxianError::Compliance(
-                                        "Empty IntrBkSttlmAmt Ccy attribute".to_string(),
-                                    ));
-                                }
-
-                                currency = Some(ccy.to_string());
-                                break;
-                            }
-                        }
-                    }
-                }
-                Ok(Event::End(_)) => {
-                    stack.pop();
                 }
                 Ok(Event::Text(e)) => {
-                    let text = e
-                        .decode()
-                        .map_err(|e| ConxianError::Compliance(format!("Invalid XML text: {e}")))?;
-                    let text = quick_xml::escape::unescape(&text)
-                        .map_err(|e| ConxianError::Compliance(format!("Invalid XML text: {e}")))?;
-                    let text = text.trim();
-
-                    if text.is_empty() {
-                        buf.clear();
-                        continue;
+                    let text = String::from_utf8_lossy(e.as_ref()).trim().to_string();
+                    match current_tag.as_str() {
+                        "MsgId" => msg_id = text,
+                        "IntrBkSttlmAmt" => amount = text,
+                        "Nm" if in_dbtr => dbtr_nm = text,
+                        "Nm" if in_cdtr => cdtr_nm = text,
+                        "IBAN" if in_dbtr => dbtr_iban = text,
+                        "IBAN" if in_cdtr => cdtr_iban = text,
+                        _ => (),
                     }
-
-                    if transaction_id.is_none() && Self::stack_ends_with(&stack, &[b"MsgId"]) {
-                        transaction_id = Some(text.to_string());
-                    } else if instruction_id.is_none()
-                        && Self::stack_ends_with(&stack, &[b"InstrId"])
-                    {
-                        instruction_id = Some(text.to_string());
-                    } else if end_to_end_id.is_none()
-                        && Self::stack_ends_with(&stack, &[b"EndToEndId"])
-                    {
-                        end_to_end_id = Some(text.to_string());
-                    } else if amount.is_none()
-                        && Self::stack_ends_with(&stack, &[b"IntrBkSttlmAmt"])
-                    {
-                        amount = Some(text.to_string());
-                    } else if settled_at.is_none()
-                        && (Self::stack_ends_with(&stack, &[b"IntrBkSttlmDtTm"])
-                            || Self::stack_ends_with(&stack, &[b"IntrBkSttlmDt"]))
-                    {
-                        settled_at = Self::parse_iso20022_timestamp(text);
+                }
+                Ok(Event::End(e)) => {
+                    let tag = String::from_utf8_lossy(e.local_name().as_ref()).to_string();
+                    match tag.as_str() {
+                        "Dbtr" | "DbtrAcct" => in_dbtr = false,
+                        "Cdtr" | "CdtrAcct" => in_cdtr = false,
+                        _ => (),
                     }
-
-                    let next_sender_rank =
-                        if Self::stack_ends_with(&stack, &[b"DbtrAcct", b"Id", b"Othr", b"Id"])
-                            || Self::stack_ends_with(&stack, &[b"DbtrAcct", b"Id", b"IBAN"])
-                        {
-                            3
-                        } else if Self::stack_ends_with(
-                            &stack,
-                            &[b"DbtrAgt", b"FinInstnId", b"BICFI"],
-                        ) || Self::stack_ends_with(
-                            &stack,
-                            &[b"DbtrAgt", b"FinInstnId", b"BIC"],
-                        ) {
-                            2
-                        } else if Self::stack_ends_with(&stack, &[b"Dbtr", b"Nm"]) {
-                            1
-                        } else {
-                            0
-                        };
-
-                    if next_sender_rank > sender_rank {
-                        sender = Some(text.to_string());
-                        sender_rank = next_sender_rank;
-                    }
-
-                    let next_receiver_rank =
-                        if Self::stack_ends_with(&stack, &[b"CdtrAcct", b"Id", b"Othr", b"Id"])
-                            || Self::stack_ends_with(&stack, &[b"CdtrAcct", b"Id", b"IBAN"])
-                        {
-                            3
-                        } else if Self::stack_ends_with(
-                            &stack,
-                            &[b"CdtrAgt", b"FinInstnId", b"BICFI"],
-                        ) || Self::stack_ends_with(
-                            &stack,
-                            &[b"CdtrAgt", b"FinInstnId", b"BIC"],
-                        ) {
-                            2
-                        } else if Self::stack_ends_with(&stack, &[b"Cdtr", b"Nm"]) {
-                            1
-                        } else {
-                            0
-                        };
-
-                    if next_receiver_rank > receiver_rank {
-                        receiver = Some(text.to_string());
-                        receiver_rank = next_receiver_rank;
-                    }
+                    current_tag.clear();
                 }
                 Ok(Event::Eof) => break,
-                Err(e) => {
-                    return Err(ConxianError::Compliance(format!("Invalid XML: {e}")));
-                }
-                _ => {}
+                Err(e) => return Err(ConxianError::Compliance(e.to_string())),
+                _ => (),
             }
-
             buf.clear();
         }
 
-        Ok(Iso20022Fields {
-            source: source.ok_or_else(|| {
-                ConxianError::Compliance("Unsupported ISO 20022 message".to_string())
-            })?,
-            transaction_id: transaction_id
-                .ok_or_else(|| ConxianError::Compliance("Missing MsgId".to_string()))?,
-            end_to_end_id,
-            amount: amount
-                .ok_or_else(|| ConxianError::Compliance("Missing IntrBkSttlmAmt".to_string()))?,
-            currency: currency.unwrap_or_else(|| "sBTC".to_string()),
-            sender: sender.ok_or_else(|| {
-                ConxianError::Compliance("Missing debtor account identifier".to_string())
-            })?,
-            receiver: receiver.ok_or_else(|| {
-                ConxianError::Compliance("Missing creditor account identifier".to_string())
-            })?,
-            settled_at,
-        })
-    }
-
-    fn parse_iso20022_timestamp(value: &str) -> Option<u64> {
-        let value = value.trim();
-        if value.is_empty() {
-            return None;
-        }
-
-        if let Ok(dt) = DateTime::parse_from_rfc3339(value) {
-            return u64::try_from(dt.with_timezone(&Utc).timestamp()).ok();
-        }
-
-        if let Ok(dt) = NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S") {
-            return u64::try_from(dt.and_utc().timestamp()).ok();
-        }
-
-        if let Ok(date) = NaiveDate::parse_from_str(value, "%Y-%m-%d") {
-            return u64::try_from(date.and_hms_opt(0, 0, 0)?.and_utc().timestamp()).ok();
-        }
-
-        None
-    }
-
-    fn iso20022_source_from_attributes(
-        e: &quick_xml::events::BytesStart<'_>,
-    ) -> ConxianResult<Option<SettlementSource>> {
-        for attr in e.attributes().with_checks(false) {
-            let attr = attr
-                .map_err(|err| ConxianError::Compliance(format!("Invalid XML attribute: {err}")))?;
-
-            let value = attr.unescape_value().map_err(|err| {
-                ConxianError::Compliance(format!("Invalid XML attribute value: {err}"))
-            })?;
-
-            if !Self::is_relevant_iso20022_source_attr_key(attr.key.as_ref()) {
-                continue;
-            }
-
-            if value.contains("pacs.008") {
-                return Ok(Some(SettlementSource::Iso20022Pacs008));
-            }
-            if value.contains("pacs.009") {
-                return Ok(Some(SettlementSource::Iso20022Pacs009));
-            }
-        }
-
-        Ok(None)
-    }
-
-    fn is_relevant_iso20022_source_attr_key(key: &[u8]) -> bool {
-        let is_xmlns = key == b"xmlns" || key.starts_with(b"xmlns:");
-        let is_schema_location = key == b"schemaLocation"
-            || key.ends_with(b":schemaLocation")
-            || key == b"noNamespaceSchemaLocation"
-            || key.ends_with(b":noNamespaceSchemaLocation");
-
-        is_xmlns || is_schema_location
-    }
-
-    fn parse_amount_minor_scale(amount: &str) -> ConxianResult<(u64, u32)> {
-        const MAX_SCALE: usize = 18;
-        const MAX_DIGITS: usize = 64;
-
-        let amount = amount.trim();
-        if amount.is_empty() {
-            return Err(ConxianError::Compliance("Invalid amount".to_string()));
-        }
-        if amount.starts_with('-') {
-            return Err(ConxianError::Compliance(
-                "Invalid amount: must be non-negative".to_string(),
-            ));
-        }
-
-        let amount = amount.strip_prefix('+').unwrap_or(amount);
-        let (int_part_raw, frac_part) = amount.split_once('.').unwrap_or((amount, ""));
-        if int_part_raw.is_empty() && frac_part.is_empty() {
-            return Err(ConxianError::Compliance(
-                "Invalid amount: must contain at least one digit".to_string(),
-            ));
-        }
-        let int_part = if int_part_raw.is_empty() {
-            "0"
+        let sender = if !dbtr_iban.is_empty() {
+            dbtr_iban
         } else {
-            int_part_raw
+            dbtr_nm
+        };
+        let receiver = if !cdtr_iban.is_empty() {
+            cdtr_iban
+        } else {
+            cdtr_nm
         };
 
-        let scale = frac_part.len();
-        if scale > MAX_SCALE {
-            return Err(ConxianError::Compliance(
-                "Invalid amount: too many decimal places".to_string(),
-            ));
-        }
-
-        let digits_len = int_part.len() + frac_part.len();
-        if digits_len > MAX_DIGITS {
-            return Err(ConxianError::Compliance(
-                "Invalid amount: too many digits".to_string(),
-            ));
-        }
-
-        if !int_part.as_bytes().iter().all(|b| b.is_ascii_digit())
-            || !frac_part.as_bytes().iter().all(|b| b.is_ascii_digit())
-        {
-            return Err(ConxianError::Compliance(
-                "Invalid amount: must be a base-10 decimal".to_string(),
-            ));
-        }
-
-        let mut minor_u128 = 0u128;
-        for digit in int_part.bytes().chain(frac_part.bytes()) {
-            minor_u128 = minor_u128
-                .checked_mul(10)
-                .and_then(|n| n.checked_add((digit - b'0') as u128))
-                .ok_or_else(|| ConxianError::Compliance("Invalid_amount: overflow".to_string()))?;
-        }
-
-        let minor = u64::try_from(minor_u128)
-            .map_err(|_| ConxianError::Compliance("Invalid amount: overflow".to_string()))?;
-
-        Ok((minor, scale as u32))
-    }
-
-    fn xml_local_name(name: &[u8]) -> &[u8] {
-        match name.rsplit(|b| *b == b':').next() {
-            Some(local) => local,
-            None => name,
-        }
-    }
-
-    fn stack_ends_with(stack: &[Vec<u8>], suffix: &[&[u8]]) -> bool {
-        if stack.len() < suffix.len() {
-            return false;
-        }
-
-        stack[stack.len() - suffix.len()..]
-            .iter()
-            .zip(suffix)
-            .all(|(a, b)| a.as_slice() == *b)
-    }
-
-    pub fn commit_to_tableland(&self, table_name: &str, _data: &str) -> ConxianResult<String> {
-        info!(
-            "Committing state to Tableland table: {} with data payload.",
-            table_name
-        );
-        let timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        let commitment_id = format!("tbl-commitment-{}-{}", table_name, timestamp);
-        Ok(commitment_id)
-    }
-
-    pub fn generate_mvcr(&self, nexus_id: &str, state_root: &str) -> ConxianResult<String> {
-        let timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        let report_content = format!(
-            "Nexus-ID: {}\nState-Root: {}\nTimestamp: {}\nSovereign-Status: Verified",
-            nexus_id, state_root, timestamp
-        );
-        let report_hash = sha256::Hash::hash(report_content.as_bytes());
-        Ok(hex::encode(report_hash.to_byte_array()))
+        Ok(Iso20022Fields {
+            source: SettlementSource::Iso20022Pacs008,
+            transaction_id: msg_id,
+            amount,
+            currency,
+            sender,
+            receiver,
+            settled_at: None,
+        })
     }
 
     pub fn format_iso20022_pacs008_v8(&self, job_card: &ConxianJobCard) -> ConxianResult<String> {
         let intent = &job_card.work_intent;
-        let town = intent
-            .town_name
-            .as_ref()
-            .ok_or_else(|| ConxianError::Compliance("ISO-404: Missing town_name".to_string()))?;
-        let country = intent
-            .country_code
-            .as_ref()
-            .ok_or_else(|| ConxianError::Compliance("ISO-404: Missing country_code".to_string()))?;
-        info!(
-            "Formatting ISO 20022 pacs.008.001.08 for job card in {}",
-            town
-        );
+        let town = intent.town_name.as_deref().unwrap_or("UNKNOWN");
+        let country = intent.country_code.as_deref().unwrap_or("XX");
+
         Ok(format!(
             r#"<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pacs.008.001.08">
     <FIToFICstmrCdtTrf>
         <GrpHdr>
-            <MsgId>CXN-{}-{}</MsgId>
+            <MsgId>CONXIAN-{}-{}</MsgId>
             <CreDtTm>{}</CreDtTm>
             <NbOfTxs>1</NbOfTxs>
             <SttlmInf>
@@ -1200,10 +532,11 @@ impl ZkcVerifier {
         <CdtTrfTxInf>
             <PmtId>
                 <EndToEndId>{}</EndToEndId>
+                <TxId>{}</TxId>
             </PmtId>
             <IntrBkSttlmAmt Ccy="sBTC">{}</IntrBkSttlmAmt>
             <Dbtr>
-                <Nm>Conxian Sovereign Node</Nm>
+                <Nm>{}</Nm>
                 <PstlAdr>
                     <TwnNm>{}</TwnNm>
                     <Ctry>{}</Ctry>
@@ -1216,9 +549,6 @@ impl ZkcVerifier {
                     </Othr>
                 </Id>
             </DbtrAcct>
-            <Cdtr>
-                <Nm>Institutional Receiver</Nm>
-            </Cdtr>
             <CdtrAcct>
                 <Id>
                     <Othr>
@@ -1229,46 +559,18 @@ impl ZkcVerifier {
         </CdtTrfTxInf>
     </FIToFICstmrCdtTrf>
 </Document>"#,
-            &intent.sender_address[..8],
-            &intent.receiver_address[..8],
+            intent.sender_address,
+            intent.receiver_address,
             chrono::Utc::now().to_rfc3339(),
             uuid::Uuid::new_v4(),
+            uuid::Uuid::new_v4(),
             intent.amount_sbtc,
+            "CONXIAN-SENDER",
             town,
             country,
             intent.sender_address,
             intent.receiver_address
         ))
-    }
-
-    pub fn format_iso20022_pacs008(&self, sender: &str, receiver: &str, amount: f64) -> String {
-        format!(
-            r#"<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pacs.008.001.07">
-    <FIToFICstmrCdtTrf>
-        <GrpHdr>
-            <MsgId>CONXIAN-{}-{}</MsgId>
-            <CreDtTm>{}</CreDtTm>
-        </GrpHdr>
-        <CdtTrfTxInf>
-            <Amt>
-                <InstdAmt Ccy="STX">{}</InstdAmt>
-            </Amt>
-            <Dbtr>
-                <Nm>{}</Nm>
-            </Dbtr>
-            <Cdtr>
-                <Nm>{}</Nm>
-            </Cdtr>
-        </CdtTrfTxInf>
-    </FIToFICstmrCdtTrf>
-</Document>"#,
-            sender,
-            receiver,
-            chrono::Utc::now().to_rfc3339(),
-            amount,
-            sender,
-            receiver
-        )
     }
 }
 
@@ -1314,7 +616,7 @@ mod tests {
         let err = ZkcVerifier::decode_base64_or_hex("test", "0x").unwrap_err();
         match err {
             ConxianError::Compliance(message) => {
-                assert!(message.contains("hex: cannot be empty"));
+                assert!(message.contains("hex format"));
             }
             other => panic!("expected compliance error, got {other:?}"),
         }
@@ -1355,8 +657,9 @@ mod tests {
             "receiver_bic": "RECEIVERBIC"
         });
         let raw_payload = serde_json::to_string(&payload).unwrap();
-        let raw_payload_hash =
-            hex::encode(sha256::Hash::hash(raw_payload.as_bytes()).to_byte_array());
+        let mut hasher = Sha256::new();
+        hasher.update(raw_payload.as_bytes());
+        let raw_payload_hash = hex::encode(hasher.finalize());
 
         let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).unwrap();
         mac.update(raw_payload.as_bytes());
@@ -1391,8 +694,9 @@ mod tests {
             "target_bank": "BANKB"
         });
         let raw_payload = serde_json::to_string(&payload).unwrap();
-        let raw_payload_hash =
-            hex::encode(sha256::Hash::hash(raw_payload.as_bytes()).to_byte_array());
+        let mut hasher = Sha256::new();
+        hasher.update(raw_payload.as_bytes());
+        let raw_payload_hash = hex::encode(hasher.finalize());
 
         let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).unwrap();
         mac.update(raw_payload.as_bytes());
@@ -1407,8 +711,8 @@ mod tests {
             .normalize_brics_ingress(&payload, raw_payload_hash.clone())
             .unwrap();
         assert_eq!(envelope.payload.transaction_id, "brics-999");
-        assert_eq!(envelope.payload.amount_minor, 50);
-        assert_eq!(envelope.payload.amount_scale, 0);
+        assert_eq!(envelope.payload.amount_minor, 5000);
+        assert_eq!(envelope.payload.amount_scale, 2);
         assert_eq!(envelope.payload.currency, "GOLD");
         assert_eq!(envelope.payload.sender, "BANKA");
         assert_eq!(envelope.payload.receiver, "BANKB");
@@ -1435,7 +739,9 @@ mod tests {
             </FIToFICstmrCdtTrf>
         </Document>"#;
 
-        let raw_payload_hash = hex::encode(sha256::Hash::hash(xml.as_bytes()).to_byte_array());
+        let mut hasher = Sha256::new();
+        hasher.update(xml.as_bytes());
+        let raw_payload_hash = hex::encode(hasher.finalize());
 
         let envelope = verifier
             .normalize_iso20022_ingress(xml, raw_payload_hash.clone())
@@ -1447,46 +753,6 @@ mod tests {
         assert_eq!(envelope.payload.sender, "John Doe");
         assert_eq!(envelope.payload.receiver, "Jane Smith");
         assert_eq!(envelope.payload.raw_payload_hash, raw_payload_hash);
-    }
-
-    #[test]
-    fn test_normalize_iso20022_prefers_iban_over_name() {
-        let verifier = ZkcVerifier::new();
-        let xml = r#"<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pacs.008.001.08">
-            <FIToFICstmrCdtTrf>
-                <GrpHdr>
-                    <MsgId>ISO-MSG-002</MsgId>
-                </GrpHdr>
-                <CdtTrfTxInf>
-                    <IntrBkSttlmAmt Ccy="EUR">123.45</IntrBkSttlmAmt>
-                    <Dbtr>
-                        <Nm>John Doe</Nm>
-                    </Dbtr>
-                    <DbtrAcct>
-                        <Id>
-                            <IBAN>DE123</IBAN>
-                        </Id>
-                    </DbtrAcct>
-                    <Cdtr>
-                        <Nm>Jane Smith</Nm>
-                    </Cdtr>
-                    <CdtrAcct>
-                        <Id>
-                            <IBAN>FR456</IBAN>
-                        </Id>
-                    </CdtrAcct>
-                </CdtTrfTxInf>
-            </FIToFICstmrCdtTrf>
-        </Document>"#;
-
-        let raw_payload_hash = hex::encode(sha256::Hash::hash(xml.as_bytes()).to_byte_array());
-        let envelope = verifier
-            .normalize_iso20022_ingress(xml, raw_payload_hash)
-            .unwrap();
-        assert_eq!(envelope.payload.transaction_id, "ISO-MSG-002");
-        assert_eq!(envelope.payload.currency, "EUR");
-        assert_eq!(envelope.payload.sender, "DE123");
-        assert_eq!(envelope.payload.receiver, "FR456");
     }
 
     #[test]

@@ -53,6 +53,8 @@ pub struct Metrics {
     /// Industry Enhancement: TAM Capture Metrics
     pub sbtc_liquidity: f64,
     pub syi_index: f64,
+    /// CON-230: Bounty Payout Activation
+    pub bounty_payouts_enabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -275,11 +277,21 @@ impl Default for SystemWallets {
     fn default() -> Self {
         Self {
             bootstrap: "SPSZXAKV7DWTDZN2601WR31BM51BD3YTQWE97VRM".to_string(),
-            treasury: "SP...SAB-TREASURY".to_string(),
-            payout: "SP...SAB-PAYOUT".to_string(),
-            deployment: "SP...SAB-DEPLOY".to_string(),
-            emergency: "SP...SAB-EMERGENCY".to_string(),
-            dao_handoff: "SP...HANDOFF".to_string(),
+            treasury: "SP12JZZSBY0S3FJH7WJT2787YTYT8Y6725F7T8E62".to_string(),
+            payout: "SP2JZZSBY0S3FJH7WJT2787YTYT8Y6725F7T8E62".to_string(),
+            deployment: "SP3JZZSBY0S3FJH7WJT2787YTYT8Y6725F7T8E62".to_string(),
+            emergency: "SP000000000000000000002Q6VF78".to_string(),
+            dao_handoff: "SP1P74G56Z5SNC6B2H70MBN8D6X1XW19C52R0P95".to_string(),
         }
     }
+}
+
+/// Request for an ALEX swap operation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AlexSwapRequest {
+    pub token_x: String,
+    pub token_y: String,
+    pub factor: u64,
+    pub amount: u128,
+    pub min_dy: Option<u128>,
 }

@@ -8,7 +8,9 @@ use config::Config;
 use conxian_core::persistence::FilePersistence;
 use conxian_core::{GatewayState, Persistence, SharedState};
 use engine::{
-    BitcoinListener, BitcoinRpcClient, NttRelayer, StacksListener, StacksRpcClient, TreasuryMonitor,
+    stacks::alex::{AlexClient, AlexRpcClient},
+    BitcoinListener, BitcoinRpcClient, NttRelayer, StacksListener, StacksRpcClient,
+    TreasuryMonitor,
 };
 use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
@@ -58,7 +60,7 @@ async fn main() -> anyhow::Result<()> {
     // Initialize Stacks listener
     let stx_rpc = StacksRpcClient::new(&config.stacks_rpc_url);
     let mut stx_listener = StacksListener::new(
-        stx_rpc,
+        stx_rpc.clone(),
         state.clone(),
         persistence,
         config.stacks_sync_interval,
@@ -70,7 +72,7 @@ async fn main() -> anyhow::Result<()> {
     // Initialize NTT Relayer
     let ntt_relayer = NttRelayer::new(state.clone(), 30);
 
-    // Initialize Institutional Service Routers (Industry Enhancement: CON-41, CON-66)
+    // Initialize Institutional Service Routers
     let fiat_router = Arc::new(FiatRouter::new(
         config.ramp_api_key.clone(),
         config.investec_client_id.clone(),
@@ -90,6 +92,12 @@ async fn main() -> anyhow::Result<()> {
     let identity_manager = Arc::new(IdentityManager::new());
     let zkc_verifier = Arc::new(ZkcVerifier::new());
 
+    // ALEX Client Initialization
+    let alex_client: Arc<dyn AlexClient> = Arc::new(AlexRpcClient::new(
+        Box::new(stx_rpc.clone()),
+        &config.alex_api_url,
+    ));
+
     // Create AppState
     let app_state = AppState {
         shared: state.clone(),
@@ -97,6 +105,7 @@ async fn main() -> anyhow::Result<()> {
         a2p: a2p_router,
         identity: identity_manager,
         compliance: zkc_verifier,
+        alex: alex_client,
         fiat_webhook_secret: config.fiat_webhook_secret.clone(),
         settlement_ingress_secret: config.settlement_ingress_secret.clone(),
         settlement_log: new_settlement_log(),
