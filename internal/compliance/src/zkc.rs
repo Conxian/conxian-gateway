@@ -457,7 +457,13 @@ impl ZkcVerifier {
                         && (Self::stack_ends_with(&stack, &[b"IntrBkSttlmDtTm"])
                             || Self::stack_ends_with(&stack, &[b"IntrBkSttlmDt"]))
                     {
-                        settled_at = Self::parse_iso20022_timestamp(text);
+                        let parsed = Self::parse_iso20022_timestamp(text).ok_or_else(|| {
+                            ConxianError::Compliance(format!(
+                                "Unparseable ISO 20022 settlement timestamp: {text}"
+                            ))
+                        })?;
+
+                        settled_at = Some(parsed);
                     }
 
                     let next_sender_rank =
@@ -546,6 +552,26 @@ impl ZkcVerifier {
 
         if let Ok(dt) = DateTime::parse_from_rfc3339(value) {
             return u64::try_from(dt.with_timezone(&Utc).timestamp()).ok();
+        }
+
+        if let Ok(dt) = DateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S%.f%:z") {
+            return u64::try_from(dt.with_timezone(&Utc).timestamp()).ok();
+        }
+
+        if let Ok(dt) = DateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S%:z") {
+            return u64::try_from(dt.with_timezone(&Utc).timestamp()).ok();
+        }
+
+        if let Ok(dt) = DateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S%.f%z") {
+            return u64::try_from(dt.with_timezone(&Utc).timestamp()).ok();
+        }
+
+        if let Ok(dt) = DateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S%z") {
+            return u64::try_from(dt.with_timezone(&Utc).timestamp()).ok();
+        }
+
+        if let Ok(dt) = NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S%.f") {
+            return u64::try_from(dt.and_utc().timestamp()).ok();
         }
 
         if let Ok(dt) = NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S") {
