@@ -1,3 +1,4 @@
+use bincode::Options;
 use bitcoin::hex::FromHex;
 use bitcoin::secp256k1::{self, ecdsa::Signature, Message, PublicKey, Secp256k1};
 use chrono;
@@ -147,24 +148,32 @@ impl ZkcVerifier {
 
         info!("Verifying ZKML proof for device: {}", proof.device_id);
 
-        let receipt_bytes = Self::decode_base64_or_hex("receipt", &proof.receipt)?;
-        let receipt: Receipt = bincode::deserialize(&receipt_bytes).map_err(|e| {
-            warn!(error = %e, "ZKML receipt deserialization failed");
-            ConxianError::Compliance("Internal cryptographic verification error".to_string())
-        })?;
+        const MAX_PROOF_RECEIPT_ENCODED_LEN: usize = 1024 * 1024;
+        const MAX_PROOF_RECEIPT_BYTES: usize = 512 * 1024;
 
-        let image_id_bytes = Vec::from_hex(&proof.image_id)
-            .map_err(|_| ConxianError::Compliance("Invalid proof image format".into()))?;
-        if image_id_bytes.len() != 32 {
+        let receipt_value = proof.receipt.trim();
+        if receipt_value.len() > MAX_PROOF_RECEIPT_ENCODED_LEN {
             return Err(ConxianError::Compliance(
-                "Invalid proof image format: image_id must be 32 bytes".into(),
+                "Invalid proof receipt format".into(),
             ));
         }
 
-        let mut image_id = [0u32; 8];
-        for (word, chunk) in image_id.iter_mut().zip(image_id_bytes.chunks_exact(4)) {
-            *word = u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+        let receipt_bytes = Self::decode_base64_or_hex("receipt", receipt_value)?;
+        if receipt_bytes.len() > MAX_PROOF_RECEIPT_BYTES {
+            return Err(ConxianError::Compliance(
+                "Invalid proof receipt format".into(),
+            ));
         }
+
+        let receipt: Receipt = bincode::DefaultOptions::new()
+            .with_limit(MAX_PROOF_RECEIPT_BYTES as u64)
+            .deserialize(&receipt_bytes)
+            .map_err(|e| {
+                warn!(error = %e, "ZKML receipt deserialization failed");
+                ConxianError::Compliance("Internal cryptographic verification error".to_string())
+            })?;
+
+        let image_id = Self::parse_zkml_image_id(&proof.image_id)?;
 
         receipt.verify(image_id).map_err(|e| {
             warn!(error = %e, "ZKML proof verification failed");
@@ -951,7 +960,7 @@ impl ZkcVerifier {
     #[allow(dead_code)]
     fn decode_base64_or_hex(label: &str, value: &str) -> ConxianResult<Vec<u8>> {
         let value = value.trim();
-        if value.to_lowercase().starts_with("0x") {
+        if value.starts_with("0x") || value.starts_with("0X") {
             if value.len() < 3 {
                 return Err(ConxianError::Compliance(format!(
                     "Invalid hex format for {label}: too short"
@@ -969,6 +978,29 @@ impl ZkcVerifier {
             base64::Engine::decode(&base64::engine::general_purpose::STANDARD, value)
                 .map_err(|e| ConxianError::Compliance(format!("Invalid base64 for {label}: {e}")))
         }
+    }
+
+    fn parse_zkml_image_id(image_id_hex: &str) -> ConxianResult<[u32; 8]> {
+        const IMAGE_ID_HEX_LEN: usize = 64;
+
+        let image_id_hex = image_id_hex.trim();
+        if image_id_hex.len() != IMAGE_ID_HEX_LEN {
+            return Err(ConxianError::Compliance(
+                "Invalid proof image format: image_id must be 32 bytes".into(),
+            ));
+        }
+
+        let mut image_id_bytes = [0u8; 32];
+        hex::decode_to_slice(image_id_hex, &mut image_id_bytes)
+            .map_err(|_| ConxianError::Compliance("Invalid proof image format".into()))?;
+
+        // Convert into words explicitly so behavior is independent of host endianness.
+        let mut image_id = [0u32; 8];
+        for (word, chunk) in image_id.iter_mut().zip(image_id_bytes.chunks_exact(4)) {
+            *word = u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+        }
+
+        Ok(image_id)
     }
 }
 
@@ -1034,6 +1066,33 @@ mod tests {
     fn test_decode_base64_or_hex_accepts_base64() {
         let bytes = ZkcVerifier::decode_base64_or_hex("test", "Zm9v").unwrap();
         assert_eq!(bytes, b"foo");
+    }
+
+    #[test]
+    fn test_parse_zkml_image_id_maps_words_little_endian() {
+        let image_id = ZkcVerifier::parse_zkml_image_id(
+            "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+        )
+        .unwrap();
+
+        assert_eq!(
+            image_id,
+            [
+                0x03020100, 0x07060504, 0x0b0a0908, 0x0f0e0d0c, 0x13121110, 0x17161514, 0x1b1a1918,
+                0x1f1e1d1c,
+            ]
+        );
+    }
+
+    #[test]
+    fn test_parse_zkml_image_id_rejects_invalid_length() {
+        let err = ZkcVerifier::parse_zkml_image_id("deadbeef").unwrap_err();
+        match err {
+            ConxianError::Compliance(message) => {
+                assert!(message.contains("image_id must be 32 bytes"));
+            }
+            other => panic!("expected compliance error, got {other:?}"),
+        }
     }
 
     #[test]
