@@ -23,13 +23,21 @@ fn make_tee_attestation_header(raw_payload_hash: &str) -> String {
     let secret_key = SecretKey::from_slice(&[1u8; 32]).unwrap();
     let public_key = secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
 
-    let digest = Sha256::digest(raw_payload_hash.as_bytes());
+    let device_id = "conxius-tee-test";
+
+    let mut hasher = Sha256::new();
+    hasher.update(b"conxius-attestation:v1");
+    hasher.update(device_id.as_bytes());
+    hasher.update([0u8]);
+    hasher.update(raw_payload_hash.as_bytes());
+    let digest = hasher.finalize();
+
     let message = Message::from_digest_slice(&digest).unwrap();
     let signature = secp.sign_ecdsa(&message, &secret_key);
     let signature_der = signature.serialize_der();
 
     let attestation = Attestation {
-        device_id: "conxius-tee-test".to_string(),
+        device_id: device_id.to_string(),
         signature: hex::encode(signature_der),
         payload: raw_payload_hash.to_string(),
         public_key: hex::encode(public_key.serialize()),
@@ -156,6 +164,46 @@ async fn test_ingress_iso20022_authorized() {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn test_ingress_iso20022_rejects_tampered_tee_device_id() {
+    let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
+    {
+        let mut s = state.write().unwrap();
+        s.stacks.burn_block_height = Some(55);
+    }
+    let app = setup_app(state);
+
+    let xml_payload = r#"<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pacs.008.001.08"><FIToFICstmrCdtTrf><GrpHdr><MsgId>TX-123</MsgId></GrpHdr><CdtTrfTxInf><IntrBkSttlmAmt Ccy="sBTC">0.5</IntrBkSttlmAmt><DbtrAcct><Id><Othr><Id>SENDER-AC-1</Id></Othr></Id></DbtrAcct><CdtrAcct><Id><Othr><Id>RECEIVER-AC-1</Id></Othr></Id></CdtrAcct></CdtTrfTxInf></FIToFICstmrCdtTrf></Document>"#;
+
+    let mut mac = Hmac::<Sha256>::new_from_slice(TEST_SETTLEMENT_SECRET.as_bytes()).unwrap();
+    mac.update(xml_payload.as_bytes());
+    let signature = hex::encode(mac.finalize().into_bytes());
+
+    let raw_payload_hash = hex::encode(Sha256::digest(xml_payload.as_bytes()));
+    let tee_attestation = make_tee_attestation_header(&raw_payload_hash);
+
+    let mut attestation_value: serde_json::Value = serde_json::from_str(&tee_attestation).unwrap();
+    attestation_value["data"]["device_id"] = json!("conxius-tee-tampered");
+    let tee_attestation = serde_json::to_string(&attestation_value).unwrap();
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/ingress/iso20022")
+                .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("Content-Type", "application/xml")
+                .header("x-iso20022-signature", signature)
+                .header("x-tee-attestation", tee_attestation)
+                .body(Body::from(xml_payload))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
 #[tokio::test]

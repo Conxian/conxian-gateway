@@ -15,6 +15,7 @@ use uuid;
 type HmacSha256 = Hmac<Sha256>;
 
 const INGRESS_SIGNATURE_HEX_LEN: usize = 64;
+const ATTESTATION_SIGNING_DOMAIN: &[u8] = b"conxius-attestation:v1";
 
 pub struct ZkcVerifier {
     secp: Secp256k1<secp256k1::All>,
@@ -92,7 +93,13 @@ impl ZkcVerifier {
             ConxianError::Security("Attestation verification failed: invalid signature data".into())
         })?;
 
-        let digest = Sha256::digest(attestation.payload.as_bytes());
+        let mut hasher = Sha256::new();
+        hasher.update(ATTESTATION_SIGNING_DOMAIN);
+        hasher.update(attestation.device_id.as_bytes());
+        hasher.update([0u8]);
+        hasher.update(attestation.payload.as_bytes());
+
+        let digest = hasher.finalize();
         let message = Message::from_digest_slice(&digest)
             .map_err(|_| ConxianError::Security("Internal verification error".into()))?;
 
@@ -126,7 +133,13 @@ impl ZkcVerifier {
             ConxianError::Security("Attestation verification failed: invalid signature data".into())
         })?;
 
-        let digest = Sha256::digest(attestation.payload.as_bytes());
+        let mut hasher = Sha256::new();
+        hasher.update(ATTESTATION_SIGNING_DOMAIN);
+        hasher.update(attestation.device_id.as_bytes());
+        hasher.update([0u8]);
+        hasher.update(attestation.payload.as_bytes());
+
+        let digest = hasher.finalize();
         let message = Message::from_digest_slice(&digest)
             .map_err(|_| ConxianError::Security("Internal verification error".into()))?;
 
@@ -351,27 +364,37 @@ impl ZkcVerifier {
         attestation: &AttestationRequest,
         payload_hash: &str,
     ) -> ConxianResult<bool> {
-        let (device_id, signed_payload) = match attestation {
-            AttestationRequest::Ecdsa(a) => (&a.device_id, &a.payload),
-            AttestationRequest::Schnorr(a) => (&a.device_id, &a.payload),
-            _ => {
-                return Err(ConxianError::Security(
-                    "Unsupported attestation type for settlement trigger".into(),
-                ))
+        match attestation {
+            AttestationRequest::Ecdsa(a) => {
+                if !a.device_id.starts_with("conxius-tee-") {
+                    return Ok(false);
+                }
+
+                if a.payload != payload_hash {
+                    return Ok(false);
+                }
+
+                match self.verify(a) {
+                    Ok(valid) => Ok(valid),
+                    Err(_) => Ok(false),
+                }
             }
-        };
+            AttestationRequest::Schnorr(a) => {
+                if !a.device_id.starts_with("conxius-tee-") {
+                    return Ok(false);
+                }
 
-        if !device_id.starts_with("conxius-tee-") {
-            return Err(ConxianError::Security(
-                "Access denied: non-TEE device not allowed".into(),
-            ));
+                if a.payload != payload_hash {
+                    return Ok(false);
+                }
+
+                match self.verify_schnorr(a) {
+                    Ok(valid) => Ok(valid),
+                    Err(_) => Ok(false),
+                }
+            }
+            _ => Ok(false),
         }
-
-        if signed_payload != payload_hash {
-            return Ok(false);
-        }
-
-        self.verify_attestation(attestation.clone())
     }
 
     fn parse_pacs008_v8(&self, xml: &str) -> ConxianResult<Iso20022Fields> {
