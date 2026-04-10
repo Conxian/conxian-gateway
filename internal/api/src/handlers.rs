@@ -624,7 +624,7 @@ pub async fn get_alex_quote(
 
 pub async fn execute_alex_swap(
     State(_state): State<AppState>,
-    Json(_request): Json<AlexSwapRequest>,
+    _body: Bytes,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     warn!("ALEX swap requested but signer integration is unavailable");
     Err((
