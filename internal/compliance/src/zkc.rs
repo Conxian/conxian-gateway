@@ -170,8 +170,8 @@ impl ZkcVerifier {
         }
 
         let mut image_id = [0u32; 8];
-        for (i, chunk) in image_id_bytes.chunks_exact(4).enumerate() {
-            image_id[i] = u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+        for (word, chunk) in image_id.iter_mut().zip(image_id_bytes.chunks_exact(4)) {
+            *word = u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
         }
 
         receipt.verify(image_id).map_err(|e| {
