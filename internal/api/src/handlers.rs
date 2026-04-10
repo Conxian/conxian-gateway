@@ -651,3 +651,89 @@ pub async fn toggle_bounty_payouts(
     info!("Bounty payouts enabled: {}", enabled);
     Json(json!({ "status": "success", "bounty_payouts_enabled": enabled }))
 }
+
+#[derive(Debug, serde::Deserialize)]
+pub struct OfflinePosRequest {
+    pub tx_hash: String,
+    pub amount_sbtc: f64,
+    pub device_id: String,
+    pub passkey_attestation: conxian_core::AttestationRequest,
+}
+
+pub async fn handle_offline_pos(
+    State(state): State<AppState>,
+    Json(payload): Json<OfflinePosRequest>,
+) -> Result<Json<conxian_core::OfflineReceipt>, (StatusCode, Json<Value>)> {
+    let mut receipt = state
+        .compliance
+        .sign_offline_receipt(
+            &payload.tx_hash,
+            payload.amount_sbtc,
+            &payload.device_id,
+            payload.passkey_attestation,
+        )
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": e.to_string() })),
+            )
+        })?;
+
+    state
+        .compliance
+        .simulate_mesh_gossip(&mut receipt)
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": e.to_string() })),
+            )
+        })?;
+
+    state.offline_queue.enqueue(&receipt).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        )
+    })?;
+
+    Ok(Json(receipt))
+}
+
+pub async fn sync_offline_receipts(
+    State(state): State<AppState>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let receipts = state.offline_queue.dequeue_pending().map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        )
+    })?;
+
+    let mut synced_count = 0;
+    for receipt in receipts {
+        if state
+            .compliance
+            .verify_offline_receipt(&receipt)
+            .unwrap_or(false)
+        {
+            info!(
+                "Broadcasting offline receipt {} to L2...",
+                receipt.receipt_id
+            );
+            state
+                .offline_queue
+                .mark_broadcasted(&receipt.receipt_id)
+                .map_err(|e| {
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(json!({ "error": e.to_string() })),
+                    )
+                })?;
+            synced_count += 1;
+        }
+    }
+
+    Ok(Json(
+        json!({ "status": "success", "synced_count": synced_count }),
+    ))
+}

@@ -109,6 +109,7 @@ async fn main() -> anyhow::Result<()> {
         fiat_webhook_secret: config.fiat_webhook_secret.clone(),
         settlement_ingress_secret: config.settlement_ingress_secret.clone(),
         settlement_log: new_settlement_log(),
+        offline_queue: api::new_offline_queue(),
     };
 
     // Create a cancellation token for graceful shutdown of listeners
