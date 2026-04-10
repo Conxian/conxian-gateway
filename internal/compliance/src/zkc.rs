@@ -1045,11 +1045,7 @@ impl ZkcVerifier {
         let job_card_json =
             serde_json::to_string(job_card).map_err(|e| ConxianError::Internal(e.to_string()))?;
         let job_hash = hex::encode(Sha256::digest(job_card_json.as_bytes()));
-
-        let committed = bitvm_attestation
-            .state_root
-            .split(|c: char| !c.is_ascii_hexdigit())
-            .any(|token| token.len() == job_hash.len() && token.eq_ignore_ascii_case(&job_hash));
+        let committed = Self::state_root_commits_job_hash(&bitvm_attestation.state_root, &job_hash);
 
         if !committed {
             return Err(ConxianError::Security(
@@ -1058,6 +1054,37 @@ impl ZkcVerifier {
         }
 
         Ok(true)
+    }
+
+    /// Returns true if `state_root` commits to `job_hash`.
+    ///
+    /// If `state_root` contains a `job_hash=` tag (case-insensitive), this requires an exact match
+    /// of the tagged value and does not fall back to scanning for bare 64-hex tokens.
+    ///
+    /// When no `job_hash=` tag is present, this falls back to scanning for a standalone hex token
+    /// equal (case-insensitive) to `job_hash`.
+    fn state_root_commits_job_hash(state_root: &str, job_hash: &str) -> bool {
+        let state_root_lower = state_root.to_ascii_lowercase();
+        let job_hash_lower = job_hash.to_ascii_lowercase();
+
+        let tag = "job_hash=";
+        if state_root_lower.contains(tag) {
+            let tagged = format!("{tag}{job_hash_lower}");
+            for (idx, _) in state_root_lower.match_indices(&tagged) {
+                let after = idx + tagged.len();
+                if after == state_root_lower.len()
+                    || !state_root_lower.as_bytes()[after].is_ascii_hexdigit()
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        state_root
+            .split(|c: char| !c.is_ascii_hexdigit())
+            .any(|token| token.len() == job_hash.len() && token.eq_ignore_ascii_case(job_hash))
     }
 
     #[allow(dead_code)]
