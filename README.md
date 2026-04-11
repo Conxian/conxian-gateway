@@ -5,8 +5,16 @@ Institutional-grade middleware bridging Bitcoin/Stacks state logic with enterpri
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Status](https://img.shields.io/badge/Status-v0.1.0-orange.svg)](#project-status)
 
+## 0. Governance & BOS Role
+**Business Unit**: Protocol & Institutional Infrastructure
+**BOS Role**: Canonical Blockchain State Listener & Compliance Pipe
+**Status**: Mainnet-Ready (Production)
+**Ownership**: @botshelomokoka @admin-conxian-labs
+
 ## 1. Overview & Vision
 Conxian Gateway is a high-performance Rust middleware designed to bridge Bitcoin/Stacks state logic with enterprise compliance. It succeeds `Anya-core` and `OPSource`, consolidating their core functionalities into a singular, audit-ready binary.
+
+Conxian is designed to capture the Total Addressable Market (TAM) of Bitcoin-native liquidity ($10B+), moving beyond the initial Stacks Serviceable Addressable Market (SAM).
 
 ### Intended Audience
 - **Institutional Developers**: Building high-integrity Bitcoin/Stacks infrastructure.

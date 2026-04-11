@@ -1153,6 +1153,73 @@ struct Iso20022Fields {
     settled_at: Option<u64>,
 }
 
+/// Industry Enhancement: Sovereign Commitment Hooks (CON-329).
+/// Decouples compliance logic from Web2 persistence.
+pub trait SovereignCommit {
+    fn commit_settlement(
+        &self,
+        envelope: &conxian_core::SettlementEnvelope,
+    ) -> conxian_core::ConxianResult<()>;
+    fn commit_to_tableland(
+        &self,
+        table: &str,
+        data: serde_json::Value,
+    ) -> conxian_core::ConxianResult<()>;
+}
+
+impl SovereignCommit for ZkcVerifier {
+    fn commit_settlement(
+        &self,
+        envelope: &conxian_core::SettlementEnvelope,
+    ) -> conxian_core::ConxianResult<()> {
+        info!(
+            "Sovereign commit initiated for settlement: {}",
+            envelope.payload.transaction_id
+        );
+
+        // Phase 5 Clean Break: Redirecting from Neon/Supabase to Tableland
+        let table = "cxn_settlements_v1";
+        let data = serde_json::to_value(envelope).map_err(|e| {
+            ConxianError::Compliance(format!("serialize settlement envelope failed: {e}"))
+        })?;
+
+        if let Err(e) = self.commit_to_tableland(table, data) {
+            warn!(
+                table = %table,
+                transaction_id = %envelope.payload.transaction_id,
+                "Tableland commit failed: {e}"
+            );
+            return Err(e);
+        }
+
+        Ok(())
+    }
+
+    #[cfg(any(test, feature = "mock-integrations"))]
+    fn commit_to_tableland(
+        &self,
+        table: &str,
+        data: serde_json::Value,
+    ) -> conxian_core::ConxianResult<()> {
+        // Simulation of decentralized SQL commitment
+        info!(table = %table, "Committing state to Tableland decentralized SQL...");
+        // In production, this would use a Tableland SDK or gateway
+        let _ = data;
+        Ok(())
+    }
+
+    #[cfg(not(any(test, feature = "mock-integrations")))]
+    fn commit_to_tableland(
+        &self,
+        table: &str,
+        _data: serde_json::Value,
+    ) -> conxian_core::ConxianResult<()> {
+        Err(ConxianError::Internal(format!(
+            "Tableland commit is not enabled for table '{table}'. Build with feature 'mock-integrations' for tests/sims, or wire a production Tableland client."
+        )))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
