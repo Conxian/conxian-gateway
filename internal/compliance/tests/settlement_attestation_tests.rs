@@ -1,5 +1,12 @@
 use compliance::ZkcVerifier;
-use conxian_core::{Attestation, AttestationRequest, ZkmlProof};
+use conxian_core::{Attestation, AttestationRequest, ConxianResult, ZkmlProof};
+
+fn assert_denied(res: ConxianResult<bool>) {
+    assert!(
+        matches!(res, Ok(false)),
+        "expected settlement attestation denial as Ok(false), got: {res:?}"
+    );
+}
 
 #[test]
 fn settlement_attestation_rejects_non_tee_device() {
@@ -13,7 +20,7 @@ fn settlement_attestation_rejects_non_tee_device() {
     });
 
     let res = verifier.verify_settlement_trigger_attestation(&attestation, "payload-hash");
-    assert!(matches!(res, Ok(false)));
+    assert_denied(res);
 }
 
 #[test]
@@ -30,7 +37,7 @@ fn settlement_attestation_rejects_unsupported_attestation_types() {
     });
 
     let res = verifier.verify_settlement_trigger_attestation(&attestation, "payload-hash");
-    assert!(matches!(res, Ok(false)));
+    assert_denied(res);
 }
 
 #[test]
@@ -45,7 +52,7 @@ fn settlement_attestation_denies_on_verification_errors() {
     });
 
     let res = verifier.verify_settlement_trigger_attestation(&attestation, "payload-hash");
-    assert!(matches!(res, Ok(false)));
+    assert_denied(res);
 }
 
 #[test]
