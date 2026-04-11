@@ -1184,7 +1184,11 @@ impl SovereignCommit for ZkcVerifier {
         })?;
 
         if let Err(e) = self.commit_to_tableland(table, data) {
-            warn!(table = %table, "Tableland commit failed: {e}");
+            warn!(
+                table = %table,
+                transaction_id = %envelope.payload.transaction_id,
+                "Tableland commit failed: {e}"
+            );
             return Err(e);
         }
 
