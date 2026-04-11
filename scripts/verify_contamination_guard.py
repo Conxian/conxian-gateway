@@ -79,8 +79,9 @@ def check_file(filepath: Path) -> bool:
                     print(
                         f"SENSITIVE WARNING: Found '{kw}' in non-test file {filepath}:{i+1} - {line.strip()}"
                     )
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"CONTAMINATION FAILURE: Failed to scan file {filepath}: {e}", file=sys.stderr)
+        return True
     return False
 
 def main():
@@ -105,6 +106,12 @@ def main():
 
     if failed:
         print("Contamination guard failed. Please remove stubs/placeholders from production paths.")
+        return 1
+
+    if scanned_files == 0:
+        print(
+            "Contamination guard did not scan any files; check INCLUDE_DIRS/INCLUDE_EXTENSIONS configuration."
+        )
         return 1
 
     print(f"Production paths are clean. ({scanned_files} files scanned)")
