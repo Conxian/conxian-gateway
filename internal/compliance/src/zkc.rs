@@ -60,12 +60,12 @@ impl ZkcVerifier {
         Ok(mac.verify_slice(&sig_bytes).is_ok())
     }
 
-    pub fn verify_attestation(&self, request: AttestationRequest) -> ConxianResult<bool> {
+    pub fn verify_attestation(&self, request: &AttestationRequest) -> ConxianResult<bool> {
         match request {
-            AttestationRequest::Ecdsa(a) => self.verify(&a),
-            AttestationRequest::Schnorr(a) => self.verify_schnorr(&a),
-            AttestationRequest::Zkml(p) => self.verify_zkml(&p),
-            AttestationRequest::BitVm(a) => self.verify_bitvm(&a),
+            AttestationRequest::Ecdsa(a) => self.verify(a),
+            AttestationRequest::Schnorr(a) => self.verify_schnorr(a),
+            AttestationRequest::Zkml(p) => self.verify_zkml(p),
+            AttestationRequest::BitVm(a) => self.verify_bitvm(a),
         }
     }
 
@@ -77,7 +77,7 @@ impl ZkcVerifier {
             ));
         }
 
-        #[cfg(any(test, feature = "mock-integrations"))]
+        #[cfg(feature = "mock-integrations")]
         if attestation.device_id.contains("-mock-") {
             return Ok(true);
         }
@@ -587,24 +587,22 @@ impl ZkcVerifier {
         let (device_id, signed_payload) = match attestation {
             AttestationRequest::Ecdsa(a) => (&a.device_id, &a.payload),
             AttestationRequest::Schnorr(a) => (&a.device_id, &a.payload),
-            _ => {
-                return Err(ConxianError::Security(
-                    "Unsupported attestation type for settlement trigger".into(),
-                ))
-            }
+            _ => return Ok(false),
         };
 
         if !device_id.starts_with("conxius-tee-") {
-            return Err(ConxianError::Security(
-                "Access denied: non-TEE device not allowed".into(),
-            ));
+            return Ok(false);
         }
 
         if signed_payload != payload_hash {
             return Ok(false);
         }
 
-        self.verify_attestation(attestation.clone())
+        match self.verify_attestation(attestation) {
+            Ok(valid) => Ok(valid),
+            Err(ConxianError::Security(_)) => Ok(false),
+            Err(e) => Err(e),
+        }
     }
 
     fn parse_pacs008_v8(&self, xml: &str) -> ConxianResult<Iso20022Fields> {
@@ -1016,7 +1014,7 @@ impl ZkcVerifier {
         }
 
         // Verify Passkey attestation
-        self.verify_attestation(receipt.passkey_attestation.clone())
+        self.verify_attestation(&receipt.passkey_attestation)
     }
 
     pub fn verify_job_card_settlement(
