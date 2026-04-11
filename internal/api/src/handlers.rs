@@ -10,7 +10,7 @@ use conxian_core::{AttestationRequest, SettlementEnvelope, SettlementProposal};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
 const TEE_ATTESTATION_HEADER: &str = "x-tee-attestation";
 const SETTLEMENT_LOG_MAX_ENTRIES: usize = 1000;
@@ -505,7 +505,7 @@ fn verify_tee_settlement_attestation(
             ));
         }
         Err(e) => {
-            debug!(error = %e, "TEE settlement attestation verification error");
+            warn!(error = %e, "TEE settlement attestation verification error");
             return Err((
                 StatusCode::UNAUTHORIZED,
                 Json(json!({ "error": "Invalid TEE attestation" })),
