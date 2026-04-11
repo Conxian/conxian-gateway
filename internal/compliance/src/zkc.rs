@@ -1179,11 +1179,19 @@ impl SovereignCommit for ZkcVerifier {
 
         // Phase 5 Clean Break: Redirecting from Neon/Supabase to Tableland
         let table = "cxn_settlements_v1";
-        self.commit_to_tableland(table, serde_json::to_value(envelope).unwrap())?;
+        let data = serde_json::to_value(envelope).map_err(|e| {
+            ConxianError::Compliance(format!("serialize settlement envelope failed: {e}"))
+        })?;
+
+        if let Err(e) = self.commit_to_tableland(table, data) {
+            warn!(table = %table, "Tableland commit failed: {e}");
+            return Err(e);
+        }
 
         Ok(())
     }
 
+    #[cfg(any(test, feature = "mock-integrations"))]
     fn commit_to_tableland(
         &self,
         table: &str,
@@ -1194,6 +1202,17 @@ impl SovereignCommit for ZkcVerifier {
         // In production, this would use a Tableland SDK or gateway
         let _ = data;
         Ok(())
+    }
+
+    #[cfg(not(any(test, feature = "mock-integrations")))]
+    fn commit_to_tableland(
+        &self,
+        table: &str,
+        _data: serde_json::Value,
+    ) -> conxian_core::ConxianResult<()> {
+        Err(ConxianError::Internal(format!(
+            "Tableland commit is not enabled for table '{table}'. Build with feature 'mock-integrations' for tests/sims, or wire a production Tableland client."
+        )))
     }
 }
 
