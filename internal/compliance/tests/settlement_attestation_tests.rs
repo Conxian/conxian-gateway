@@ -13,7 +13,7 @@ fn settlement_attestation_rejects_non_tee_device() {
     });
 
     let res = verifier.verify_settlement_trigger_attestation(&attestation, "payload-hash");
-    assert!(!res.unwrap());
+    assert!(matches!(res, Ok(false)));
 }
 
 #[test]
@@ -30,7 +30,7 @@ fn settlement_attestation_rejects_unsupported_attestation_types() {
     });
 
     let res = verifier.verify_settlement_trigger_attestation(&attestation, "payload-hash");
-    assert!(!res.unwrap());
+    assert!(matches!(res, Ok(false)));
 }
 
 #[test]
@@ -45,7 +45,7 @@ fn settlement_attestation_denies_on_verification_errors() {
     });
 
     let res = verifier.verify_settlement_trigger_attestation(&attestation, "payload-hash");
-    assert!(!res.unwrap());
+    assert!(matches!(res, Ok(false)));
 }
 
 #[test]
@@ -60,5 +60,5 @@ fn settlement_attestation_accepts_tee_mock_attestation() {
     });
 
     let res = verifier.verify_settlement_trigger_attestation(&attestation, "payload-hash");
-    assert!(res.unwrap());
+    assert!(matches!(res, Ok(true)));
 }
