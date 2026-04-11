@@ -73,6 +73,7 @@ impl ZkcVerifier {
             ));
         }
 
+        #[cfg(feature = "mock-integrations")]
         if attestation.device_id.contains("-mock-") {
             return Ok(true);
         }

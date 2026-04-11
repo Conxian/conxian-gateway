@@ -49,7 +49,7 @@ fn settlement_attestation_denies_on_verification_errors() {
 }
 
 #[test]
-fn settlement_attestation_accepts_tee_mock_attestation() {
+fn settlement_attestation_feature_gates_tee_mock_attestation() {
     let verifier = ZkcVerifier::new();
 
     let attestation = AttestationRequest::Ecdsa(Attestation {
@@ -60,5 +60,6 @@ fn settlement_attestation_accepts_tee_mock_attestation() {
     });
 
     let res = verifier.verify_settlement_trigger_attestation(&attestation, "payload-hash");
-    assert!(matches!(res, Ok(true)));
+    let expected = cfg!(feature = "mock-integrations");
+    assert!(matches!(res, Ok(valid) if valid == expected));
 }
