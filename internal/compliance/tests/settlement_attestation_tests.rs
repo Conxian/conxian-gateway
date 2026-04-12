@@ -56,7 +56,7 @@ fn settlement_attestation_denies_on_verification_errors() {
 }
 
 #[test]
-fn settlement_attestation_feature_gates_tee_mock_attestation() {
+fn settlement_attestation_rejects_mock_device_id() {
     let verifier = ZkcVerifier::new();
 
     let attestation = AttestationRequest::Ecdsa(Attestation {
@@ -67,6 +67,5 @@ fn settlement_attestation_feature_gates_tee_mock_attestation() {
     });
 
     let res = verifier.verify_settlement_trigger_attestation(&attestation, "payload-hash");
-    let expected = cfg!(feature = "mock-integrations");
-    assert!(matches!(res, Ok(valid) if valid == expected));
+    assert_denied(res);
 }

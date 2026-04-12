@@ -12,7 +12,7 @@ use hmac::{Hmac, Mac};
 use risc0_zkvm::Receipt;
 use sha2::{Digest, Sha256};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 use uuid;
 
 type HmacSha256 = Hmac<Sha256>;
@@ -21,7 +21,7 @@ const INGRESS_SIGNATURE_HEX_LEN: usize = 64;
 pub const ATTESTATION_SIGNING_DOMAIN: &[u8] = b"conxius-attestation:v1";
 const MAX_ZKML_FIELD_LEN: usize = 4 * 1024 * 1024;
 const MAX_INLINE_PUBLIC_INPUTS: usize = 8 * 1024;
-const TEE_DEVICE_ID_PREFIX: &str = "conxius-tee-";
+pub const TEE_DEVICE_ID_PREFIX: &str = "conxius-tee-";
 
 pub struct ZkcVerifier {
     secp: Secp256k1<secp256k1::All>,
@@ -601,6 +601,14 @@ impl ZkcVerifier {
         };
 
         if !device_id.starts_with(TEE_DEVICE_ID_PREFIX) {
+            return Ok(false);
+        }
+
+        if device_id.contains("-mock-") {
+            debug!(
+                device_id = %device_id,
+                "TEE settlement attestation rejected: mock device_id not allowed"
+            );
             return Ok(false);
         }
 
