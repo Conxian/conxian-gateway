@@ -22,11 +22,14 @@ pub const ATTESTATION_SIGNING_DOMAIN: &[u8] = b"conxius-attestation:v1";
 const MAX_ZKML_FIELD_LEN: usize = 4 * 1024 * 1024;
 const MAX_INLINE_PUBLIC_INPUTS: usize = 8 * 1024;
 pub(crate) const TEE_DEVICE_ID_PREFIX: &str = "conxius-tee-";
+const MOCK_TEE_DEVICE_ID_BASE: &str = "mock";
 const MOCK_TEE_DEVICE_ID_PREFIX: &str = "mock-";
 
 fn is_mock_device_id(device_id: &str) -> bool {
     match device_id.strip_prefix(TEE_DEVICE_ID_PREFIX) {
-        Some(rest) => rest == "mock" || rest.starts_with(MOCK_TEE_DEVICE_ID_PREFIX),
+        Some(rest) => {
+            rest == MOCK_TEE_DEVICE_ID_BASE || rest.starts_with(MOCK_TEE_DEVICE_ID_PREFIX)
+        }
         None => false,
     }
 }
