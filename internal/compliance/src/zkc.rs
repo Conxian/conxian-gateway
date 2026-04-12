@@ -24,6 +24,10 @@ const MAX_INLINE_PUBLIC_INPUTS: usize = 8 * 1024;
 pub const TEE_DEVICE_ID_PREFIX: &str = "conxius-tee-";
 const MOCK_DEVICE_ID_MARKER: &str = "-mock-";
 
+fn is_mock_device_id(device_id: &str) -> bool {
+    device_id.contains(MOCK_DEVICE_ID_MARKER)
+}
+
 pub struct ZkcVerifier {
     secp: Secp256k1<secp256k1::All>,
 }
@@ -605,7 +609,7 @@ impl ZkcVerifier {
             return Ok(false);
         }
 
-        if device_id.contains(MOCK_DEVICE_ID_MARKER) {
+        if is_mock_device_id(device_id) {
             debug!(
                 device_id = %device_id,
                 "TEE settlement attestation rejected: mock device_id not allowed"
