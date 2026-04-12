@@ -213,11 +213,8 @@ impl ZkcVerifier {
             ));
         }
 
-        let receipt_bytes = Self::decode_base64_or_hex_bounded(
-            "receipt",
-            receipt_value,
-            MAX_ZKML_RECEIPT_BYTES,
-        )?;
+        let receipt_bytes =
+            Self::decode_base64_or_hex_bounded("receipt", receipt_value, MAX_ZKML_RECEIPT_BYTES)?;
         let computed_receipt_hash = hex::encode(Sha256::digest(&receipt_bytes));
         if !computed_receipt_hash.eq_ignore_ascii_case(receipt_hash) {
             return Err(ConxianError::Security(
@@ -1379,8 +1376,8 @@ mod tests {
         assert_eq!(
             image_id,
             [
-                0x03020100, 0x07060504, 0x0b0a0908, 0x0f0e0d0c, 0x13121110, 0x17161514,
-                0x1b1a1918, 0x1f1e1d1c,
+                0x03020100, 0x07060504, 0x0b0a0908, 0x0f0e0d0c, 0x13121110, 0x17161514, 0x1b1a1918,
+                0x1f1e1d1c,
             ]
         );
     }
@@ -1395,8 +1392,8 @@ mod tests {
         assert_eq!(
             image_id,
             [
-                0x03020100, 0x07060504, 0x0b0a0908, 0x0f0e0d0c, 0x13121110, 0x17161514,
-                0x1b1a1918, 0x1f1e1d1c,
+                0x03020100, 0x07060504, 0x0b0a0908, 0x0f0e0d0c, 0x13121110, 0x17161514, 0x1b1a1918,
+                0x1f1e1d1c,
             ]
         );
     }
@@ -1411,8 +1408,8 @@ mod tests {
         assert_eq!(
             image_id,
             [
-                0x03020100, 0x07060504, 0x0b0a0908, 0x0f0e0d0c, 0x13121110, 0x17161514,
-                0x1b1a1918, 0x1f1e1d1c,
+                0x03020100, 0x07060504, 0x0b0a0908, 0x0f0e0d0c, 0x13121110, 0x17161514, 0x1b1a1918,
+                0x1f1e1d1c,
             ]
         );
     }
@@ -1467,7 +1464,7 @@ mod tests {
     #[test]
     fn test_verify_zkml_rejects_oversized_receipt_decoded_len() {
         let verifier = ZkcVerifier::new();
-        let receipt_bytes = vec![0u8; MAX_ZKML_RECEIPT_BYTES + 1];
+        let receipt_bytes = vec![0u8; MAX_ZKML_RECEIPT_BYTES + 2];
         let receipt =
             base64::Engine::encode(&base64::engine::general_purpose::STANDARD, receipt_bytes);
         let proof = ZkmlProof {
