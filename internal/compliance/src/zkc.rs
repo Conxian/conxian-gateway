@@ -1027,6 +1027,17 @@ impl ZkcVerifier {
         self.verify_attestation(&receipt.passkey_attestation)
     }
 
+    /// Computes the BitVM `job_hash` as SHA-256 over the JCS-canonicalized job card JSON.
+    ///
+    /// Any writer producing a BitVM `state_root` commitment must compute `job_hash` using the
+    /// same JCS canonicalization.
+    fn compute_job_hash(job_card: &conxian_core::ConxianJobCard) -> ConxianResult<String> {
+        let job_card_bytes = serde_jcs::to_vec(job_card)
+            .map_err(|e| ConxianError::Internal(format!("JCS job card encoding failed: {e}")))?;
+
+        Ok(hex::encode(Sha256::digest(&job_card_bytes)))
+    }
+
     pub fn verify_job_card_settlement(
         &self,
         job_card: &conxian_core::ConxianJobCard,
@@ -1042,9 +1053,7 @@ impl ZkcVerifier {
             return Err(ConxianError::Compliance("Invalid settlement amount".into()));
         }
 
-        let job_card_bytes =
-            serde_jcs::to_vec(job_card).map_err(|e| ConxianError::Internal(e.to_string()))?;
-        let job_hash = hex::encode(Sha256::digest(&job_card_bytes));
+        let job_hash = Self::compute_job_hash(job_card)?;
 
         let committed = Self::state_root_commits_job_hash(&bitvm_attestation.state_root, &job_hash);
 
@@ -1061,6 +1070,10 @@ impl ZkcVerifier {
     ///
     /// This requires an explicit `job_hash=<64-hex>` tag in `state_root` and does not accept a
     /// bare 64-hex digest.
+    ///
+    /// `state_root` must be ASCII. If multiple `job_hash=` tags are present, all of them must be
+    /// well-formed and equal to `job_hash`. Any embedded or malformed `job_hash=` occurrences are
+    /// treated as invalid and reject the entire commitment.
     fn state_root_commits_job_hash(state_root: &str, job_hash: &str) -> bool {
         let state_root = state_root.trim();
         let job_hash = job_hash.trim();
@@ -1069,22 +1082,50 @@ impl ZkcVerifier {
             return false;
         }
 
+        if !state_root.is_ascii() {
+            return false;
+        }
+
         let state_root_lower = state_root.to_ascii_lowercase();
         let job_hash_lower = job_hash.to_ascii_lowercase();
-        let tagged = format!("job_hash={job_hash_lower}");
 
-        state_root_lower.match_indices(&tagged).any(|(idx, _)| {
-            let bytes = state_root_lower.as_bytes();
+        let tag = "job_hash=";
+        let bytes = state_root_lower.as_bytes();
+        let is_boundary = |idx: usize| {
+            idx >= bytes.len() || (!bytes[idx].is_ascii_alphanumeric() && bytes[idx] != b'_')
+        };
+        let mut found = false;
 
-            let before_ok =
-                idx == 0 || (!bytes[idx - 1].is_ascii_alphanumeric() && bytes[idx - 1] != b'_');
+        for (idx, _) in state_root_lower.match_indices(tag) {
+            let before_ok = idx == 0 || is_boundary(idx - 1);
+            if !before_ok {
+                return false;
+            }
 
-            let after = idx + tagged.len();
-            let after_ok = after == bytes.len()
-                || (!bytes[after].is_ascii_alphanumeric() && bytes[after] != b'_');
+            let value_start = idx + tag.len();
+            let value_end = value_start + job_hash_lower.len();
+            if value_end > state_root_lower.len() {
+                return false;
+            }
 
-            before_ok && after_ok
-        })
+            let candidate = &state_root_lower[value_start..value_end];
+            if !candidate.as_bytes().iter().all(|b| b.is_ascii_hexdigit()) {
+                return false;
+            }
+
+            let after_ok = is_boundary(value_end);
+            if !after_ok {
+                return false;
+            }
+
+            if candidate != job_hash_lower {
+                return false;
+            }
+
+            found = true;
+        }
+
+        found
     }
 
     #[allow(dead_code)]
@@ -1312,7 +1353,7 @@ mod tests {
     }
 
     #[test]
-    fn test_bitvm_job_hash_is_stable() {
+    fn test_compute_job_hash_is_stable() {
         let job_card = conxian_core::ConxianJobCard {
             context: "https://schema.conxian.io/jobcard/v2".to_string(),
             r#type: "ConxianJobCard".to_string(),
@@ -1325,9 +1366,7 @@ mod tests {
             },
         };
 
-        let bytes = serde_jcs::to_vec(&job_card).unwrap();
-        let job_hash = hex::encode(Sha256::digest(&bytes));
-
+        let job_hash = ZkcVerifier::compute_job_hash(&job_card).unwrap();
         assert_eq!(
             job_hash,
             "9d0b498c365fb034171f2601227911b4111b57f0c153e7460545e67b24c25c1b"
@@ -1407,12 +1446,73 @@ mod tests {
     }
 
     #[test]
+    fn test_state_root_commits_job_hash_rejects_embedded_tag_prefix() {
+        let job_hash = "h".repeat(64);
+        let state_root = format!("foo_job_hash={job_hash}");
+        assert!(!ZkcVerifier::state_root_commits_job_hash(
+            &state_root,
+            &job_hash
+        ));
+    }
+
+    #[test]
+    fn test_state_root_commits_job_hash_rejects_embedded_tag_suffix() {
+        let job_hash = "i".repeat(64);
+        let state_root = format!("job_hash={job_hash}_foo");
+        assert!(!ZkcVerifier::state_root_commits_job_hash(
+            &state_root,
+            &job_hash
+        ));
+    }
+
+    #[test]
     fn test_state_root_commits_job_hash_rejects_non_hex_job_hash() {
         let job_hash = "g".repeat(64);
         let state_root = format!("job_hash={job_hash}");
         assert!(!ZkcVerifier::state_root_commits_job_hash(
             &state_root,
             &job_hash
+        ));
+    }
+
+    #[test]
+    fn test_state_root_commits_job_hash_rejects_non_ascii_state_root() {
+        let job_hash = "a".repeat(64);
+        let state_root = format!("job_hash={job_hash}é");
+        assert!(!ZkcVerifier::state_root_commits_job_hash(
+            &state_root,
+            &job_hash
+        ));
+    }
+
+    #[test]
+    fn test_state_root_commits_job_hash_accepts_multiple_matching_tags() {
+        let job_hash = "b".repeat(64);
+        let state_root = format!("job_hash={job_hash};foo=bar;job_hash={job_hash}");
+        assert!(ZkcVerifier::state_root_commits_job_hash(
+            &state_root,
+            &job_hash
+        ));
+    }
+
+    #[test]
+    fn test_state_root_commits_job_hash_rejects_multiple_mismatched_tags() {
+        let expected = "c".repeat(64);
+        let other = "d".repeat(64);
+        let state_root = format!("job_hash={expected};job_hash={other}");
+        assert!(!ZkcVerifier::state_root_commits_job_hash(
+            &state_root,
+            &expected
+        ));
+    }
+
+    #[test]
+    fn test_state_root_commits_job_hash_rejects_tag_with_non_hex_value() {
+        let expected = "e".repeat(64);
+        let state_root = format!("job_hash={}{}", "f".repeat(63), "g");
+        assert!(!ZkcVerifier::state_root_commits_job_hash(
+            &state_root,
+            &expected
         ));
     }
 
