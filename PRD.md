@@ -69,6 +69,9 @@ Conxian is designed to capture the Total Addressable Market (TAM) of Bitcoin-nat
     - Integrated CJCS v2.0 JSON-LD into core SDK for labor orchestration.
     - Implemented BitVM2 verification floor for trustless Job Card settlement.
 - 2026-04-10: Mainnet Alignment & Production Readiness (Jules):
+    - Implemented SovereignCommit hooks for Tableland migration (CON-329).
+    - Enhanced institutional metrics with TAM capture and SYI tracking.
+    - Established mandatory TERMS.md and PRIVACY.md institutional documentation.
     - Created canonical portfolio map and repository inventory (CON-468/CON-410).
     - Implemented ALEX DEX client and exposed quote/swap API endpoints (CON-136).
     - Integrated maintainer-controlled bounty payout toggle (CON-230).

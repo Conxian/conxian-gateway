@@ -4,7 +4,9 @@ use axum_test::TestServer;
 use compliance::{IdentityManager, ZkcVerifier};
 use conxian_core::{GatewayState, SharedState};
 use engine::stacks::alex::SimulatedAlexClient;
+use secp256k1::{Message, PublicKey, Secp256k1, SecretKey};
 use serde_json::json;
+use sha2::{Digest, Sha256};
 use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -55,20 +57,33 @@ async fn test_offline_pos_blackout_reconciliation() {
     let app = configure_routes(app_state, api_token.to_string());
     let server = TestServer::new(app).unwrap();
 
+    let device_id = "conxius-mock-device-1";
+    let passkey_payload = "mock-payload";
+
+    let secp = Secp256k1::new();
+    let secret_key = SecretKey::from_slice(&[1u8; 32]).unwrap();
+    let public_key = PublicKey::from_secret_key(&secp, &secret_key);
+    let public_key_hex = hex::encode(public_key.serialize());
+
+    let digest = Sha256::digest(passkey_payload.as_bytes());
+    let message = Message::from_digest_slice(&digest).unwrap();
+    let signature = secp.sign_ecdsa(&message, &secret_key);
+    let signature_hex = hex::encode(signature.serialize_der());
+
     let count = 10;
     for i in 0..count {
         let tx_hash = format!("tx-offline-{}", i);
         let payload = json!({
             "tx_hash": tx_hash,
             "amount_sbtc": 0.001,
-            "device_id": "conxius-mock-device-1",
+            "device_id": device_id,
             "passkey_attestation": {
                 "type": "Ecdsa",
                 "data": {
-                    "device_id": "conxius-mock-device-1",
-                    "signature": "mock-sig",
-                    "payload": "mock-payload",
-                    "public_key": "mock-key"
+                    "device_id": device_id,
+                    "signature": signature_hex,
+                    "payload": passkey_payload,
+                    "public_key": public_key_hex
                 }
             }
         });
