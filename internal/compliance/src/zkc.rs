@@ -25,9 +25,10 @@ pub(crate) const TEE_DEVICE_ID_PREFIX: &str = "conxius-tee-";
 const MOCK_TEE_DEVICE_ID_PREFIX: &str = "mock-";
 
 fn is_mock_device_id(device_id: &str) -> bool {
-    device_id
-        .strip_prefix(TEE_DEVICE_ID_PREFIX)
-        .is_some_and(|rest| rest.starts_with(MOCK_TEE_DEVICE_ID_PREFIX))
+    match device_id.strip_prefix(TEE_DEVICE_ID_PREFIX) {
+        Some(rest) => rest == "mock" || rest.starts_with(MOCK_TEE_DEVICE_ID_PREFIX),
+        None => false,
+    }
 }
 
 pub struct ZkcVerifier {

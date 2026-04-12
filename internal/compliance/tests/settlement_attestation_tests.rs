@@ -104,4 +104,10 @@ fn settlement_attestation_rejects_mock_device_id() {
         make_signed_attestation(&format!("{TEE_DEVICE_ID_PREFIX}mock-123"), "payload-hash");
     let res = verifier.verify_settlement_trigger_attestation(&rejected, "payload-hash");
     assert_denied(res);
+
+    let rejected_without_dash =
+        make_signed_attestation(&format!("{TEE_DEVICE_ID_PREFIX}mock"), "payload-hash");
+    let res =
+        verifier.verify_settlement_trigger_attestation(&rejected_without_dash, "payload-hash");
+    assert_denied(res);
 }
