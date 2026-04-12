@@ -1159,6 +1159,11 @@ impl ZkcVerifier {
             )))
         } else if let Some(max_decoded_len) = max_decoded_len {
             let max_possible_decoded_len = value.len().div_ceil(4).saturating_mul(3);
+            if max_possible_decoded_len.saturating_sub(2) > max_decoded_len {
+                return Err(ConxianError::Compliance(format!(
+                    "Invalid {label}: payload too large (max {max_decoded_len} bytes decoded)"
+                )));
+            }
             let mut out = vec![0u8; std::cmp::min(max_possible_decoded_len, max_decoded_len)];
             let n = base64::Engine::decode_slice(
                 &base64::engine::general_purpose::STANDARD,
