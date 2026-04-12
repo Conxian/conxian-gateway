@@ -60,6 +60,16 @@ The gateway exposes an institutional REST API at `/api/v1`. Most endpoints requi
 - `POST /api/v1/erp/sync`: Sync ERP ledger via OData v4 (Authorized).
 - `POST /api/v1/settle`: Verify and settle job card settlement request (Authorized).
 - `GET /api/v1/alex/quote`: Fetch swap quote from ALEX DEX (Authorized).
+  - Query params: `token_x` (string), `token_y` (string), `factor` (u64), `amount` (u128), optional `min_dy` (u128)
+  - Example:
+    ```bash
+    curl -G 'https://<gateway-host>/api/v1/alex/quote' \
+      -H 'Authorization: Bearer <API_TOKEN>' \
+      --data-urlencode 'token_x=SP3FBR2AGKQK4H5JH8S0T2NQ9K0D8G2Q1YJ3Q0Y1.token-x' \
+      --data-urlencode 'token_y=SP3FBR2AGKQK4H5JH8S0T2NQ9K0D8G2Q1YJ3Q0Y1.token-y' \
+      --data-urlencode 'factor=1' \
+      --data-urlencode 'amount=1000000'
+    ```
 - `POST /api/v1/alex/swap`: Execute ALEX swap operation (Authorized; returns `501` until signer integration exists).
 - `POST /api/v1/bounties/payouts/toggle`: Maintainer control for bounty activation (Authorized).
 - `POST /api/v1/ingress/iso20022`: Ingest ISO 20022 settlement signals (Authorized).
