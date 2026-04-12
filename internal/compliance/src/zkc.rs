@@ -12,7 +12,7 @@ use hmac::{Hmac, Mac};
 use risc0_zkvm::Receipt;
 use sha2::{Digest, Sha256};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 use uuid;
 
 type HmacSha256 = Hmac<Sha256>;
@@ -21,7 +21,31 @@ const INGRESS_SIGNATURE_HEX_LEN: usize = 64;
 pub const ATTESTATION_SIGNING_DOMAIN: &[u8] = b"conxius-attestation:v1";
 const MAX_ZKML_FIELD_LEN: usize = 4 * 1024 * 1024;
 const MAX_INLINE_PUBLIC_INPUTS: usize = 8 * 1024;
-const TEE_DEVICE_ID_PREFIX: &str = "conxius-tee-";
+pub(crate) const TEE_DEVICE_ID_PREFIX: &str = "conxius-tee-";
+const MOCK_TEE_DEVICE_ID_BASE: &str = "mock";
+const MOCK_TEE_DEVICE_ID_PREFIX: &str = "mock-";
+
+fn is_mock_device_id(device_id: &str) -> bool {
+    match device_id.strip_prefix(TEE_DEVICE_ID_PREFIX) {
+        Some(rest) => {
+            rest == MOCK_TEE_DEVICE_ID_BASE || rest.starts_with(MOCK_TEE_DEVICE_ID_PREFIX)
+        }
+        None => false,
+    }
+}
+
+const ZKML_IMAGE_ID_HEX_LEN: usize = 64;
+// Receipts are accepted as base64 or 0x-prefixed hex. With the JSON field capped at 4MiB,
+// base64 receipts can carry up to ~3MiB decoded while hex receipts carry less.
+const MAX_ZKML_RECEIPT_BYTES: usize = 3 * 1024 * 1024;
+const MAX_ZKML_RECEIPT_ENCODED_LEN: usize = {
+    let max_hex_len = 2 + MAX_ZKML_RECEIPT_BYTES * 2;
+    if MAX_ZKML_FIELD_LEN < max_hex_len {
+        MAX_ZKML_FIELD_LEN
+    } else {
+        max_hex_len
+    }
+};
 
 pub struct ZkcVerifier {
     secp: Secp256k1<secp256k1::All>,
@@ -160,7 +184,6 @@ impl ZkcVerifier {
         }
 
         info!("Verifying ZKML proof for device: {}", proof.device_id);
-
         let receipt_hash = proof.receipt_hash.trim();
         let receipt_hash = receipt_hash
             .strip_prefix("0x")
@@ -169,18 +192,6 @@ impl ZkcVerifier {
         if !Self::is_32_byte_hex(receipt_hash) {
             return Err(ConxianError::Compliance(
                 "Invalid receipt_hash: expected 32-byte hex string".to_string(),
-            ));
-        }
-
-        let receipt_str = proof.receipt.trim();
-        if receipt_str.is_empty() {
-            return Err(ConxianError::Compliance(
-                "ZKML verification failed: receipt cannot be empty".to_string(),
-            ));
-        }
-        if receipt_str.len() > MAX_ZKML_FIELD_LEN {
-            return Err(ConxianError::Compliance(
-                "Invalid receipt: payload too large".to_string(),
             ));
         }
 
@@ -208,18 +219,22 @@ impl ZkcVerifier {
             ));
         }
 
-        let image_id_hex = proof.image_id.trim();
-        let image_id_hex = image_id_hex
-            .strip_prefix("0x")
-            .or_else(|| image_id_hex.strip_prefix("0X"))
-            .unwrap_or(image_id_hex);
-        if !Self::is_32_byte_hex(image_id_hex) {
+        let image_id = Self::parse_zkml_image_id(&proof.image_id)?;
+
+        let receipt_value = proof.receipt.trim();
+        if receipt_value.is_empty() {
             return Err(ConxianError::Compliance(
-                "Invalid image_id: expected 32-byte hex string".to_string(),
+                "ZKML verification failed: receipt cannot be empty".to_string(),
             ));
         }
+        if receipt_value.len() > MAX_ZKML_RECEIPT_ENCODED_LEN {
+            return Err(ConxianError::Compliance(format!(
+                "Invalid receipt: payload too large (max {MAX_ZKML_RECEIPT_ENCODED_LEN} characters)"
+            )));
+        }
 
-        let receipt_bytes = Self::decode_base64_or_hex("receipt", receipt_str)?;
+        let receipt_bytes =
+            Self::decode_base64_or_hex_bounded("receipt", receipt_value, MAX_ZKML_RECEIPT_BYTES)?;
         let computed_receipt_hash = hex::encode(Sha256::digest(&receipt_bytes));
         if !computed_receipt_hash.eq_ignore_ascii_case(receipt_hash) {
             return Err(ConxianError::Security(
@@ -228,8 +243,6 @@ impl ZkcVerifier {
         }
 
         let receipt = Self::decode_risc0_receipt(&receipt_bytes)?;
-
-        let image_id = Self::parse_zkml_image_id(image_id_hex)?;
 
         receipt.verify(image_id).map_err(|e| {
             warn!(error = %e, "ZKML proof verification failed");
@@ -601,6 +614,14 @@ impl ZkcVerifier {
         };
 
         if !device_id.starts_with(TEE_DEVICE_ID_PREFIX) {
+            return Ok(false);
+        }
+
+        if is_mock_device_id(device_id) {
+            debug!(
+                device_id = %device_id,
+                "TEE settlement attestation rejected: mock device_id not allowed"
+            );
             return Ok(false);
         }
 
@@ -1075,14 +1096,14 @@ impl ZkcVerifier {
     /// well-formed and equal to `job_hash`. Any embedded or malformed `job_hash=` occurrences are
     /// treated as invalid and reject the entire commitment.
     fn state_root_commits_job_hash(state_root: &str, job_hash: &str) -> bool {
+        if !state_root.is_ascii() {
+            return false;
+        }
+
         let state_root = state_root.trim();
         let job_hash = job_hash.trim();
 
         if job_hash.len() != 64 || !job_hash.as_bytes().iter().all(|b| b.is_ascii_hexdigit()) {
-            return false;
-        }
-
-        if !state_root.is_ascii() {
             return false;
         }
 
@@ -1130,32 +1151,16 @@ impl ZkcVerifier {
 
     #[allow(dead_code)]
     fn decode_base64_or_hex(label: &str, value: &str) -> ConxianResult<Vec<u8>> {
-        let value = value.trim();
-        if value.starts_with("0x") || value.starts_with("0X") {
-            if value.len() < 3 {
-                return Err(ConxianError::Compliance(format!(
-                    "Invalid hex format for {label}: too short"
-                )));
-            }
-            Vec::from_hex(&value[2..]).map_err(|e| {
-                ConxianError::Compliance(format!("Invalid hex format for {label}: {e}"))
-            })
-        } else if value.chars().all(|c| c.is_ascii_hexdigit()) {
-            Err(ConxianError::Compliance(format!(
-                "Ambiguous encoding for {label}: hex values must be prefixed with 0x"
-            )))
-        } else {
-            // Default to base64
-            base64::Engine::decode(&base64::engine::general_purpose::STANDARD, value)
-                .map_err(|e| ConxianError::Compliance(format!("Invalid base64 for {label}: {e}")))
-        }
+        Self::decode_base64_or_hex_with_max_decoded_len(label, value, None)
     }
 
     fn parse_zkml_image_id(image_id_hex: &str) -> ConxianResult<[u32; 8]> {
-        const IMAGE_ID_HEX_LEN: usize = 64;
-
         let image_id_hex = image_id_hex.trim();
-        if image_id_hex.len() != IMAGE_ID_HEX_LEN {
+        let image_id_hex = image_id_hex
+            .strip_prefix("0x")
+            .or_else(|| image_id_hex.strip_prefix("0X"))
+            .unwrap_or(image_id_hex);
+        if image_id_hex.len() != ZKML_IMAGE_ID_HEX_LEN {
             return Err(ConxianError::Compliance(
                 "Invalid proof image format: image_id must be 32 bytes".into(),
             ));
@@ -1174,11 +1179,89 @@ impl ZkcVerifier {
         Ok(image_id)
     }
 
+    fn decode_base64_or_hex_bounded(
+        label: &str,
+        value: &str,
+        max_decoded_len: usize,
+    ) -> ConxianResult<Vec<u8>> {
+        Self::decode_base64_or_hex_with_max_decoded_len(label, value, Some(max_decoded_len))
+    }
+
+    fn decode_base64_or_hex_with_max_decoded_len(
+        label: &str,
+        value: &str,
+        max_decoded_len: Option<usize>,
+    ) -> ConxianResult<Vec<u8>> {
+        let value = value.trim();
+        if let Some(hex_body) = value
+            .strip_prefix("0x")
+            .or_else(|| value.strip_prefix("0X"))
+        {
+            if hex_body.is_empty() {
+                return Err(ConxianError::Compliance(format!(
+                    "Invalid hex format for {label}: too short"
+                )));
+            }
+            if hex_body.len() % 2 != 0 {
+                return Err(ConxianError::Compliance(format!(
+                    "Invalid hex format for {label}: odd length"
+                )));
+            }
+
+            let decoded_len = hex_body.len() / 2;
+            if let Some(max_decoded_len) = max_decoded_len {
+                if decoded_len > max_decoded_len {
+                    return Err(ConxianError::Compliance(format!(
+                        "Invalid {label}: payload too large (max {max_decoded_len} bytes decoded)"
+                    )));
+                }
+            }
+
+            let mut out = vec![0u8; decoded_len];
+            hex::decode_to_slice(hex_body, &mut out).map_err(|e| {
+                ConxianError::Compliance(format!("Invalid hex format for {label}: {e}"))
+            })?;
+            Ok(out)
+        } else if value.chars().all(|c| c.is_ascii_hexdigit()) {
+            Err(ConxianError::Compliance(format!(
+                "Ambiguous encoding for {label}: hex values must be prefixed with 0x"
+            )))
+        } else if let Some(max_decoded_len) = max_decoded_len {
+            let max_possible_decoded_len = value.len().div_ceil(4).saturating_mul(3);
+            // Allow for up to two '=' padding characters in valid base64 so we don't prematurely
+            // reject inputs that still decode to <= max_decoded_len.
+            if max_possible_decoded_len.saturating_sub(2) > max_decoded_len {
+                return Err(ConxianError::Compliance(format!(
+                    "Invalid {label}: payload too large (max {max_decoded_len} bytes decoded)"
+                )));
+            }
+            let mut out = vec![0u8; std::cmp::min(max_possible_decoded_len, max_decoded_len)];
+            let n = base64::Engine::decode_slice(
+                &base64::engine::general_purpose::STANDARD,
+                value,
+                &mut out,
+            )
+            .map_err(|e| match e {
+                base64::DecodeSliceError::OutputSliceTooSmall => ConxianError::Compliance(format!(
+                    "Invalid {label}: payload too large (max {max_decoded_len} bytes decoded)"
+                )),
+                base64::DecodeSliceError::DecodeError(e) => {
+                    ConxianError::Compliance(format!("Invalid base64 for {label}: {e}"))
+                }
+            })?;
+            out.truncate(n);
+            Ok(out)
+        } else {
+            base64::Engine::decode(&base64::engine::general_purpose::STANDARD, value)
+                .map_err(|e| ConxianError::Compliance(format!("Invalid base64 for {label}: {e}")))
+        }
+    }
+
     fn decode_risc0_receipt(bytes: &[u8]) -> ConxianResult<Receipt> {
-        if bytes.len() > MAX_ZKML_FIELD_LEN {
-            return Err(ConxianError::Compliance(
-                "Invalid receipt: payload too large".to_string(),
-            ));
+        if bytes.len() > MAX_ZKML_RECEIPT_BYTES {
+            return Err(ConxianError::Compliance(format!(
+                "Invalid receipt: payload too large (max {MAX_ZKML_RECEIPT_BYTES} bytes decoded)"
+            )));
         }
 
         if let Ok(receipt) = Receipt::try_from_slice(bytes) {
@@ -1486,6 +1569,18 @@ mod tests {
     }
 
     #[test]
+    fn test_state_root_commits_job_hash_rejects_non_ascii_whitespace_wrapping() {
+        const EM_SPACE: char = '\u{2003}';
+
+        let job_hash = "e".repeat(64);
+        let state_root = format!("{ws}job_hash={job_hash}{ws}", ws = EM_SPACE);
+        assert!(!ZkcVerifier::state_root_commits_job_hash(
+            &state_root,
+            &job_hash
+        ));
+    }
+
+    #[test]
     fn test_state_root_commits_job_hash_accepts_multiple_matching_tags() {
         let job_hash = "b".repeat(64);
         let state_root = format!("job_hash={job_hash};foo=bar;job_hash={job_hash}");
@@ -1560,6 +1655,22 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_zkml_image_id_accepts_prefixed_hex() {
+        let image_id = ZkcVerifier::parse_zkml_image_id(
+            "0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+        )
+        .unwrap();
+
+        assert_eq!(
+            image_id,
+            [
+                0x03020100, 0x07060504, 0x0b0a0908, 0x0f0e0d0c, 0x13121110, 0x17161514, 0x1b1a1918,
+                0x1f1e1d1c,
+            ]
+        );
+    }
+
+    #[test]
     fn test_parse_zkml_image_id_rejects_non_hex_content() {
         let err = ZkcVerifier::parse_zkml_image_id(
             "zz0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
@@ -1579,6 +1690,39 @@ mod tests {
         match err {
             ConxianError::Compliance(message) => {
                 assert!(message.contains("image_id must be 32 bytes"));
+            }
+            other => panic!("expected compliance error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_verify_zkml_rejects_oversized_receipt_encoded_len() {
+        let verifier = ZkcVerifier::new();
+        let proof = ZkmlProof {
+            device_id: "conxius-test".to_string(),
+            image_id: "0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+                .to_string(),
+            receipt: "A".repeat(MAX_ZKML_RECEIPT_ENCODED_LEN + 1),
+            receipt_hash: "00".repeat(32),
+            public_inputs: "foo".to_string(),
+            journal: "bar".to_string(),
+        };
+
+        let err = verifier.verify_zkml(&proof).unwrap_err();
+        match err {
+            ConxianError::Compliance(message) => {
+                assert!(message.contains("payload too large"));
+            }
+            other => panic!("expected compliance error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_decode_base64_or_hex_bounded_rejects_oversized_base64() {
+        let err = ZkcVerifier::decode_base64_or_hex_bounded("receipt", "Zm9v", 2).unwrap_err();
+        match err {
+            ConxianError::Compliance(message) => {
+                assert!(message.contains("payload too large"));
             }
             other => panic!("expected compliance error, got {other:?}"),
         }
@@ -1731,5 +1875,112 @@ mod tests {
             .compute_trigger_id(rail, &raw_payload_hash, &identifiers)
             .unwrap();
         assert_eq!(id1, id2);
+    }
+
+    fn assert_denied(res: ConxianResult<bool>) {
+        assert!(
+            matches!(res, Ok(false)),
+            "expected settlement attestation denial as Ok(false), got: {res:?}"
+        );
+    }
+
+    fn make_signed_attestation(device_id: &str, payload_hash: &str) -> AttestationRequest {
+        let secp = Secp256k1::new();
+        let secret_key = secp256k1::SecretKey::from_slice(&[1u8; 32]).unwrap();
+        let public_key = PublicKey::from_secret_key(&secp, &secret_key);
+
+        let mut hasher = Sha256::new();
+        hasher.update(ATTESTATION_SIGNING_DOMAIN);
+        hasher.update(device_id.as_bytes());
+        hasher.update([0u8]);
+        hasher.update(payload_hash.as_bytes());
+        let digest = hasher.finalize();
+
+        let message = Message::from_digest_slice(&digest).unwrap();
+        let signature = secp.sign_ecdsa(&message, &secret_key);
+        let signature_der = signature.serialize_der();
+
+        AttestationRequest::Ecdsa(Attestation {
+            device_id: device_id.to_string(),
+            signature: hex::encode(signature_der),
+            payload: payload_hash.to_string(),
+            public_key: hex::encode(public_key.serialize()),
+        })
+    }
+
+    #[test]
+    fn settlement_attestation_rejects_non_tee_device() {
+        let verifier = ZkcVerifier::new();
+
+        let attestation = AttestationRequest::Ecdsa(Attestation {
+            device_id: "conxius-mobile-123".to_string(),
+            signature: "00".to_string(),
+            payload: "payload-hash".to_string(),
+            public_key: "00".to_string(),
+        });
+
+        let res = verifier.verify_settlement_trigger_attestation(&attestation, "payload-hash");
+        assert_denied(res);
+    }
+
+    #[test]
+    fn settlement_attestation_rejects_unsupported_attestation_types() {
+        let verifier = ZkcVerifier::new();
+
+        let attestation = AttestationRequest::Zkml(ZkmlProof {
+            device_id: format!("{TEE_DEVICE_ID_PREFIX}123"),
+            image_id: "".to_string(),
+            receipt: "".to_string(),
+            receipt_hash: "".to_string(),
+            public_inputs: "".to_string(),
+            journal: "".to_string(),
+        });
+
+        let res = verifier.verify_settlement_trigger_attestation(&attestation, "payload-hash");
+        assert_denied(res);
+    }
+
+    #[test]
+    fn settlement_attestation_denies_on_verification_errors() {
+        let verifier = ZkcVerifier::new();
+
+        let attestation = AttestationRequest::Ecdsa(Attestation {
+            device_id: format!("{TEE_DEVICE_ID_PREFIX}123"),
+            signature: "".to_string(),
+            payload: "payload-hash".to_string(),
+            public_key: "".to_string(),
+        });
+
+        let res = verifier.verify_settlement_trigger_attestation(&attestation, "payload-hash");
+        assert_denied(res);
+    }
+
+    #[test]
+    fn settlement_attestation_rejects_mock_device_id() {
+        let verifier = ZkcVerifier::new();
+
+        let accepted =
+            make_signed_attestation(&format!("{TEE_DEVICE_ID_PREFIX}test-123"), "payload-hash");
+        let res = verifier.verify_settlement_trigger_attestation(&accepted, "payload-hash");
+        assert!(matches!(res, Ok(true)), "expected Ok(true), got: {res:?}");
+
+        let accepted_with_marker = make_signed_attestation(
+            &format!("{TEE_DEVICE_ID_PREFIX}test-mock-123"),
+            "payload-hash",
+        );
+        let res =
+            verifier.verify_settlement_trigger_attestation(&accepted_with_marker, "payload-hash");
+        assert!(matches!(res, Ok(true)), "expected Ok(true), got: {res:?}");
+
+        let rejected =
+            make_signed_attestation(&format!("{TEE_DEVICE_ID_PREFIX}mock-123"), "payload-hash");
+        let res = verifier.verify_settlement_trigger_attestation(&rejected, "payload-hash");
+        assert_denied(res);
+
+        let rejected_without_dash =
+            make_signed_attestation(&format!("{TEE_DEVICE_ID_PREFIX}mock"), "payload-hash");
+        let res =
+            verifier.verify_settlement_trigger_attestation(&rejected_without_dash, "payload-hash");
+        assert_denied(res);
     }
 }
