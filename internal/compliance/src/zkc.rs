@@ -1042,10 +1042,14 @@ impl ZkcVerifier {
             return Err(ConxianError::Compliance("Invalid settlement amount".into()));
         }
 
-        let job_card_json =
-            serde_json::to_string(job_card).map_err(|e| ConxianError::Internal(e.to_string()))?;
-        let job_hash = hex::encode(Sha256::digest(job_card_json.as_bytes()));
-        let committed = Self::state_root_commits_job_hash(&bitvm_attestation.state_root, &job_hash);
+        let job_card_value =
+            serde_json::to_value(job_card).map_err(|e| ConxianError::Internal(e.to_string()))?;
+        let job_card_json = serde_json::to_vec(&job_card_value)
+            .map_err(|e| ConxianError::Internal(e.to_string()))?;
+        let job_hash = hex::encode(Sha256::digest(&job_card_json));
+
+        let state_root = bitvm_attestation.state_root.trim();
+        let committed = Self::state_root_commits_job_hash(state_root, &job_hash);
 
         if !committed {
             return Err(ConxianError::Security(
@@ -1058,33 +1062,19 @@ impl ZkcVerifier {
 
     /// Returns true if `state_root` commits to `job_hash`.
     ///
-    /// If `state_root` contains a `job_hash=` tag (case-insensitive), this requires an exact match
-    /// of the tagged value and does not fall back to scanning for bare 64-hex tokens.
-    ///
-    /// When no `job_hash=` tag is present, this falls back to scanning for a standalone hex token
-    /// equal (case-insensitive) to `job_hash`.
+    /// This requires an explicit `job_hash=<64-hex>` tag in `state_root`.
     fn state_root_commits_job_hash(state_root: &str, job_hash: &str) -> bool {
-        let state_root_lower = state_root.to_ascii_lowercase();
-        let job_hash_lower = job_hash.to_ascii_lowercase();
+        let state_root = state_root.trim();
+        let job_hash = job_hash.trim();
 
-        let tag = "job_hash=";
-        if state_root_lower.contains(tag) {
-            let tagged = format!("{tag}{job_hash_lower}");
-            for (idx, _) in state_root_lower.match_indices(&tagged) {
-                let after = idx + tagged.len();
-                if after == state_root_lower.len()
-                    || !state_root_lower.as_bytes()[after].is_ascii_hexdigit()
-                {
-                    return true;
-                }
-            }
-
+        if job_hash.len() != 64 || !job_hash.as_bytes().iter().all(|b| b.is_ascii_hexdigit()) {
             return false;
         }
 
+        let tagged = format!("job_hash={job_hash}");
         state_root
-            .split(|c: char| !c.is_ascii_hexdigit())
-            .any(|token| token.len() == job_hash.len() && token.eq_ignore_ascii_case(job_hash))
+            .split(|c: char| c.is_whitespace() || matches!(c, ';' | ',' | '|'))
+            .any(|part| part.eq_ignore_ascii_case(&tagged))
     }
 
     #[allow(dead_code)]
@@ -1309,6 +1299,46 @@ mod tests {
     fn test_decode_base64_or_hex_accepts_base64() {
         let bytes = ZkcVerifier::decode_base64_or_hex("test", "Zm9v").unwrap();
         assert_eq!(bytes, b"foo");
+    }
+
+    #[test]
+    fn test_state_root_commits_job_hash_matches_explicit_tag() {
+        let job_hash = "a".repeat(64);
+        let state_root = format!("job_hash={job_hash}");
+        assert!(ZkcVerifier::state_root_commits_job_hash(
+            &state_root,
+            &job_hash
+        ));
+
+        let state_root = format!("foo=bar;job_hash={job_hash};baz=qux");
+        assert!(ZkcVerifier::state_root_commits_job_hash(
+            &state_root,
+            &job_hash
+        ));
+
+        let state_root = format!("FOO=BAR JOB_HASH={job_hash}");
+        assert!(ZkcVerifier::state_root_commits_job_hash(
+            &state_root,
+            &job_hash
+        ));
+    }
+
+    #[test]
+    fn test_state_root_commits_job_hash_rejects_untagged_hash() {
+        let job_hash = "b".repeat(64);
+        assert!(!ZkcVerifier::state_root_commits_job_hash(
+            &job_hash, &job_hash
+        ));
+    }
+
+    #[test]
+    fn test_state_root_commits_job_hash_rejects_tag_suffix() {
+        let job_hash = "c".repeat(64);
+        let state_root = format!("job_hash={job_hash}0");
+        assert!(!ZkcVerifier::state_root_commits_job_hash(
+            &state_root,
+            &job_hash
+        ));
     }
 
     #[test]
