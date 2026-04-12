@@ -1479,6 +1479,16 @@ mod tests {
     }
 
     #[test]
+    fn test_state_root_commits_job_hash_rejects_non_ascii_whitespace_wrapping() {
+        let job_hash = "e".repeat(64);
+        let state_root = format!("\u{2003}job_hash={job_hash}\u{2003}");
+        assert!(!ZkcVerifier::state_root_commits_job_hash(
+            &state_root,
+            &job_hash
+        ));
+    }
+
+    #[test]
     fn test_state_root_commits_job_hash_accepts_multiple_matching_tags() {
         let job_hash = "b".repeat(64);
         let state_root = format!("job_hash={job_hash};foo=bar;job_hash={job_hash}");
