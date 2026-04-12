@@ -1048,8 +1048,7 @@ impl ZkcVerifier {
             .map_err(|e| ConxianError::Internal(e.to_string()))?;
         let job_hash = hex::encode(Sha256::digest(&job_card_json));
 
-        let state_root = bitvm_attestation.state_root.trim();
-        let committed = Self::state_root_commits_job_hash(state_root, &job_hash);
+        let committed = Self::state_root_commits_job_hash(&bitvm_attestation.state_root, &job_hash);
 
         if !committed {
             return Err(ConxianError::Security(
@@ -1062,7 +1061,8 @@ impl ZkcVerifier {
 
     /// Returns true if `state_root` commits to `job_hash`.
     ///
-    /// This requires an explicit `job_hash=<64-hex>` tag in `state_root`.
+    /// This requires an explicit `job_hash=<64-hex>` tag in `state_root` and does not accept a
+    /// bare 64-hex digest.
     fn state_root_commits_job_hash(state_root: &str, job_hash: &str) -> bool {
         let state_root = state_root.trim();
         let job_hash = job_hash.trim();
@@ -1369,6 +1369,27 @@ mod tests {
         let job_hash = "d".repeat(64);
         let state_root = format!("xjob_hash={job_hash}");
         assert!(!ZkcVerifier::state_root_commits_job_hash(
+            &state_root,
+            &job_hash
+        ));
+    }
+
+    #[test]
+    fn test_state_root_commits_job_hash_rejects_non_hex_job_hash() {
+        let job_hash = "g".repeat(64);
+        let state_root = format!("job_hash={job_hash}");
+        assert!(!ZkcVerifier::state_root_commits_job_hash(
+            &state_root,
+            &job_hash
+        ));
+    }
+
+    #[test]
+    fn test_state_root_commits_job_hash_trims_inputs() {
+        let job_hash = "e".repeat(64);
+        let state_root = format!("  job_hash={job_hash}  ");
+        let job_hash = format!("  {job_hash}  ");
+        assert!(ZkcVerifier::state_root_commits_job_hash(
             &state_root,
             &job_hash
         ));
