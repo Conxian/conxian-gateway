@@ -1071,10 +1071,21 @@ impl ZkcVerifier {
             return false;
         }
 
-        let tagged = format!("job_hash={job_hash}");
-        state_root
-            .split(|c: char| c.is_whitespace() || matches!(c, ';' | ',' | '|'))
-            .any(|part| part.eq_ignore_ascii_case(&tagged))
+        let state_root_lower = state_root.to_ascii_lowercase();
+        let job_hash_lower = job_hash.to_ascii_lowercase();
+        let tagged = format!("job_hash={job_hash_lower}");
+
+        state_root_lower.match_indices(&tagged).any(|(idx, _)| {
+            let bytes = state_root_lower.as_bytes();
+
+            let before_ok =
+                idx == 0 || (!bytes[idx - 1].is_ascii_alphanumeric() && bytes[idx - 1] != b'_');
+
+            let after = idx + tagged.len();
+            let after_ok = after == bytes.len() || !bytes[after].is_ascii_hexdigit();
+
+            before_ok && after_ok
+        })
     }
 
     #[allow(dead_code)]
@@ -1316,6 +1327,18 @@ mod tests {
             &job_hash
         ));
 
+        let state_root = format!("?job_hash={job_hash}&foo=bar");
+        assert!(ZkcVerifier::state_root_commits_job_hash(
+            &state_root,
+            &job_hash
+        ));
+
+        let state_root = format!("job_hash={job_hash}:foo=bar");
+        assert!(ZkcVerifier::state_root_commits_job_hash(
+            &state_root,
+            &job_hash
+        ));
+
         let state_root = format!("FOO=BAR JOB_HASH={job_hash}");
         assert!(ZkcVerifier::state_root_commits_job_hash(
             &state_root,
@@ -1335,6 +1358,16 @@ mod tests {
     fn test_state_root_commits_job_hash_rejects_tag_suffix() {
         let job_hash = "c".repeat(64);
         let state_root = format!("job_hash={job_hash}0");
+        assert!(!ZkcVerifier::state_root_commits_job_hash(
+            &state_root,
+            &job_hash
+        ));
+    }
+
+    #[test]
+    fn test_state_root_commits_job_hash_rejects_non_delimited_tag() {
+        let job_hash = "d".repeat(64);
+        let state_root = format!("xjob_hash={job_hash}");
         assert!(!ZkcVerifier::state_root_commits_job_hash(
             &state_root,
             &job_hash
