@@ -12,7 +12,7 @@ use hmac::{Hmac, Mac};
 use risc0_zkvm::Receipt;
 use sha2::{Digest, Sha256};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 use uuid;
 
 type HmacSha256 = Hmac<Sha256>;
@@ -21,7 +21,18 @@ const INGRESS_SIGNATURE_HEX_LEN: usize = 64;
 pub const ATTESTATION_SIGNING_DOMAIN: &[u8] = b"conxius-attestation:v1";
 const MAX_ZKML_FIELD_LEN: usize = 4 * 1024 * 1024;
 const MAX_INLINE_PUBLIC_INPUTS: usize = 8 * 1024;
-const TEE_DEVICE_ID_PREFIX: &str = "conxius-tee-";
+pub(crate) const TEE_DEVICE_ID_PREFIX: &str = "conxius-tee-";
+const MOCK_TEE_DEVICE_ID_BASE: &str = "mock";
+const MOCK_TEE_DEVICE_ID_PREFIX: &str = "mock-";
+
+fn is_mock_device_id(device_id: &str) -> bool {
+    match device_id.strip_prefix(TEE_DEVICE_ID_PREFIX) {
+        Some(rest) => {
+            rest == MOCK_TEE_DEVICE_ID_BASE || rest.starts_with(MOCK_TEE_DEVICE_ID_PREFIX)
+        }
+        None => false,
+    }
+}
 
 pub struct ZkcVerifier {
     secp: Secp256k1<secp256k1::All>,
@@ -601,6 +612,14 @@ impl ZkcVerifier {
         };
 
         if !device_id.starts_with(TEE_DEVICE_ID_PREFIX) {
+            return Ok(false);
+        }
+
+        if is_mock_device_id(device_id) {
+            debug!(
+                device_id = %device_id,
+                "TEE settlement attestation rejected: mock device_id not allowed"
+            );
             return Ok(false);
         }
 
@@ -1736,5 +1755,112 @@ mod tests {
             .compute_trigger_id(rail, &raw_payload_hash, &identifiers)
             .unwrap();
         assert_eq!(id1, id2);
+    }
+
+    fn assert_denied(res: ConxianResult<bool>) {
+        assert!(
+            matches!(res, Ok(false)),
+            "expected settlement attestation denial as Ok(false), got: {res:?}"
+        );
+    }
+
+    fn make_signed_attestation(device_id: &str, payload_hash: &str) -> AttestationRequest {
+        let secp = Secp256k1::new();
+        let secret_key = secp256k1::SecretKey::from_slice(&[1u8; 32]).unwrap();
+        let public_key = PublicKey::from_secret_key(&secp, &secret_key);
+
+        let mut hasher = Sha256::new();
+        hasher.update(ATTESTATION_SIGNING_DOMAIN);
+        hasher.update(device_id.as_bytes());
+        hasher.update([0u8]);
+        hasher.update(payload_hash.as_bytes());
+        let digest = hasher.finalize();
+
+        let message = Message::from_digest_slice(&digest).unwrap();
+        let signature = secp.sign_ecdsa(&message, &secret_key);
+        let signature_der = signature.serialize_der();
+
+        AttestationRequest::Ecdsa(Attestation {
+            device_id: device_id.to_string(),
+            signature: hex::encode(signature_der),
+            payload: payload_hash.to_string(),
+            public_key: hex::encode(public_key.serialize()),
+        })
+    }
+
+    #[test]
+    fn settlement_attestation_rejects_non_tee_device() {
+        let verifier = ZkcVerifier::new();
+
+        let attestation = AttestationRequest::Ecdsa(Attestation {
+            device_id: "conxius-mobile-123".to_string(),
+            signature: "00".to_string(),
+            payload: "payload-hash".to_string(),
+            public_key: "00".to_string(),
+        });
+
+        let res = verifier.verify_settlement_trigger_attestation(&attestation, "payload-hash");
+        assert_denied(res);
+    }
+
+    #[test]
+    fn settlement_attestation_rejects_unsupported_attestation_types() {
+        let verifier = ZkcVerifier::new();
+
+        let attestation = AttestationRequest::Zkml(ZkmlProof {
+            device_id: format!("{TEE_DEVICE_ID_PREFIX}123"),
+            image_id: "".to_string(),
+            receipt: "".to_string(),
+            receipt_hash: "".to_string(),
+            public_inputs: "".to_string(),
+            journal: "".to_string(),
+        });
+
+        let res = verifier.verify_settlement_trigger_attestation(&attestation, "payload-hash");
+        assert_denied(res);
+    }
+
+    #[test]
+    fn settlement_attestation_denies_on_verification_errors() {
+        let verifier = ZkcVerifier::new();
+
+        let attestation = AttestationRequest::Ecdsa(Attestation {
+            device_id: format!("{TEE_DEVICE_ID_PREFIX}123"),
+            signature: "".to_string(),
+            payload: "payload-hash".to_string(),
+            public_key: "".to_string(),
+        });
+
+        let res = verifier.verify_settlement_trigger_attestation(&attestation, "payload-hash");
+        assert_denied(res);
+    }
+
+    #[test]
+    fn settlement_attestation_rejects_mock_device_id() {
+        let verifier = ZkcVerifier::new();
+
+        let accepted =
+            make_signed_attestation(&format!("{TEE_DEVICE_ID_PREFIX}test-123"), "payload-hash");
+        let res = verifier.verify_settlement_trigger_attestation(&accepted, "payload-hash");
+        assert!(matches!(res, Ok(true)), "expected Ok(true), got: {res:?}");
+
+        let accepted_with_marker = make_signed_attestation(
+            &format!("{TEE_DEVICE_ID_PREFIX}test-mock-123"),
+            "payload-hash",
+        );
+        let res =
+            verifier.verify_settlement_trigger_attestation(&accepted_with_marker, "payload-hash");
+        assert!(matches!(res, Ok(true)), "expected Ok(true), got: {res:?}");
+
+        let rejected =
+            make_signed_attestation(&format!("{TEE_DEVICE_ID_PREFIX}mock-123"), "payload-hash");
+        let res = verifier.verify_settlement_trigger_attestation(&rejected, "payload-hash");
+        assert_denied(res);
+
+        let rejected_without_dash =
+            make_signed_attestation(&format!("{TEE_DEVICE_ID_PREFIX}mock"), "payload-hash");
+        let res =
+            verifier.verify_settlement_trigger_attestation(&rejected_without_dash, "payload-hash");
+        assert_denied(res);
     }
 }
