@@ -60,7 +60,12 @@ The gateway exposes an institutional REST API at `/api/v1`. Most endpoints requi
 - `POST /api/v1/erp/sync`: Sync ERP ledger via OData v4 (Authorized).
 - `POST /api/v1/settle`: Verify and settle job card settlement request (Authorized).
 - `GET /api/v1/alex/quote`: Fetch swap quote from ALEX DEX (Authorized).
-  - Query params: `token_x` (string), `token_y` (string), `factor` (u64), `amount` (u128), optional `min_dy` (u128)
+  - Query params (URL-encoded; no request body):
+    - `token_x`: Input token identifier (Stacks contract principal, e.g. `SP...token-x`).
+    - `token_y`: Output token identifier (Stacks contract principal, e.g. `SP...token-y`).
+    - `amount`: Integer amount of `token_x` in its smallest on-chain units (no decimal point).
+    - `factor`: Integer swap factor (required for compatibility with `/api/v1/alex/swap`; currently ignored by `/api/v1/alex/quote`).
+    - `min_dy` (optional): Minimum output amount of `token_y` in its smallest on-chain units (reserved for `/api/v1/alex/swap`; currently ignored by `/api/v1/alex/quote`).
   - Example:
     ```bash
     curl -G 'https://<gateway-host>/api/v1/alex/quote' \
