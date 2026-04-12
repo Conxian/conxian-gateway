@@ -1066,14 +1066,14 @@ impl ZkcVerifier {
     /// well-formed and equal to `job_hash`. Any embedded or malformed `job_hash=` occurrences are
     /// treated as invalid and reject the entire commitment.
     fn state_root_commits_job_hash(state_root: &str, job_hash: &str) -> bool {
+        if !state_root.is_ascii() {
+            return false;
+        }
+
         let state_root = state_root.trim();
         let job_hash = job_hash.trim();
 
         if job_hash.len() != 64 || !job_hash.as_bytes().iter().all(|b| b.is_ascii_hexdigit()) {
-            return false;
-        }
-
-        if !state_root.is_ascii() {
             return false;
         }
 
@@ -1440,7 +1440,7 @@ mod tests {
 
     #[test]
     fn test_state_root_commits_job_hash_rejects_embedded_tag_prefix() {
-        let job_hash = "h".repeat(64);
+        let job_hash = "e".repeat(64);
         let state_root = format!("foo_job_hash={job_hash}");
         assert!(!ZkcVerifier::state_root_commits_job_hash(
             &state_root,
@@ -1450,7 +1450,7 @@ mod tests {
 
     #[test]
     fn test_state_root_commits_job_hash_rejects_embedded_tag_suffix() {
-        let job_hash = "i".repeat(64);
+        let job_hash = "f".repeat(64);
         let state_root = format!("job_hash={job_hash}_foo");
         assert!(!ZkcVerifier::state_root_commits_job_hash(
             &state_root,
