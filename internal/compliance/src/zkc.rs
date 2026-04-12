@@ -24,8 +24,8 @@ const MAX_INLINE_PUBLIC_INPUTS: usize = 8 * 1024;
 const TEE_DEVICE_ID_PREFIX: &str = "conxius-tee-";
 
 const ZKML_IMAGE_ID_HEX_LEN: usize = 64;
-const MAX_ZKML_RECEIPT_BYTES: usize = 512 * 1024;
-const MAX_ZKML_RECEIPT_ENCODED_LEN: usize = 2 + MAX_ZKML_RECEIPT_BYTES * 2;
+const MAX_ZKML_RECEIPT_BYTES: usize = MAX_ZKML_FIELD_LEN;
+const MAX_ZKML_RECEIPT_ENCODED_LEN: usize = MAX_ZKML_FIELD_LEN;
 
 pub struct ZkcVerifier {
     secp: Secp256k1<secp256k1::All>,
@@ -208,9 +208,9 @@ impl ZkcVerifier {
             ));
         }
         if receipt_value.len() > MAX_ZKML_RECEIPT_ENCODED_LEN {
-            return Err(ConxianError::Compliance(
-                "Invalid receipt: payload too large".to_string(),
-            ));
+            return Err(ConxianError::Compliance(format!(
+                "Invalid receipt: payload too large (max {MAX_ZKML_RECEIPT_BYTES} bytes decoded)"
+            )));
         }
 
         let receipt_bytes =
@@ -1082,28 +1082,7 @@ impl ZkcVerifier {
 
     #[allow(dead_code)]
     fn decode_base64_or_hex(label: &str, value: &str) -> ConxianResult<Vec<u8>> {
-        let value = value.trim();
-        if let Some(hex_body) = value
-            .strip_prefix("0x")
-            .or_else(|| value.strip_prefix("0X"))
-        {
-            if hex_body.is_empty() {
-                return Err(ConxianError::Compliance(format!(
-                    "Invalid hex format for {label}: too short"
-                )));
-            }
-            Vec::from_hex(hex_body).map_err(|e| {
-                ConxianError::Compliance(format!("Invalid hex format for {label}: {e}"))
-            })
-        } else if value.chars().all(|c| c.is_ascii_hexdigit()) {
-            Err(ConxianError::Compliance(format!(
-                "Ambiguous encoding for {label}: hex values must be prefixed with 0x"
-            )))
-        } else {
-            // Default to base64
-            base64::Engine::decode(&base64::engine::general_purpose::STANDARD, value)
-                .map_err(|e| ConxianError::Compliance(format!("Invalid base64 for {label}: {e}")))
-        }
+        Self::decode_base64_or_hex_with_max_decoded_len(label, value, None)
     }
 
     fn parse_zkml_image_id(image_id_hex: &str) -> ConxianResult<[u32; 8]> {
@@ -1136,15 +1115,24 @@ impl ZkcVerifier {
         value: &str,
         max_decoded_len: usize,
     ) -> ConxianResult<Vec<u8>> {
+        Self::decode_base64_or_hex_with_max_decoded_len(label, value, Some(max_decoded_len))
+    }
+
+    fn decode_base64_or_hex_with_max_decoded_len(
+        label: &str,
+        value: &str,
+        max_decoded_len: Option<usize>,
+    ) -> ConxianResult<Vec<u8>> {
         let value = value.trim();
-        if value.starts_with("0x") || value.starts_with("0X") {
-            if value.len() < 3 {
+        if let Some(hex_body) = value
+            .strip_prefix("0x")
+            .or_else(|| value.strip_prefix("0X"))
+        {
+            if hex_body.is_empty() {
                 return Err(ConxianError::Compliance(format!(
                     "Invalid hex format for {label}: too short"
                 )));
             }
-
-            let hex_body = &value[2..];
             if hex_body.len() % 2 != 0 {
                 return Err(ConxianError::Compliance(format!(
                     "Invalid hex format for {label}: odd length"
@@ -1152,10 +1140,12 @@ impl ZkcVerifier {
             }
 
             let decoded_len = hex_body.len() / 2;
-            if decoded_len > max_decoded_len {
-                return Err(ConxianError::Compliance(format!(
-                    "Invalid hex format for {label}: too large"
-                )));
+            if let Some(max_decoded_len) = max_decoded_len {
+                if decoded_len > max_decoded_len {
+                    return Err(ConxianError::Compliance(format!(
+                        "Invalid {label}: payload too large (max {max_decoded_len} bytes decoded)"
+                    )));
+                }
             }
 
             let mut out = vec![0u8; decoded_len];
@@ -1167,7 +1157,7 @@ impl ZkcVerifier {
             Err(ConxianError::Compliance(format!(
                 "Ambiguous encoding for {label}: hex values must be prefixed with 0x"
             )))
-        } else {
+        } else if let Some(max_decoded_len) = max_decoded_len {
             let max_possible_decoded_len = value.len().div_ceil(4).saturating_mul(3);
             let mut out = vec![0u8; std::cmp::min(max_possible_decoded_len, max_decoded_len)];
             let n = base64::Engine::decode_slice(
@@ -1176,23 +1166,26 @@ impl ZkcVerifier {
                 &mut out,
             )
             .map_err(|e| match e {
-                base64::DecodeSliceError::OutputSliceTooSmall => {
-                    ConxianError::Compliance(format!("Invalid base64 for {label}: too large"))
-                }
+                base64::DecodeSliceError::OutputSliceTooSmall => ConxianError::Compliance(format!(
+                    "Invalid {label}: payload too large (max {max_decoded_len} bytes decoded)"
+                )),
                 base64::DecodeSliceError::DecodeError(e) => {
                     ConxianError::Compliance(format!("Invalid base64 for {label}: {e}"))
                 }
             })?;
             out.truncate(n);
             Ok(out)
+        } else {
+            base64::Engine::decode(&base64::engine::general_purpose::STANDARD, value)
+                .map_err(|e| ConxianError::Compliance(format!("Invalid base64 for {label}: {e}")))
         }
     }
 
     fn decode_risc0_receipt(bytes: &[u8]) -> ConxianResult<Receipt> {
         if bytes.len() > MAX_ZKML_RECEIPT_BYTES {
-            return Err(ConxianError::Compliance(
-                "Invalid receipt: payload too large".to_string(),
-            ));
+            return Err(ConxianError::Compliance(format!(
+                "Invalid receipt: payload too large (max {MAX_ZKML_RECEIPT_BYTES} bytes decoded)"
+            )));
         }
 
         if let Ok(receipt) = Receipt::try_from_slice(bytes) {
@@ -1462,25 +1455,11 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_zkml_rejects_oversized_receipt_decoded_len() {
-        let verifier = ZkcVerifier::new();
-        let receipt_bytes = vec![0u8; MAX_ZKML_RECEIPT_BYTES + 2];
-        let receipt =
-            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, receipt_bytes);
-        let proof = ZkmlProof {
-            device_id: "conxius-test".to_string(),
-            image_id: "0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
-                .to_string(),
-            receipt,
-            receipt_hash: "00".repeat(32),
-            public_inputs: "foo".to_string(),
-            journal: "bar".to_string(),
-        };
-
-        let err = verifier.verify_zkml(&proof).unwrap_err();
+    fn test_decode_base64_or_hex_bounded_rejects_oversized_base64() {
+        let err = ZkcVerifier::decode_base64_or_hex_bounded("receipt", "Zm9v", 2).unwrap_err();
         match err {
             ConxianError::Compliance(message) => {
-                assert!(message.contains("too large"));
+                assert!(message.contains("payload too large"));
             }
             other => panic!("expected compliance error, got {other:?}"),
         }
