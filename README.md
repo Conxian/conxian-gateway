@@ -76,6 +76,7 @@ The gateway exposes an institutional REST API at `/api/v1`. Most endpoints requi
       --data-urlencode 'factor=1' \
       --data-urlencode 'min_dy=1'
     ```
+  - Response: `{ "dy": "<integer>" }` (quoted output amount in the smallest/base units of `token_y`, returned as a string).
 - `POST /api/v1/alex/swap`: Execute ALEX swap operation (Authorized; returns `501` until signer integration exists).
 - `POST /api/v1/bounties/payouts/toggle`: Maintainer control for bounty activation (Authorized).
 - `POST /api/v1/ingress/iso20022`: Ingest ISO 20022 settlement signals (Authorized).
