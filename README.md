@@ -49,7 +49,7 @@ The gateway exposes an institutional REST API at `/api/v1`. Most endpoints requi
 - `POST /api/v1/iso20022/payment`: Generate standardized ISO 20022 egress messages (Authorized).
 - `POST /api/v1/fiat/session`: Initiate fiat on-ramp sessions (Ramp, Investec, etc.) (Authorized).
 - `POST /api/v1/otp/send`: Send stateless OTP via Infobip (Authorized).
-- `POST /api/v1/alex/quote`: Fetch swap quote from ALEX DEX (Authorized).
+- `GET /api/v1/alex/quote`: Fetch swap quote from ALEX DEX (Authorized).
 - `POST /api/v1/alex/swap`: Execute ALEX swap operation (Authorized; returns `501` until signer integration exists).
 - `POST /api/v1/bounties/payouts/toggle`: Maintainer control for bounty activation (Authorized).
 - `POST /api/v1/ingress/iso20022`: Ingest ISO 20022 settlement signals (Authorized).
