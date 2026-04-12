@@ -1,6 +1,6 @@
-use bincode::Options;
 use bitcoin::hex::FromHex;
 use bitcoin::secp256k1::{self, ecdsa::Signature, Message, PublicKey, Secp256k1};
+use borsh::BorshDeserialize;
 use chrono;
 use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
 use conxian_core::{
@@ -18,9 +18,14 @@ use uuid;
 type HmacSha256 = Hmac<Sha256>;
 
 const INGRESS_SIGNATURE_HEX_LEN: usize = 64;
+pub const ATTESTATION_SIGNING_DOMAIN: &[u8] = b"conxius-attestation:v1";
+const MAX_ZKML_FIELD_LEN: usize = 4 * 1024 * 1024;
+const MAX_INLINE_PUBLIC_INPUTS: usize = 8 * 1024;
+const TEE_DEVICE_ID_PREFIX: &str = "conxius-tee-";
+
 const ZKML_IMAGE_ID_HEX_LEN: usize = 64;
-const MAX_ZKML_RECEIPT_ENCODED_LEN: usize = 1024 * 1024;
 const MAX_ZKML_RECEIPT_BYTES: usize = 512 * 1024;
+const MAX_ZKML_RECEIPT_ENCODED_LEN: usize = 2 + MAX_ZKML_RECEIPT_BYTES * 2;
 
 pub struct ZkcVerifier {
     secp: Secp256k1<secp256k1::All>,
@@ -61,13 +66,25 @@ impl ZkcVerifier {
         Ok(mac.verify_slice(&sig_bytes).is_ok())
     }
 
-    pub fn verify_attestation(&self, request: AttestationRequest) -> ConxianResult<bool> {
+    pub fn verify_attestation(&self, request: &AttestationRequest) -> ConxianResult<bool> {
         match request {
-            AttestationRequest::Ecdsa(a) => self.verify(&a),
-            AttestationRequest::Schnorr(a) => self.verify_schnorr(&a),
-            AttestationRequest::Zkml(p) => self.verify_zkml(&p),
-            AttestationRequest::BitVm(a) => self.verify_bitvm(&a),
+            AttestationRequest::Ecdsa(a) => self.verify(a),
+            AttestationRequest::Schnorr(a) => self.verify_schnorr(a),
+            AttestationRequest::Zkml(p) => self.verify_zkml(p),
+            AttestationRequest::BitVm(a) => self.verify_bitvm(a),
         }
+    }
+
+    fn attestation_message(device_id: &str, payload: &str) -> ConxianResult<Message> {
+        let mut hasher = Sha256::new();
+        hasher.update(ATTESTATION_SIGNING_DOMAIN);
+        hasher.update(device_id.as_bytes());
+        hasher.update([0u8]);
+        hasher.update(payload.as_bytes());
+
+        let digest = hasher.finalize();
+        Message::from_digest_slice(&digest)
+            .map_err(|_| ConxianError::Security("Internal verification error".into()))
     }
 
     pub fn verify(&self, attestation: &Attestation) -> ConxianResult<bool> {
@@ -78,6 +95,7 @@ impl ZkcVerifier {
             ));
         }
 
+        #[cfg(feature = "mock-integrations")]
         if attestation.device_id.contains("-mock-") {
             return Ok(true);
         }
@@ -98,9 +116,7 @@ impl ZkcVerifier {
             ConxianError::Security("Attestation verification failed: invalid signature data".into())
         })?;
 
-        let digest = Sha256::digest(attestation.payload.as_bytes());
-        let message = Message::from_digest_slice(&digest)
-            .map_err(|_| ConxianError::Security("Internal verification error".into()))?;
+        let message = Self::attestation_message(&attestation.device_id, &attestation.payload)?;
 
         Ok(self
             .secp
@@ -132,9 +148,7 @@ impl ZkcVerifier {
             ConxianError::Security("Attestation verification failed: invalid signature data".into())
         })?;
 
-        let digest = Sha256::digest(attestation.payload.as_bytes());
-        let message = Message::from_digest_slice(&digest)
-            .map_err(|_| ConxianError::Security("Internal verification error".into()))?;
+        let message = Self::attestation_message(&attestation.device_id, &attestation.payload)?;
 
         Ok(self
             .secp
@@ -150,36 +164,130 @@ impl ZkcVerifier {
         }
 
         info!("Verifying ZKML proof for device: {}", proof.device_id);
-
-        let receipt_value = proof.receipt.trim();
-        if receipt_value.len() > MAX_ZKML_RECEIPT_ENCODED_LEN {
+        let receipt_hash = proof.receipt_hash.trim();
+        let receipt_hash = receipt_hash
+            .strip_prefix("0x")
+            .or_else(|| receipt_hash.strip_prefix("0X"))
+            .unwrap_or(receipt_hash);
+        if !Self::is_32_byte_hex(receipt_hash) {
             return Err(ConxianError::Compliance(
-                "Invalid proof receipt format".into(),
+                "Invalid receipt_hash: expected 32-byte hex string".to_string(),
             ));
         }
 
-        let receipt_bytes =
-            Self::decode_base64_or_hex_bounded("receipt", receipt_value, MAX_ZKML_RECEIPT_BYTES)
-                .map_err(|e| {
-                    warn!(error = %e, "ZKML receipt decoding failed");
-                    ConxianError::Compliance("Invalid proof receipt format".to_string())
-                })?;
+        let public_inputs_str = proof.public_inputs.trim();
+        if public_inputs_str.is_empty() {
+            return Err(ConxianError::Compliance(
+                "ZKML verification failed: public_inputs cannot be empty".to_string(),
+            ));
+        }
+        if public_inputs_str.len() > MAX_ZKML_FIELD_LEN {
+            return Err(ConxianError::Compliance(
+                "Invalid public_inputs: payload too large".to_string(),
+            ));
+        }
 
-        let receipt: Receipt = bincode::DefaultOptions::new()
-            .with_limit(MAX_ZKML_RECEIPT_BYTES as u64)
-            .reject_trailing_bytes()
-            .deserialize(&receipt_bytes)
-            .map_err(|e| {
-                warn!(error = %e, "ZKML receipt deserialization failed");
-                ConxianError::Compliance("Invalid proof receipt format".to_string())
-            })?;
+        let journal_str = proof.journal.trim();
+        if journal_str.is_empty() {
+            return Err(ConxianError::Compliance(
+                "ZKML verification failed: journal cannot be empty".to_string(),
+            ));
+        }
+        if journal_str.len() > MAX_ZKML_FIELD_LEN {
+            return Err(ConxianError::Compliance(
+                "Invalid journal: payload too large".to_string(),
+            ));
+        }
 
         let image_id = Self::parse_zkml_image_id(&proof.image_id)?;
+
+        let receipt_value = proof.receipt.trim();
+        if receipt_value.is_empty() {
+            return Err(ConxianError::Compliance(
+                "ZKML verification failed: receipt cannot be empty".to_string(),
+            ));
+        }
+        if receipt_value.len() > MAX_ZKML_RECEIPT_ENCODED_LEN {
+            return Err(ConxianError::Compliance(
+                "Invalid receipt: payload too large".to_string(),
+            ));
+        }
+
+        let receipt_bytes = Self::decode_base64_or_hex_bounded(
+            "receipt",
+            receipt_value,
+            MAX_ZKML_RECEIPT_BYTES,
+        )?;
+        let computed_receipt_hash = hex::encode(Sha256::digest(&receipt_bytes));
+        if !computed_receipt_hash.eq_ignore_ascii_case(receipt_hash) {
+            return Err(ConxianError::Security(
+                "ZKML verification failed: receipt_hash mismatch".to_string(),
+            ));
+        }
+
+        let receipt = Self::decode_risc0_receipt(&receipt_bytes)?;
 
         receipt.verify(image_id).map_err(|e| {
             warn!(error = %e, "ZKML proof verification failed");
             ConxianError::Security("Cryptographic proof verification failed".to_string())
         })?;
+
+        let receipt_journal = receipt.journal.bytes.as_slice();
+
+        if receipt_journal != journal_str.as_bytes() {
+            let decoded_journal_bytes = Self::decode_base64_or_hex("journal", journal_str)?;
+            if receipt_journal != decoded_journal_bytes.as_slice() {
+                return Err(ConxianError::Security(
+                    "ZKML verification failed: journal mismatch".to_string(),
+                ));
+            }
+        }
+
+        let public_inputs_raw = public_inputs_str.as_bytes();
+        let public_inputs_raw_hash_hex = hex::encode(Sha256::digest(public_inputs_raw));
+        let public_inputs_raw_hash_hex_upper = public_inputs_raw_hash_hex.to_ascii_uppercase();
+
+        let mut public_inputs_ok =
+            Self::contains_subslice(receipt_journal, public_inputs_raw_hash_hex.as_bytes())
+                || Self::contains_subslice(
+                    receipt_journal,
+                    public_inputs_raw_hash_hex_upper.as_bytes(),
+                );
+
+        if !public_inputs_ok && public_inputs_raw.len() <= MAX_INLINE_PUBLIC_INPUTS {
+            public_inputs_ok = Self::contains_subslice(receipt_journal, public_inputs_raw);
+        }
+
+        if !public_inputs_ok {
+            let public_inputs_decoded =
+                Self::decode_base64_or_hex("public_inputs", public_inputs_str).ok();
+
+            if let Some(public_inputs_decoded) = public_inputs_decoded {
+                let public_inputs_decoded_hash_hex =
+                    hex::encode(Sha256::digest(&public_inputs_decoded));
+                let public_inputs_decoded_hash_hex_upper =
+                    public_inputs_decoded_hash_hex.to_ascii_uppercase();
+
+                public_inputs_ok = Self::contains_subslice(
+                    receipt_journal,
+                    public_inputs_decoded_hash_hex.as_bytes(),
+                ) || Self::contains_subslice(
+                    receipt_journal,
+                    public_inputs_decoded_hash_hex_upper.as_bytes(),
+                );
+
+                if !public_inputs_ok && public_inputs_decoded.len() <= MAX_INLINE_PUBLIC_INPUTS {
+                    public_inputs_ok =
+                        Self::contains_subslice(receipt_journal, public_inputs_decoded.as_slice());
+                }
+            }
+        }
+
+        if !public_inputs_ok {
+            return Err(ConxianError::Security(
+                "ZKML verification failed: journal missing public input commitment".to_string(),
+            ));
+        }
         Ok(true)
     }
 
@@ -485,24 +593,22 @@ impl ZkcVerifier {
         let (device_id, signed_payload) = match attestation {
             AttestationRequest::Ecdsa(a) => (&a.device_id, &a.payload),
             AttestationRequest::Schnorr(a) => (&a.device_id, &a.payload),
-            _ => {
-                return Err(ConxianError::Security(
-                    "Unsupported attestation type for settlement trigger".into(),
-                ))
-            }
+            _ => return Ok(false),
         };
 
-        if !device_id.starts_with("conxius-tee-") {
-            return Err(ConxianError::Security(
-                "Access denied: non-TEE device not allowed".into(),
-            ));
+        if !device_id.starts_with(TEE_DEVICE_ID_PREFIX) {
+            return Ok(false);
         }
 
         if signed_payload != payload_hash {
             return Ok(false);
         }
 
-        self.verify_attestation(attestation.clone())
+        match self.verify_attestation(attestation) {
+            Ok(valid) => Ok(valid),
+            Err(ConxianError::Security(_)) => Ok(false),
+            Err(e) => Err(e),
+        }
     }
 
     fn parse_pacs008_v8(&self, xml: &str) -> ConxianResult<Iso20022Fields> {
@@ -534,7 +640,7 @@ impl ZkcVerifier {
 
                     let name = e.local_name().as_ref().to_vec();
                     if name.as_slice() == b"IntrBkSttlmAmt" && currency.is_none() {
-                        for attr in e.attributes().with_checks(false) {
+                        for attr in e.attributes() {
                             let attr = attr.map_err(|e| {
                                 ConxianError::Compliance(format!("Invalid XML attribute: {e}"))
                             })?;
@@ -567,7 +673,7 @@ impl ZkcVerifier {
 
                     let name = e.local_name().as_ref().to_vec();
                     if name.as_slice() == b"IntrBkSttlmAmt" && currency.is_none() {
-                        for attr in e.attributes().with_checks(false) {
+                        for attr in e.attributes() {
                             let attr = attr.map_err(|e| {
                                 ConxianError::Compliance(format!("Invalid XML attribute: {e}"))
                             })?;
@@ -712,28 +818,20 @@ impl ZkcVerifier {
             return u64::try_from(dt.with_timezone(&Utc).timestamp()).ok();
         }
 
-        if let Ok(dt) = DateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S%.f%:z") {
-            return u64::try_from(dt.with_timezone(&Utc).timestamp()).ok();
+        const FIXED_OFFSET_FORMATS: [&str; 2] = ["%Y-%m-%dT%H:%M:%S%.f%z", "%Y-%m-%dT%H:%M:%S%z"];
+
+        for fmt in FIXED_OFFSET_FORMATS {
+            if let Ok(dt) = DateTime::parse_from_str(value, fmt) {
+                return u64::try_from(dt.with_timezone(&Utc).timestamp()).ok();
+            }
         }
 
-        if let Ok(dt) = DateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S%:z") {
-            return u64::try_from(dt.with_timezone(&Utc).timestamp()).ok();
-        }
+        const NAIVE_FORMATS: [&str; 2] = ["%Y-%m-%dT%H:%M:%S%.f", "%Y-%m-%dT%H:%M:%S"];
 
-        if let Ok(dt) = DateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S%.f%z") {
-            return u64::try_from(dt.with_timezone(&Utc).timestamp()).ok();
-        }
-
-        if let Ok(dt) = DateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S%z") {
-            return u64::try_from(dt.with_timezone(&Utc).timestamp()).ok();
-        }
-
-        if let Ok(dt) = NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S%.f") {
-            return u64::try_from(dt.and_utc().timestamp()).ok();
-        }
-
-        if let Ok(dt) = NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S") {
-            return u64::try_from(dt.and_utc().timestamp()).ok();
+        for fmt in NAIVE_FORMATS {
+            if let Ok(dt) = NaiveDateTime::parse_from_str(value, fmt) {
+                return u64::try_from(dt.and_utc().timestamp()).ok();
+            }
         }
 
         if let Ok(date) = NaiveDate::parse_from_str(value, "%Y-%m-%d") {
@@ -922,7 +1020,7 @@ impl ZkcVerifier {
         }
 
         // Verify Passkey attestation
-        self.verify_attestation(receipt.passkey_attestation.clone())
+        self.verify_attestation(&receipt.passkey_attestation)
     }
 
     pub fn verify_job_card_settlement(
@@ -943,11 +1041,7 @@ impl ZkcVerifier {
         let job_card_json =
             serde_json::to_string(job_card).map_err(|e| ConxianError::Internal(e.to_string()))?;
         let job_hash = hex::encode(Sha256::digest(job_card_json.as_bytes()));
-
-        let committed = bitvm_attestation
-            .state_root
-            .split(|c: char| !c.is_ascii_hexdigit())
-            .any(|token| token.len() == job_hash.len() && token.eq_ignore_ascii_case(&job_hash));
+        let committed = Self::state_root_commits_job_hash(&bitvm_attestation.state_root, &job_hash);
 
         if !committed {
             return Err(ConxianError::Security(
@@ -956,6 +1050,37 @@ impl ZkcVerifier {
         }
 
         Ok(true)
+    }
+
+    /// Returns true if `state_root` commits to `job_hash`.
+    ///
+    /// If `state_root` contains a `job_hash=` tag (case-insensitive), this requires an exact match
+    /// of the tagged value and does not fall back to scanning for bare 64-hex tokens.
+    ///
+    /// When no `job_hash=` tag is present, this falls back to scanning for a standalone hex token
+    /// equal (case-insensitive) to `job_hash`.
+    fn state_root_commits_job_hash(state_root: &str, job_hash: &str) -> bool {
+        let state_root_lower = state_root.to_ascii_lowercase();
+        let job_hash_lower = job_hash.to_ascii_lowercase();
+
+        let tag = "job_hash=";
+        if state_root_lower.contains(tag) {
+            let tagged = format!("{tag}{job_hash_lower}");
+            for (idx, _) in state_root_lower.match_indices(&tagged) {
+                let after = idx + tagged.len();
+                if after == state_root_lower.len()
+                    || !state_root_lower.as_bytes()[after].is_ascii_hexdigit()
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        state_root
+            .split(|c: char| !c.is_ascii_hexdigit())
+            .any(|token| token.len() == job_hash.len() && token.eq_ignore_ascii_case(job_hash))
     }
 
     #[allow(dead_code)]
@@ -1065,6 +1190,52 @@ impl ZkcVerifier {
             Ok(out)
         }
     }
+
+    fn decode_risc0_receipt(bytes: &[u8]) -> ConxianResult<Receipt> {
+        if bytes.len() > MAX_ZKML_RECEIPT_BYTES {
+            return Err(ConxianError::Compliance(
+                "Invalid receipt: payload too large".to_string(),
+            ));
+        }
+
+        if let Ok(receipt) = Receipt::try_from_slice(bytes) {
+            return Ok(receipt);
+        }
+
+        let words = Self::bytes_to_words_le(bytes)?;
+        risc0_zkvm::serde::from_slice::<Receipt, u32>(&words)
+            .map_err(|e| ConxianError::Compliance(format!("Invalid receipt encoding: {e}")))
+    }
+
+    fn bytes_to_words_le(bytes: &[u8]) -> ConxianResult<Vec<u32>> {
+        if !bytes.len().is_multiple_of(4) {
+            return Err(ConxianError::Compliance(
+                "Invalid receipt encoding: expected 4-byte word alignment".to_string(),
+            ));
+        }
+
+        let mut words = Vec::with_capacity(bytes.len() / 4);
+        for chunk in bytes.chunks_exact(4) {
+            words.push(u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
+        }
+        Ok(words)
+    }
+
+    fn contains_subslice(haystack: &[u8], needle: &[u8]) -> bool {
+        if needle.is_empty() {
+            return false;
+        }
+
+        memchr::memmem::find(haystack, needle).is_some()
+    }
+
+    fn is_even_len_hex(value: &str) -> bool {
+        value.len().is_multiple_of(2) && value.as_bytes().iter().all(|b| b.is_ascii_hexdigit())
+    }
+
+    fn is_32_byte_hex(value: &str) -> bool {
+        value.len() == 64 && Self::is_even_len_hex(value)
+    }
 }
 
 struct Iso20022Fields {
@@ -1075,6 +1246,73 @@ struct Iso20022Fields {
     sender: String,
     receiver: String,
     settled_at: Option<u64>,
+}
+
+/// Industry Enhancement: Sovereign Commitment Hooks (CON-329).
+/// Decouples compliance logic from Web2 persistence.
+pub trait SovereignCommit {
+    fn commit_settlement(
+        &self,
+        envelope: &conxian_core::SettlementEnvelope,
+    ) -> conxian_core::ConxianResult<()>;
+    fn commit_to_tableland(
+        &self,
+        table: &str,
+        data: serde_json::Value,
+    ) -> conxian_core::ConxianResult<()>;
+}
+
+impl SovereignCommit for ZkcVerifier {
+    fn commit_settlement(
+        &self,
+        envelope: &conxian_core::SettlementEnvelope,
+    ) -> conxian_core::ConxianResult<()> {
+        info!(
+            "Sovereign commit initiated for settlement: {}",
+            envelope.payload.transaction_id
+        );
+
+        // Phase 5 Clean Break: Redirecting from Neon/Supabase to Tableland
+        let table = "cxn_settlements_v1";
+        let data = serde_json::to_value(envelope).map_err(|e| {
+            ConxianError::Compliance(format!("serialize settlement envelope failed: {e}"))
+        })?;
+
+        if let Err(e) = self.commit_to_tableland(table, data) {
+            warn!(
+                table = %table,
+                transaction_id = %envelope.payload.transaction_id,
+                "Tableland commit failed: {e}"
+            );
+            return Err(e);
+        }
+
+        Ok(())
+    }
+
+    #[cfg(any(test, feature = "mock-integrations"))]
+    fn commit_to_tableland(
+        &self,
+        table: &str,
+        data: serde_json::Value,
+    ) -> conxian_core::ConxianResult<()> {
+        // Simulation of decentralized SQL commitment
+        info!(table = %table, "Committing state to Tableland decentralized SQL...");
+        // In production, this would use a Tableland SDK or gateway
+        let _ = data;
+        Ok(())
+    }
+
+    #[cfg(not(any(test, feature = "mock-integrations")))]
+    fn commit_to_tableland(
+        &self,
+        table: &str,
+        _data: serde_json::Value,
+    ) -> conxian_core::ConxianResult<()> {
+        Err(ConxianError::Internal(format!(
+            "Tableland commit is not enabled for table '{table}'. Build with feature 'mock-integrations' for tests/sims, or wire a production Tableland client."
+        )))
+    }
 }
 
 #[cfg(test)]
@@ -1141,14 +1379,8 @@ mod tests {
         assert_eq!(
             image_id,
             [
-                0x0302_0100,
-                0x0706_0504,
-                0x0b0a_0908,
-                0x0f0e_0d0c,
-                0x1312_1110,
-                0x1716_1514,
-                0x1b1a_1918,
-                0x1f1e_1d1c,
+                0x03020100, 0x07060504, 0x0b0a0908, 0x0f0e0d0c, 0x13121110, 0x17161514,
+                0x1b1a1918, 0x1f1e1d1c,
             ]
         );
     }
@@ -1163,8 +1395,8 @@ mod tests {
         assert_eq!(
             image_id,
             [
-                0x03020100, 0x07060504, 0x0b0a0908, 0x0f0e0d0c, 0x13121110, 0x17161514, 0x1b1a1918,
-                0x1f1e1d1c,
+                0x03020100, 0x07060504, 0x0b0a0908, 0x0f0e0d0c, 0x13121110, 0x17161514,
+                0x1b1a1918, 0x1f1e1d1c,
             ]
         );
     }
@@ -1179,8 +1411,8 @@ mod tests {
         assert_eq!(
             image_id,
             [
-                0x03020100, 0x07060504, 0x0b0a0908, 0x0f0e0d0c, 0x13121110, 0x17161514, 0x1b1a1918,
-                0x1f1e1d1c,
+                0x03020100, 0x07060504, 0x0b0a0908, 0x0f0e0d0c, 0x13121110, 0x17161514,
+                0x1b1a1918, 0x1f1e1d1c,
             ]
         );
     }
@@ -1215,17 +1447,18 @@ mod tests {
         let verifier = ZkcVerifier::new();
         let proof = ZkmlProof {
             device_id: "conxius-test".to_string(),
-            image_id: "".to_string(),
+            image_id: "0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+                .to_string(),
             receipt: "A".repeat(MAX_ZKML_RECEIPT_ENCODED_LEN + 1),
-            receipt_hash: "".to_string(),
-            public_inputs: "".to_string(),
-            journal: "".to_string(),
+            receipt_hash: "00".repeat(32),
+            public_inputs: "foo".to_string(),
+            journal: "bar".to_string(),
         };
 
         let err = verifier.verify_zkml(&proof).unwrap_err();
         match err {
             ConxianError::Compliance(message) => {
-                assert!(message.contains("Invalid proof receipt format"));
+                assert!(message.contains("payload too large"));
             }
             other => panic!("expected compliance error, got {other:?}"),
         }
@@ -1239,17 +1472,18 @@ mod tests {
             base64::Engine::encode(&base64::engine::general_purpose::STANDARD, receipt_bytes);
         let proof = ZkmlProof {
             device_id: "conxius-test".to_string(),
-            image_id: "".to_string(),
+            image_id: "0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+                .to_string(),
             receipt,
-            receipt_hash: "".to_string(),
-            public_inputs: "".to_string(),
-            journal: "".to_string(),
+            receipt_hash: "00".repeat(32),
+            public_inputs: "foo".to_string(),
+            journal: "bar".to_string(),
         };
 
         let err = verifier.verify_zkml(&proof).unwrap_err();
         match err {
             ConxianError::Compliance(message) => {
-                assert!(message.contains("Invalid proof receipt format"));
+                assert!(message.contains("too large"));
             }
             other => panic!("expected compliance error, got {other:?}"),
         }

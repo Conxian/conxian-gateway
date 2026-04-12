@@ -30,3 +30,8 @@ Thank you for your interest in contributing to Conxian! We welcome contributions
 
 ## Code of Conduct
 We are committed to a welcoming and inclusive community. Please be respectful and professional in all interactions.
+
+## Mainnet Readiness & Branch Policy
+- **main**: Strictly Mainnet-only production code. No stubs, mocks, or placeholders.
+- **staged**: Mainnet production validation. All promotion to `main` must pass through `staged` with full mainnet-acceptance evidence.
+- **dev**: Testnet-only logic and non-production validation.
