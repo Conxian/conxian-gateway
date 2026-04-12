@@ -64,7 +64,7 @@ The gateway exposes an institutional REST API at `/api/v1`. Most endpoints requi
     - `token_x`: Input token contract principal (passed through to ALEX as `token-x`, e.g. `SP...token-x`).
     - `token_y`: Output token contract principal (passed through to ALEX as `token-y`, e.g. `SP...token-y`).
     - `amount`: Integer amount of `token_x` in its smallest on-chain units (no decimal point; passed through to ALEX as `amount`).
-    - `factor` (required): Integer factor (required by the swap request schema; currently ignored by `/api/v1/alex/quote`). Use `1`.
+    - `factor` (required): Integer factor (required by the swap request schema; currently ignored by `/api/v1/alex/quote`). Use `1`. If omitted, the gateway rejects the request with `400`.
     - `min_dy` (optional): Integer minimum output amount of `token_y` in its smallest on-chain units (accepted but currently ignored by `/api/v1/alex/quote`).
   - Example:
     ```bash
@@ -74,7 +74,7 @@ The gateway exposes an institutional REST API at `/api/v1`. Most endpoints requi
       --data-urlencode 'token_y=SP3FBR2AGKQK4H5JH8S0T2NQ9K0D8G2Q1YJ3Q0Y1.token-y' \
       --data-urlencode 'amount=1000000' \
       --data-urlencode 'factor=1' \
-      --data-urlencode 'min_dy=1'
+      --data-urlencode 'min_dy=1' # NOTE: accepted but currently ignored by /api/v1/alex/quote
     ```
   - Response: `{ "dy": "<integer>" }` (quoted output amount in the smallest/base units of `token_y`, returned as a string).
 - `POST /api/v1/alex/swap`: Execute ALEX swap operation (Authorized; returns `501` until signer integration exists).
