@@ -24,8 +24,8 @@ const MAX_INLINE_PUBLIC_INPUTS: usize = 8 * 1024;
 const TEE_DEVICE_ID_PREFIX: &str = "conxius-tee-";
 
 const ZKML_IMAGE_ID_HEX_LEN: usize = 64;
-const MAX_ZKML_RECEIPT_BYTES: usize = MAX_ZKML_FIELD_LEN;
 const MAX_ZKML_RECEIPT_ENCODED_LEN: usize = MAX_ZKML_FIELD_LEN;
+const MAX_ZKML_RECEIPT_BYTES: usize = MAX_ZKML_RECEIPT_ENCODED_LEN * 3 / 4;
 
 pub struct ZkcVerifier {
     secp: Secp256k1<secp256k1::All>,
@@ -209,7 +209,7 @@ impl ZkcVerifier {
         }
         if receipt_value.len() > MAX_ZKML_RECEIPT_ENCODED_LEN {
             return Err(ConxianError::Compliance(format!(
-                "Invalid receipt: payload too large (max {MAX_ZKML_RECEIPT_BYTES} bytes decoded)"
+                "Invalid receipt: payload too large (max {MAX_ZKML_RECEIPT_ENCODED_LEN} characters)"
             )));
         }
 
