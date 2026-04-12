@@ -1480,8 +1480,10 @@ mod tests {
 
     #[test]
     fn test_state_root_commits_job_hash_rejects_non_ascii_whitespace_wrapping() {
+        const EM_SPACE: char = '\u{2003}';
+
         let job_hash = "e".repeat(64);
-        let state_root = format!("\u{2003}job_hash={job_hash}\u{2003}");
+        let state_root = format!("{ws}job_hash={job_hash}{ws}", ws = EM_SPACE);
         assert!(!ZkcVerifier::state_root_commits_job_hash(
             &state_root,
             &job_hash
