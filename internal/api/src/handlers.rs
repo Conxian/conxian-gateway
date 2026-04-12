@@ -6,11 +6,11 @@ use axum::{
     Json,
 };
 use compliance::zkc::SovereignCommit;
-use conxian_core::{AttestationRequest, SettlementEnvelope, SettlementProposal};
+use conxian_core::{AttestationRequest, ConxianError, SettlementEnvelope, SettlementProposal};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 const TEE_ATTESTATION_HEADER: &str = "x-tee-attestation";
 const SETTLEMENT_LOG_MAX_ENTRIES: usize = 1000;
@@ -504,11 +504,18 @@ fn verify_tee_settlement_attestation(
                 Json(json!({ "error": "Invalid TEE attestation" })),
             ));
         }
-        Err(e) => {
-            warn!(error = %e, "TEE settlement attestation verification error");
+        Err(e @ ConxianError::Security(_)) => {
+            warn!(error = %e, "TEE settlement attestation rejected");
             return Err((
                 StatusCode::UNAUTHORIZED,
                 Json(json!({ "error": "Invalid TEE attestation" })),
+            ));
+        }
+        Err(e) => {
+            error!(error = %e, "TEE settlement attestation verification error");
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "TEE attestation verification failed" })),
             ));
         }
     }

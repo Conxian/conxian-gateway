@@ -1,6 +1,7 @@
 use api::{configure_routes, new_settlement_log, AppState};
 use axum::http::StatusCode;
 use axum_test::TestServer;
+use compliance::zkc::ATTESTATION_SIGNING_DOMAIN;
 use compliance::{IdentityManager, ZkcVerifier};
 use conxian_core::{GatewayState, SharedState};
 use engine::stacks::alex::SimulatedAlexClient;
@@ -65,7 +66,13 @@ async fn test_offline_pos_blackout_reconciliation() {
     let public_key = PublicKey::from_secret_key(&secp, &secret_key);
     let public_key_hex = hex::encode(public_key.serialize());
 
-    let digest = Sha256::digest(passkey_payload.as_bytes());
+    let mut hasher = Sha256::new();
+    hasher.update(ATTESTATION_SIGNING_DOMAIN);
+    hasher.update(device_id.as_bytes());
+    hasher.update([0u8]);
+    hasher.update(passkey_payload.as_bytes());
+
+    let digest = hasher.finalize();
     let message = Message::from_digest_slice(&digest).unwrap();
     let signature = secp.sign_ecdsa(&message, &secret_key);
     let signature_hex = hex::encode(signature.serialize_der());

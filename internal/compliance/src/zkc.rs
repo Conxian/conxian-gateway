@@ -18,8 +18,10 @@ use uuid;
 type HmacSha256 = Hmac<Sha256>;
 
 const INGRESS_SIGNATURE_HEX_LEN: usize = 64;
+pub const ATTESTATION_SIGNING_DOMAIN: &[u8] = b"conxius-attestation:v1";
 const MAX_ZKML_FIELD_LEN: usize = 4 * 1024 * 1024;
 const MAX_INLINE_PUBLIC_INPUTS: usize = 8 * 1024;
+const TEE_DEVICE_ID_PREFIX: &str = "conxius-tee-";
 
 pub struct ZkcVerifier {
     secp: Secp256k1<secp256k1::All>,
@@ -69,6 +71,18 @@ impl ZkcVerifier {
         }
     }
 
+    fn attestation_message(device_id: &str, payload: &str) -> ConxianResult<Message> {
+        let mut hasher = Sha256::new();
+        hasher.update(ATTESTATION_SIGNING_DOMAIN);
+        hasher.update(device_id.as_bytes());
+        hasher.update([0u8]);
+        hasher.update(payload.as_bytes());
+
+        let digest = hasher.finalize();
+        Message::from_digest_slice(&digest)
+            .map_err(|_| ConxianError::Security("Internal verification error".into()))
+    }
+
     pub fn verify(&self, attestation: &Attestation) -> ConxianResult<bool> {
         if !attestation.device_id.starts_with("conxius-") {
             warn!(device_id = %attestation.device_id, "Rejected attestation: missing conxius- prefix");
@@ -98,9 +112,7 @@ impl ZkcVerifier {
             ConxianError::Security("Attestation verification failed: invalid signature data".into())
         })?;
 
-        let digest = Sha256::digest(attestation.payload.as_bytes());
-        let message = Message::from_digest_slice(&digest)
-            .map_err(|_| ConxianError::Security("Internal verification error".into()))?;
+        let message = Self::attestation_message(&attestation.device_id, &attestation.payload)?;
 
         Ok(self
             .secp
@@ -132,9 +144,7 @@ impl ZkcVerifier {
             ConxianError::Security("Attestation verification failed: invalid signature data".into())
         })?;
 
-        let digest = Sha256::digest(attestation.payload.as_bytes());
-        let message = Message::from_digest_slice(&digest)
-            .map_err(|_| ConxianError::Security("Internal verification error".into()))?;
+        let message = Self::attestation_message(&attestation.device_id, &attestation.payload)?;
 
         Ok(self
             .secp
@@ -590,7 +600,7 @@ impl ZkcVerifier {
             _ => return Ok(false),
         };
 
-        if !device_id.starts_with("conxius-tee-") {
+        if !device_id.starts_with(TEE_DEVICE_ID_PREFIX) {
             return Ok(false);
         }
 
