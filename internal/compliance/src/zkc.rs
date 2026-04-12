@@ -1042,10 +1042,8 @@ impl ZkcVerifier {
             return Err(ConxianError::Compliance("Invalid settlement amount".into()));
         }
 
-        let job_card_value =
-            serde_json::to_value(job_card).map_err(|e| ConxianError::Internal(e.to_string()))?;
-        let job_card_bytes = serde_json::to_vec(&job_card_value)
-            .map_err(|e| ConxianError::Internal(e.to_string()))?;
+        let job_card_bytes =
+            serde_jcs::to_vec(job_card).map_err(|e| ConxianError::Internal(e.to_string()))?;
         let job_hash = hex::encode(Sha256::digest(&job_card_bytes));
 
         let committed = Self::state_root_commits_job_hash(&bitvm_attestation.state_root, &job_hash);
@@ -1311,6 +1309,29 @@ mod tests {
     fn test_decode_base64_or_hex_accepts_base64() {
         let bytes = ZkcVerifier::decode_base64_or_hex("test", "Zm9v").unwrap();
         assert_eq!(bytes, b"foo");
+    }
+
+    #[test]
+    fn test_bitvm_job_hash_is_stable() {
+        let job_card = conxian_core::ConxianJobCard {
+            context: "https://schema.conxian.io/jobcard/v2".to_string(),
+            r#type: "ConxianJobCard".to_string(),
+            work_intent: conxian_core::WorkIntent {
+                sender_address: "SENDER".to_string(),
+                receiver_address: "RECEIVER".to_string(),
+                amount_sbtc: 1000.5,
+                town_name: None,
+                country_code: None,
+            },
+        };
+
+        let bytes = serde_jcs::to_vec(&job_card).unwrap();
+        let job_hash = hex::encode(Sha256::digest(&bytes));
+
+        assert_eq!(
+            job_hash,
+            "9d0b498c365fb034171f2601227911b4111b57f0c153e7460545e67b24c25c1b"
+        );
     }
 
     #[test]
