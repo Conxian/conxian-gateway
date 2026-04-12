@@ -1041,6 +1041,17 @@ impl ZkcVerifier {
         self.verify_attestation(&receipt.passkey_attestation)
     }
 
+    /// Computes the BitVM `job_hash` as SHA-256 over the JCS-canonicalized job card JSON.
+    ///
+    /// Any writer producing a BitVM `state_root` commitment must compute `job_hash` using the
+    /// same JCS canonicalization.
+    fn compute_job_hash(job_card: &conxian_core::ConxianJobCard) -> ConxianResult<String> {
+        let job_card_bytes = serde_jcs::to_vec(job_card)
+            .map_err(|e| ConxianError::Internal(format!("JCS job card encoding failed: {e}")))?;
+
+        Ok(hex::encode(Sha256::digest(&job_card_bytes)))
+    }
+
     pub fn verify_job_card_settlement(
         &self,
         job_card: &conxian_core::ConxianJobCard,
@@ -1056,9 +1067,7 @@ impl ZkcVerifier {
             return Err(ConxianError::Compliance("Invalid settlement amount".into()));
         }
 
-        let job_card_bytes =
-            serde_jcs::to_vec(job_card).map_err(|e| ConxianError::Internal(e.to_string()))?;
-        let job_hash = hex::encode(Sha256::digest(&job_card_bytes));
+        let job_hash = Self::compute_job_hash(job_card)?;
 
         let committed = Self::state_root_commits_job_hash(&bitvm_attestation.state_root, &job_hash);
 
@@ -1444,7 +1453,7 @@ mod tests {
     }
 
     #[test]
-    fn test_bitvm_job_hash_is_stable() {
+    fn test_compute_job_hash_is_stable() {
         let job_card = conxian_core::ConxianJobCard {
             context: "https://schema.conxian.io/jobcard/v2".to_string(),
             r#type: "ConxianJobCard".to_string(),
@@ -1457,9 +1466,7 @@ mod tests {
             },
         };
 
-        let bytes = serde_jcs::to_vec(&job_card).unwrap();
-        let job_hash = hex::encode(Sha256::digest(&bytes));
-
+        let job_hash = ZkcVerifier::compute_job_hash(&job_card).unwrap();
         assert_eq!(
             job_hash,
             "9d0b498c365fb034171f2601227911b4111b57f0c153e7460545e67b24c25c1b"
@@ -1540,7 +1547,7 @@ mod tests {
 
     #[test]
     fn test_state_root_commits_job_hash_rejects_embedded_tag_prefix() {
-        let job_hash = "e".repeat(64);
+        let job_hash = "a".repeat(64);
         let state_root = format!("foo_job_hash={job_hash}");
         assert!(!ZkcVerifier::state_root_commits_job_hash(
             &state_root,
@@ -1550,7 +1557,7 @@ mod tests {
 
     #[test]
     fn test_state_root_commits_job_hash_rejects_embedded_tag_suffix() {
-        let job_hash = "f".repeat(64);
+        let job_hash = "b".repeat(64);
         let state_root = format!("job_hash={job_hash}_foo");
         assert!(!ZkcVerifier::state_root_commits_job_hash(
             &state_root,
