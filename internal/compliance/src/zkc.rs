@@ -24,8 +24,17 @@ const MAX_INLINE_PUBLIC_INPUTS: usize = 8 * 1024;
 const TEE_DEVICE_ID_PREFIX: &str = "conxius-tee-";
 
 const ZKML_IMAGE_ID_HEX_LEN: usize = 64;
-const MAX_ZKML_RECEIPT_ENCODED_LEN: usize = MAX_ZKML_FIELD_LEN;
+// Receipts are accepted as base64 or 0x-prefixed hex. With the JSON field capped at 4MiB,
+// base64 receipts can carry up to ~3MiB decoded while hex receipts carry less.
 const MAX_ZKML_RECEIPT_BYTES: usize = 3 * 1024 * 1024;
+const MAX_ZKML_RECEIPT_ENCODED_LEN: usize = {
+    let max_hex_len = 2 + MAX_ZKML_RECEIPT_BYTES * 2;
+    if MAX_ZKML_FIELD_LEN < max_hex_len {
+        MAX_ZKML_FIELD_LEN
+    } else {
+        max_hex_len
+    }
+};
 
 pub struct ZkcVerifier {
     secp: Secp256k1<secp256k1::All>,
