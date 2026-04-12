@@ -1044,9 +1044,9 @@ impl ZkcVerifier {
 
         let job_card_value =
             serde_json::to_value(job_card).map_err(|e| ConxianError::Internal(e.to_string()))?;
-        let job_card_json = serde_json::to_vec(&job_card_value)
+        let job_card_bytes = serde_json::to_vec(&job_card_value)
             .map_err(|e| ConxianError::Internal(e.to_string()))?;
-        let job_hash = hex::encode(Sha256::digest(&job_card_json));
+        let job_hash = hex::encode(Sha256::digest(&job_card_bytes));
 
         let committed = Self::state_root_commits_job_hash(&bitvm_attestation.state_root, &job_hash);
 
@@ -1082,7 +1082,8 @@ impl ZkcVerifier {
                 idx == 0 || (!bytes[idx - 1].is_ascii_alphanumeric() && bytes[idx - 1] != b'_');
 
             let after = idx + tagged.len();
-            let after_ok = after == bytes.len() || !bytes[after].is_ascii_hexdigit();
+            let after_ok = after == bytes.len()
+                || (!bytes[after].is_ascii_alphanumeric() && bytes[after] != b'_');
 
             before_ok && after_ok
         })
@@ -1358,6 +1359,16 @@ mod tests {
     fn test_state_root_commits_job_hash_rejects_tag_suffix() {
         let job_hash = "c".repeat(64);
         let state_root = format!("job_hash={job_hash}0");
+        assert!(!ZkcVerifier::state_root_commits_job_hash(
+            &state_root,
+            &job_hash
+        ));
+    }
+
+    #[test]
+    fn test_state_root_commits_job_hash_rejects_alphanumeric_suffix() {
+        let job_hash = "f".repeat(64);
+        let state_root = format!("job_hash={job_hash}g");
         assert!(!ZkcVerifier::state_root_commits_job_hash(
             &state_root,
             &job_hash
