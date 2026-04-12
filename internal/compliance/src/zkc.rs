@@ -1312,6 +1312,29 @@ mod tests {
     }
 
     #[test]
+    fn test_bitvm_job_hash_is_stable() {
+        let job_card = conxian_core::ConxianJobCard {
+            context: "https://schema.conxian.io/jobcard/v2".to_string(),
+            r#type: "ConxianJobCard".to_string(),
+            work_intent: conxian_core::WorkIntent {
+                sender_address: "SENDER".to_string(),
+                receiver_address: "RECEIVER".to_string(),
+                amount_sbtc: 1000.5,
+                town_name: None,
+                country_code: None,
+            },
+        };
+
+        let bytes = serde_jcs::to_vec(&job_card).unwrap();
+        let job_hash = hex::encode(Sha256::digest(&bytes));
+
+        assert_eq!(
+            job_hash,
+            "9d0b498c365fb034171f2601227911b4111b57f0c153e7460545e67b24c25c1b"
+        );
+    }
+
+    #[test]
     fn test_state_root_commits_job_hash_matches_explicit_tag() {
         let job_hash = "a".repeat(64);
         let state_root = format!("job_hash={job_hash}");
