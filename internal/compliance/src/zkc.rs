@@ -21,11 +21,13 @@ const INGRESS_SIGNATURE_HEX_LEN: usize = 64;
 pub const ATTESTATION_SIGNING_DOMAIN: &[u8] = b"conxius-attestation:v1";
 const MAX_ZKML_FIELD_LEN: usize = 4 * 1024 * 1024;
 const MAX_INLINE_PUBLIC_INPUTS: usize = 8 * 1024;
-pub const TEE_DEVICE_ID_PREFIX: &str = "conxius-tee-";
-const MOCK_DEVICE_ID_MARKER: &str = "-mock-";
+pub(crate) const TEE_DEVICE_ID_PREFIX: &str = "conxius-tee-";
+const MOCK_TEE_DEVICE_ID_PREFIX: &str = "mock-";
 
 fn is_mock_device_id(device_id: &str) -> bool {
-    device_id.contains(MOCK_DEVICE_ID_MARKER)
+    device_id
+        .strip_prefix(TEE_DEVICE_ID_PREFIX)
+        .is_some_and(|rest| rest.starts_with(MOCK_TEE_DEVICE_ID_PREFIX))
 }
 
 pub struct ZkcVerifier {

@@ -4,6 +4,8 @@ use conxian_core::{Attestation, AttestationRequest, ConxianResult, ZkmlProof};
 use secp256k1::{Message, Secp256k1, SecretKey};
 use sha2::{Digest, Sha256};
 
+const TEE_DEVICE_ID_PREFIX: &str = "conxius-tee-";
+
 fn assert_denied(res: ConxianResult<bool>) {
     assert!(
         matches!(res, Ok(false)),
@@ -55,7 +57,7 @@ fn settlement_attestation_rejects_unsupported_attestation_types() {
     let verifier = ZkcVerifier::new();
 
     let attestation = AttestationRequest::Zkml(ZkmlProof {
-        device_id: "conxius-tee-123".to_string(),
+        device_id: format!("{TEE_DEVICE_ID_PREFIX}123"),
         image_id: "".to_string(),
         receipt: "".to_string(),
         receipt_hash: "".to_string(),
@@ -72,7 +74,7 @@ fn settlement_attestation_denies_on_verification_errors() {
     let verifier = ZkcVerifier::new();
 
     let attestation = AttestationRequest::Ecdsa(Attestation {
-        device_id: "conxius-tee-123".to_string(),
+        device_id: format!("{TEE_DEVICE_ID_PREFIX}123"),
         signature: "".to_string(),
         payload: "payload-hash".to_string(),
         public_key: "".to_string(),
@@ -86,11 +88,20 @@ fn settlement_attestation_denies_on_verification_errors() {
 fn settlement_attestation_rejects_mock_device_id() {
     let verifier = ZkcVerifier::new();
 
-    let accepted = make_signed_attestation("conxius-tee-test-123", "payload-hash");
+    let accepted =
+        make_signed_attestation(&format!("{TEE_DEVICE_ID_PREFIX}test-123"), "payload-hash");
     let res = verifier.verify_settlement_trigger_attestation(&accepted, "payload-hash");
     assert!(matches!(res, Ok(true)), "expected Ok(true), got: {res:?}");
 
-    let rejected = make_signed_attestation("conxius-tee-mock-123", "payload-hash");
+    let accepted_with_marker = make_signed_attestation(
+        &format!("{TEE_DEVICE_ID_PREFIX}test-mock-123"),
+        "payload-hash",
+    );
+    let res = verifier.verify_settlement_trigger_attestation(&accepted_with_marker, "payload-hash");
+    assert!(matches!(res, Ok(true)), "expected Ok(true), got: {res:?}");
+
+    let rejected =
+        make_signed_attestation(&format!("{TEE_DEVICE_ID_PREFIX}mock-123"), "payload-hash");
     let res = verifier.verify_settlement_trigger_attestation(&rejected, "payload-hash");
     assert_denied(res);
 }
