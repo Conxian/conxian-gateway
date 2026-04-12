@@ -37,15 +37,8 @@ fn is_mock_device_id(device_id: &str) -> bool {
 const ZKML_IMAGE_ID_HEX_LEN: usize = 64;
 // Receipts are accepted as base64 or 0x-prefixed hex. With the JSON field capped at 4MiB,
 // base64 receipts can carry up to ~3MiB decoded while hex receipts carry less.
-const MAX_ZKML_RECEIPT_BYTES: usize = 3 * 1024 * 1024;
-const MAX_ZKML_RECEIPT_ENCODED_LEN: usize = {
-    let max_hex_len = 2 + MAX_ZKML_RECEIPT_BYTES * 2;
-    if MAX_ZKML_FIELD_LEN < max_hex_len {
-        MAX_ZKML_FIELD_LEN
-    } else {
-        max_hex_len
-    }
-};
+const MAX_ZKML_RECEIPT_BYTES: usize = (MAX_ZKML_FIELD_LEN / 4) * 3;
+const MAX_ZKML_RECEIPT_INPUT_LEN: usize = MAX_ZKML_FIELD_LEN;
 
 pub struct ZkcVerifier {
     secp: Secp256k1<secp256k1::All>,
@@ -227,9 +220,9 @@ impl ZkcVerifier {
                 "ZKML verification failed: receipt cannot be empty".to_string(),
             ));
         }
-        if receipt_value.len() > MAX_ZKML_RECEIPT_ENCODED_LEN {
+        if receipt_value.len() > MAX_ZKML_RECEIPT_INPUT_LEN {
             return Err(ConxianError::Compliance(format!(
-                "Invalid receipt: payload too large (max {MAX_ZKML_RECEIPT_ENCODED_LEN} characters)"
+                "Invalid receipt: payload too large (max {MAX_ZKML_RECEIPT_INPUT_LEN} bytes)"
             )));
         }
 
@@ -1219,14 +1212,38 @@ impl ZkcVerifier {
             )))
         } else if let Some(max_decoded_len) = max_decoded_len {
             let max_possible_decoded_len = value.len().div_ceil(4).saturating_mul(3);
-            // Allow for up to two '=' padding characters in valid base64 so we don't prematurely
-            // reject inputs that still decode to <= max_decoded_len.
-            if max_possible_decoded_len.saturating_sub(2) > max_decoded_len {
+            let decoded_len_upper_bound = if value.len() % 4 == 0 {
+                let padding = value
+                    .as_bytes()
+                    .iter()
+                    .rev()
+                    .take_while(|&&b| b == b'=')
+                    .count();
+                if padding <= 2 {
+                    (value.len() / 4).saturating_mul(3).saturating_sub(padding)
+                } else {
+                    max_possible_decoded_len
+                }
+            } else {
+                max_possible_decoded_len
+            };
+
+            // When the input includes explicit '=' padding we can compute an exact decoded length
+            // for valid base64 (and cheaply reject oversized payloads without decoding). For
+            // unpadded/non-aligned inputs, keep a conservative allowance so we don't falsely
+            // reject base64 that decodes to <= max_decoded_len.
+            let reject_upper_bound = if value.len() % 4 == 0 {
+                decoded_len_upper_bound
+            } else {
+                decoded_len_upper_bound.saturating_sub(2)
+            };
+
+            if reject_upper_bound > max_decoded_len {
                 return Err(ConxianError::Compliance(format!(
                     "Invalid {label}: payload too large (max {max_decoded_len} bytes decoded)"
                 )));
             }
-            let mut out = vec![0u8; std::cmp::min(max_possible_decoded_len, max_decoded_len)];
+            let mut out = vec![0u8; std::cmp::min(decoded_len_upper_bound, max_decoded_len)];
             let n = base64::Engine::decode_slice(
                 &base64::engine::general_purpose::STANDARD,
                 value,
@@ -1695,7 +1712,7 @@ mod tests {
             device_id: "conxius-test".to_string(),
             image_id: "0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
                 .to_string(),
-            receipt: "A".repeat(MAX_ZKML_RECEIPT_ENCODED_LEN + 1),
+            receipt: "A".repeat(MAX_ZKML_RECEIPT_INPUT_LEN + 1),
             receipt_hash: "00".repeat(32),
             public_inputs: "foo".to_string(),
             journal: "bar".to_string(),
