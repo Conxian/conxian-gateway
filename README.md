@@ -43,18 +43,31 @@ This project is in active development. While it implements production-grade secu
 The gateway exposes an institutional REST API at `/api/v1`. Most endpoints require Bearer token authentication.
 
 - `GET /api/v1/health`: Service health check.
+- `GET /api/v1/version`: Gateway version string.
 - `GET /api/v1/metrics`: Prometheus-compatible metrics (Authorized).
+- `GET /api/v1/state`: Current gateway state snapshot (Authorized).
 - `POST /api/v1/verify`: Verify cryptographic attestations (ECDSA, Schnorr, ZKML, BitVM) (Authorized).
+- `POST /api/v1/identity/exchange`: Exchange Enclave-signed OIDC token for GCP access token (Authorized).
 - `POST /api/v1/identity/resolve`: Resolve identity for ENS, BNS, World ID, or Web3.bio (Authorized).
 - `POST /api/v1/iso20022/payment`: Generate standardized ISO 20022 egress messages (Authorized).
-- `POST /api/v1/fiat/session`: Initiate fiat on-ramp sessions (Ramp, Investec, etc.) (Authorized).
-- `POST /api/v1/otp/send`: Send stateless OTP via Infobip (Authorized).
+- `POST /api/v1/iso20022/pacs008`: Ingest ISO 20022 pacs.008 settlement signals (Authorized).
+- `POST /api/v1/iso20022/pacs009`: Ingest ISO 20022 pacs.009 settlement signals (Authorized).
+- `POST /api/v1/settlement/papss`: Ingest PAPSS settlement signals (Authorized).
+- `POST /api/v1/settlement/brics`: Ingest BRICS settlement signals (Authorized).
+- `POST /api/v1/fiat/webhook`: Verify fiat provider webhook signatures (Authorized).
+- `POST /api/v1/a2p/otp`: Send stateless OTP via Infobip (Authorized).
+- `POST /api/v1/a2p/verify`: Verify stateless OTP via Infobip (Authorized).
+- `POST /api/v1/erp/sync`: Sync ERP ledger via OData v4 (Authorized).
+- `POST /api/v1/settle`: Verify and settle job card settlement request (Authorized).
 - `GET /api/v1/alex/quote`: Fetch swap quote from ALEX DEX (Authorized).
 - `POST /api/v1/alex/swap`: Execute ALEX swap operation (Authorized; returns `501` until signer integration exists).
 - `POST /api/v1/bounties/payouts/toggle`: Maintainer control for bounty activation (Authorized).
 - `POST /api/v1/ingress/iso20022`: Ingest ISO 20022 settlement signals (Authorized).
 - `POST /api/v1/ingress/papss`: Ingest PAPSS settlement signals (Authorized).
 - `POST /api/v1/ingress/brics`: Ingest BRICS settlement signals (Authorized).
+- `GET /api/v1/settlements/external`: Read recent externally ingested settlements (Authorized).
+- `POST /api/v1/pos/offline`: Submit offline POS receipt for signing and queueing (Authorized).
+- `POST /api/v1/pos/sync`: Sync pending offline POS receipts (Authorized).
 
 Full endpoint documentation can be found by inspecting the routes in `internal/api/src/routes.rs`.
 
