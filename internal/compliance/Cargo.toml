@@ -17,6 +17,7 @@ hex = "0.4.3"
 rand = "0.8"
 chrono = { workspace = true }
 serde_json = { workspace = true }
+serde_jcs = "0.2.0"
 uuid = { version = "1.7.0", features = ["v4"] }
 tokio = { workspace = true, features = ["full"] }
 quick-xml = "0.38.1"

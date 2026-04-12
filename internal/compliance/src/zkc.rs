@@ -1042,10 +1042,8 @@ impl ZkcVerifier {
             return Err(ConxianError::Compliance("Invalid settlement amount".into()));
         }
 
-        let job_card_value =
-            serde_json::to_value(job_card).map_err(|e| ConxianError::Internal(e.to_string()))?;
-        let job_card_bytes = serde_json::to_vec(&job_card_value)
-            .map_err(|e| ConxianError::Internal(e.to_string()))?;
+        let job_card_bytes =
+            serde_jcs::to_vec(job_card).map_err(|e| ConxianError::Internal(e.to_string()))?;
         let job_hash = hex::encode(Sha256::digest(&job_card_bytes));
 
         let committed = Self::state_root_commits_job_hash(&bitvm_attestation.state_root, &job_hash);
