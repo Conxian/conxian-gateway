@@ -25,7 +25,7 @@ const TEE_DEVICE_ID_PREFIX: &str = "conxius-tee-";
 
 const ZKML_IMAGE_ID_HEX_LEN: usize = 64;
 const MAX_ZKML_RECEIPT_ENCODED_LEN: usize = MAX_ZKML_FIELD_LEN;
-const MAX_ZKML_RECEIPT_BYTES: usize = MAX_ZKML_RECEIPT_ENCODED_LEN * 3 / 4;
+const MAX_ZKML_RECEIPT_BYTES: usize = 3 * 1024 * 1024;
 
 pub struct ZkcVerifier {
     secp: Secp256k1<secp256k1::All>,
@@ -1159,6 +1159,8 @@ impl ZkcVerifier {
             )))
         } else if let Some(max_decoded_len) = max_decoded_len {
             let max_possible_decoded_len = value.len().div_ceil(4).saturating_mul(3);
+            // Allow for up to two '=' padding characters in valid base64 so we don't prematurely
+            // reject inputs that still decode to <= max_decoded_len.
             if max_possible_decoded_len.saturating_sub(2) > max_decoded_len {
                 return Err(ConxianError::Compliance(format!(
                     "Invalid {label}: payload too large (max {max_decoded_len} bytes decoded)"
