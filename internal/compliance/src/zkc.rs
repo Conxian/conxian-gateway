@@ -1521,7 +1521,14 @@ mod tests {
         let secret_key = secp256k1::SecretKey::from_slice(&[1u8; 32]).unwrap();
         let public_key = PublicKey::from_secret_key(&secp, &secret_key);
 
-        let message = ZkcVerifier::attestation_message(device_id, payload_hash).unwrap();
+        let mut hasher = Sha256::new();
+        hasher.update(ATTESTATION_SIGNING_DOMAIN);
+        hasher.update(device_id.as_bytes());
+        hasher.update([0u8]);
+        hasher.update(payload_hash.as_bytes());
+        let digest = hasher.finalize();
+
+        let message = Message::from_digest_slice(&digest).unwrap();
         let signature = secp.sign_ecdsa(&message, &secret_key);
         let signature_der = signature.serialize_der();
 
