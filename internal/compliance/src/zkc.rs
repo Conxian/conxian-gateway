@@ -1447,7 +1447,7 @@ mod tests {
 
     #[test]
     fn test_state_root_commits_job_hash_rejects_embedded_tag_prefix() {
-        let job_hash = "h".repeat(64);
+        let job_hash = "a".repeat(64);
         let state_root = format!("foo_job_hash={job_hash}");
         assert!(!ZkcVerifier::state_root_commits_job_hash(
             &state_root,
@@ -1457,7 +1457,7 @@ mod tests {
 
     #[test]
     fn test_state_root_commits_job_hash_rejects_embedded_tag_suffix() {
-        let job_hash = "i".repeat(64);
+        let job_hash = "b".repeat(64);
         let state_root = format!("job_hash={job_hash}_foo");
         assert!(!ZkcVerifier::state_root_commits_job_hash(
             &state_root,
