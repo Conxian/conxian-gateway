@@ -61,11 +61,11 @@ The gateway exposes an institutional REST API at `/api/v1`. Most endpoints requi
 - `POST /api/v1/settle`: Verify and settle job card settlement request (Authorized).
 - `GET /api/v1/alex/quote`: Fetch swap quote from ALEX DEX (Authorized).
   - Query params (URL query string; URL-encoded; no request body):
-    - `token_x`: Input token contract principal (passed through to ALEX as `token-x`, e.g. `SP...token-x`).
-    - `token_y`: Output token contract principal (passed through to ALEX as `token-y`, e.g. `SP...token-y`).
-    - `amount`: Integer amount of `token_x` in its smallest on-chain units (no decimal point; passed through to ALEX as `amount`).
-    - `factor` (required): Integer factor (required by the request schema shared with `/api/v1/alex/swap`; currently ignored by `/api/v1/alex/quote`). If omitted, the gateway rejects the request with `400`. Use `1`.
-    - `min_dy` (optional): Integer minimum output amount of `token_y` in its smallest on-chain units (accepted but currently ignored by `/api/v1/alex/quote`).
+    - `token_x` (string, required): Input token contract principal (value like `SP...token-x`). The gateway forwards this to ALEX using query param key `token-x`.
+    - `token_y` (string, required): Output token contract principal (value like `SP...token-y`). The gateway forwards this to ALEX using query param key `token-y`.
+    - `amount` (decimal string, required): Unsigned integer amount of `token_x` in its smallest/base units. The gateway forwards this to ALEX using query param key `amount`.
+    - `factor` (decimal string, required): Unsigned integer required by the request schema shared with `/api/v1/alex/swap`; currently ignored by `/api/v1/alex/quote` (reserved for `/api/v1/alex/swap`). If omitted, the gateway rejects the request with `400`. Use `1`.
+    - `min_dy` (decimal string, optional): Unsigned integer minimum output amount in the smallest/base units of `token_y`. Accepted but currently ignored by `/api/v1/alex/quote` (reserved for `/api/v1/alex/swap`).
   - Example:
     ```bash
     curl -G 'https://<gateway-host>/api/v1/alex/quote' \
@@ -73,10 +73,9 @@ The gateway exposes an institutional REST API at `/api/v1`. Most endpoints requi
       --data-urlencode 'token_x=SP3FBR2AGKQK4H5JH8S0T2NQ9K0D8G2Q1YJ3Q0Y1.token-x' \
       --data-urlencode 'token_y=SP3FBR2AGKQK4H5JH8S0T2NQ9K0D8G2Q1YJ3Q0Y1.token-y' \
       --data-urlencode 'amount=1000000' \
-      --data-urlencode 'factor=1' \
-      --data-urlencode 'min_dy=1'  # NOTE: min_dy is accepted but currently ignored by /api/v1/alex/quote
+      --data-urlencode 'factor=1'
     ```
-  - Response: `{ "dy": "<integer>" }` (quoted output amount in the smallest/base units of `token_y`, returned as a string).
+  - Response: `{ "dy": "123456789" }` (quoted output amount in the smallest/base units of `token_y`, returned as a string).
 - `POST /api/v1/alex/swap`: Execute ALEX swap operation (Authorized; returns `501` until signer integration exists).
 - `POST /api/v1/bounties/payouts/toggle`: Maintainer control for bounty activation (Authorized).
 - `POST /api/v1/ingress/iso20022`: Ingest ISO 20022 settlement signals (Authorized).
