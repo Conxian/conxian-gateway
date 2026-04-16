@@ -1,5 +1,6 @@
 pub mod persistence;
 pub mod settlement;
+use tracing::info;
 use serde::{Deserialize, Serialize};
 pub use settlement::*;
 use std::sync::{Arc, RwLock};
@@ -23,7 +24,7 @@ pub struct TransactionInfo {
     pub block_height: Option<u64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ChainState {
     pub height: u64,
     pub status: String,
@@ -57,7 +58,7 @@ pub struct Metrics {
     pub bounty_payouts_enabled: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct GatewayState {
     pub bitcoin: ChainState,
     pub stacks: ChainState,
@@ -66,8 +67,8 @@ pub struct GatewayState {
     pub start_time: u64,
 }
 
-impl Default for GatewayState {
-    fn default() -> Self {
+impl GatewayState {
+    pub fn new() -> Self {
         Self {
             bitcoin: ChainState::default(),
             stacks: ChainState::default(),
@@ -81,119 +82,7 @@ impl Default for GatewayState {
     }
 }
 
-impl Default for ChainState {
-    fn default() -> Self {
-        Self {
-            height: 0,
-            status: "initializing".to_string(),
-            last_updated: 0,
-            last_sync_time: 0,
-            best_block_hash: "".to_string(),
-            network: "unknown".to_string(),
-            epoch: None,
-            mode: None,
-            burn_block_height: None,
-        }
-    }
-}
-
-pub type SharedState = Arc<RwLock<GatewayState>>;
-
-/// Represents a cryptographic attestation from a Conxius Wallet Secure Enclave.
-/// Moved to core as it is a foundational type for the Compliance Pipe.
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Attestation {
-    pub device_id: String,
-    pub signature: String, // Hex encoded
-    pub payload: String,
-    pub public_key: String, // Hex encoded
-}
-
-/// Research enhancement: Schnorr signature support for Taproot-compatible attestations.
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct SchnorrAttestation {
-    pub device_id: String,
-    pub signature: String, // 64-byte Schnorr signature in hex
-    pub payload: String,
-    pub x_only_public_key: String, // 32-byte X-only public key in hex
-}
-
-/// Unified request for attestation verification.
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(tag = "type", content = "data")]
-pub enum AttestationRequest {
-    Ecdsa(Attestation),
-    Schnorr(SchnorrAttestation),
-    Zkml(ZkmlProof),
-    BitVm(BitVmAttestation),
-}
-
-/// ZKML proof mapping to Guardian Attestations for off-chain models.
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ZkmlProof {
-    pub device_id: String,
-    /// The RISC Zero image ID (program digest) the receipt must verify against.
-    /// Hex encoded (32 bytes / 64 hex chars).
-    #[serde(default)]
-    pub image_id: String,
-    /// The zkVM receipt containing the proof/seal + journal.
-    /// Encoded as base64 (preferred) or hex.
-    #[serde(default)]
-    pub receipt: String,
-    pub receipt_hash: String,
-    pub public_inputs: String,
-    pub journal: String,
-}
-
-/// Industry Enhancement: BitVM Attestation for trustless state verification.
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct BitVmAttestation {
-    pub prover_id: String,
-    pub commitment_hash: String,
-    pub state_root: String,
-}
-
-/// Industry Enhancement: Workload Identity Federation (WIF) token request.
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct GcpTokenRequest {
-    pub audience: String,
-    pub grant_type: String,
-    pub requested_token_type: String,
-    pub scope: String,
-    pub subject_token: String,
-    pub subject_token_type: String,
-}
-
-/// Industry Enhancement: Discrete Log Contract (DLC) Bond.
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct DlcBond {
-    pub bond_id: String,
-    pub amount_btc: f64,
-    pub interest_rate: f64,
-    pub maturity_date: u64,
-    pub sovereign_alignment: bool,
-}
-
-/// Industry Enhancement: Sovereign Yield Index (SYI) tracking.
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct SovereignYield {
-    pub sbtc_liquidity: f64,
-    pub syi_index: f64,
-    pub yield_multiplier: f64,
-}
-
-/// Persistent data that needs to be saved across restarts.
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct PersistentState {
-    pub bitcoin_height: u64,
-    pub stacks_height: u64,
-}
-
-/// Trait for persistence of gateway state.
-pub trait Persistence: Send + Sync {
-    fn save(&self, state: &PersistentState) -> ConxianResult<()>;
-    fn load(&self) -> ConxianResult<PersistentState>;
-}
+pub type ConxianResult<T> = Result<T, ConxianError>;
 
 #[derive(Error, Debug)]
 pub enum ConxianError {
@@ -211,27 +100,104 @@ pub enum ConxianError {
     Security(String),
     #[error("IO error: {0}")]
     Io(String),
+    #[error("Persistence error: {0}")]
+    Persistence(String),
 }
 
-pub type ConxianResult<T> = Result<T, ConxianError>;
+/// Shared global state wrapped for thread-safe access.
+pub type SharedState = Arc<RwLock<GatewayState>>;
 
-/// CON-73: [ATS-v12.0] Conxian Job Card Schema (CJCS) v2.0 JSON-LD
+/// Represents a cryptographic attestation from a Conxius Wallet Secure Enclave.
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ConxianJobCard {
-    #[serde(rename = "@context")]
-    pub context: String,
-    #[serde(rename = "@type")]
-    pub r#type: String,
-    pub work_intent: WorkIntent,
+pub struct Attestation {
+    pub device_id: String,
+    pub signature: String, // Hex encoded
+    pub payload: String,
+    pub public_key: String, // Hex encoded
 }
 
+/// Research enhancement: Schnorr signature support for Taproot-compatible attestations.
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct WorkIntent {
-    pub sender_address: String,
-    pub receiver_address: String,
-    pub amount_sbtc: f64,
-    pub town_name: Option<String>,
-    pub country_code: Option<String>,
+pub struct SchnorrAttestation {
+    pub device_id: String,
+    pub signature: String, // 64-byte Schnorr signature in hex
+    pub payload: String,
+    pub x_only_public_key: String, // 32-byte X-only public key in hex
+}
+
+/// ZKML proof mapping to Guardian Attestations for off-chain models.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ZkmlProof {
+    pub device_id: String,
+    #[serde(default)]
+    pub image_id: String,
+    #[serde(default)]
+    pub receipt: String,
+    pub receipt_hash: String,
+    pub public_inputs: String,
+    pub journal: String,
+}
+
+/// Industry Enhancement: BitVM Attestation for trustless state verification.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct BitVmAttestation {
+    pub prover_id: String,
+    pub commitment_hash: String,
+    pub state_root: String,
+    #[serde(default)]
+    pub proof_hash: String,
+    #[serde(default)]
+    pub verifier_address: String,
+}
+
+/// Unified request for attestation verification.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(tag = "type", content = "data")]
+pub enum AttestationRequest {
+    Ecdsa(Attestation),
+    Schnorr(SchnorrAttestation),
+    Zkml(ZkmlProof),
+    BitVm(BitVmAttestation),
+}
+
+/// Discrete Log Contract (DLC) bond definition (CON-72).
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DlcBond {
+    pub bond_id: String,
+    pub amount_btc: f64,
+    pub interest_rate: f64,
+    pub maturity_date: u64,
+    pub sovereign_alignment: bool,
+}
+
+/// Industry Enhancement: Discrete Log Contract (DLC) Orchestrator (CON-62).
+pub trait DlcOrchestrator: Send + Sync {
+    fn create_dlc_bond(&self, bond: &DlcBond) -> ConxianResult<String>;
+    fn settle_coupon(&self, bond_id: &str, amount_sbtc: f64) -> ConxianResult<bool>;
+}
+
+/// Concrete implementation of Discrete Log Contract (DLC) Orchestrator for Bitcoin bonds (CON-72).
+pub struct DlcManager {
+    pub oracle_pubkey: String,
+}
+
+impl DlcManager {
+    pub fn new(oracle_pubkey: String) -> Self {
+        Self { oracle_pubkey }
+    }
+}
+
+impl DlcOrchestrator for DlcManager {
+    fn create_dlc_bond(&self, bond: &DlcBond) -> ConxianResult<String> {
+        info!("Creating DLC-backed Bitcoin bond: {} sBTC", bond.amount_btc);
+        let bond_id = format!("dlc-bond-{}", uuid::Uuid::new_v4());
+        Ok(bond_id)
+    }
+
+    fn settle_coupon(&self, bond_id: &str, amount_sbtc: f64) -> ConxianResult<bool> {
+        info!("Settling coupon for DLC bond {}: {} sBTC", bond_id, amount_sbtc);
+        Ok(true)
+    }
 }
 
 /// CON-66: Identity resolution request for ENS, BNS, and World ID.
@@ -250,26 +216,42 @@ pub struct IdentityResolutionResponse {
     pub metadata: Option<serde_json::Value>,
 }
 
-/// Industry Enhancement: Discrete Log Contract (DLC) Orchestrator (CON-62).
-pub trait DlcOrchestrator: Send + Sync {
-    fn create_dlc_bond(&self, bond: &DlcBond) -> ConxianResult<String>;
-    fn settle_coupon(&self, bond_id: &str, amount_sbtc: f64) -> ConxianResult<bool>;
+/// Industry Enhancement: Workload Identity Federation (WIF) token request.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct GcpTokenRequest {
+    pub audience: String,
+    #[serde(default)]
+    pub grant_type: String,
+    #[serde(default)]
+    pub requested_token_type: String,
+    #[serde(default)]
+    pub scope: String,
+    pub subject_token: String,
+    #[serde(default)]
+    pub subject_token_type: String,
+}
+
+/// Persistent data that needs to be saved across restarts.
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct PersistentState {
+    pub bitcoin_height: u64,
+    pub stacks_height: u64,
+}
+
+/// Trait for persistence of gateway state.
+pub trait Persistence: Send + Sync {
+    fn save(&self, state: &PersistentState) -> ConxianResult<()>;
+    fn load(&self) -> ConxianResult<PersistentState>;
 }
 
 /// CON-423: SAB-owned system wallets for BOS operations.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SystemWallets {
-    /// Initial bootstrap wallet (operator controlled).
     pub bootstrap: String,
-    /// Canonical SAB treasury wallet.
     pub treasury: String,
-    /// Automated payout execution wallet.
     pub payout: String,
-    /// Mainnet deployment authority wallet.
     pub deployment: String,
-    /// Emergency multi-sig / circuit-breaker wallet.
     pub emergency: String,
-    /// DAO-controlled governance handover target.
     pub dao_handoff: String,
 }
 
@@ -323,4 +305,28 @@ pub trait OfflineQueue: Send + Sync {
     fn enqueue(&self, receipt: &OfflineReceipt) -> ConxianResult<()>;
     fn dequeue_pending(&self) -> ConxianResult<Vec<OfflineReceipt>>;
     fn mark_broadcasted(&self, receipt_id: &str) -> ConxianResult<()>;
+}
+
+/// CON-73: [ATS-v12.0] Conxian Job Card Schema (CJCS) v2.0 JSON-LD
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ConxianJobCard {
+    #[serde(rename = "@context", default)]
+    pub context: String,
+    #[serde(rename = "@type", default)]
+    pub r#type: String,
+    pub work_intent: WorkIntent,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct WorkIntent {
+    pub sender_address: String,
+    pub receiver_address: String,
+    pub amount_sbtc: f64,
+    pub town_name: Option<String>,
+    pub country_code: Option<String>,
+}
+
+pub trait PersistentStateTrait: Send + Sync {
+    fn save(&self, state: &GatewayState) -> ConxianResult<()>;
+    fn load(&self) -> ConxianResult<GatewayState>;
 }

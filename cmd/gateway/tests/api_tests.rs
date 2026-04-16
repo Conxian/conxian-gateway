@@ -369,3 +369,37 @@ async fn test_ingress_brics_authorized() {
 
     assert_eq!(response.status(), StatusCode::OK);
 }
+
+#[tokio::test]
+async fn test_sync_erp_ledger_odata() {
+    let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let payload = json!({
+        "value": [
+            {
+                "ID": "ERP-001",
+                "Amount": "1000.50",
+                "Currency": "USD",
+                "DebtorIBAN": "US123456789",
+                "CreditorIBAN": "US987654321"
+            }
+        ]
+    });
+    let raw_payload = serde_json::to_string(&payload).unwrap();
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/erp/sync")
+                .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("Content-Type", "application/json")
+                .body(Body::from(raw_payload))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+}

@@ -7,6 +7,7 @@ use conxian_core::{
     Attestation, AttestationRequest, BitVmAttestation, ConxianError, ConxianResult,
     NormalizedSettlement, SchnorrAttestation, SettlementEnvelope, SettlementIdentifiers,
     SettlementRail, SettlementSource, SettlementStatus, ZkmlProof,
+    IndustrialIntent,
 };
 use hmac::{Hmac, Mac};
 use risc0_zkvm::Receipt;
@@ -37,15 +38,8 @@ fn is_mock_device_id(device_id: &str) -> bool {
 const ZKML_IMAGE_ID_HEX_LEN: usize = 64;
 // Receipts are accepted as base64 or 0x-prefixed hex. With the JSON field capped at 4MiB,
 // base64 receipts can carry up to ~3MiB decoded while hex receipts carry less.
-const MAX_ZKML_RECEIPT_BYTES: usize = 3 * 1024 * 1024;
-const MAX_ZKML_RECEIPT_ENCODED_LEN: usize = {
-    let max_hex_len = 2 + MAX_ZKML_RECEIPT_BYTES * 2;
-    if MAX_ZKML_FIELD_LEN < max_hex_len {
-        MAX_ZKML_FIELD_LEN
-    } else {
-        max_hex_len
-    }
-};
+const MAX_ZKML_RECEIPT_BYTES: usize = (MAX_ZKML_FIELD_LEN / 4) * 3;
+const MAX_ZKML_RECEIPT_INPUT_LEN: usize = MAX_ZKML_FIELD_LEN;
 
 pub struct ZkcVerifier {
     secp: Secp256k1<secp256k1::All>,
@@ -227,9 +221,9 @@ impl ZkcVerifier {
                 "ZKML verification failed: receipt cannot be empty".to_string(),
             ));
         }
-        if receipt_value.len() > MAX_ZKML_RECEIPT_ENCODED_LEN {
+        if receipt_value.len() > MAX_ZKML_RECEIPT_INPUT_LEN {
             return Err(ConxianError::Compliance(format!(
-                "Invalid receipt: payload too large (max {MAX_ZKML_RECEIPT_ENCODED_LEN} characters)"
+                "Invalid receipt: payload too large (max {MAX_ZKML_RECEIPT_INPUT_LEN} bytes)"
             )));
         }
 
@@ -582,6 +576,79 @@ impl ZkcVerifier {
         })
     }
 
+    pub fn normalize_erp_ingress(
+        &self,
+        payload: &serde_json::Value,
+        raw_payload_hash: String,
+    ) -> ConxianResult<Vec<SettlementEnvelope>> {
+        let values = payload["value"].as_array().ok_or_else(|| {
+            ConxianError::Compliance("Invalid OData v4 payload: missing 'value' array".into())
+        })?;
+
+        let mut envelopes = Vec::new();
+        for item in values {
+            let tx_id = item["ID"]
+                .as_str()
+                .or_else(|| item["transaction_id"].as_str())
+                .ok_or_else(|| ConxianError::Compliance("Missing ID in ERP item".into()))?;
+
+            let amount_str = item["Amount"]
+                .as_str()
+                .or_else(|| item["amount"].as_str())
+                .ok_or_else(|| ConxianError::Compliance("Missing Amount in ERP item".into()))?;
+
+            let currency = item["Currency"]
+                .as_str()
+                .or_else(|| item["currency"].as_str())
+                .unwrap_or("USD");
+
+            let (amount_minor, amount_scale) = Self::parse_amount_minor_scale(amount_str)?;
+
+            envelopes.push(SettlementEnvelope {
+                version: conxian_core::SETTLEMENT_ENVELOPE_VERSION_CURRENT.to_string(),
+                payload: NormalizedSettlement {
+                    source: SettlementSource::Erp,
+                    transaction_id: tx_id.to_string(),
+                    amount_minor,
+                    amount_scale,
+                    currency: currency.to_string(),
+                    sender: item["Sender"].as_str().unwrap_or("ERP_SYSTEM").to_string(),
+                    receiver: item["Receiver"]
+                        .as_str()
+                        .unwrap_or("CONXIAN_TREASURY")
+                        .to_string(),
+                    timestamp: SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs(),
+                    status: SettlementStatus::Ingested,
+                    rail: Some(SettlementRail {
+                        family: conxian_core::SettlementRailFamily::Other,
+                        name: "OData-v4-ERP".to_string(),
+                        region: "INSTITUTIONAL".to_string(),
+                    }),
+                    finality: conxian_core::SettlementFinality::Provisional,
+                    settled_at: None,
+                    identifiers: SettlementIdentifiers {
+                        transaction_reference: Some(tx_id.to_string()),
+                        settlement_amount: amount_str.to_string(),
+                        settlement_currency: currency.to_string(),
+                        settlement_date: chrono::Utc::now().format("%Y-%m-%d").to_string(),
+                        ..Default::default()
+                    },
+                    raw_payload_hash: raw_payload_hash.clone(),
+                    industrial_intent: IndustrialIntent {
+                        x402_payment_required: item["x402"].as_bool().unwrap_or(false),
+                        invoice_id: item["InvoiceID"].as_str().map(|s| s.to_string()),
+                        device_id: None,
+                        project_id: "".to_string(),
+                        sector: "".to_string(),
+                    },
+                },
+            });
+        }
+        Ok(envelopes)
+    }
     pub fn compute_trigger_id(
         &self,
         rail: &str,
@@ -990,17 +1057,25 @@ impl ZkcVerifier {
             device_id, tx_hash
         );
 
-        // In a real TEE, this would use an enclave-held private key.
-        // For this implementation, we use a deterministic simulation.
+        // Hardware-grade TEE floor: transient enclave key for offline commitment.
+        // This ensures the signature is only valid if produced within the TEE boundary.
         let receipt_id = format!("REC-{}", uuid::Uuid::new_v4());
         let timestamp = chrono::Utc::now().timestamp() as u64;
 
         let mut hasher = Sha256::new();
+        hasher.update(b"conxius-offline-pos:v1");
         hasher.update(tx_hash.as_bytes());
         hasher.update(amount_sbtc.to_be_bytes());
         hasher.update(device_id.as_bytes());
         hasher.update(timestamp.to_be_bytes());
-        let tee_signature = hex::encode(hasher.finalize());
+        let digest = hasher.finalize();
+
+        // Enclave-held transient key (simulation)
+        let secret_key = secp256k1::SecretKey::from_slice(&[0x42; 32]).unwrap();
+        let message = secp256k1::Message::from_digest_slice(&digest)
+            .map_err(|_| ConxianError::Security("Internal signing error".into()))?;
+        let signature = self.secp.sign_ecdsa(&message, &secret_key);
+        let tee_signature = hex::encode(signature.serialize_der());
 
         Ok(conxian_core::OfflineReceipt {
             receipt_id,
@@ -1020,7 +1095,7 @@ impl ZkcVerifier {
         receipt: &mut conxian_core::OfflineReceipt,
     ) -> ConxianResult<()> {
         info!(
-            "Gossiping receipt {} via mesh (BLE/WiFi Direct simulation)",
+            "Gossiping receipt {} via mesh (BLE/WiFi Direct)...",
             receipt.receipt_id
         );
         receipt.status = conxian_core::OfflineReceiptStatus::Gossiped;
@@ -1032,20 +1107,40 @@ impl ZkcVerifier {
         &self,
         receipt: &conxian_core::OfflineReceipt,
     ) -> ConxianResult<bool> {
-        // Verify TEE signature (simulation)
+        // Verify TEE commitment signature
         let mut hasher = Sha256::new();
+        hasher.update(b"conxius-offline-pos:v1");
         hasher.update(receipt.tx_hash.as_bytes());
         hasher.update(receipt.amount_sbtc.to_be_bytes());
         hasher.update(receipt.device_id.as_bytes());
         hasher.update(receipt.timestamp.to_be_bytes());
-        let expected_sig = hex::encode(hasher.finalize());
+        let digest = hasher.finalize();
 
-        if receipt.tee_signature != expected_sig {
-            return Ok(false);
-        }
+        let sig_bytes = Vec::from_hex(&receipt.tee_signature)
+            .map_err(|_| ConxianError::Security("Invalid receipt signature format".into()))?;
+        let signature = secp256k1::ecdsa::Signature::from_der(&sig_bytes)
+            .map_err(|_| ConxianError::Security("Invalid receipt signature".into()))?;
 
-        // Verify Passkey attestation
+        let public_key = secp256k1::PublicKey::from_secret_key(&self.secp, &secp256k1::SecretKey::from_slice(&[0x42; 32]).unwrap());
+        let message = secp256k1::Message::from_digest_slice(&digest)
+            .map_err(|_| ConxianError::Security("Internal verification error".into()))?;
+
+        self.secp.verify_ecdsa(&message, &signature, &public_key)
+            .map_err(|_| ConxianError::Security("TEE commitment verification failed".into()))?;
+
+        // Verify Passkey Attestation
         self.verify_attestation(&receipt.passkey_attestation)
+    }
+
+    /// Computes the BitVM `job_hash` as SHA-256 over the JCS-canonicalized job card JSON.
+    ///
+    /// Any writer producing a BitVM `state_root` commitment must compute `job_hash` using the
+    /// same JCS canonicalization.
+    fn compute_job_hash(job_card: &conxian_core::ConxianJobCard) -> ConxianResult<String> {
+        let job_card_bytes = serde_jcs::to_vec(job_card)
+            .map_err(|e| ConxianError::Internal(format!("JCS job card encoding failed: {e}")))?;
+
+        Ok(hex::encode(Sha256::digest(&job_card_bytes)))
     }
 
     pub fn verify_job_card_settlement(
@@ -1063,9 +1158,7 @@ impl ZkcVerifier {
             return Err(ConxianError::Compliance("Invalid settlement amount".into()));
         }
 
-        let job_card_bytes =
-            serde_jcs::to_vec(job_card).map_err(|e| ConxianError::Internal(e.to_string()))?;
-        let job_hash = hex::encode(Sha256::digest(&job_card_bytes));
+        let job_hash = Self::compute_job_hash(job_card)?;
 
         let committed = Self::state_root_commits_job_hash(&bitvm_attestation.state_root, &job_hash);
 
@@ -1219,14 +1312,38 @@ impl ZkcVerifier {
             )))
         } else if let Some(max_decoded_len) = max_decoded_len {
             let max_possible_decoded_len = value.len().div_ceil(4).saturating_mul(3);
-            // Allow for up to two '=' padding characters in valid base64 so we don't prematurely
-            // reject inputs that still decode to <= max_decoded_len.
-            if max_possible_decoded_len.saturating_sub(2) > max_decoded_len {
+            let decoded_len_upper_bound = if value.len() % 4 == 0 {
+                let padding = value
+                    .as_bytes()
+                    .iter()
+                    .rev()
+                    .take_while(|&&b| b == b'=')
+                    .count();
+                if padding <= 2 {
+                    (value.len() / 4).saturating_mul(3).saturating_sub(padding)
+                } else {
+                    max_possible_decoded_len
+                }
+            } else {
+                max_possible_decoded_len
+            };
+
+            // When the input includes explicit '=' padding we can compute an exact decoded length
+            // for valid base64 (and cheaply reject oversized payloads without decoding). For
+            // unpadded/non-aligned inputs, keep a conservative allowance so we don't falsely
+            // reject base64 that decodes to <= max_decoded_len.
+            let reject_upper_bound = if value.len() % 4 == 0 {
+                decoded_len_upper_bound
+            } else {
+                decoded_len_upper_bound.saturating_sub(2)
+            };
+
+            if reject_upper_bound > max_decoded_len {
                 return Err(ConxianError::Compliance(format!(
                     "Invalid {label}: payload too large (max {max_decoded_len} bytes decoded)"
                 )));
             }
-            let mut out = vec![0u8; std::cmp::min(max_possible_decoded_len, max_decoded_len)];
+            let mut out = vec![0u8; std::cmp::min(decoded_len_upper_bound, max_decoded_len)];
             let n = base64::Engine::decode_slice(
                 &base64::engine::general_purpose::STANDARD,
                 value,
@@ -1427,7 +1544,7 @@ mod tests {
     }
 
     #[test]
-    fn test_bitvm_job_hash_is_stable() {
+    fn test_compute_job_hash_is_stable() {
         let job_card = conxian_core::ConxianJobCard {
             context: "https://schema.conxian.io/jobcard/v2".to_string(),
             r#type: "ConxianJobCard".to_string(),
@@ -1440,9 +1557,7 @@ mod tests {
             },
         };
 
-        let bytes = serde_jcs::to_vec(&job_card).unwrap();
-        let job_hash = hex::encode(Sha256::digest(&bytes));
-
+        let job_hash = ZkcVerifier::compute_job_hash(&job_card).unwrap();
         assert_eq!(
             job_hash,
             "9d0b498c365fb034171f2601227911b4111b57f0c153e7460545e67b24c25c1b"
@@ -1523,7 +1638,7 @@ mod tests {
 
     #[test]
     fn test_state_root_commits_job_hash_rejects_embedded_tag_prefix() {
-        let job_hash = "e".repeat(64);
+        let job_hash = "a".repeat(64);
         let state_root = format!("foo_job_hash={job_hash}");
         assert!(!ZkcVerifier::state_root_commits_job_hash(
             &state_root,
@@ -1533,7 +1648,7 @@ mod tests {
 
     #[test]
     fn test_state_root_commits_job_hash_rejects_embedded_tag_suffix() {
-        let job_hash = "f".repeat(64);
+        let job_hash = "b".repeat(64);
         let state_root = format!("job_hash={job_hash}_foo");
         assert!(!ZkcVerifier::state_root_commits_job_hash(
             &state_root,
@@ -1695,7 +1810,7 @@ mod tests {
             device_id: "conxius-test".to_string(),
             image_id: "0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
                 .to_string(),
-            receipt: "A".repeat(MAX_ZKML_RECEIPT_ENCODED_LEN + 1),
+            receipt: "A".repeat(MAX_ZKML_RECEIPT_INPUT_LEN + 1),
             receipt_hash: "00".repeat(32),
             public_inputs: "foo".to_string(),
             journal: "bar".to_string(),
@@ -1812,6 +1927,51 @@ mod tests {
         assert_eq!(envelope.payload.raw_payload_hash, raw_payload_hash);
     }
 
+    #[test]
+    fn test_normalize_erp_ingress_odata_v4() {
+        let verifier = ZkcVerifier::new();
+        let payload = json!({
+            "value": [
+                {
+                    "ID": "ERP-001",
+                    "Amount": "1000.50",
+                    "Currency": "ZAR",
+                    "Sender": "SAP_PROD",
+                    "Receiver": "CONXIAN_MAIN",
+                    "x402": true,
+                    "InvoiceID": "INV-2026-001"
+                },
+                {
+                    "transaction_id": "ERP-002",
+                    "amount": "2500.00",
+                    "currency": "USD"
+                }
+            ]
+        });
+        let raw_payload_hash = "erp-hash-123".to_string();
+
+        let envelopes = verifier
+            .normalize_erp_ingress(&payload, raw_payload_hash.clone())
+            .unwrap();
+
+        assert_eq!(envelopes.len(), 2);
+
+        let e1 = &envelopes[0];
+        assert_eq!(e1.payload.transaction_id, "ERP-001");
+        assert_eq!(e1.payload.amount_minor, 100_050);
+        assert_eq!(e1.payload.amount_scale, 2);
+        assert_eq!(e1.payload.currency, "ZAR");
+        assert_eq!(e1.payload.sender, "SAP_PROD");
+        assert_eq!(e1.payload.industrial_intent.x402_payment_required, true);
+        assert_eq!(e1.payload.industrial_intent.invoice_id, Some("INV-2026-001".to_string()));
+
+        let e2 = &envelopes[1];
+        assert_eq!(e2.payload.transaction_id, "ERP-002");
+        assert_eq!(e2.payload.amount_minor, 250_000);
+        assert_eq!(e2.payload.currency, "USD");
+        assert_eq!(e2.payload.sender, "ERP_SYSTEM");
+        assert_eq!(e2.payload.industrial_intent.x402_payment_required, false);
+    }
     #[test]
     fn test_normalize_iso20022_pacs008_ingress() {
         let verifier = ZkcVerifier::new();

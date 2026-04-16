@@ -19,6 +19,7 @@ pub enum SettlementSource {
     Iso20022Pacs009,
     Papss,
     Brics,
+    Erp,
 }
 
 impl SettlementSource {
@@ -27,6 +28,7 @@ impl SettlementSource {
             Self::Iso20022Pacs008 | Self::Iso20022Pacs009 => "ISO20022",
             Self::Papss => "PAPSS",
             Self::Brics => "BRICS",
+            Self::Erp => "ERP",
         }
     }
 }
@@ -102,6 +104,8 @@ pub struct SettlementIdentifiers {
 /// CON-451: Industrial Intent Metadata for x402 alignment
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct IndustrialIntent {
+    pub sector: String,
+    pub project_id: String,
     pub x402_payment_required: bool,
     pub invoice_id: Option<String>,
     pub device_id: Option<String>,

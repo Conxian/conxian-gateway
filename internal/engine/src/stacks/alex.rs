@@ -2,6 +2,8 @@ use crate::stacks::rpc::StacksRpc;
 use async_trait::async_trait;
 pub use conxian_core::AlexSwapRequest;
 use conxian_core::{ConxianError, ConxianResult};
+use serde_json::json;
+use tracing::{info, warn};
 use serde::{Deserialize, Serialize};
 
 /// ALEX DEX Pair information.
@@ -77,16 +79,36 @@ impl AlexClient for AlexRpcClient {
         .await
         .map_err(|e| ConxianError::Internal(e.to_string()))?
     }
-
     async fn execute_swap(
         &self,
-        _request: AlexSwapRequest,
+        request: AlexSwapRequest,
         _signer_key: &str,
     ) -> ConxianResult<String> {
-        // Production implementation: construct Clarity contract-call (swap-helper)
-        // using stacks-transactions logic and broadcast via self.rpc.
+        info!(
+            "Preparing ALEX swap: {} {} -> {}",
+            request.amount, request.token_x, request.token_y
+        );
+
+        // Production implementation (Phase 5): construct Clarity contract-call
+        // This structure aligns with the 'swap-helper-v1' interface on ALEX.
+        let _payload = json!({
+            "contract_address": "SP3K8BC0PPEVCV7NZ6QSRWPQ2JE9E5B6N3PA0XBHT",
+            "contract_name": "alex-swap-helper-v1",
+            "function_name": "swap-helper",
+            "function_args": [
+                { "type": "principal", "value": request.token_x },
+                { "type": "principal", "value": request.token_y },
+                { "type": "uint", "value": request.amount.to_string() },
+                { "type": "uint", "value": request.min_dy.unwrap_or(1).to_string() }
+            ]
+        });
+
+        // Current status: logic is structured but requires secure signer integration
+        // for transaction signing and broadcasting to Stacks mainnet.
+        warn!("ALEX swap execution structured but waiting for signer-enclave cutover");
+
         Err(ConxianError::Internal(
-            "ALEX swap execution (contract-call) requires signer integration".to_string(),
+            "ALEX swap execution requires secure signer-enclave integration".to_string(),
         ))
     }
 }
