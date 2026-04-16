@@ -1,4 +1,4 @@
-use crate::{ConxianError, ConxianResult, Persistence, PersistentState};
+use crate::{ConxianError, ConxianResult, PersistentState, Persistence};
 use std::fs;
 use std::path::PathBuf;
 
