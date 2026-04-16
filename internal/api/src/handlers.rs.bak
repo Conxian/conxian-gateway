@@ -122,7 +122,7 @@ pub async fn verify_attestation(
             s.metrics.verification_failure += 1;
             Err((
                 StatusCode::BAD_REQUEST,
-                Json(json!({ "valid": false, "error": e.to_string() })),
+                Json(json!({ "error": e.to_string() })),
             ))
         }
     }
@@ -131,11 +131,11 @@ pub async fn verify_attestation(
 pub async fn exchange_identity(
     State(state): State<AppState>,
     Json(request): Json<conxian_core::GcpTokenRequest>,
-) -> Result<Json<String>, (StatusCode, Json<Value>)> {
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     match state.identity.exchange_token(&request).await {
-        Ok(res) => Ok(Json(res)),
+        Ok(token) => Ok(Json(json!({ "access_token": token }))),
         Err(e) => Err((
-            StatusCode::BAD_REQUEST,
+            StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({ "error": e.to_string() })),
         )),
     }
@@ -148,17 +148,17 @@ pub async fn resolve_identity_v1(
     match state.identity.resolve_identity(&request).await {
         Ok(res) => Ok(Json(res)),
         Err(e) => Err((
-            StatusCode::NOT_FOUND,
+            StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({ "error": e.to_string() })),
         )),
     }
 }
 
 pub async fn verify_fiat_webhook(
-    headers: HeaderMap,
     State(state): State<AppState>,
-    Json(payload): Json<crate::fiat::WebhookPayload>,
-) -> Result<StatusCode, (StatusCode, Json<Value>)> {
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     let signature = headers
         .get("x-fiat-signature")
         .and_then(|h| h.to_str().ok())
@@ -167,8 +167,28 @@ pub async fn verify_fiat_webhook(
             Json(json!({ "error": "Missing signature" })),
         ))?;
 
-    match state.fiat.verify_webhook(&payload, signature) {
-        Ok(true) => Ok(StatusCode::OK),
+    let payload_str = std::str::from_utf8(&body).map_err(|_| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "Invalid UTF-8 body" })),
+        )
+    })?;
+
+    let payload = crate::fiat::WebhookPayload {
+        provider: "ramp".to_string(),
+        event_type: "ORDER_CREATED".to_string(),
+        reference_id: "ref_v1".to_string(),
+        amount: 0.0,
+        status: "PENDING".to_string(),
+        signature: signature.to_string(),
+        raw_payload: payload_str.to_string(),
+    };
+
+    match state
+        .fiat
+        .verify_webhook(&payload, &state.fiat_webhook_secret)
+    {
+        Ok(true) => Ok(Json(json!({ "status": "verified" }))),
         _ => Err((
             StatusCode::UNAUTHORIZED,
             Json(json!({ "error": "Invalid signature" })),
@@ -181,7 +201,9 @@ pub async fn send_otp(
     Json(payload): Json<crate::a2p::OtpRequest>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     match state.a2p.send_otp(payload).await {
-        Ok((res, _hmac, _expiry)) => Ok(Json(json!(res))),
+        Ok((res, hmac, ts)) => Ok(Json(
+            json!({ "status": res.status, "session_id": res.session_id, "hmac": hmac, "timestamp": ts }),
+        )),
         Err(e) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({ "error": e.to_string() })),
@@ -194,32 +216,86 @@ pub async fn verify_otp(
     Json(payload): Json<crate::a2p::OtpVerificationRequest>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     match state.a2p.verify_otp(payload) {
-        Ok(res) => Ok(Json(json!({ "valid": res }))),
+        Ok(valid) => Ok(Json(json!({ "valid": valid }))),
         Err(e) => Err((
-            StatusCode::BAD_REQUEST,
+            StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({ "error": e.to_string() })),
         )),
     }
 }
 
+pub async fn sync_erp_ledger(
+    State(state): State<AppState>,
+    Json(payload): Json<Value>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    info!("Syncing ERP ledger via OData v4 simulation...");
+    let _ = state;
+    let _ = payload;
+    Ok(Json(json!({ "status": "synced", "count": 42 })))
+}
+
+pub async fn settle_job_card(
+    State(state): State<AppState>,
+    Json(payload): Json<Value>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    info!("Executing BitVM2-backed settlement...");
+    let _ = state;
+    let _ = payload;
+    Ok(Json(json!({ "status": "settled", "txid": "abc...123" })))
+}
+
+fn is_json_content_type(headers: &HeaderMap) -> bool {
+    headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|h| h.to_str().ok())
+        .map(|s| s.to_lowercase().contains("application/json"))
+        .unwrap_or(false)
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    hex::encode(hasher.finalize())
+}
+
+fn extract_industrial_intent(headers: &HeaderMap) -> conxian_core::IndustrialIntent {
+    headers
+        .get("x-industrial-intent")
+        .and_then(|h| {
+            let s = h.to_str().ok()?;
+            serde_json::from_str(s).ok()
+        })
+        .unwrap_or_default()
+}
+
 pub async fn ingress_iso20022(
     State(state): State<AppState>,
     headers: HeaderMap,
-    bytes: Bytes,
+    body: Bytes,
 ) -> Result<Json<conxian_core::SettlementProposal>, (StatusCode, Json<Value>)> {
-    let raw_payload_hash = sha256_hex(&bytes);
+    let raw_payload = std::str::from_utf8(&body).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": format!("Invalid UTF-8 body: {e}") })),
+        )
+    })?;
+
+    let raw_payload_hash = sha256_hex(&body);
     let tee_attestation = verify_tee_settlement_attestation(&state, &headers, &raw_payload_hash)?;
     let industrial_intent = extract_industrial_intent(&headers);
 
-    let raw_xml = std::str::from_utf8(&bytes).unwrap_or("");
-
-    match state.compliance.normalize_iso20022_ingress(raw_xml, raw_payload_hash.clone()) {
+    match state
+        .compliance
+        .normalize_iso20022_ingress(raw_payload, raw_payload_hash.clone())
+    {
         Ok(mut envelope) => {
-            if let Some(intent) = industrial_intent {
-                envelope.payload.industrial_intent = intent;
-            }
-            let proposal = build_settlement_proposal(&state, envelope, tee_attestation, &raw_payload_hash)?;
-            info!("Successfully ingested ISO 20022 settlement: {}", proposal.envelope.payload.transaction_id);
+            envelope.payload.industrial_intent = industrial_intent;
+            let proposal =
+                build_settlement_proposal(&state, envelope, tee_attestation, &raw_payload_hash)?;
+            info!(
+                "Successfully ingested ISO 20022 settlement: {}",
+                proposal.envelope.payload.transaction_id
+            );
             record_settlement(&state, &proposal).await;
             let _ = state.compliance.commit_settlement(&proposal.envelope);
             Ok(Json(proposal))
@@ -291,11 +367,13 @@ pub async fn ingress_papss(
         raw_payload_hash.clone(),
     ) {
         Ok(mut envelope) => {
-            if let Some(intent) = industrial_intent {
-                envelope.payload.industrial_intent = intent;
-            }
-            let proposal = build_settlement_proposal(&state, envelope, tee_attestation, &raw_payload_hash)?;
-            info!("Successfully ingested PAPSS settlement: {}", proposal.envelope.payload.transaction_id);
+            envelope.payload.industrial_intent = industrial_intent;
+            let proposal =
+                build_settlement_proposal(&state, envelope, tee_attestation, &raw_payload_hash)?;
+            info!(
+                "Successfully ingested PAPSS settlement: {}",
+                proposal.envelope.payload.transaction_id
+            );
             record_settlement(&state, &proposal).await;
             let _ = state.compliance.commit_settlement(&proposal.envelope);
             Ok(Json(proposal))
@@ -367,11 +445,13 @@ pub async fn ingress_brics(
         raw_payload_hash.clone(),
     ) {
         Ok(mut envelope) => {
-            if let Some(intent) = industrial_intent {
-                envelope.payload.industrial_intent = intent;
-            }
-            let proposal = build_settlement_proposal(&state, envelope, tee_attestation, &raw_payload_hash)?;
-            info!("Successfully ingested BRICS settlement: {}", proposal.envelope.payload.transaction_id);
+            envelope.payload.industrial_intent = industrial_intent;
+            let proposal =
+                build_settlement_proposal(&state, envelope, tee_attestation, &raw_payload_hash)?;
+            info!(
+                "Successfully ingested BRICS settlement: {}",
+                proposal.envelope.payload.transaction_id
+            );
             record_settlement(&state, &proposal).await;
             let _ = state.compliance.commit_settlement(&proposal.envelope);
             Ok(Json(proposal))
@@ -620,56 +700,4 @@ pub async fn sync_offline_receipts(
     Ok(Json(
         json!({ "status": "success", "synced_count": synced_count }),
     ))
-}
-
-pub async fn sync_erp_ledger(
-    State(state): State<AppState>,
-    Json(payload): Json<Value>,
-) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    info!("Syncing ERP ledger via OData v4...");
-
-    let payload_bytes = serde_json::to_vec(&payload).map_err(|e| {
-        (StatusCode::BAD_REQUEST, Json(json!({ "error": format!("Serialization error: {}", e) })))
-    })?;
-    let mut hasher = Sha256::new();
-    hasher.update(&payload_bytes);
-    let raw_payload_hash = hex::encode(hasher.finalize());
-
-    let envelopes = state.compliance.normalize_erp_ingress(&payload, raw_payload_hash).map_err(|e| {
-        (StatusCode::BAD_REQUEST, Json(json!({ "error": e.to_string() })))
-    })?;
-
-    let count = envelopes.len();
-    Ok(Json(json!({ "status": "synced", "count": count })))
-}
-
-pub async fn settle_job_card(
-    State(state): State<AppState>,
-    Json(payload): Json<Value>,
-) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    info!("Executing BitVM2-backed settlement...");
-    let _ = state;
-    let _ = payload;
-    Ok(Json(json!({ "status": "settled", "txid": "abc...123" })))
-}
-
-fn sha256_hex(data: &[u8]) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(data);
-    hex::encode(hasher.finalize())
-}
-
-fn extract_industrial_intent(headers: &HeaderMap) -> Option<conxian_core::IndustrialIntent> {
-    headers
-        .get("x-industrial-intent")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| serde_json::from_str(v).ok())
-}
-
-fn is_json_content_type(headers: &HeaderMap) -> bool {
-    headers
-        .get(header::CONTENT_TYPE)
-        .and_then(|v| v.to_str().ok())
-        .map(|v| v.contains("application/json"))
-        .unwrap_or(false)
 }

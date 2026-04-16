@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  # Lane 1: Community Sovereign Node
+  # Focus: Decentralization, individual operation
+  sovereign-node:
+    build: .
+    image: conxian-gateway:latest
+    container_name: conxian-sovereign-node
+    environment:
+      - API_TOKEN=${SOVEREIGN_API_TOKEN:-local-dev-token}
+      - BITCOIN_RPC_URL=${BITCOIN_RPC_URL:-https://bitcoin-rpc.publicnode.com}
+      - STACKS_RPC_URL=${STACKS_RPC_URL:-https://api.mainnet.hiro.so}
+      - FIAT_WEBHOOK_SECRET=${FIAT_WEBHOOK_SECRET:-changeme_fiat}
+      - SETTLEMENT_INGRESS_SECRET=${SETTLEMENT_INGRESS_SECRET:-changeme_ingress}
+    ports:
+      - "3000:3000"
+    volumes:
+      - sovereign_data:/usr/app
+    restart: unless-stopped
+
+  # Lane 2: Business-Managed Gateway
+  # Focus: B2B integration, institutional ledger reconciliation
+  business-gateway:
+    build: .
+    image: conxian-gateway:latest
+    container_name: conxian-business-gateway
+    environment:
+      - API_TOKEN=${BUSINESS_API_TOKEN:-business-dev-token}
+      - BITCOIN_RPC_URL=${BITCOIN_RPC_URL}
+      - STACKS_RPC_URL=${STACKS_RPC_URL}
+      - FIAT_WEBHOOK_SECRET=${FIAT_WEBHOOK_SECRET}
+      - SETTLEMENT_INGRESS_SECRET=${SETTLEMENT_INGRESS_SECRET}
+      - RUST_LOG=debug
+    ports:
+      - "3001:3000"
+    volumes:
+      - business_data:/usr/app
+    restart: unless-stopped
+
+  # Lane 3: Enterprise / Private Cloud
+  # Focus: High availability, specialized compliance (ISO 20022)
+  enterprise-gateway:
+    build: .
+    image: conxian-gateway:latest
+    container_name: conxian-enterprise-gateway
+    environment:
+      - API_TOKEN=${ENTERPRISE_API_TOKEN:-enterprise-dev-token}
+      - BITCOIN_RPC_URL=${BITCOIN_RPC_URL}
+      - STACKS_RPC_URL=${STACKS_RPC_URL}
+      - FIAT_WEBHOOK_SECRET=${FIAT_WEBHOOK_SECRET}
+      - SETTLEMENT_INGRESS_SECRET=${SETTLEMENT_INGRESS_SECRET}
+      - ALEX_API_URL=${ALEX_API_URL:-https://api.alexlab.co}
+    ports:
+      - "3002:3000"
+    volumes:
+      - enterprise_data:/usr/app
+    deploy:
+      replicas: 2
+    restart: unless-stopped
+
+volumes:
+  sovereign_data:
+  business_data:
+  enterprise_data:

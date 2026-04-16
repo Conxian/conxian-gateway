@@ -4,6 +4,8 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+tracing.workspace = true
+uuid.workspace = true
 bitcoin.workspace = true
 serde.workspace = true
 serde_json.workspace = true
