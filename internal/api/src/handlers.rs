@@ -547,6 +547,19 @@ fn extract_industrial_intent(headers: &HeaderMap) -> Option<conxian_core::Indust
         .and_then(|v| serde_json::from_str(v).ok())
 }
 
+pub async fn exchange_identity(
+    State(state): State<AppState>,
+    Json(payload): Json<conxian_core::GcpTokenRequest>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    match state.identity.exchange_token(&payload).await {
+        Ok(token) => Ok(Json(json!({ "access_token": token }))),
+        Err(e) => Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": e.to_string() })),
+        )),
+    }
+}
+
 pub async fn verify_attestation(
     State(_state): State<AppState>,
     Json(_payload): Json<Value>,
@@ -558,26 +571,19 @@ pub async fn verify_attestation(
     ))
 }
 
-pub async fn exchange_identity(
-    State(_state): State<AppState>,
-    Json(_payload): Json<Value>,
-) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    warn!("Identity exchange not implemented");
-    Err((
-        StatusCode::NOT_IMPLEMENTED,
-        Json(json!({"error": "Identity exchange unavailable"})),
-    ))
-}
+
 
 pub async fn resolve_identity_v1(
-    State(_state): State<AppState>,
-    Json(_payload): Json<Value>,
-) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    warn!("Identity resolution v1 not implemented");
-    Err((
-        StatusCode::NOT_IMPLEMENTED,
-        Json(json!({"error": "Identity resolution unavailable"})),
-    ))
+    State(state): State<AppState>,
+    Json(payload): Json<conxian_core::IdentityResolutionRequest>,
+) -> Result<Json<conxian_core::IdentityResolutionResponse>, (StatusCode, Json<Value>)> {
+    match state.identity.resolve_identity(&payload).await {
+        Ok(res) => Ok(Json(res)),
+        Err(e) => Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": e.to_string() })),
+        )),
+    }
 }
 
 pub async fn ingress_papss(

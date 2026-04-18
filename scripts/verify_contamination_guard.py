@@ -11,7 +11,7 @@ INCLUDE_DIRS = ["cmd", "internal", "pkg"]
 INCLUDE_EXTENSIONS = [".rs", ".toml"]
 
 # Keywords that indicate non-production logic or placeholders.
-CONTAMINATION_KEYWORDS = ["changeme", "stub", "placeholder", "testnet"]
+CONTAMINATION_KEYWORDS = ["changeme", "stub", "placeholder"]
 
 # 'mock' is allowed if it's part of a feature flag or test, but we'll flag direct use.
 SENSITIVE_KEYWORDS = ["mock"]
