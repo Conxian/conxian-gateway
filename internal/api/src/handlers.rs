@@ -1,154 +1,104 @@
 use crate::AppState;
 use axum::{
-    body::{Body, Bytes},
+    body::Body,
     extract::{Query, State},
-    http::{header, HeaderMap, StatusCode},
+    http::{HeaderMap, StatusCode},
     Json,
 };
-use compliance::zkc::SovereignCommit;
-use conxian_core::{AttestationRequest, ConxianError, SettlementEnvelope, SettlementProposal};
+use compliance::SovereignCommit;
+use conxian_core::{
+    AttestationRequest, ConxianError, JobCardSettlementRequest, SettlementEnvelope,
+    SettlementProposal,
+};
+use http_body_util::BodyExt;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{error, info, warn};
 
-const TEE_ATTESTATION_HEADER: &str = "x-tee-attestation";
+pub const TEE_ATTESTATION_HEADER: &str = "x-tee-attestation";
 const SETTLEMENT_LOG_MAX_ENTRIES: usize = 1000;
 
-pub async fn health_check(State(state): State<AppState>) -> (StatusCode, Json<Value>) {
-    let mut s = state.shared.write().unwrap();
-    s.metrics.health_requests += 1;
-    s.metrics.total_requests += 1;
+pub async fn get_health(State(state): State<AppState>) -> Json<Value> {
+    let s = state.shared.read().unwrap();
+    let bitcoin_status = if s.bitcoin.last_sync_time > 0 {
+        "synced"
+    } else {
+        "syncing"
+    };
+    let stacks_status = if s.stacks.last_sync_time > 0 {
+        "synced"
+    } else {
+        "syncing"
+    };
 
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_secs();
 
-    let btc_stale = now - s.bitcoin.last_sync_time > 120;
-    let stacks_stale = now - s.stacks.last_sync_time > 300;
+    let mut overall = "ok";
+    if s.bitcoin.last_sync_time > 0 && now - s.bitcoin.last_sync_time > 120 {
+        overall = "degraded";
+    }
+    if s.stacks.last_sync_time > 0 && now - s.stacks.last_sync_time > 300 {
+        overall = "degraded";
+    }
 
-    let status = if btc_stale || stacks_stale {
-        "degraded"
-    } else {
-        "healthy"
-    };
-
-    (
-        StatusCode::OK,
-        Json(json!({
-            "status": status,
-            "version": conxian_core::VERSION,
-            "bitcoin_sync": !btc_stale,
-            "stacks_sync": !stacks_stale
-        })),
-    )
+    Json(json!({
+        "status": overall,
+        "version": env!("CARGO_PKG_VERSION"),
+        "bitcoin": {
+            "status": bitcoin_status,
+            "height": s.bitcoin.height,
+        },
+        "stacks": {
+            "status": stacks_status,
+            "height": s.stacks.height,
+            "epoch": s.stacks.epoch,
+        }
+    }))
 }
 
 pub async fn get_state(State(state): State<AppState>) -> Json<conxian_core::GatewayState> {
-    let mut s = state.shared.write().unwrap();
-    s.metrics.state_requests += 1;
-    s.metrics.total_requests += 1;
+    let s = state.shared.read().unwrap();
     Json(s.clone())
 }
 
-pub async fn get_metrics(State(state): State<AppState>) -> (StatusCode, String) {
+pub async fn get_metrics(State(state): State<AppState>) -> Json<Value> {
     let s = state.shared.read().unwrap();
-    let uptime = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs()
-        - s.start_time;
+    Json(json!({
+        "health_requests": s.metrics.health_requests,
+        "state_requests": s.metrics.state_requests,
+        "metrics_requests": s.metrics.metrics_requests,
+        "verification_requests": s.metrics.verification_requests,
+        "verification_success": s.metrics.verification_success,
+        "verification_failure": s.metrics.verification_failure,
+        "total_requests": s.metrics.total_requests,
+        "treasury": {
+            "balance_stx": s.metrics.treasury_balance_stx,
+            "balance_btc": s.metrics.treasury_balance_btc,
+            "last_update": s.metrics.last_treasury_update,
+            "sbtc_liquidity": s.metrics.sbtc_liquidity,
+            "syi_index": s.metrics.syi_index,
+        },
+        "bounty_payouts_enabled": s.metrics.bounty_payouts_enabled
+    }))
+}
 
-    let prometheus_output = format!(
-        "# HELP gateway_uptime_seconds The service uptime in seconds\n\
-         # TYPE gateway_uptime_seconds counter\n\
-         gateway_uptime_seconds {}\n\
-         # HELP gateway_total_requests Total requests processed\n\
-         # TYPE gateway_total_requests counter\n\
-         gateway_total_requests {}\n\
-         # HELP gateway_verification_success_total Successful attestations\n\
-         # TYPE gateway_verification_success_total counter\n\
-         gateway_verification_success_total {}\n\
-         # HELP gateway_verification_failure_total Failed attestations\n\
-         # TYPE gateway_verification_failure_total counter\n\
-         gateway_verification_failure_total {}\n\
-         # HELP blockchain_height_bitcoin Bitcoin L1 tip height\n\
-         # TYPE blockchain_height_bitcoin gauge\n\
-         blockchain_height_bitcoin {}\n\
-         # HELP blockchain_height_stacks Stacks L2 tip height\n\
-         # TYPE blockchain_height_stacks gauge\n\
-         blockchain_height_stacks {}\n\
-         # HELP gateway_sbtc_liquidity_usd Total sBTC liquidity in USD (TAM)\n\
-         # TYPE gateway_sbtc_liquidity_usd gauge\n\
-         gateway_sbtc_liquidity_usd {}\n\
-         # HELP gateway_syi_index_percentage Sovereign Yield Index in percentage\n\
-         # TYPE gateway_syi_index_percentage gauge\n\
-         gateway_syi_index_percentage {}\n",
-        uptime,
-        s.metrics.total_requests,
-        s.metrics.verification_success,
-        s.metrics.verification_failure,
-        s.bitcoin.height,
-        s.stacks.height,
-        s.metrics.sbtc_liquidity,
-        s.metrics.syi_index * 100.0
+pub async fn create_fiat_session(
+    State(state): State<AppState>,
+    Json(payload): Json<crate::fiat::OnRampSessionRequest>,
+) -> Result<Json<crate::fiat::OnRampSessionResponse>, (StatusCode, Json<Value>)> {
+    info!(
+        "Creating fiat on-ramp session for provider: {}",
+        payload.provider
     );
 
-    (StatusCode::OK, prometheus_output)
-}
-
-pub async fn verify_attestation(
-    State(state): State<AppState>,
-    Json(request): Json<AttestationRequest>,
-) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    let mut s = state.shared.write().unwrap();
-    s.metrics.verification_requests += 1;
-    s.metrics.total_requests += 1;
-
-    match state.compliance.verify_attestation(&request) {
-        Ok(valid) => {
-            if valid {
-                s.metrics.verification_success += 1;
-                Ok(Json(json!({ "valid": true })))
-            } else {
-                s.metrics.verification_failure += 1;
-                Ok(Json(
-                    json!({ "valid": false, "error": "Signature mismatch" }),
-                ))
-            }
-        }
-        Err(e) => {
-            s.metrics.verification_failure += 1;
-            Err((
-                StatusCode::BAD_REQUEST,
-                Json(json!({ "valid": false, "error": e.to_string() })),
-            ))
-        }
-    }
-}
-
-pub async fn exchange_identity(
-    State(state): State<AppState>,
-    Json(request): Json<conxian_core::GcpTokenRequest>,
-) -> Result<Json<String>, (StatusCode, Json<Value>)> {
-    match state.identity.exchange_token(&request).await {
+    match state.fiat.create_session(payload).await {
         Ok(res) => Ok(Json(res)),
         Err(e) => Err((
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": e.to_string() })),
-        )),
-    }
-}
-
-pub async fn resolve_identity_v1(
-    State(state): State<AppState>,
-    Json(request): Json<conxian_core::IdentityResolutionRequest>,
-) -> Result<Json<conxian_core::IdentityResolutionResponse>, (StatusCode, Json<Value>)> {
-    match state.identity.resolve_identity(&request).await {
-        Ok(res) => Ok(Json(res)),
-        Err(e) => Err((
-            StatusCode::NOT_FOUND,
+            StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({ "error": e.to_string() })),
         )),
     }
@@ -157,17 +107,21 @@ pub async fn resolve_identity_v1(
 pub async fn verify_fiat_webhook(
     headers: HeaderMap,
     State(state): State<AppState>,
-    Json(payload): Json<crate::fiat::WebhookPayload>,
+    Json(mut payload): Json<crate::fiat::WebhookPayload>,
 ) -> Result<StatusCode, (StatusCode, Json<Value>)> {
-    let signature = headers
-        .get("x-fiat-signature")
-        .and_then(|h| h.to_str().ok())
-        .ok_or((
-            StatusCode::UNAUTHORIZED,
-            Json(json!({ "error": "Missing signature" })),
-        ))?;
+    let signature_header = headers
+        .get("x-ramp-signature")
+        .or_else(|| headers.get("x-fiat-signature"))
+        .and_then(|h| h.to_str().ok());
 
-    match state.fiat.verify_webhook(&payload, signature) {
+    if let Some(sig) = signature_header {
+        payload.signature = sig.to_string();
+    }
+
+    match state
+        .fiat
+        .verify_webhook(&payload, &state.fiat_webhook_secret)
+    {
         Ok(true) => Ok(StatusCode::OK),
         _ => Err((
             StatusCode::UNAUTHORIZED,
@@ -194,7 +148,11 @@ pub async fn verify_otp(
     Json(payload): Json<crate::a2p::OtpVerificationRequest>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     match state.a2p.verify_otp(payload) {
-        Ok(res) => Ok(Json(json!({ "valid": res }))),
+        Ok(true) => Ok(Json(json!({ "status": "verified" }))),
+        Ok(false) => Err((
+            StatusCode::UNAUTHORIZED,
+            Json(json!({ "error": "Invalid OTP or HMAC" })),
+        )),
         Err(e) => Err((
             StatusCode::BAD_REQUEST,
             Json(json!({ "error": e.to_string() })),
@@ -203,23 +161,46 @@ pub async fn verify_otp(
 }
 
 pub async fn ingress_iso20022(
-    State(state): State<AppState>,
     headers: HeaderMap,
-    bytes: Bytes,
-) -> Result<Json<conxian_core::SettlementProposal>, (StatusCode, Json<Value>)> {
-    let raw_payload_hash = sha256_hex(&bytes);
+    State(state): State<AppState>,
+    body: Body,
+) -> Result<Json<SettlementProposal>, (StatusCode, Json<Value>)> {
+    let raw_payload = body
+        .collect()
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": format!("Body collection failed: {}", e) })),
+            )
+        })?
+        .to_bytes();
+
+    let raw_payload_hash = sha256_hex(&raw_payload);
     let tee_attestation = verify_tee_settlement_attestation(&state, &headers, &raw_payload_hash)?;
     let industrial_intent = extract_industrial_intent(&headers);
 
-    let raw_xml = std::str::from_utf8(&bytes).unwrap_or("");
+    let xml_str = std::str::from_utf8(&raw_payload).map_err(|_| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "Invalid UTF-8 in XML" })),
+        )
+    })?;
 
-    match state.compliance.normalize_iso20022_ingress(raw_xml, raw_payload_hash.clone()) {
+    match state
+        .compliance
+        .normalize_iso20022_ingress(xml_str, raw_payload_hash.clone())
+    {
         Ok(mut envelope) => {
             if let Some(intent) = industrial_intent {
                 envelope.payload.industrial_intent = intent;
             }
-            let proposal = build_settlement_proposal(&state, envelope, tee_attestation, &raw_payload_hash)?;
-            info!("Successfully ingested ISO 20022 settlement: {}", proposal.envelope.payload.transaction_id);
+            let proposal =
+                build_settlement_proposal(&state, envelope, tee_attestation, &raw_payload_hash)?;
+            info!(
+                "Successfully ingested ISO 20022 settlement: {}",
+                proposal.envelope.payload.transaction_id
+            );
             record_settlement(&state, &proposal).await;
             let _ = state.compliance.commit_settlement(&proposal.envelope);
             Ok(Json(proposal))
@@ -231,155 +212,76 @@ pub async fn ingress_iso20022(
     }
 }
 
-pub async fn ingress_papss(
+pub async fn sync_erp_ledger(
     State(state): State<AppState>,
-    headers: HeaderMap,
-    bytes: Bytes,
-) -> Result<Json<conxian_core::SettlementProposal>, (StatusCode, Json<Value>)> {
-    if !is_json_content_type(&headers) {
-        return Err((
-            StatusCode::UNSUPPORTED_MEDIA_TYPE,
-            Json(json!({ "error": "Unsupported Content-Type" })),
-        ));
-    }
+    Json(payload): Json<Value>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    info!("Syncing ERP ledger via OData v4...");
 
-    let raw_payload_hash = sha256_hex(&bytes);
-
-    let signature = headers
-        .get("x-papss-signature")
-        .and_then(|h| h.to_str().ok())
-        .filter(|s| !s.is_empty())
-        .ok_or((
-            StatusCode::UNAUTHORIZED,
-            Json(json!({ "error": "Missing signature" })),
-        ))?;
-
-    let raw_payload = std::str::from_utf8(&bytes).map_err(|e| {
+    let payload_bytes = serde_json::to_vec(&payload).map_err(|e: serde_json::Error| {
         (
             StatusCode::BAD_REQUEST,
-            Json(json!({ "error": format!("Invalid UTF-8 body: {e}") })),
+            Json(json!({ "error": format!("Serialization error: {}", e) })),
         )
     })?;
+    let mut hasher = Sha256::new();
+    hasher.update(&payload_bytes);
+    let raw_payload_hash = hex::encode(hasher.finalize());
 
-    match state.compliance.verify_ingress_signature(
-        raw_payload,
-        signature,
-        &state.settlement_ingress_secret,
-    ) {
-        Ok(true) => (),
-        _ => {
-            warn!("PAPSS ingress signature verification failed");
-            return Err((
-                StatusCode::UNAUTHORIZED,
-                Json(json!({ "error": "Invalid signature" })),
-            ));
-        }
-    }
+    let envelopes = state
+        .compliance
+        .normalize_erp_ingress(&payload, raw_payload_hash)
+        .map_err(|e: ConxianError| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "error": e.to_string() })),
+            )
+        })?;
 
-    let tee_attestation = verify_tee_settlement_attestation(&state, &headers, &raw_payload_hash)?;
-    let industrial_intent = extract_industrial_intent(&headers);
-
-    let payload: Value = serde_json::from_slice(&bytes).map_err(|e| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": format!("Invalid JSON body: {e}") })),
-        )
-    })?;
-
-    match state.compliance.normalize_papss_ingress(
-        payload.get("payload").unwrap_or(&payload),
-        raw_payload_hash.clone(),
-    ) {
-        Ok(mut envelope) => {
-            if let Some(intent) = industrial_intent {
-                envelope.payload.industrial_intent = intent;
-            }
-            let proposal = build_settlement_proposal(&state, envelope, tee_attestation, &raw_payload_hash)?;
-            info!("Successfully ingested PAPSS settlement: {}", proposal.envelope.payload.transaction_id);
-            record_settlement(&state, &proposal).await;
-            let _ = state.compliance.commit_settlement(&proposal.envelope);
-            Ok(Json(proposal))
-        }
-        Err(e) => Err((
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": e.to_string() })),
-        )),
-    }
+    let count = envelopes.len();
+    Ok(Json(json!({ "status": "synced", "count": count })))
 }
 
-pub async fn ingress_brics(
+pub async fn settle_job_card(
     State(state): State<AppState>,
-    headers: HeaderMap,
-    bytes: Bytes,
-) -> Result<Json<conxian_core::SettlementProposal>, (StatusCode, Json<Value>)> {
-    if !is_json_content_type(&headers) {
-        return Err((
-            StatusCode::UNSUPPORTED_MEDIA_TYPE,
-            Json(json!({ "error": "Unsupported Content-Type" })),
-        ));
-    }
+    Json(payload): Json<Value>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    info!("Executing BitVM2-backed settlement...");
 
-    let raw_payload_hash = sha256_hex(&bytes);
-
-    let signature = headers
-        .get("x-brics-signature")
-        .and_then(|h| h.to_str().ok())
-        .filter(|s| !s.is_empty())
-        .ok_or((
-            StatusCode::UNAUTHORIZED,
-            Json(json!({ "error": "Missing signature" })),
-        ))?;
-
-    let raw_payload = std::str::from_utf8(&bytes).map_err(|e| {
+    let request: JobCardSettlementRequest = serde_json::from_value(payload).map_err(|e| {
         (
             StatusCode::BAD_REQUEST,
-            Json(json!({ "error": format!("Invalid UTF-8 body: {e}") })),
+            Json(json!({ "error": format!("Invalid settlement request: {}", e) })),
         )
     })?;
 
-    match state.compliance.verify_ingress_signature(
-        raw_payload,
-        signature,
-        &state.settlement_ingress_secret,
-    ) {
-        Ok(true) => (),
-        _ => {
-            warn!("BRICS ingress signature verification failed");
-            return Err((
-                StatusCode::UNAUTHORIZED,
-                Json(json!({ "error": "Invalid signature" })),
-            ));
+    match state.compliance.verify_bitvm2_settlement(&request) {
+        Ok(true) => {
+            info!(
+                "BitVM2 settlement verified for job: {}",
+                request.bitvm_attestation.commitment_hash
+            );
+            Ok(Json(json!({
+                "status": "settled",
+                "verified": true,
+                "txid": format!("bitvm-{}", request.bitvm_attestation.proof_hash)
+            })))
         }
-    }
-
-    let tee_attestation = verify_tee_settlement_attestation(&state, &headers, &raw_payload_hash)?;
-    let industrial_intent = extract_industrial_intent(&headers);
-
-    let payload: Value = serde_json::from_slice(&bytes).map_err(|e| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": format!("Invalid JSON body: {e}") })),
-        )
-    })?;
-
-    match state.compliance.normalize_brics_ingress(
-        payload.get("payload").unwrap_or(&payload),
-        raw_payload_hash.clone(),
-    ) {
-        Ok(mut envelope) => {
-            if let Some(intent) = industrial_intent {
-                envelope.payload.industrial_intent = intent;
-            }
-            let proposal = build_settlement_proposal(&state, envelope, tee_attestation, &raw_payload_hash)?;
-            info!("Successfully ingested BRICS settlement: {}", proposal.envelope.payload.transaction_id);
-            record_settlement(&state, &proposal).await;
-            let _ = state.compliance.commit_settlement(&proposal.envelope);
-            Ok(Json(proposal))
+        Ok(false) => {
+            warn!("BitVM2 settlement verification failed");
+            Ok(Json(json!({
+                "status": "failed",
+                "verified": false,
+                "error": "Commitment or proof mismatch"
+            })))
         }
-        Err(e) => Err((
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": e.to_string() })),
-        )),
+        Err(e) => {
+            error!(error = %e, "BitVM2 settlement error");
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": e.to_string() })),
+            ))
+        }
     }
 }
 
@@ -387,7 +289,8 @@ pub async fn get_external_settlements(
     State(state): State<AppState>,
 ) -> Json<Vec<SettlementProposal>> {
     let log = state.settlement_log.read().await;
-    Json(log.iter().cloned().collect())
+    let list: Vec<SettlementProposal> = log.iter().cloned().collect();
+    Json(list)
 }
 
 fn verify_tee_settlement_attestation(
@@ -405,12 +308,13 @@ fn verify_tee_settlement_attestation(
             Json(json!({ "error": "Missing TEE attestation" })),
         ))?;
 
-    let attestation: AttestationRequest = serde_json::from_str(attestation_raw).map_err(|e| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": format!("Invalid TEE attestation format: {e}") })),
-        )
-    })?;
+    let attestation: AttestationRequest =
+        serde_json::from_str(attestation_raw).map_err(|e: serde_json::Error| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "error": format!("Invalid TEE attestation format: {e}") })),
+            )
+        })?;
 
     match state
         .compliance
@@ -463,19 +367,21 @@ fn build_settlement_proposal(
             raw_payload_hash,
             &envelope.payload.identifiers,
         )
-        .map_err(|e| {
+        .map_err(|e: ConxianError| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({ "error": e.to_string() })),
             )
         })?;
 
-    SettlementProposal::new(trigger_id, envelope, tee_attestation, burn_height, now).map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": e.to_string() })),
-        )
-    })
+    SettlementProposal::new(trigger_id, envelope, tee_attestation, burn_height, now).map_err(
+        |e: ConxianError| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": e.to_string() })),
+            )
+        },
+    )
 }
 
 async fn record_settlement(state: &AppState, proposal: &SettlementProposal) {
@@ -556,7 +462,7 @@ pub async fn handle_offline_pos(
             &payload.device_id,
             payload.passkey_attestation,
         )
-        .map_err(|e| {
+        .map_err(|e: ConxianError| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({ "error": e.to_string() })),
@@ -566,19 +472,22 @@ pub async fn handle_offline_pos(
     state
         .compliance
         .simulate_mesh_gossip(&mut receipt)
-        .map_err(|e| {
+        .map_err(|e: ConxianError| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({ "error": e.to_string() })),
             )
         })?;
 
-    state.offline_queue.enqueue(&receipt).map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": e.to_string() })),
-        )
-    })?;
+    state
+        .offline_queue
+        .enqueue(&receipt)
+        .map_err(|e: ConxianError| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": e.to_string() })),
+            )
+        })?;
 
     Ok(Json(receipt))
 }
@@ -586,12 +495,15 @@ pub async fn handle_offline_pos(
 pub async fn sync_offline_receipts(
     State(state): State<AppState>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    let receipts = state.offline_queue.dequeue_pending().map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": e.to_string() })),
-        )
-    })?;
+    let receipts = state
+        .offline_queue
+        .dequeue_pending()
+        .map_err(|e: ConxianError| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": e.to_string() })),
+            )
+        })?;
 
     let mut synced_count = 0;
     for receipt in receipts {
@@ -607,7 +519,7 @@ pub async fn sync_offline_receipts(
             state
                 .offline_queue
                 .mark_broadcasted(&receipt.receipt_id)
-                .map_err(|e| {
+                .map_err(|e: ConxianError| {
                     (
                         StatusCode::INTERNAL_SERVER_ERROR,
                         Json(json!({ "error": e.to_string() })),
@@ -620,37 +532,6 @@ pub async fn sync_offline_receipts(
     Ok(Json(
         json!({ "status": "success", "synced_count": synced_count }),
     ))
-}
-
-pub async fn sync_erp_ledger(
-    State(state): State<AppState>,
-    Json(payload): Json<Value>,
-) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    info!("Syncing ERP ledger via OData v4...");
-
-    let payload_bytes = serde_json::to_vec(&payload).map_err(|e| {
-        (StatusCode::BAD_REQUEST, Json(json!({ "error": format!("Serialization error: {}", e) })))
-    })?;
-    let mut hasher = Sha256::new();
-    hasher.update(&payload_bytes);
-    let raw_payload_hash = hex::encode(hasher.finalize());
-
-    let envelopes = state.compliance.normalize_erp_ingress(&payload, raw_payload_hash).map_err(|e| {
-        (StatusCode::BAD_REQUEST, Json(json!({ "error": e.to_string() })))
-    })?;
-
-    let count = envelopes.len();
-    Ok(Json(json!({ "status": "synced", "count": count })))
-}
-
-pub async fn settle_job_card(
-    State(state): State<AppState>,
-    Json(payload): Json<Value>,
-) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    info!("Executing BitVM2-backed settlement...");
-    let _ = state;
-    let _ = payload;
-    Ok(Json(json!({ "status": "settled", "txid": "abc...123" })))
 }
 
 fn sha256_hex(data: &[u8]) -> String {
@@ -666,10 +547,167 @@ fn extract_industrial_intent(headers: &HeaderMap) -> Option<conxian_core::Indust
         .and_then(|v| serde_json::from_str(v).ok())
 }
 
-fn is_json_content_type(headers: &HeaderMap) -> bool {
-    headers
-        .get(header::CONTENT_TYPE)
-        .and_then(|v| v.to_str().ok())
-        .map(|v| v.contains("application/json"))
-        .unwrap_or(false)
+pub async fn verify_attestation(
+    State(_state): State<AppState>,
+    Json(_payload): Json<Value>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    warn!("Direct attestation verification not implemented");
+    Err((
+        StatusCode::NOT_IMPLEMENTED,
+        Json(json!({"error": "Use specific ingress endpoints for attestation verification"})),
+    ))
+}
+
+pub async fn exchange_identity(
+    State(_state): State<AppState>,
+    Json(_payload): Json<Value>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    warn!("Identity exchange not implemented");
+    Err((
+        StatusCode::NOT_IMPLEMENTED,
+        Json(json!({"error": "Identity exchange unavailable"})),
+    ))
+}
+
+pub async fn resolve_identity_v1(
+    State(_state): State<AppState>,
+    Json(_payload): Json<Value>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    warn!("Identity resolution v1 not implemented");
+    Err((
+        StatusCode::NOT_IMPLEMENTED,
+        Json(json!({"error": "Identity resolution unavailable"})),
+    ))
+}
+
+pub async fn ingress_papss(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    body: Body,
+) -> Result<Json<SettlementProposal>, (StatusCode, Json<Value>)> {
+    let raw_payload = body
+        .collect()
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": format!("Body collection failed: {}", e) })),
+            )
+        })?
+        .to_bytes();
+
+    let raw_payload_hash = sha256_hex(&raw_payload);
+    let tee_attestation = verify_tee_settlement_attestation(&state, &headers, &raw_payload_hash)?;
+    let industrial_intent = extract_industrial_intent(&headers);
+
+    let json_payload: Value = serde_json::from_slice(&raw_payload).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": format!("Invalid JSON: {}", e) })),
+        )
+    })?;
+
+    match state
+        .compliance
+        .normalize_papss_ingress(&json_payload, raw_payload_hash.clone())
+    {
+        Ok(mut envelope) => {
+            if let Some(intent) = industrial_intent {
+                envelope.payload.industrial_intent = intent;
+            }
+            let proposal =
+                build_settlement_proposal(&state, envelope, tee_attestation, &raw_payload_hash)?;
+            info!(
+                "Successfully ingested PAPSS settlement: {}",
+                proposal.envelope.payload.transaction_id
+            );
+            record_settlement(&state, &proposal).await;
+            let _ = state.compliance.commit_settlement(&proposal.envelope);
+            Ok(Json(proposal))
+        }
+        Err(e) => Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": e.to_string() })),
+        )),
+    }
+}
+
+pub async fn ingress_brics(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    body: Body,
+) -> Result<Json<SettlementProposal>, (StatusCode, Json<Value>)> {
+    let raw_payload = body
+        .collect()
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": format!("Body collection failed: {}", e) })),
+            )
+        })?
+        .to_bytes();
+
+    let raw_payload_hash = sha256_hex(&raw_payload);
+    let tee_attestation = verify_tee_settlement_attestation(&state, &headers, &raw_payload_hash)?;
+    let industrial_intent = extract_industrial_intent(&headers);
+
+    let json_payload: Value = serde_json::from_slice(&raw_payload).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": format!("Invalid JSON: {}", e) })),
+        )
+    })?;
+
+    match state
+        .compliance
+        .normalize_brics_ingress(&json_payload, raw_payload_hash.clone())
+    {
+        Ok(mut envelope) => {
+            if let Some(intent) = industrial_intent {
+                envelope.payload.industrial_intent = intent;
+            }
+            let proposal =
+                build_settlement_proposal(&state, envelope, tee_attestation, &raw_payload_hash)?;
+            info!(
+                "Successfully ingested BRICS settlement: {}",
+                proposal.envelope.payload.transaction_id
+            );
+            record_settlement(&state, &proposal).await;
+            let _ = state.compliance.commit_settlement(&proposal.envelope);
+            Ok(Json(proposal))
+        }
+        Err(e) => Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": e.to_string() })),
+        )),
+    }
+}
+
+pub async fn get_handoff_status(State(state): State<AppState>) -> Json<Value> {
+    let s = state.shared.read().unwrap();
+    Json(json!({
+        "current_state": s.handoff_state,
+        "bootstrap_wallet": s.wallets.bootstrap,
+        "payout_destination": s.wallets.get_payout_destination(s.handoff_state),
+        "treasury_destination": s.wallets.get_treasury_destination(s.handoff_state),
+        "handoff_complete": s.handoff_state == conxian_core::HandoffState::HandoffComplete
+    }))
+}
+
+pub async fn update_handoff_state(
+    State(state): State<AppState>,
+    Json(new_state): Json<conxian_core::HandoffState>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let mut s = state.shared.write().unwrap();
+    let old_state = s.handoff_state;
+    s.handoff_state = new_state;
+
+    info!(old = ?old_state, new = ?new_state, "System handoff state updated");
+
+    Ok(Json(json!({
+        "status": "success",
+        "old_state": old_state,
+        "new_state": new_state
+    })))
 }

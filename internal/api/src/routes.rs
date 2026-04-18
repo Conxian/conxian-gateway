@@ -1,6 +1,6 @@
 use crate::auth::auth_middleware;
 use crate::handlers;
-use crate::middleware::latency_tracker;
+use crate::middleware::{latency_tracker, x402_filter};
 use crate::AppState;
 use axum::{
     extract::DefaultBodyLimit,
@@ -13,7 +13,7 @@ pub fn configure_routes(state: AppState, api_token: String) -> Router {
     let token_for_auth = api_token.clone();
 
     let public_routes = Router::new()
-        .route("/health", get(handlers::health_check))
+        .route("/health", get(handlers::get_health))
         .with_state(state.clone());
 
     let private_routes = Router::new()
@@ -22,6 +22,7 @@ pub fn configure_routes(state: AppState, api_token: String) -> Router {
         .route("/verify", post(handlers::verify_attestation))
         .route("/identity/exchange", post(handlers::exchange_identity))
         .route("/identity/resolve", post(handlers::resolve_identity_v1))
+        .route("/fiat/session", post(handlers::create_fiat_session))
         .route("/fiat/webhook", post(handlers::verify_fiat_webhook))
         .route("/a2p/otp", post(handlers::send_otp))
         .route("/a2p/verify", post(handlers::verify_otp))
@@ -47,6 +48,9 @@ pub fn configure_routes(state: AppState, api_token: String) -> Router {
         )
         .route("/pos/offline", post(handlers::handle_offline_pos))
         .route("/pos/sync", post(handlers::sync_offline_receipts))
+        .route("/handoff/status", get(handlers::get_handoff_status))
+        .route("/handoff/update", post(handlers::update_handoff_state))
+        .layer(middleware::from_fn(x402_filter))
         .layer(middleware::from_fn(move |req, next| {
             auth_middleware(req, next, token_for_auth.clone())
         }))
