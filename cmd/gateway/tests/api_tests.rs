@@ -50,6 +50,35 @@ fn make_tee_attestation_header(raw_payload_hash: &str) -> String {
     make_attestation_header("conxius-tee-test", raw_payload_hash)
 }
 
+fn make_x402_headers() -> (String, String) {
+    let payment_required = json!({
+        "accepts": [
+            {
+                "amount": "1000",
+                "asset": "sBTC",
+                "maxTimeoutSeconds": 600
+            }
+        ],
+        "challenge": "gateway-challenge"
+    });
+
+    let payment_signature = json!({
+        "payload": {
+            "authorization": {
+                "nonce": "gateway-nonce",
+                "validBefore": "2000000000"
+            },
+            "transaction": "0xfeedbeef"
+        },
+        "signature": "0xproof"
+    });
+
+    (
+        serde_json::to_string(&payment_required).unwrap(),
+        serde_json::to_string(&payment_signature).unwrap(),
+    )
+}
+
 fn setup_app(state: SharedState) -> axum::Router {
     let app_state = AppState {
         shared: state,
@@ -150,6 +179,7 @@ async fn test_ingress_iso20022_authorized() {
 
     let raw_payload_hash = hex::encode(Sha256::digest(xml_payload.as_bytes()));
     let tee_attestation = make_tee_attestation_header(&raw_payload_hash);
+    let (payment_required, payment_signature) = make_x402_headers();
 
     let response = app
         .oneshot(
@@ -160,6 +190,8 @@ async fn test_ingress_iso20022_authorized() {
                 .header("Content-Type", "application/xml")
                 .header("x-iso20022-signature", signature)
                 .header("x-tee-attestation", tee_attestation)
+                .header("payment-required", payment_required)
+                .header("payment-signature", payment_signature)
                 .body(Body::from(xml_payload))
                 .unwrap(),
         )
@@ -186,6 +218,7 @@ async fn test_ingress_iso20022_rejects_tampered_tee_device_id() {
 
     let raw_payload_hash = hex::encode(Sha256::digest(xml_payload.as_bytes()));
     let tee_attestation = make_tee_attestation_header(&raw_payload_hash);
+    let (payment_required, payment_signature) = make_x402_headers();
 
     let mut attestation_req: AttestationRequest = serde_json::from_str(&tee_attestation).unwrap();
     match &mut attestation_req {
@@ -203,6 +236,8 @@ async fn test_ingress_iso20022_rejects_tampered_tee_device_id() {
                 .header("Content-Type", "application/xml")
                 .header("x-iso20022-signature", signature)
                 .header("x-tee-attestation", tee_attestation)
+                .header("payment-required", payment_required)
+                .header("payment-signature", payment_signature)
                 .body(Body::from(xml_payload))
                 .unwrap(),
         )
@@ -229,6 +264,7 @@ async fn test_ingress_iso20022_rejects_non_tee_device_id() {
 
     let raw_payload_hash = hex::encode(Sha256::digest(xml_payload.as_bytes()));
     let tee_attestation = make_attestation_header("conxius-non-tee-test", &raw_payload_hash);
+    let (payment_required, payment_signature) = make_x402_headers();
 
     let response = app
         .oneshot(
@@ -239,6 +275,8 @@ async fn test_ingress_iso20022_rejects_non_tee_device_id() {
                 .header("Content-Type", "application/xml")
                 .header("x-iso20022-signature", signature)
                 .header("x-tee-attestation", tee_attestation)
+                .header("payment-required", payment_required)
+                .header("payment-signature", payment_signature)
                 .body(Body::from(xml_payload))
                 .unwrap(),
         )
@@ -273,6 +311,7 @@ async fn test_ingress_iso20022_rejects_escalated_non_tee_to_tee_device_id() {
         _ => panic!("expected Ecdsa attestation in test"),
     }
     let tee_attestation = serde_json::to_string(&attestation_req).unwrap();
+    let (payment_required, payment_signature) = make_x402_headers();
 
     let response = app
         .oneshot(
@@ -283,6 +322,8 @@ async fn test_ingress_iso20022_rejects_escalated_non_tee_to_tee_device_id() {
                 .header("Content-Type", "application/xml")
                 .header("x-iso20022-signature", signature)
                 .header("x-tee-attestation", tee_attestation)
+                .header("payment-required", payment_required)
+                .header("payment-signature", payment_signature)
                 .body(Body::from(xml_payload))
                 .unwrap(),
         )
@@ -312,6 +353,7 @@ async fn test_ingress_papss_authorized() {
 
     let raw_payload_hash = hex::encode(Sha256::digest(raw_payload.as_bytes()));
     let tee_attestation = make_tee_attestation_header(&raw_payload_hash);
+    let (payment_required, payment_signature) = make_x402_headers();
 
     let response = app
         .oneshot(
@@ -322,6 +364,8 @@ async fn test_ingress_papss_authorized() {
                 .header("Content-Type", "application/json")
                 .header("x-papss-signature", signature)
                 .header("x-tee-attestation", tee_attestation)
+                .header("payment-required", payment_required)
+                .header("payment-signature", payment_signature)
                 .body(Body::from(raw_payload))
                 .unwrap(),
         )
@@ -351,6 +395,7 @@ async fn test_ingress_brics_authorized() {
 
     let raw_payload_hash = hex::encode(Sha256::digest(raw_payload.as_bytes()));
     let tee_attestation = make_tee_attestation_header(&raw_payload_hash);
+    let (payment_required, payment_signature) = make_x402_headers();
 
     let response = app
         .oneshot(
@@ -361,6 +406,8 @@ async fn test_ingress_brics_authorized() {
                 .header("Content-Type", "application/json")
                 .header("x-brics-signature", signature)
                 .header("x-tee-attestation", tee_attestation)
+                .header("payment-required", payment_required)
+                .header("payment-signature", payment_signature)
                 .body(Body::from(raw_payload))
                 .unwrap(),
         )
@@ -402,4 +449,76 @@ async fn test_sync_erp_ledger_odata() {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn test_ingress_iso20022_requires_x402_headers() {
+    let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
+    {
+        let mut s = state.write().unwrap();
+        s.stacks.burn_block_height = Some(55);
+    }
+    let app = setup_app(state);
+
+    let xml_payload = r#"<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pacs.008.001.08"><FIToFICstmrCdtTrf><GrpHdr><MsgId>TX-123</MsgId></GrpHdr><CdtTrfTxInf><IntrBkSttlmAmt Ccy="sBTC">0.5</IntrBkSttlmAmt><DbtrAcct><Id><Othr><Id>SENDER-AC-1</Id></Othr></Id></DbtrAcct><CdtrAcct><Id><Othr><Id>RECEIVER-AC-1</Id></Othr></Id></CdtrAcct></CdtTrfTxInf></FIToFICstmrCdtTrf></Document>"#;
+
+    let mut mac = Hmac::<Sha256>::new_from_slice(TEST_SETTLEMENT_SECRET.as_bytes()).unwrap();
+    mac.update(xml_payload.as_bytes());
+    let signature = hex::encode(mac.finalize().into_bytes());
+
+    let raw_payload_hash = hex::encode(Sha256::digest(xml_payload.as_bytes()));
+    let tee_attestation = make_tee_attestation_header(&raw_payload_hash);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/ingress/iso20022")
+                .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("Content-Type", "application/xml")
+                .header("x-iso20022-signature", signature)
+                .header("x-tee-attestation", tee_attestation)
+                .body(Body::from(xml_payload))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::PAYMENT_REQUIRED);
+}
+
+#[tokio::test]
+async fn test_iso20022_pacs008_alias_route_requires_x402_headers() {
+    let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
+    {
+        let mut s = state.write().unwrap();
+        s.stacks.burn_block_height = Some(55);
+    }
+    let app = setup_app(state);
+
+    let xml_payload = r#"<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pacs.008.001.08"><FIToFICstmrCdtTrf><GrpHdr><MsgId>TX-123</MsgId></GrpHdr><CdtTrfTxInf><IntrBkSttlmAmt Ccy="sBTC">0.5</IntrBkSttlmAmt><DbtrAcct><Id><Othr><Id>SENDER-AC-1</Id></Othr></Id></DbtrAcct><CdtrAcct><Id><Othr><Id>RECEIVER-AC-1</Id></Othr></Id></CdtrAcct></CdtTrfTxInf></FIToFICstmrCdtTrf></Document>"#;
+
+    let mut mac = Hmac::<Sha256>::new_from_slice(TEST_SETTLEMENT_SECRET.as_bytes()).unwrap();
+    mac.update(xml_payload.as_bytes());
+    let signature = hex::encode(mac.finalize().into_bytes());
+
+    let raw_payload_hash = hex::encode(Sha256::digest(xml_payload.as_bytes()));
+    let tee_attestation = make_tee_attestation_header(&raw_payload_hash);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/iso20022/pacs008")
+                .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("Content-Type", "application/xml")
+                .header("x-iso20022-signature", signature)
+                .header("x-tee-attestation", tee_attestation)
+                .body(Body::from(xml_payload))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::PAYMENT_REQUIRED);
 }
