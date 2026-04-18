@@ -341,7 +341,7 @@ impl ZkcVerifier {
         const MAX_LEN: usize = 128;
 
         if amount.is_empty() {
-            return Err(ConxianError::Compliance("Invalid amount".to_string()));
+            return Err(ConxianError::Compliance(format!("Invalid amount {amount:?}: empty")));
         }
         if amount.len() > MAX_LEN {
             return Err(ConxianError::Compliance(
@@ -2141,5 +2141,32 @@ mod tests {
         let res =
             verifier.verify_settlement_trigger_attestation(&rejected_without_dash, "payload-hash");
         assert_denied(res);
+    }
+}
+
+#[cfg(test)]
+mod additional_audit_tests {
+    use super::*;
+    use conxian_core::{ConxianJobCard, WorkIntent};
+
+    #[test]
+    fn test_compute_job_hash_stability_audit() {
+        let job_card = ConxianJobCard {
+            context: "https://conxian.io/job-card/v2".to_string(),
+            r#type: "ConxianJobCard".to_string(),
+            work_intent: WorkIntent {
+                sender_address: "SP12JZZSBY0S3FJH7WJT2787YTYT8Y6725F7T8E62".to_string(),
+                receiver_address: "SP2JZZSBY0S3FJH7WJT2787YTYT8Y6725F7T8E62".to_string(),
+                amount_sbtc: 42.5,
+                town_name: None,
+                country_code: None,
+            },
+        };
+
+        let job_hash = ZkcVerifier::compute_job_hash(&job_card).unwrap();
+        assert_eq!(
+            job_hash,
+            "bcca344b33e3b90dcad0cfbcde5f0de5d659fe048f711e98dabf9e6e4ae5d6c6"
+        );
     }
 }
