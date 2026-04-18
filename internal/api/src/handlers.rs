@@ -213,13 +213,20 @@ pub async fn ingress_iso20022(
 
     let raw_xml = std::str::from_utf8(&bytes).unwrap_or("");
 
-    match state.compliance.normalize_iso20022_ingress(raw_xml, raw_payload_hash.clone()) {
+    match state
+        .compliance
+        .normalize_iso20022_ingress(raw_xml, raw_payload_hash.clone())
+    {
         Ok(mut envelope) => {
             if let Some(intent) = industrial_intent {
                 envelope.payload.industrial_intent = intent;
             }
-            let proposal = build_settlement_proposal(&state, envelope, tee_attestation, &raw_payload_hash)?;
-            info!("Successfully ingested ISO 20022 settlement: {}", proposal.envelope.payload.transaction_id);
+            let proposal =
+                build_settlement_proposal(&state, envelope, tee_attestation, &raw_payload_hash)?;
+            info!(
+                "Successfully ingested ISO 20022 settlement: {}",
+                proposal.envelope.payload.transaction_id
+            );
             record_settlement(&state, &proposal).await;
             let _ = state.compliance.commit_settlement(&proposal.envelope);
             Ok(Json(proposal))
@@ -294,8 +301,12 @@ pub async fn ingress_papss(
             if let Some(intent) = industrial_intent {
                 envelope.payload.industrial_intent = intent;
             }
-            let proposal = build_settlement_proposal(&state, envelope, tee_attestation, &raw_payload_hash)?;
-            info!("Successfully ingested PAPSS settlement: {}", proposal.envelope.payload.transaction_id);
+            let proposal =
+                build_settlement_proposal(&state, envelope, tee_attestation, &raw_payload_hash)?;
+            info!(
+                "Successfully ingested PAPSS settlement: {}",
+                proposal.envelope.payload.transaction_id
+            );
             record_settlement(&state, &proposal).await;
             let _ = state.compliance.commit_settlement(&proposal.envelope);
             Ok(Json(proposal))
@@ -370,8 +381,12 @@ pub async fn ingress_brics(
             if let Some(intent) = industrial_intent {
                 envelope.payload.industrial_intent = intent;
             }
-            let proposal = build_settlement_proposal(&state, envelope, tee_attestation, &raw_payload_hash)?;
-            info!("Successfully ingested BRICS settlement: {}", proposal.envelope.payload.transaction_id);
+            let proposal =
+                build_settlement_proposal(&state, envelope, tee_attestation, &raw_payload_hash)?;
+            info!(
+                "Successfully ingested BRICS settlement: {}",
+                proposal.envelope.payload.transaction_id
+            );
             record_settlement(&state, &proposal).await;
             let _ = state.compliance.commit_settlement(&proposal.envelope);
             Ok(Json(proposal))
@@ -629,15 +644,24 @@ pub async fn sync_erp_ledger(
     info!("Syncing ERP ledger via OData v4...");
 
     let payload_bytes = serde_json::to_vec(&payload).map_err(|e| {
-        (StatusCode::BAD_REQUEST, Json(json!({ "error": format!("Serialization error: {}", e) })))
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": format!("Serialization error: {}", e) })),
+        )
     })?;
     let mut hasher = Sha256::new();
     hasher.update(&payload_bytes);
     let raw_payload_hash = hex::encode(hasher.finalize());
 
-    let envelopes = state.compliance.normalize_erp_ingress(&payload, raw_payload_hash).map_err(|e| {
-        (StatusCode::BAD_REQUEST, Json(json!({ "error": e.to_string() })))
-    })?;
+    let envelopes = state
+        .compliance
+        .normalize_erp_ingress(&payload, raw_payload_hash)
+        .map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "error": e.to_string() })),
+            )
+        })?;
 
     let count = envelopes.len();
     Ok(Json(json!({ "status": "synced", "count": count })))

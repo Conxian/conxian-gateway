@@ -25,5 +25,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Sovereign/Institutional Realignment of the entire codebase for mainnet readiness.
+- Hardened repository hygiene by removing legacy backup files and updating `.gitignore`.
 - Refactored API layer to use dependency injection via `AppState`, removing hardcoded mocks.
 - Hardened security boundaries and aligned system wallets with mainnet prefixes (`SP`).

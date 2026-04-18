@@ -2,9 +2,9 @@ use crate::stacks::rpc::StacksRpc;
 use async_trait::async_trait;
 pub use conxian_core::AlexSwapRequest;
 use conxian_core::{ConxianError, ConxianResult};
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tracing::{info, warn};
-use serde::{Deserialize, Serialize};
 
 /// ALEX DEX Pair information.
 #[derive(Debug, Clone, Serialize, Deserialize)]

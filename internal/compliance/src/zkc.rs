@@ -5,9 +5,8 @@ use chrono;
 use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
 use conxian_core::{
     Attestation, AttestationRequest, BitVmAttestation, ConxianError, ConxianResult,
-    NormalizedSettlement, SchnorrAttestation, SettlementEnvelope, SettlementIdentifiers,
-    SettlementRail, SettlementSource, SettlementStatus, ZkmlProof,
-    IndustrialIntent,
+    IndustrialIntent, NormalizedSettlement, SchnorrAttestation, SettlementEnvelope,
+    SettlementIdentifiers, SettlementRail, SettlementSource, SettlementStatus, ZkmlProof,
 };
 use hmac::{Hmac, Mac};
 use risc0_zkvm::Receipt;
@@ -1121,11 +1120,15 @@ impl ZkcVerifier {
         let signature = secp256k1::ecdsa::Signature::from_der(&sig_bytes)
             .map_err(|_| ConxianError::Security("Invalid receipt signature".into()))?;
 
-        let public_key = secp256k1::PublicKey::from_secret_key(&self.secp, &secp256k1::SecretKey::from_slice(&[0x42; 32]).unwrap());
+        let public_key = secp256k1::PublicKey::from_secret_key(
+            &self.secp,
+            &secp256k1::SecretKey::from_slice(&[0x42; 32]).unwrap(),
+        );
         let message = secp256k1::Message::from_digest_slice(&digest)
             .map_err(|_| ConxianError::Security("Internal verification error".into()))?;
 
-        self.secp.verify_ecdsa(&message, &signature, &public_key)
+        self.secp
+            .verify_ecdsa(&message, &signature, &public_key)
             .map_err(|_| ConxianError::Security("TEE commitment verification failed".into()))?;
 
         // Verify Passkey Attestation
@@ -1312,7 +1315,7 @@ impl ZkcVerifier {
             )))
         } else if let Some(max_decoded_len) = max_decoded_len {
             let max_possible_decoded_len = value.len().div_ceil(4).saturating_mul(3);
-            let decoded_len_upper_bound = if value.len() % 4 == 0 {
+            let decoded_len_upper_bound = if value.len().is_multiple_of(4) {
                 let padding = value
                     .as_bytes()
                     .iter()
@@ -1332,7 +1335,7 @@ impl ZkcVerifier {
             // for valid base64 (and cheaply reject oversized payloads without decoding). For
             // unpadded/non-aligned inputs, keep a conservative allowance so we don't falsely
             // reject base64 that decodes to <= max_decoded_len.
-            let reject_upper_bound = if value.len() % 4 == 0 {
+            let reject_upper_bound = if value.len().is_multiple_of(4) {
                 decoded_len_upper_bound
             } else {
                 decoded_len_upper_bound.saturating_sub(2)
@@ -1962,15 +1965,18 @@ mod tests {
         assert_eq!(e1.payload.amount_scale, 2);
         assert_eq!(e1.payload.currency, "ZAR");
         assert_eq!(e1.payload.sender, "SAP_PROD");
-        assert_eq!(e1.payload.industrial_intent.x402_payment_required, true);
-        assert_eq!(e1.payload.industrial_intent.invoice_id, Some("INV-2026-001".to_string()));
+        assert!(e1.payload.industrial_intent.x402_payment_required);
+        assert_eq!(
+            e1.payload.industrial_intent.invoice_id,
+            Some("INV-2026-001".to_string())
+        );
 
         let e2 = &envelopes[1];
         assert_eq!(e2.payload.transaction_id, "ERP-002");
         assert_eq!(e2.payload.amount_minor, 250_000);
         assert_eq!(e2.payload.currency, "USD");
         assert_eq!(e2.payload.sender, "ERP_SYSTEM");
-        assert_eq!(e2.payload.industrial_intent.x402_payment_required, false);
+        assert!(!e2.payload.industrial_intent.x402_payment_required);
     }
     #[test]
     fn test_normalize_iso20022_pacs008_ingress() {

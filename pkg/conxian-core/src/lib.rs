@@ -1,10 +1,10 @@
 pub mod persistence;
 pub mod settlement;
-use tracing::info;
 use serde::{Deserialize, Serialize};
 pub use settlement::*;
 use std::sync::{Arc, RwLock};
 use thiserror::Error;
+use tracing::info;
 
 /// Current version of the Conxian Gateway core library.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -195,7 +195,10 @@ impl DlcOrchestrator for DlcManager {
     }
 
     fn settle_coupon(&self, bond_id: &str, amount_sbtc: f64) -> ConxianResult<bool> {
-        info!("Settling coupon for DLC bond {}: {} sBTC", bond_id, amount_sbtc);
+        info!(
+            "Settling coupon for DLC bond {}: {} sBTC",
+            bond_id, amount_sbtc
+        );
         Ok(true)
     }
 }
