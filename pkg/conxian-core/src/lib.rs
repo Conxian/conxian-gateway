@@ -64,6 +64,7 @@ pub struct GatewayState {
     pub stacks: ChainState,
     pub metrics: Metrics,
     pub wallets: SystemWallets,
+    pub handoff_state: HandoffState,
     pub start_time: u64,
 }
 
@@ -74,6 +75,7 @@ impl GatewayState {
             stacks: ChainState::default(),
             metrics: Metrics::default(),
             wallets: SystemWallets::default(),
+            handoff_state: HandoffState::default(),
             start_time: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
@@ -158,6 +160,12 @@ pub enum AttestationRequest {
     Schnorr(SchnorrAttestation),
     Zkml(ZkmlProof),
     BitVm(BitVmAttestation),
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct JobCardSettlementRequest {
+    pub job_card: ConxianJobCard,
+    pub bitvm_attestation: BitVmAttestation,
 }
 
 /// Discrete Log Contract (DLC) bond definition (CON-72).
@@ -256,6 +264,11 @@ pub struct SystemWallets {
     pub deployment: String,
     pub emergency: String,
     pub dao_handoff: String,
+    pub protocol_owned: String,
+    pub reserve_fund: String,
+    pub labs_ops: String,
+    pub contributor_claims: String,
+    pub founder_vault: String,
 }
 
 impl Default for SystemWallets {
@@ -267,6 +280,11 @@ impl Default for SystemWallets {
             deployment: "SP3JZZSBY0S3FJH7WJT2787YTYT8Y6725F7T8E62".to_string(),
             emergency: "SP000000000000000000002Q6VF78".to_string(),
             dao_handoff: "SP1P74G56Z5SNC6B2H70MBN8D6X1XW19C52R0P95".to_string(),
+            protocol_owned: "SP2JZZSBY0S3FJH7WJT2787YTYT8Y6725F7T8E62".to_string(),
+            reserve_fund: "SP3JZZSBY0S3FJH7WJT2787YTYT8Y6725F7T8E62".to_string(),
+            labs_ops: "SP2KZZSBY0S3FJH7WJT2787YTYT8Y6725F7T8E62".to_string(),
+            contributor_claims: "SP3KZZSBY0S3FJH7WJT2787YTYT8Y6725F7T8E62".to_string(),
+            founder_vault: "SP4KZZSBY0S3FJH7WJT2787YTYT8Y6725F7T8E62".to_string(),
         }
     }
 }
@@ -332,4 +350,30 @@ pub struct WorkIntent {
 pub trait PersistentStateTrait: Send + Sync {
     fn save(&self, state: &GatewayState) -> ConxianResult<()>;
     fn load(&self) -> ConxianResult<GatewayState>;
+}
+
+/// CON-482: Handoff sequence state
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
+pub enum HandoffState {
+    #[default]
+    BootstrapActive,
+    SabAuditInProgress,
+    DaoProposalActive,
+    HandoffComplete,
+}
+
+impl SystemWallets {
+    pub fn get_payout_destination(&self, state: HandoffState) -> &str {
+        match state {
+            HandoffState::BootstrapActive => &self.bootstrap,
+            _ => &self.payout,
+        }
+    }
+
+    pub fn get_treasury_destination(&self, state: HandoffState) -> &str {
+        match state {
+            HandoffState::BootstrapActive => &self.bootstrap,
+            _ => &self.treasury,
+        }
+    }
 }

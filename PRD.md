@@ -44,7 +44,7 @@ Conxian is designed to capture the Total Addressable Market (TAM) of Bitcoin-nat
 - [x] R30: Specialized NTT Relayer Deployment (Status: Complete)
 - [x] R31: Conxian Job Card Schema (CJCS) v2.0 Integration (Status: Complete)
 - [x] R32: BitVM2-Backed Job Card Settlement Verification (Status: Complete)
-- [x] R33: Institutional OData v4 ERP Sync (Status: Simulated)
+- [x] R33: Institutional OData v4 ERP Sync (Status: Complete)
 - [x] R34: Advanced Axum Observability & Latency Tracking (Status: Complete)
 - [x] R35: Canonical Portfolio Mapping (Status: Complete)
 - [x] R36: Industrial Intent & x402 Alignment (Status: Complete)
@@ -93,3 +93,5 @@ Conxian is designed to capture the Total Addressable Market (TAM) of Bitcoin-nat
 - **Portfolio Mapping**: Created canonical portfolio map in `docs/PORTFOLIO_MAP.md`.
 - **Readiness Gates**: Defined repository-scoped readiness criteria in `docs/READINESS_GATES.md`.
 - **SAB Migration**: Mapped Web2 dependencies and sovereign target states in `docs/SAB_MIGRATION.md`.
+
+- **R33 (ERP Sync)**: Replaced simulation with robust OData v4 field extraction logic supporting SAP/Oracle institutional standards, including x402 industrial intent and sector-specific metadata.
