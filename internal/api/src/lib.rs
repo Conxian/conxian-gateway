@@ -7,6 +7,7 @@ pub mod fiat;
 pub mod handlers;
 pub mod middleware;
 pub mod routes;
+pub mod x402;
 
 pub use routes::configure_routes;
 

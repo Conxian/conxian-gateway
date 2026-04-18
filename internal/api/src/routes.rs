@@ -1,6 +1,7 @@
 use crate::auth::auth_middleware;
 use crate::handlers;
 use crate::middleware::latency_tracker;
+use crate::x402::x402_filter;
 use crate::AppState;
 use axum::{
     extract::DefaultBodyLimit,
@@ -16,6 +17,17 @@ pub fn configure_routes(state: AppState, api_token: String) -> Router {
         .route("/health", get(handlers::health_check))
         .with_state(state.clone());
 
+    let x402_protected_routes = Router::new()
+        .route("/settle", post(handlers::settle_job_card))
+        .route("/iso20022/pacs008", post(handlers::ingress_iso20022))
+        .route("/iso20022/pacs009", post(handlers::ingress_iso20022))
+        .route("/settlement/papss", post(handlers::ingress_papss))
+        .route("/settlement/brics", post(handlers::ingress_brics))
+        .route("/ingress/iso20022", post(handlers::ingress_iso20022))
+        .route("/ingress/papss", post(handlers::ingress_papss))
+        .route("/ingress/brics", post(handlers::ingress_brics))
+        .layer(middleware::from_fn(x402_filter));
+
     let private_routes = Router::new()
         .route("/metrics", get(handlers::get_metrics))
         .route("/state", get(handlers::get_state))
@@ -26,15 +38,7 @@ pub fn configure_routes(state: AppState, api_token: String) -> Router {
         .route("/a2p/otp", post(handlers::send_otp))
         .route("/a2p/verify", post(handlers::verify_otp))
         .route("/erp/sync", post(handlers::sync_erp_ledger))
-        .route("/settle", post(handlers::settle_job_card))
         .route("/iso20022/payment", post(handlers::generate_iso_payment))
-        .route("/iso20022/pacs008", post(handlers::ingress_iso20022))
-        .route("/iso20022/pacs009", post(handlers::ingress_iso20022))
-        .route("/settlement/papss", post(handlers::ingress_papss))
-        .route("/settlement/brics", post(handlers::ingress_brics))
-        .route("/ingress/iso20022", post(handlers::ingress_iso20022))
-        .route("/ingress/papss", post(handlers::ingress_papss))
-        .route("/ingress/brics", post(handlers::ingress_brics))
         .route(
             "/settlements/external",
             get(handlers::get_external_settlements),
@@ -47,6 +51,7 @@ pub fn configure_routes(state: AppState, api_token: String) -> Router {
         )
         .route("/pos/offline", post(handlers::handle_offline_pos))
         .route("/pos/sync", post(handlers::sync_offline_receipts))
+        .merge(x402_protected_routes)
         .layer(middleware::from_fn(move |req, next| {
             auth_middleware(req, next, token_for_auth.clone())
         }))
