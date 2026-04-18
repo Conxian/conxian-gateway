@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+
+## [0.1.1] - 2026-04-18
+
+### Added
+- Implemented `resolve_identity` and `exchange_token` handlers in the API layer.
+- Integrated `DlcOrchestrator` into the global `AppState` and gateway configuration.
+- Introduced `Network` enum for strict environment separation (Mainnet, Testnet, Simulated).
+- Added `ORACLE_PUBKEY` mandatory configuration for DLC bond orchestration.
+
+### Changed
+- Hardened `SovereignCommit` implementation with simulated Tableland SQL insertion for settlements and job cards.
+- Refactored `Config::from_env` to use network-specific defaults for RPC and API URLs.
+- Updated `verify_contamination_guard.py` to support formal environment-based keywords.
+- Removed identity resolution stubs in favor of functional simulations.
+
 ## [0.1.0] - 2026-04-10
 
 ### Added

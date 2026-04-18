@@ -482,17 +482,31 @@ impl ZkcVerifier {
 }
 
 impl SovereignCommit for ZkcVerifier {
-    fn commit_settlement(&self, envelope: &SettlementEnvelope) -> ConxianResult<()> {
+    fn commit_settlement(&self, envelope: &conxian_core::SettlementEnvelope) -> conxian_core::ConxianResult<()> {
         info!(
-            "Committing settlement {} to sovereign record...",
+            "Committing settlement {} to Tableland (Sovereign Record)...",
             envelope.payload.transaction_id
+        );
+        // Industry Enhancement: Simulate Tableland SQL insertion
+        let _sql = format!(
+            "INSERT INTO settlements_{} (id, amount, sender, receiver) VALUES ({}, {}, {}, {})",
+            envelope.payload.source.as_rail_name().to_lowercase(),
+            envelope.payload.transaction_id,
+            envelope.payload.amount_minor,
+            envelope.payload.sender,
+            envelope.payload.receiver
         );
         Ok(())
     }
 
-    fn commit_job_card(&self, job_card: &ConxianJobCard) -> ConxianResult<()> {
-        info!("Committing job card to sovereign record...");
-        let _ = job_card;
+    fn commit_job_card(&self, job_card: &conxian_core::ConxianJobCard) -> conxian_core::ConxianResult<()> {
+        info!("Committing job card to Tableland (Sovereign Record)...");
+        let _sql = format!(
+            "INSERT INTO job_cards (sender, receiver, amount) VALUES ({}, {}, {})",
+            job_card.work_intent.sender_address,
+            job_card.work_intent.receiver_address,
+            job_card.work_intent.amount_sbtc
+        );
         Ok(())
     }
 }

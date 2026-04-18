@@ -16,7 +16,7 @@ This document tracks the migration of Web2 infrastructure dependencies to a sove
 
 ### Wave 1: Data Decoupling
 - **Goal**: Move critical settlement logs and job cards from Supabase to Tableland.
-- **Status**: Researching Tableland commit logic in `ZkcVerifier`.
+- **Status**: Tableland SQL simulation implemented in `ZkcVerifier` via `SovereignCommit`.
 
 ### Wave 2: Identity Sovereignty
 - **Goal**: Implement Workload Identity Federation (WIF) to remove reliance on external OIDC providers.

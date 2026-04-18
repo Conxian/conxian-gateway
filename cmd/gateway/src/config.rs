@@ -12,6 +12,30 @@ const BANXA_API_KEY_SENTINEL: &str = "REQUIRED_FOR_PROD_BANXA_API_KEY";
 const BANXA_SECRET_SENTINEL: &str = "REQUIRED_FOR_PROD_BANXA_SECRET";
 const INFOBIP_API_KEY_SENTINEL: &str = "REQUIRED_FOR_PROD_INFOBIP_API_KEY";
 const HMAC_SECRET_SENTINEL: &str = "REQUIRED_FOR_PROD_HMAC_SECRET";
+const ORACLE_PUBKEY_SENTINEL: &str = "REQUIRED_FOR_PROD_ORACLE_PUBKEY";
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Network {
+    Mainnet,
+    Testnet,
+    Simulated,
+}
+
+impl Network {
+    pub fn from_env() -> Self {
+        match env::var("CONXIAN_NETWORK")
+            .unwrap_or_else(|_| "mainnet".to_string())
+            .to_lowercase()
+            .as_str()
+        {
+            "mainnet" => Self::Mainnet,
+            "testnet" => Self::Testnet,
+            "simulated" => Self::Simulated,
+            _ => Self::Mainnet,
+        }
+    }
+}
 
 #[allow(dead_code)]
 pub struct Config {
@@ -36,6 +60,8 @@ pub struct Config {
     pub fiat_webhook_secret: String,
     pub settlement_ingress_secret: String,
     pub alex_api_url: String,
+    pub oracle_pubkey: String,
+    pub network: Network,
 }
 
 impl Config {
@@ -68,22 +94,40 @@ impl Config {
         let banxa_secret = Self::get_mandatory_env("BANXA_SECRET", BANXA_SECRET_SENTINEL);
         let infobip_api_key = Self::get_mandatory_env("INFOBIP_API_KEY", INFOBIP_API_KEY_SENTINEL);
         let hmac_secret = Self::get_mandatory_env("HMAC_SECRET", HMAC_SECRET_SENTINEL);
+        let oracle_pubkey = Self::get_mandatory_env("ORACLE_PUBKEY", ORACLE_PUBKEY_SENTINEL);
+        let network = Network::from_env();
+
+        let (btc_url, stx_url, alex_url) = match network {
+            Network::Mainnet => (
+                "https://bitcoin-rpc.publicnode.com".to_string(),
+                "https://api.mainnet.hiro.so".to_string(),
+                "https://api.alexlab.co".to_string(),
+            ),
+            Network::Testnet => (
+                "https://bitcoin-testnet.publicnode.com".to_string(),
+                "https://api.testnet.hiro.so".to_string(),
+                "https://api.testnet.alexlab.co".to_string(),
+            ),
+            Network::Simulated => (
+                "http://localhost:18443".to_string(),
+                "http://localhost:3999".to_string(),
+                "http://localhost:3010".to_string(),
+            ),
+        };
 
         if settlement_ingress_secret == fiat_webhook_secret {
             panic!("SETTLEMENT_INGRESS_SECRET must be distinct from FIAT_WEBHOOK_SECRET");
         }
 
         Self {
-            bitcoin_rpc_url: env::var("BITCOIN_RPC_URL")
-                .unwrap_or_else(|_| "https://bitcoin-rpc.publicnode.com".to_string()),
+            bitcoin_rpc_url: env::var("BITCOIN_RPC_URL").unwrap_or(btc_url),
             bitcoin_rpc_user: env::var("BITCOIN_RPC_USER").unwrap_or_default(),
             bitcoin_rpc_pass: env::var("BITCOIN_RPC_PASS").unwrap_or_default(),
             bitcoin_sync_interval: env::var("BITCOIN_SYNC_INTERVAL")
                 .unwrap_or_else(|_| "10".to_string())
                 .parse()
                 .unwrap_or(10),
-            stacks_rpc_url: env::var("STACKS_RPC_URL")
-                .unwrap_or_else(|_| "https://api.mainnet.hiro.so".to_string()),
+            stacks_rpc_url: env::var("STACKS_RPC_URL").unwrap_or(stx_url),
             stacks_sync_interval: env::var("STACKS_SYNC_INTERVAL")
                 .unwrap_or_else(|_| "30".to_string())
                 .parse()
@@ -106,8 +150,9 @@ impl Config {
             hmac_secret,
             fiat_webhook_secret,
             settlement_ingress_secret,
-            alex_api_url: env::var("ALEX_API_URL")
-                .unwrap_or_else(|_| "https://api.alexlab.co".to_string()),
+            oracle_pubkey,
+            network,
+            alex_api_url: env::var("ALEX_API_URL").unwrap_or(alex_url),
         }
     }
 }
@@ -172,6 +217,7 @@ mod tests {
         env::set_var("BANXA_SECRET", "banxa-secret");
         env::set_var("INFOBIP_API_KEY", "infobip-key");
         env::set_var("HMAC_SECRET", "hmac-secret");
+        env::set_var("ORACLE_PUBKEY", "oracle-key");
     }
 
     #[test]
