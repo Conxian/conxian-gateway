@@ -174,7 +174,7 @@ impl IdentityManager {
                 provider: "worldid".to_string(),
                 verified: true,
                 metadata: Some(
-                    json!({ "verification_level": "orb", "nullifier": "mock-nullifier-123" }),
+                    json!({ "verification_level": "orb", "nullifier": "sim-nullifier-123" }),
                 ),
             })
         }

@@ -99,7 +99,7 @@ pub async fn create_fiat_session(
         Ok(res) => Ok(Json(res)),
         Err(e) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": e.to_string() })),
+            Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
         )),
     }
 }
@@ -138,7 +138,7 @@ pub async fn send_otp(
         Ok((res, _hmac, _expiry)) => Ok(Json(json!(res))),
         Err(e) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": e.to_string() })),
+            Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
         )),
     }
 }
@@ -155,7 +155,7 @@ pub async fn verify_otp(
         )),
         Err(e) => Err((
             StatusCode::BAD_REQUEST,
-            Json(json!({ "error": e.to_string() })),
+            Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
         )),
     }
 }
@@ -207,7 +207,7 @@ pub async fn ingress_iso20022(
         }
         Err(e) => Err((
             StatusCode::BAD_REQUEST,
-            Json(json!({ "error": e.to_string() })),
+            Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
         )),
     }
 }
@@ -234,7 +234,7 @@ pub async fn sync_erp_ledger(
         .map_err(|e: ConxianError| {
             (
                 StatusCode::BAD_REQUEST,
-                Json(json!({ "error": e.to_string() })),
+                Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
             )
         })?;
 
@@ -279,7 +279,7 @@ pub async fn settle_job_card(
             error!(error = %e, "BitVM2 settlement error");
             Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
             ))
         }
     }
@@ -370,7 +370,7 @@ fn build_settlement_proposal(
         .map_err(|e: ConxianError| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
             )
         })?;
 
@@ -378,7 +378,7 @@ fn build_settlement_proposal(
         |e: ConxianError| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
             )
         },
     )
@@ -400,7 +400,7 @@ pub async fn generate_iso_payment(
         Ok(xml) => Ok(Json(json!({ "xml": xml, "schema": "pacs.008.001.08" }))),
         Err(e) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": e.to_string() })),
+            Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
         )),
     }
 }
@@ -413,7 +413,7 @@ pub async fn get_alex_quote(
         Ok(amount) => Ok(Json(json!({ "dy": amount.to_string() }))),
         Err(e) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": e.to_string() })),
+            Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
         )),
     }
 }
@@ -435,7 +435,7 @@ pub async fn execute_alex_swap(
         }
         Err(e) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": e.to_string() })),
+            Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
         )),
     }
 }
@@ -473,7 +473,7 @@ pub async fn handle_offline_pos(
         .map_err(|e: ConxianError| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
             )
         })?;
 
@@ -483,7 +483,7 @@ pub async fn handle_offline_pos(
         .map_err(|e: ConxianError| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
             )
         })?;
 
@@ -493,7 +493,7 @@ pub async fn handle_offline_pos(
         .map_err(|e: ConxianError| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
             )
         })?;
 
@@ -509,7 +509,7 @@ pub async fn sync_offline_receipts(
         .map_err(|e: ConxianError| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
+                Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
             )
         })?;
 
@@ -530,7 +530,7 @@ pub async fn sync_offline_receipts(
                 .map_err(|e: ConxianError| {
                     (
                         StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(json!({ "error": e.to_string() })),
+                        Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
                     )
                 })?;
             synced_count += 1;
@@ -563,7 +563,7 @@ pub async fn exchange_identity(
         Ok(token) => Ok(Json(json!({ "access_token": token }))),
         Err(e) => Err((
             StatusCode::BAD_REQUEST,
-            Json(json!({ "error": e.to_string() })),
+            Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
         )),
     }
 }
@@ -576,6 +576,9 @@ pub async fn verify_attestation(
         AttestationRequest::Ecdsa(a) => state
             .compliance
             .verify_settlement_trigger_attestation(&payload, &a.payload),
+        AttestationRequest::Zkml(p) => state
+            .compliance
+            .verify_settlement_trigger_attestation(&payload, &p.receipt_hash),
         AttestationRequest::BitVm(_b) => {
             return Ok(Json(json!({
                 "status": "partial",
@@ -597,7 +600,7 @@ pub async fn verify_attestation(
         Ok(false) => Ok(Json(json!({ "status": "failed" }))),
         Err(e) => Err((
             StatusCode::BAD_REQUEST,
-            Json(json!({ "error": e.to_string() })),
+            Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
         )),
     }
 }
@@ -610,7 +613,7 @@ pub async fn resolve_identity_v1(
         Ok(res) => Ok(Json(res)),
         Err(e) => Err((
             StatusCode::BAD_REQUEST,
-            Json(json!({ "error": e.to_string() })),
+            Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
         )),
     }
 }
@@ -662,7 +665,7 @@ pub async fn ingress_papss(
         }
         Err(e) => Err((
             StatusCode::BAD_REQUEST,
-            Json(json!({ "error": e.to_string() })),
+            Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
         )),
     }
 }
@@ -714,7 +717,7 @@ pub async fn ingress_brics(
         }
         Err(e) => Err((
             StatusCode::BAD_REQUEST,
-            Json(json!({ "error": e.to_string() })),
+            Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
         )),
     }
 }

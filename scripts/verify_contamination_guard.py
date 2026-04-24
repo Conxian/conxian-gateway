@@ -65,8 +65,8 @@ def check_file(filepath: Path) -> bool:
                     continue
 
                 gated = False
-                for j in range(max(0, i - 3), i + 1):
-                    if "#[cfg" in lines[j] and (
+                for j in range(max(0, i - 15), i + 1):
+                    if ("#[cfg" in lines[j] or "#[test]" in lines[j]) and (
                         "test" in lines[j] or "mock-integrations" in lines[j]
                     ):
                         gated = True

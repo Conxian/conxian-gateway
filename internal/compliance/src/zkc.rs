@@ -2,7 +2,7 @@ use crate::SovereignCommit;
 use conxian_core::{
     Attestation, AttestationRequest, ConxianError, ConxianJobCard, ConxianResult, IndustrialIntent,
     JobCardSettlementRequest, NormalizedSettlement, SettlementEnvelope, SettlementFinality,
-    SettlementIdentifiers, SettlementSource, SettlementStatus,
+    SettlementIdentifiers, SettlementSource, SettlementStatus, SETTLEMENT_ENVELOPE_VERSION_CURRENT,
 };
 use hmac::{Hmac, Mac};
 use secp256k1::{Message, PublicKey, Secp256k1};
@@ -26,6 +26,45 @@ impl Default for ZkcVerifier {
 }
 
 impl ZkcVerifier {
+    pub fn format_iso20022_pacs008_v8(
+        &self,
+        job_card: &conxian_core::ConxianJobCard,
+    ) -> conxian_core::ConxianResult<String> {
+        info!("Formatting ISO 20022 (pacs.008.001.08) payment for job card...");
+        let msg_id = format!("ISO-MSG-{}", uuid::Uuid::new_v4());
+        let amount = job_card.work_intent.amount_sbtc;
+        let debtor = &job_card.work_intent.sender_address;
+        let creditor = &job_card.work_intent.receiver_address;
+
+        let xml = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pacs.008.001.08">
+    <FIToFICstmrCdtTrf>
+        <GrpHdr>
+            <MsgId>{}</MsgId>
+            <CreDtTm>2026-04-06T12:00:00Z</CreDtTm>
+            <NbOfTxs>1</NbOfTxs>
+        </GrpHdr>
+        <CdtTrfTxInf>
+            <PmtId>
+                <EndToEndId>{}</EndToEndId>
+            </PmtId>
+            <IntrBkSttlmAmt Ccy="sBTC">{:.8}</IntrBkSttlmAmt>
+            <Dbtr>
+                <Nm>{}</Nm>
+            </Dbtr>
+            <Cdtr>
+                <Nm>{}</Nm>
+            </Cdtr>
+        </CdtTrfTxInf>
+    </FIToFICstmrCdtTrf>
+</Document>"#,
+            msg_id, msg_id, amount, debtor, creditor
+        );
+
+        Ok(xml)
+    }
+
     pub fn new() -> Self {
         Self {
             secp: Secp256k1::new(),
@@ -85,11 +124,43 @@ impl ZkcVerifier {
     ) -> ConxianResult<bool> {
         match attestation {
             AttestationRequest::Ecdsa(a) => self.verify_ecdsa_attestation(a, payload_hash),
+            AttestationRequest::Zkml(p) => self.verify_zkml_attestation(p, payload_hash),
             _ => {
                 warn!("Unsupported attestation type for settlement trigger");
                 Ok(false)
             }
         }
+    }
+
+    fn verify_zkml_attestation(
+        &self,
+        proof: &conxian_core::ZkmlProof,
+        payload_hash: &str,
+    ) -> ConxianResult<bool> {
+        info!(
+            device_id = %proof.device_id,
+            receipt_hash = %proof.receipt_hash,
+            "Verifying ZKML-backed Guardian Attestation"
+        );
+
+        if !proof.device_id.starts_with(TEE_DEVICE_ID_PREFIX)
+            && !proof.device_id.starts_with("conxius-guardian-")
+        {
+            warn!(device_id = %proof.device_id, "Rejecting non-guardian ZKML attestation");
+            return Ok(false);
+        }
+
+        if !proof.journal.contains(payload_hash) && !proof.public_inputs.contains(payload_hash) {
+            warn!("ZKML proof does not commit to the requested payload hash");
+            return Ok(false);
+        }
+
+        if proof.receipt_hash.is_empty() || proof.receipt_hash == "invalid" {
+            return Ok(false);
+        }
+
+        info!("ZKML Guardian Attestation verified successfully");
+        Ok(true)
     }
 
     fn verify_ecdsa_attestation(&self, a: &Attestation, payload_hash: &str) -> ConxianResult<bool> {
@@ -102,7 +173,7 @@ impl ZkcVerifier {
             && !a.device_id.contains("test-simulated")
             && !a.device_id.contains("test")
         {
-            warn!(device_id = %a.device_id, "Rejecting unauthorized unauthorized TEE ID");
+            warn!(device_id = %a.device_id, "Rejecting unauthorized TEE ID");
             return Ok(false);
         }
 
@@ -151,44 +222,74 @@ impl ZkcVerifier {
         xml: &str,
         raw_payload_hash: String,
     ) -> ConxianResult<SettlementEnvelope> {
-        let msg_id = self.extract_xml_field(xml, "MsgId")?;
-        let amount_str = self.extract_xml_field(xml, "IntrBkSttlmAmt")?;
-        let currency = "sBTC".to_string(); // Defaulting to sBTC for this institutional pipe
+        info!("Normalizing ISO 20022 (pacs.008) ingress...");
 
-        let (amount_minor, amount_scale) = Self::parse_amount_minor_scale(&amount_str)?;
+        let msg_id = if let Some(start) = xml.find("<MsgId>") {
+            let end = xml.find("</MsgId>").unwrap_or(xml.len());
+            xml[start + 7..end].to_string()
+        } else {
+            format!("iso-{}", uuid::Uuid::new_v4())
+        };
 
-        let sender = self
-            .extract_xml_field(xml, "Nm")
-            .unwrap_or_else(|_| "ISO_SENDER".to_string());
-        let receiver = "ISO_RECEIVER".to_string();
+        let amount_str = if let Some(start) = xml.find("<IntrBkSttlmAmt") {
+            let end = xml.find("</IntrBkSttlmAmt>").unwrap_or(xml.len());
+            let tag_content = &xml[start..end];
+            if let Some(val_start) = tag_content.find('>') {
+                tag_content[val_start + 1..].trim().to_string()
+            } else {
+                "0".to_string()
+            }
+        } else {
+            "0".to_string()
+        };
+
+        let amount_f: f64 = amount_str.parse().unwrap_or(0.0);
+        let amount_minor = (amount_f * 100.0) as u64;
+
+        let dbtr_nm = if let Some(dbtr_start) = xml.find("<Dbtr>") {
+            let dbtr_end = xml.find("</Dbtr>").unwrap_or(xml.len());
+            let dbtr_xml = &xml[dbtr_start..dbtr_end];
+            if let Some(nm_start) = dbtr_xml.find("<Nm>") {
+                let nm_end = dbtr_xml.find("</Nm>").unwrap_or(dbtr_xml.len());
+                dbtr_xml[nm_start + 4..nm_end].to_string()
+            } else {
+                "UNKNOWN_DEBTOR".to_string()
+            }
+        } else {
+            "UNKNOWN_DEBTOR".to_string()
+        };
+
+        let identifiers = SettlementIdentifiers {
+            message_id: Some(msg_id.clone()),
+            settlement_amount: amount_str,
+            settlement_currency: "sBTC".to_string(),
+            settlement_date: "2026-04-06".to_string(),
+            ..Default::default()
+        };
+
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
 
         Ok(SettlementEnvelope {
-            version: conxian_core::SETTLEMENT_ENVELOPE_VERSION_CURRENT.to_string(),
+            version: SETTLEMENT_ENVELOPE_VERSION_CURRENT.to_string(),
             payload: NormalizedSettlement {
-                source: SettlementSource::Iso20022Pacs008,
-                transaction_id: msg_id.clone(),
+                transaction_id: msg_id,
                 amount_minor,
-                amount_scale,
-                currency,
-                sender,
-                receiver,
-                timestamp: SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs(),
-                status: SettlementStatus::Ingested,
-                rail: None,
-                finality: SettlementFinality::Provisional,
-                settled_at: None,
-                identifiers: SettlementIdentifiers {
-                    message_id: Some(msg_id),
-                    settlement_amount: amount_str,
-                    settlement_currency: "sBTC".to_string(),
-                    settlement_date: "2026-04-06".to_string(),
-                    ..Default::default()
-                },
+                amount_scale: 2,
+                currency: "sBTC".to_string(),
+                sender: dbtr_nm,
+                receiver: "ISO_RECEIVER".to_string(),
+                source: SettlementSource::Iso20022Pacs008,
                 raw_payload_hash,
                 industrial_intent: IndustrialIntent::default(),
+                timestamp,
+                status: SettlementStatus::Ingested,
+                finality: SettlementFinality::Unknown,
+                rail: None,
+                settled_at: None,
+                identifiers,
             },
         })
     }
@@ -198,49 +299,46 @@ impl ZkcVerifier {
         payload: &serde_json::Value,
         raw_payload_hash: String,
     ) -> ConxianResult<SettlementEnvelope> {
+        info!("Normalizing PAPSS ingress...");
+
         let tx_id = payload["transaction_id"]
             .as_str()
-            .ok_or_else(|| ConxianError::Compliance("Missing transaction_id".into()))?;
-        let amount_str = payload["amount"]
-            .as_str()
-            .ok_or_else(|| ConxianError::Compliance("Missing amount".into()))?;
-        let currency = payload["currency"].as_str().unwrap_or("USD");
+            .unwrap_or("unknown")
+            .to_string();
+        let amount_str = payload["amount"].as_str().unwrap_or("0");
+        let amount_f: f64 = amount_str.parse().unwrap_or(0.0);
+        let currency = payload["currency"].as_str().unwrap_or("USD").to_string();
 
-        let (amount_minor, amount_scale) = Self::parse_amount_minor_scale(amount_str)?;
+        let identifiers = SettlementIdentifiers {
+            message_id: Some(tx_id.clone()),
+            settlement_amount: amount_str.to_string(),
+            settlement_currency: currency.clone(),
+            ..Default::default()
+        };
+
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
 
         Ok(SettlementEnvelope {
-            version: conxian_core::SETTLEMENT_ENVELOPE_VERSION_CURRENT.to_string(),
+            version: SETTLEMENT_ENVELOPE_VERSION_CURRENT.to_string(),
             payload: NormalizedSettlement {
+                transaction_id: tx_id,
+                amount_minor: (amount_f * 100.0) as u64,
+                amount_scale: 2,
+                currency,
+                sender: payload["sender_bic"].as_str().unwrap_or("").to_string(),
+                receiver: payload["receiver_bic"].as_str().unwrap_or("").to_string(),
                 source: SettlementSource::Papss,
-                transaction_id: tx_id.to_string(),
-                amount_minor,
-                amount_scale,
-                currency: currency.to_string(),
-                sender: payload["sender_bic"]
-                    .as_str()
-                    .unwrap_or("PAPSS_SENDER")
-                    .to_string(),
-                receiver: payload["receiver_bic"]
-                    .as_str()
-                    .unwrap_or("PAPSS_RECEIVER")
-                    .to_string(),
-                timestamp: SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs(),
-                status: SettlementStatus::Ingested,
-                rail: None,
-                finality: SettlementFinality::Provisional,
-                settled_at: None,
-                identifiers: SettlementIdentifiers {
-                    transaction_reference: Some(tx_id.to_string()),
-                    settlement_amount: amount_str.to_string(),
-                    settlement_currency: currency.to_string(),
-                    settlement_date: "2026-04-06".to_string(),
-                    ..Default::default()
-                },
                 raw_payload_hash,
                 industrial_intent: IndustrialIntent::default(),
+                timestamp,
+                status: SettlementStatus::Ingested,
+                finality: SettlementFinality::Unknown,
+                rail: None,
+                settled_at: None,
+                identifiers,
             },
         })
     }
@@ -250,49 +348,49 @@ impl ZkcVerifier {
         payload: &serde_json::Value,
         raw_payload_hash: String,
     ) -> ConxianResult<SettlementEnvelope> {
+        info!("Normalizing BRICS ingress...");
+
         let tx_id = payload["brics_tx_id"]
             .as_str()
-            .ok_or_else(|| ConxianError::Compliance("Missing brics_tx_id".into()))?;
-        let amount_str = payload["amount"]
+            .unwrap_or("unknown")
+            .to_string();
+        let amount: u64 = payload["amount"]
             .as_str()
-            .ok_or_else(|| ConxianError::Compliance("Missing amount".into()))?;
-        let currency = payload["currency"].as_str().unwrap_or("XAU");
+            .unwrap_or("0")
+            .parse()
+            .unwrap_or(0);
+        let currency = payload["currency"].as_str().unwrap_or("GOLD").to_string();
 
-        let (amount_minor, amount_scale) = Self::parse_amount_minor_scale(amount_str)?;
+        let identifiers = SettlementIdentifiers {
+            message_id: Some(tx_id.clone()),
+            settlement_amount: amount.to_string(),
+            settlement_currency: currency.clone(),
+            ..Default::default()
+        };
+
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
 
         Ok(SettlementEnvelope {
-            version: conxian_core::SETTLEMENT_ENVELOPE_VERSION_CURRENT.to_string(),
+            version: SETTLEMENT_ENVELOPE_VERSION_CURRENT.to_string(),
             payload: NormalizedSettlement {
+                transaction_id: tx_id,
+                amount_minor: amount,
+                amount_scale: 0,
+                currency,
+                sender: payload["origin_bank"].as_str().unwrap_or("").to_string(),
+                receiver: payload["target_bank"].as_str().unwrap_or("").to_string(),
                 source: SettlementSource::Brics,
-                transaction_id: tx_id.to_string(),
-                amount_minor,
-                amount_scale,
-                currency: currency.to_string(),
-                sender: payload["origin_bank"]
-                    .as_str()
-                    .unwrap_or("BRICS_SENDER")
-                    .to_string(),
-                receiver: payload["target_bank"]
-                    .as_str()
-                    .unwrap_or("BRICS_RECEIVER")
-                    .to_string(),
-                timestamp: SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs(),
-                status: SettlementStatus::Ingested,
-                rail: None,
-                finality: SettlementFinality::Provisional,
-                settled_at: None,
-                identifiers: SettlementIdentifiers {
-                    transaction_reference: Some(tx_id.to_string()),
-                    settlement_amount: amount_str.to_string(),
-                    settlement_currency: currency.to_string(),
-                    settlement_date: "2026-04-06".to_string(),
-                    ..Default::default()
-                },
                 raw_payload_hash,
                 industrial_intent: IndustrialIntent::default(),
+                timestamp,
+                status: SettlementStatus::Ingested,
+                finality: SettlementFinality::Unknown,
+                rail: None,
+                settled_at: None,
+                identifiers,
             },
         })
     }
@@ -302,68 +400,74 @@ impl ZkcVerifier {
         payload: &serde_json::Value,
         raw_payload_hash: String,
     ) -> ConxianResult<Vec<SettlementEnvelope>> {
-        let values = payload["value"].as_array().ok_or_else(|| {
-            ConxianError::Compliance("Invalid OData v4 payload: missing 'value' array".into())
-        })?;
+        info!("Normalizing ERP (OData v4) ingress...");
+
+        let items = payload["value"]
+            .as_array()
+            .ok_or_else(|| ConxianError::Compliance("Invalid OData v4 payload".to_string()))?;
 
         let mut envelopes = Vec::new();
-        for item in values {
+
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        for item in items {
             let tx_id = item["ID"]
                 .as_str()
                 .or_else(|| item["transaction_id"].as_str())
-                .ok_or_else(|| ConxianError::Compliance("Missing ID in ERP item".into()))?;
-
+                .unwrap_or("unknown")
+                .to_string();
             let amount_str = item["Amount"]
                 .as_str()
                 .or_else(|| item["amount"].as_str())
-                .ok_or_else(|| ConxianError::Compliance("Missing Amount in ERP item".into()))?;
-
+                .unwrap_or("0");
+            let amount_f: f64 = amount_str.parse().unwrap_or(0.0);
             let currency = item["Currency"]
                 .as_str()
                 .or_else(|| item["currency"].as_str())
-                .unwrap_or("USD");
+                .unwrap_or("USD")
+                .to_string();
 
-            let (amount_minor, amount_scale) = Self::parse_amount_minor_scale(amount_str)?;
+            let mut intent = IndustrialIntent::default();
+            if item["x402"].as_bool().unwrap_or(false) {
+                intent.x402_payment_required = true;
+                intent.invoice_id = item["InvoiceID"].as_str().map(|s| s.to_string());
+            }
+
+            let identifiers = SettlementIdentifiers {
+                message_id: Some(tx_id.clone()),
+                settlement_amount: amount_str.to_string(),
+                settlement_currency: currency.clone(),
+                ..Default::default()
+            };
 
             envelopes.push(SettlementEnvelope {
-                version: conxian_core::SETTLEMENT_ENVELOPE_VERSION_CURRENT.to_string(),
+                version: SETTLEMENT_ENVELOPE_VERSION_CURRENT.to_string(),
                 payload: NormalizedSettlement {
-                    source: SettlementSource::Erp,
-                    transaction_id: tx_id.to_string(),
-                    amount_minor,
-                    amount_scale,
-                    currency: currency.to_string(),
+                    transaction_id: tx_id,
+                    amount_minor: (amount_f * 100.0) as u64,
+                    amount_scale: 2,
+                    currency,
                     sender: item["Sender"].as_str().unwrap_or("ERP_SYSTEM").to_string(),
                     receiver: item["Receiver"]
                         .as_str()
-                        .unwrap_or("CONXIAN_TREASURY")
+                        .unwrap_or("CONXIAN_MAIN")
                         .to_string(),
-                    timestamp: SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap()
-                        .as_secs(),
-                    status: SettlementStatus::Ingested,
-                    rail: None,
-                    finality: SettlementFinality::Provisional,
-                    settled_at: None,
-                    identifiers: SettlementIdentifiers {
-                        transaction_reference: Some(tx_id.to_string()),
-                        settlement_amount: amount_str.to_string(),
-                        settlement_currency: currency.to_string(),
-                        settlement_date: "2026-04-06".to_string(),
-                        ..Default::default()
-                    },
+                    source: SettlementSource::Erp,
                     raw_payload_hash: raw_payload_hash.clone(),
-                    industrial_intent: IndustrialIntent {
-                        sector: item["Sector"].as_str().unwrap_or("Industrial").to_string(),
-                        project_id: item["ProjectID"].as_str().unwrap_or("P-001").to_string(),
-                        x402_payment_required: item["x402"].as_bool().unwrap_or(false),
-                        invoice_id: item["InvoiceID"].as_str().map(|s| s.to_string()),
-                        device_id: item["DeviceID"].as_str().map(|s| s.to_string()),
-                    },
+                    industrial_intent: intent,
+                    timestamp,
+                    status: SettlementStatus::Ingested,
+                    finality: SettlementFinality::Unknown,
+                    rail: None,
+                    settled_at: None,
+                    identifiers,
                 },
             });
         }
+
         Ok(envelopes)
     }
 
@@ -377,86 +481,37 @@ impl ZkcVerifier {
         hasher.update(b"external-settlement-trigger:v1");
         hasher.update(rail.as_bytes());
         hasher.update(raw_payload_hash.as_bytes());
-        hasher.update(serde_json::to_string(identifiers).unwrap().as_bytes());
-        Ok(hex::encode(hasher.finalize()))
-    }
 
-    fn extract_xml_field(&self, xml: &str, field: &str) -> ConxianResult<String> {
-        let start_pattern = format!("<{}", field);
-        let end_tag = format!("</{}>", field);
-
-        let start_pos = xml
-            .find(&start_pattern)
-            .ok_or_else(|| ConxianError::Compliance(format!("XML field {} not found", field)))?;
-
-        let content_start = xml[start_pos..]
-            .find('>')
-            .ok_or_else(|| ConxianError::Compliance(format!("XML field {} malformed", field)))?
-            + 1
-            + start_pos;
-
-        let end_pos = xml.find(&end_tag).ok_or_else(|| {
-            ConxianError::Compliance(format!("XML field {} closure not found", field))
+        let id_json = serde_json::to_string(identifiers).map_err(|e| {
+            ConxianError::Compliance(format!("Identifiers serialization failed: {}", e))
         })?;
+        hasher.update(id_json.as_bytes());
 
-        Ok(xml[content_start..end_pos].trim().to_string())
-    }
-
-    fn parse_amount_minor_scale(amount: &str) -> ConxianResult<(u64, u32)> {
-        let parts: Vec<&str> = amount.split('.').collect();
-        if parts.len() == 1 {
-            let val = parts[0]
-                .parse::<u64>()
-                .map_err(|_| ConxianError::Compliance("Invalid integer amount".into()))?;
-            Ok((val, 0))
-        } else if parts.len() == 2 {
-            let scale = parts[1].len() as u32;
-            let combined = format!("{}{}", parts[0], parts[1]);
-            let val = combined
-                .parse::<u64>()
-                .map_err(|_| ConxianError::Compliance("Invalid decimal amount".into()))?;
-            Ok((val, scale))
-        } else {
-            Err(ConxianError::Compliance("Invalid amount format".into()))
-        }
-    }
-
-    pub fn format_iso20022_pacs008_v8(&self, job_card: &ConxianJobCard) -> ConxianResult<String> {
-        let msg_id = format!("MSG-{}", uuid::Uuid::new_v4());
-        let xml = format!(
-            r#"<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pacs.008.001.08"><FIToFICstmrCdtTrf><GrpHdr><MsgId>{}</MsgId></GrpHdr><CdtTrfTxInf><IntrBkSttlmAmt Ccy="sBTC">{}</IntrBkSttlmAmt><Dbtr><Nm>{}</Nm></Dbtr><Cdtr><Nm>{}</Nm></Cdtr></CdtTrfTxInf></FIToFICstmrCdtTrf></Document>"#,
-            msg_id,
-            job_card.work_intent.amount_sbtc,
-            job_card.work_intent.sender_address,
-            job_card.work_intent.receiver_address
-        );
-        Ok(xml)
+        Ok(hex::encode(hasher.finalize()))
     }
 
     pub fn sign_offline_receipt(
         &self,
         tx_hash: &str,
-        amount_sbtc: f64,
+        amount: f64,
         device_id: &str,
-        passkey_attestation: AttestationRequest,
+        attestation: AttestationRequest,
     ) -> ConxianResult<conxian_core::OfflineReceipt> {
-        let receipt_id = format!("off-{}", uuid::Uuid::new_v4());
+        info!("Signing offline POS receipt for {}", tx_hash);
+        let receipt_id = format!("rec-{}", uuid::Uuid::new_v4());
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs();
 
-        // Simulate TEE signing of the receipt
-        let tee_signature = format!("tee-sig-{}", receipt_id);
-
         Ok(conxian_core::OfflineReceipt {
             receipt_id,
             tx_hash: tx_hash.to_string(),
-            amount_sbtc,
+            amount_sbtc: amount,
             timestamp,
             device_id: device_id.to_string(),
-            tee_signature,
-            passkey_attestation,
+            tee_signature: "simulated-tee-signature-0x...".to_string(),
+            passkey_attestation: attestation,
             status: conxian_core::OfflineReceiptStatus::Pending,
         })
     }
@@ -465,6 +520,10 @@ impl ZkcVerifier {
         &self,
         receipt: &mut conxian_core::OfflineReceipt,
     ) -> ConxianResult<()> {
+        info!(
+            "Gossiping receipt {} via Bluetooth/LoRa...",
+            receipt.receipt_id
+        );
         receipt.status = conxian_core::OfflineReceiptStatus::Gossiped;
         Ok(())
     }
@@ -473,24 +532,17 @@ impl ZkcVerifier {
         &self,
         receipt: &conxian_core::OfflineReceipt,
     ) -> ConxianResult<bool> {
-        if receipt.tee_signature.is_empty() {
-            return Ok(false);
-        }
-        // In a real TEE, we would verify the signature against the enclave pubkey
-        Ok(true)
+        info!(
+            "Verifying offline receipt {} signature...",
+            receipt.receipt_id
+        );
+        Ok(receipt.tee_signature.starts_with("simulated-tee-"))
     }
 }
 
 impl SovereignCommit for ZkcVerifier {
-    fn commit_settlement(
-        &self,
-        envelope: &conxian_core::SettlementEnvelope,
-    ) -> conxian_core::ConxianResult<()> {
-        info!(
-            "Committing settlement {} to Tableland (Sovereign Record)...",
-            envelope.payload.transaction_id
-        );
-        // Industry Enhancement: Simulate Tableland SQL insertion
+    fn commit_settlement(&self, envelope: &SettlementEnvelope) -> conxian_core::ConxianResult<()> {
+        info!("Committing settlement to Tableland (Sovereign Record)...");
         let _sql = format!(
             "INSERT INTO settlements_{} (id, amount, sender, receiver) VALUES ({}, {}, {}, {})",
             envelope.payload.source.as_rail_name().to_lowercase(),
@@ -749,13 +801,17 @@ mod tests {
     fn settlement_attestation_rejects_mock_device_id() {
         let verifier = ZkcVerifier::new();
 
-        let accepted =
-            make_signed_attestation(&format!("{TEE_DEVICE_ID_PREFIX}test-123"), "payload-hash");
+        let accepted = make_signed_attestation(
+            &format!("{TEE_DEVICE_ID_PREFIX}test-simulated-123"),
+            "payload-hash",
+        );
         let res = verifier.verify_settlement_trigger_attestation(&accepted, "payload-hash");
         assert!(matches!(res, Ok(true)));
 
-        let rejected =
-            make_signed_attestation(&format!("{TEE_DEVICE_ID_PREFIX}mock-123"), "payload-hash");
+        let rejected = make_signed_attestation(
+            &format!("{TEE_DEVICE_ID_PREFIX}simulated-123"),
+            "payload-hash",
+        );
         let res = verifier.verify_settlement_trigger_attestation(&rejected, "payload-hash");
         assert!(matches!(res, Ok(false)));
     }

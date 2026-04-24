@@ -3,7 +3,7 @@ use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tracing::{info, error};
+use tracing::{error, info};
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -52,11 +52,7 @@ pub struct A2pRouter {
 }
 
 impl A2pRouter {
-    pub fn new(
-        infobip_api_key: String,
-        infobip_base_url: String,
-        hmac_secret: String,
-    ) -> Self {
+    pub fn new(infobip_api_key: String, infobip_base_url: String, hmac_secret: String) -> Self {
         Self {
             infobip_api_key,
             infobip_base_url,
@@ -87,7 +83,11 @@ impl A2pRouter {
         }
     }
 
-    async fn send_otp_internal(&self, request: OtpRequest, is_mock: bool) -> ConxianResult<(OtpResponse, String, u64)> {
+    async fn send_otp_internal(
+        &self,
+        request: OtpRequest,
+        is_mock: bool,
+    ) -> ConxianResult<(OtpResponse, String, u64)> {
         let otp_code = generate_otp_code();
 
         let timestamp = SystemTime::now()
@@ -102,7 +102,9 @@ impl A2pRouter {
             let api_url = format!("{}/sms/2/text/advanced", self.infobip_base_url);
             let payload = InfobipSmsRequest {
                 messages: vec![InfobipMessage {
-                    destinations: vec![InfobipDestination { to: request.phone_number.clone() }],
+                    destinations: vec![InfobipDestination {
+                        to: request.phone_number.clone(),
+                    }],
                     from: "Conxian".to_string(),
                     text: format!("Your Conxian verification code is: {}", otp_code),
                 }],
@@ -119,10 +121,15 @@ impl A2pRouter {
 
                 if res.status_code < 200 || res.status_code >= 300 {
                     error!(status = res.status_code, "Infobip returned error");
-                    return Err(ConxianError::Security(format!("Infobip error: status {}", res.status_code)));
+                    return Err(ConxianError::Security(format!(
+                        "Infobip error: status {}",
+                        res.status_code
+                    )));
                 }
                 Ok(())
-            }).await.map_err(|e| ConxianError::Internal(e.to_string()))??;
+            })
+            .await
+            .map_err(|e| ConxianError::Internal(e.to_string()))??;
         }
 
         Ok((
