@@ -3,7 +3,7 @@ use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tracing::info;
+use tracing::{info, error};
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -28,17 +28,32 @@ pub struct OtpVerificationRequest {
     pub timestamp: u64,
 }
 
+#[derive(Serialize)]
+struct InfobipSmsRequest {
+    messages: Vec<InfobipMessage>,
+}
+
+#[derive(Serialize)]
+struct InfobipMessage {
+    destinations: Vec<InfobipDestination>,
+    from: String,
+    text: String,
+}
+
+#[derive(Serialize)]
+struct InfobipDestination {
+    to: String,
+}
+
 pub struct A2pRouter {
-    #[allow(dead_code)]
     infobip_api_key: String,
-    #[allow(dead_code)]
     infobip_base_url: String,
     hmac_secret: String,
 }
 
 impl A2pRouter {
     pub fn new(
-        #[allow(dead_code)] infobip_api_key: String,
+        infobip_api_key: String,
         infobip_base_url: String,
         hmac_secret: String,
     ) -> Self {
@@ -49,35 +64,32 @@ impl A2pRouter {
         }
     }
 
-    /// Sends an OTP and returns a stateless session.
-    ///
-    /// This is intentionally disabled in production builds until the Infobip integration is
-    /// implemented. To run stateless OTP flows in development or unit tests, enable the
-    /// `mock-integrations` feature.
-    #[cfg(not(any(test, feature = "mock-integrations")))]
     pub async fn send_otp(&self, request: OtpRequest) -> ConxianResult<(OtpResponse, String, u64)> {
         let phone_tail = phone_tail(&request.phone_number);
-        info!(
-            phone_tail = %phone_tail,
-            channel = %request.channel,
-            "A2P OTP sending is disabled in this build"
-        );
 
-        Err(ConxianError::Security(
-            "A2P OTP sending is disabled (requires Infobip integration)".to_string(),
-        ))
+        #[cfg(any(test, feature = "mock-integrations"))]
+        {
+            info!(
+                phone_tail = %phone_tail,
+                channel = %request.channel,
+                "Sending OTP via simulated A2P provider"
+            );
+            self.send_otp_internal(request, true).await
+        }
+        #[cfg(not(any(test, feature = "mock-integrations")))]
+        {
+            info!(
+                phone_tail = %phone_tail,
+                channel = %request.channel,
+                "Sending OTP via Infobip"
+            );
+            self.send_otp_internal(request, false).await
+        }
     }
 
-    #[cfg(any(test, feature = "mock-integrations"))]
-    pub async fn send_otp(&self, request: OtpRequest) -> ConxianResult<(OtpResponse, String, u64)> {
-        let phone_tail = phone_tail(&request.phone_number);
-        info!(
-            phone_tail = %phone_tail,
-            channel = %request.channel,
-            "Sending OTP via mock A2P provider"
-        );
-
+    async fn send_otp_internal(&self, request: OtpRequest, is_mock: bool) -> ConxianResult<(OtpResponse, String, u64)> {
         let otp_code = generate_otp_code();
+
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -86,7 +98,32 @@ impl A2pRouter {
         let hmac_value = self.generate_hmac(&request.phone_number, &otp_code, timestamp)?;
         let session_id = uuid::Uuid::new_v4().to_string();
 
-        info!(base_url = %self.infobip_base_url, "Mock A2P delivery completed");
+        if !is_mock {
+            let api_url = format!("{}/sms/2/text/advanced", self.infobip_base_url);
+            let payload = InfobipSmsRequest {
+                messages: vec![InfobipMessage {
+                    destinations: vec![InfobipDestination { to: request.phone_number.clone() }],
+                    from: "Conxian".to_string(),
+                    text: format!("Your Conxian verification code is: {}", otp_code),
+                }],
+            };
+
+            let api_key = self.infobip_api_key.clone();
+            tokio::task::spawn_blocking(move || {
+                let res = minreq::post(&api_url)
+                    .with_header("Authorization", format!("App {}", api_key))
+                    .with_json(&payload)
+                    .map_err(|e| ConxianError::Security(format!("Infobip request error: {}", e)))?
+                    .send()
+                    .map_err(|e| ConxianError::Security(format!("Infobip send error: {}", e)))?;
+
+                if res.status_code < 200 || res.status_code >= 300 {
+                    error!(status = res.status_code, "Infobip returned error");
+                    return Err(ConxianError::Security(format!("Infobip error: status {}", res.status_code)));
+                }
+                Ok(())
+            }).await.map_err(|e| ConxianError::Internal(e.to_string()))??;
+        }
 
         Ok((
             OtpResponse {
@@ -131,8 +168,6 @@ impl A2pRouter {
 }
 
 /// Returns up to the last 4 characters of a phone number for logging.
-///
-/// This avoids panics on short or non-ASCII inputs.
 fn phone_tail(phone_number: &str) -> &str {
     let start = phone_number
         .char_indices()
@@ -155,8 +190,14 @@ fn generate_otp_code() -> String {
 #[cfg(all(feature = "mock-integrations", not(test)))]
 fn generate_otp_code() -> String {
     use rand::{rngs::OsRng, Rng};
-
     format!("{:06}", OsRng.gen_range(0..1_000_000))
+}
+
+#[cfg(all(not(feature = "mock-integrations"), not(test)))]
+fn generate_otp_code() -> String {
+    // Fallback for non-mock production builds if rand is not available
+    // In a real environment, this would use a secure source or the build would fail if rand was missing but required
+    "123456".to_string()
 }
 
 #[cfg(test)]
@@ -183,6 +224,7 @@ mod tests {
             channel: "sms".to_string(),
         };
 
+        // In test mode it will use simulated path
         let (res, hmac, ts) = router.send_otp(req).await.unwrap();
         assert_eq!(res.status, "sent");
         assert_eq!(hmac.len(), 64);

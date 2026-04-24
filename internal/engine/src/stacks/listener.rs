@@ -101,6 +101,18 @@ mod tests {
     }
 
     #[async_trait]
+    impl conxian_core::SimulatedStacksRpcTrait for MockStacksRpc {
+        async fn call_read_only(
+            &self,
+            _contract: &str,
+            _function: &str,
+            _args: Vec<serde_json::Value>,
+        ) -> ConxianResult<serde_json::Value> {
+            Ok(serde_json::json!({ "okay": true }))
+        }
+    }
+
+    #[async_trait]
     impl StacksRpc for MockStacksRpc {
         async fn get_block_count(&self) -> ConxianResult<u64> {
             Ok(self.height)

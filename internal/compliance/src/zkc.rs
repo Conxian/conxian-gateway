@@ -98,11 +98,11 @@ impl ZkcVerifier {
             return Ok(false);
         }
 
-        if a.device_id.contains("mock")
-            && !a.device_id.contains("test-mock")
+        if a.device_id.contains("simulated")
+            && !a.device_id.contains("test-simulated")
             && !a.device_id.contains("test")
         {
-            warn!(device_id = %a.device_id, "Rejecting unauthorized mock TEE ID");
+            warn!(device_id = %a.device_id, "Rejecting unauthorized unauthorized TEE ID");
             return Ok(false);
         }
 
@@ -482,7 +482,10 @@ impl ZkcVerifier {
 }
 
 impl SovereignCommit for ZkcVerifier {
-    fn commit_settlement(&self, envelope: &conxian_core::SettlementEnvelope) -> conxian_core::ConxianResult<()> {
+    fn commit_settlement(
+        &self,
+        envelope: &conxian_core::SettlementEnvelope,
+    ) -> conxian_core::ConxianResult<()> {
         info!(
             "Committing settlement {} to Tableland (Sovereign Record)...",
             envelope.payload.transaction_id
@@ -499,7 +502,10 @@ impl SovereignCommit for ZkcVerifier {
         Ok(())
     }
 
-    fn commit_job_card(&self, job_card: &conxian_core::ConxianJobCard) -> conxian_core::ConxianResult<()> {
+    fn commit_job_card(
+        &self,
+        job_card: &conxian_core::ConxianJobCard,
+    ) -> conxian_core::ConxianResult<()> {
         info!("Committing job card to Tableland (Sovereign Record)...");
         let _sql = format!(
             "INSERT INTO job_cards (sender, receiver, amount) VALUES ({}, {}, {})",

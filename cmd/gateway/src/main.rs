@@ -89,7 +89,8 @@ async fn main() -> anyhow::Result<()> {
         config.hmac_secret.clone(),
     ));
 
-    let identity_manager = Arc::new(IdentityManager::new());
+    // Inject StacksRpc into IdentityManager for BNS resolution
+    let identity_manager = Arc::new(IdentityManager::with_stacks_rpc(Box::new(stx_rpc.clone())));
     let zkc_verifier = Arc::new(ZkcVerifier::new());
 
     // ALEX Client Initialization

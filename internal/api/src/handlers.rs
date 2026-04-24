@@ -419,17 +419,25 @@ pub async fn get_alex_quote(
 }
 
 pub async fn execute_alex_swap(
-    State(_state): State<AppState>,
-    _body: Body,
+    State(state): State<AppState>,
+    Json(payload): Json<conxian_core::AlexSwapRequest>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    warn!("ALEX swap requested but signer integration is unavailable");
-    Err((
-        StatusCode::NOT_IMPLEMENTED,
-        Json(json!({
-            "error": "Swap execution not available: signer integration required",
-            "code": "alex_swap_signer_unavailable"
-        })),
-    ))
+    info!("Building ALEX swap payload for preparation...");
+
+    match state.alex.build_swap_payload(payload).await {
+        Ok(preparation) => {
+            warn!("ALEX swap execution paused: signer-enclave integration required for broadcast");
+            Ok(Json(json!({
+                "status": "prepared",
+                "preparation": preparation,
+                "message": "Payload built successfully. Signer integration required for final execution."
+            })))
+        }
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        )),
+    }
 }
 
 pub async fn toggle_bounty_payouts(
@@ -561,17 +569,38 @@ pub async fn exchange_identity(
 }
 
 pub async fn verify_attestation(
-    State(_state): State<AppState>,
-    Json(_payload): Json<Value>,
+    State(state): State<AppState>,
+    Json(payload): Json<AttestationRequest>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    warn!("Direct attestation verification not implemented");
-    Err((
-        StatusCode::NOT_IMPLEMENTED,
-        Json(json!({"error": "Use specific ingress endpoints for attestation verification"})),
-    ))
+    let result = match &payload {
+        AttestationRequest::Ecdsa(a) => state
+            .compliance
+            .verify_settlement_trigger_attestation(&payload, &a.payload),
+        AttestationRequest::BitVm(_b) => {
+            return Ok(Json(json!({
+                "status": "partial",
+                "message": "BitVM attestation requires JobCard context; use /api/v1/settle for full verification"
+            })));
+        }
+        _ => {
+            return Err((
+                StatusCode::NOT_IMPLEMENTED,
+                Json(json!({
+                    "error": "General verification not implemented for this attestation type"
+                })),
+            ))
+        }
+    };
+
+    match result {
+        Ok(true) => Ok(Json(json!({ "status": "verified" }))),
+        Ok(false) => Ok(Json(json!({ "status": "failed" }))),
+        Err(e) => Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": e.to_string() })),
+        )),
+    }
 }
-
-
 
 pub async fn resolve_identity_v1(
     State(state): State<AppState>,
