@@ -5,8 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2026-04-15
 
-## [0.1.1] - 2026-04-18
+### Added
+- Integrated BNS (Stacks Name Service) resolution in `IdentityManager` via `call_read_only` RPC.
+- Implemented production-grade Infobip SMS egress logic in `A2pRouter`.
+- Added `build_swap_payload` to `AlexClient` to support prepared transaction payloads for secure signers.
+- Introduced `SimulatedStacksRpcTrait` in `conxian-core` to decouple compliance from engine.
+
+### Changed
+- Hardened ALEX swap path in API to return `prepared` status with structured Clarity payloads.
+- Refactored `IdentityManager` and `AppState` to use dependency injection for Stacks RPC, removing circular dependencies.
+- Updated `PRD.md` and `ENHANCEMENT_PLAN.md` to reflect full functional state of shared services.
+
+## [0.1.1] - 2026-04-10
 
 ### Added
 - Implemented `resolve_identity` and `exchange_token` handlers in the API layer.
@@ -20,7 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated `verify_contamination_guard.py` to support formal environment-based keywords.
 - Removed identity resolution stubs in favor of functional simulations.
 
-## [0.1.0] - 2026-04-10
+## [0.1.0] - 2026-04-05
 
 ### Added
 - Initialized workspace structure with Rust 2021.

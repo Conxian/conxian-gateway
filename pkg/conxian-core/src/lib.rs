@@ -1,5 +1,6 @@
 pub mod persistence;
 pub mod settlement;
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 pub use settlement::*;
 use std::sync::{Arc, RwLock};
@@ -376,4 +377,14 @@ impl SystemWallets {
             _ => &self.treasury,
         }
     }
+}
+
+#[async_trait]
+pub trait SimulatedStacksRpcTrait: Send + Sync {
+    async fn call_read_only(
+        &self,
+        contract: &str,
+        function: &str,
+        args: Vec<serde_json::Value>,
+    ) -> ConxianResult<serde_json::Value>;
 }

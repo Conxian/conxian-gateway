@@ -4,12 +4,12 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-tracing.workspace = true
-uuid.workspace = true
-bitcoin.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-anyhow.workspace = true
-rusqlite.workspace = true
-aes-gcm.workspace = true
 thiserror.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+hex = "0.4.3"
+rusqlite = { workspace = true }
+aes-gcm = { workspace = true }
+async-trait = { workspace = true }

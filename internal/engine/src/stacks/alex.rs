@@ -23,6 +23,10 @@ pub trait AlexClient: Send + Sync {
         request: AlexSwapRequest,
         signer_key: &str,
     ) -> ConxianResult<String>;
+    async fn build_swap_payload(
+        &self,
+        request: AlexSwapRequest,
+    ) -> ConxianResult<serde_json::Value>;
 }
 
 /// Production implementation of the AlexClient.
@@ -79,6 +83,24 @@ impl AlexClient for AlexRpcClient {
         .await
         .map_err(|e| ConxianError::Internal(e.to_string()))?
     }
+
+    async fn build_swap_payload(
+        &self,
+        request: AlexSwapRequest,
+    ) -> ConxianResult<serde_json::Value> {
+        Ok(json!({
+            "contract_address": "SP3K8BC0PPEVCV7NZ6QSRWPQ2JE9E5B6N3PA0XBHT",
+            "contract_name": "alex-swap-helper-v1",
+            "function_name": "swap-helper",
+            "function_args": [
+                { "type": "principal", "value": request.token_x },
+                { "type": "principal", "value": request.token_y },
+                { "type": "uint", "value": request.amount.to_string() },
+                { "type": "uint", "value": request.min_dy.unwrap_or(1).to_string() }
+            ]
+        }))
+    }
+
     async fn execute_swap(
         &self,
         request: AlexSwapRequest,
@@ -89,19 +111,7 @@ impl AlexClient for AlexRpcClient {
             request.amount, request.token_x, request.token_y
         );
 
-        // Production implementation (Phase 5): construct Clarity contract-call
-        // This structure aligns with the 'swap-helper-v1' interface on ALEX.
-        let _payload = json!({
-            "contract_address": "SP3K8BC0PPEVCV7NZ6QSRWPQ2JE9E5B6N3PA0XBHT",
-            "contract_name": "alex-swap-helper-v1",
-            "function_name": "swap-helper",
-            "function_args": [
-                { "type": "principal", "value": request.token_x },
-                { "type": "principal", "value": request.token_y },
-                { "type": "uint", "value": request.amount.to_string() },
-                { "type": "uint", "value": request.min_dy.unwrap_or(1).to_string() }
-            ]
-        });
+        let _payload = self.build_swap_payload(request).await?;
 
         // Current status: logic is structured but requires secure signer integration
         // for transaction signing and broadcasting to Stacks mainnet.
@@ -128,5 +138,17 @@ impl AlexClient for SimulatedAlexClient {
         _signer_key: &str,
     ) -> ConxianResult<String> {
         Ok("txid_alex_simulated_swap_rehearsal".to_string())
+    }
+
+    async fn build_swap_payload(
+        &self,
+        request: AlexSwapRequest,
+    ) -> ConxianResult<serde_json::Value> {
+        Ok(json!({
+            "token_x": request.token_x,
+            "token_y": request.token_y,
+            "amount": request.amount.to_string(),
+            "simulated": true
+        }))
     }
 }
