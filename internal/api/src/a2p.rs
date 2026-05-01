@@ -194,17 +194,10 @@ fn generate_otp_code() -> String {
     TEST_OTP_CODE.to_string()
 }
 
-#[cfg(all(feature = "mock-integrations", not(test)))]
+#[cfg(not(test))]
 fn generate_otp_code() -> String {
     use rand::{rngs::OsRng, Rng};
     format!("{:06}", OsRng.gen_range(0..1_000_000))
-}
-
-#[cfg(all(not(feature = "mock-integrations"), not(test)))]
-fn generate_otp_code() -> String {
-    // Fallback for non-mock production builds if rand is not available
-    // In a real environment, this would use a secure source or the build would fail if rand was missing but required
-    "123456".to_string()
 }
 
 #[cfg(test)]

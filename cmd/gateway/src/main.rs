@@ -99,6 +99,15 @@ async fn main() -> anyhow::Result<()> {
         &config.alex_api_url,
     ));
 
+    // Parse offline queue secret into 32-byte key
+    let mut offline_key = [0u8; 32];
+    let secret_bytes = config.offline_queue_secret.as_bytes();
+    if secret_bytes.len() >= 32 {
+        offline_key.copy_from_slice(&secret_bytes[0..32]);
+    } else {
+        offline_key[0..secret_bytes.len()].copy_from_slice(secret_bytes);
+    }
+
     // Create AppState
     let app_state = AppState {
         shared: state.clone(),
@@ -110,7 +119,7 @@ async fn main() -> anyhow::Result<()> {
         fiat_webhook_secret: config.fiat_webhook_secret.clone(),
         settlement_ingress_secret: config.settlement_ingress_secret.clone(),
         settlement_log: new_settlement_log(),
-        offline_queue: api::new_offline_queue(),
+        offline_queue: api::new_offline_queue(offline_key),
     };
 
     // Create a cancellation token for graceful shutdown of listeners

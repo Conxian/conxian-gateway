@@ -38,8 +38,7 @@ pub fn new_settlement_log() -> Arc<RwLock<VecDeque<SettlementProposal>>> {
     Arc::new(RwLock::new(VecDeque::new()))
 }
 
-pub fn new_offline_queue() -> Arc<dyn conxian_core::OfflineQueue> {
-    let key = [0u8; 32]; // In production, this would be an enclave-wrapped key
+pub fn new_offline_queue(key: [u8; 32]) -> Arc<dyn conxian_core::OfflineQueue> {
     Arc::new(
         conxian_core::persistence::EncryptedOfflineQueue::new("offline_queue.db", key)
             .expect("Failed to init offline queue"),
