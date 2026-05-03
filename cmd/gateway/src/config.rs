@@ -13,6 +13,7 @@ const BANXA_SECRET_SENTINEL: &str = "REQUIRED_FOR_PROD_BANXA_SECRET";
 const INFOBIP_API_KEY_SENTINEL: &str = "REQUIRED_FOR_PROD_INFOBIP_API_KEY";
 const HMAC_SECRET_SENTINEL: &str = "REQUIRED_FOR_PROD_HMAC_SECRET";
 const ORACLE_PUBKEY_SENTINEL: &str = "REQUIRED_FOR_PROD_ORACLE_PUBKEY";
+const OFFLINE_QUEUE_SECRET_SENTINEL: &str = "REQUIRED_FOR_PROD_OFFLINE_QUEUE_SECRET";
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -61,6 +62,7 @@ pub struct Config {
     pub settlement_ingress_secret: String,
     pub alex_api_url: String,
     pub oracle_pubkey: String,
+    pub offline_queue_secret: String,
     pub network: Network,
 }
 
@@ -95,6 +97,8 @@ impl Config {
         let infobip_api_key = Self::get_mandatory_env("INFOBIP_API_KEY", INFOBIP_API_KEY_SENTINEL);
         let hmac_secret = Self::get_mandatory_env("HMAC_SECRET", HMAC_SECRET_SENTINEL);
         let oracle_pubkey = Self::get_mandatory_env("ORACLE_PUBKEY", ORACLE_PUBKEY_SENTINEL);
+        let offline_queue_secret =
+            Self::get_mandatory_env("OFFLINE_QUEUE_SECRET", OFFLINE_QUEUE_SECRET_SENTINEL);
         let network = Network::from_env();
 
         let (btc_url, stx_url, alex_url) = match network {
@@ -151,6 +155,7 @@ impl Config {
             fiat_webhook_secret,
             settlement_ingress_secret,
             oracle_pubkey,
+            offline_queue_secret,
             network,
             alex_api_url: env::var("ALEX_API_URL").unwrap_or(alex_url),
         }
@@ -190,6 +195,7 @@ mod tests {
                 "BANXA_SECRET",
                 "INFOBIP_API_KEY",
                 "HMAC_SECRET",
+                "OFFLINE_QUEUE_SECRET",
             ];
             let vars = keys.into_iter().map(|k| (k, env::var(k).ok())).collect();
             Self { vars }
@@ -218,6 +224,10 @@ mod tests {
         env::set_var("INFOBIP_API_KEY", "infobip-key");
         env::set_var("HMAC_SECRET", "hmac-secret");
         env::set_var("ORACLE_PUBKEY", "oracle-key");
+        env::set_var(
+            "OFFLINE_QUEUE_SECRET",
+            "offline-queue-secret-that-is-at-least-32-bytes-long-for-prod",
+        );
     }
 
     #[test]
