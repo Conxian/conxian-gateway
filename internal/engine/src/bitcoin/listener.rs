@@ -63,7 +63,7 @@ impl<R: BitcoinRpc> BitcoinListener<R> {
                                 let mut state = self.state.write().unwrap();
                                 state.bitcoin.height = block.height;
                                 state.bitcoin.last_updated = block.timestamp;
-                                state.bitcoin.last_sync_time = now;
+                                state.bitcoin.last_sync_timestamp = now;
                                 state.bitcoin.status = "synced".to_string();
                                 state.bitcoin.best_block_hash = block.hash.clone();
                                 if let Some(ref n) = self.network {
@@ -86,7 +86,7 @@ impl<R: BitcoinRpc> BitcoinListener<R> {
                     self.last_height = current_height;
                 } else {
                     let mut state = self.state.write().unwrap();
-                    state.bitcoin.last_sync_time = now;
+                    state.bitcoin.last_sync_timestamp = now;
                 }
                 Ok(())
             }
@@ -167,7 +167,7 @@ mod tests {
             assert_eq!(s.bitcoin.status, "synced");
             assert_eq!(s.bitcoin.network, "mainnet");
             assert_eq!(s.bitcoin.best_block_hash, "hash-100");
-            assert!(s.bitcoin.last_sync_time > 0);
+            assert!(s.bitcoin.last_sync_timestamp > 0);
         }
 
         // Update height
