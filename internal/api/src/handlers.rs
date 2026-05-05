@@ -21,12 +21,12 @@ const SETTLEMENT_LOG_MAX_ENTRIES: usize = 1000;
 
 pub async fn get_health(State(state): State<AppState>) -> Json<Value> {
     let s = state.shared.read().unwrap();
-    let bitcoin_status = if s.bitcoin.last_sync_time > 0 {
+    let bitcoin_status = if s.bitcoin.last_sync_timestamp > 0 {
         "synced"
     } else {
         "syncing"
     };
-    let stacks_status = if s.stacks.last_sync_time > 0 {
+    let stacks_status = if s.stacks.last_sync_timestamp > 0 {
         "synced"
     } else {
         "syncing"
@@ -37,11 +37,11 @@ pub async fn get_health(State(state): State<AppState>) -> Json<Value> {
         .unwrap()
         .as_secs();
 
-    let mut overall = "ok";
-    if s.bitcoin.last_sync_time > 0 && now - s.bitcoin.last_sync_time > 120 {
+    let mut overall = "healthy";
+    if s.bitcoin.last_sync_timestamp > 0 && now - s.bitcoin.last_sync_timestamp > 120 {
         overall = "degraded";
     }
-    if s.stacks.last_sync_time > 0 && now - s.stacks.last_sync_time > 300 {
+    if s.stacks.last_sync_timestamp > 0 && now - s.stacks.last_sync_timestamp > 300 {
         overall = "degraded";
     }
 

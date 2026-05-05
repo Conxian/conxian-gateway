@@ -45,7 +45,7 @@ impl<R: StacksRpc> StacksListener<R> {
                     state.stacks.height = info.height;
                     state.stacks.status = "synced".to_string();
                     state.stacks.last_updated = now;
-                    state.stacks.last_sync_time = now;
+                    state.stacks.last_sync_timestamp = now;
                     state.stacks.network = info.network;
                     state.stacks.mode = Some("nakamoto".to_string());
                     state.stacks.epoch = Some(info.epoch);
@@ -61,7 +61,7 @@ impl<R: StacksRpc> StacksListener<R> {
                     self.last_height = info.height;
                 } else {
                     let mut state = self.state.write().unwrap();
-                    state.stacks.last_sync_time = now;
+                    state.stacks.last_sync_timestamp = now;
                 }
                 Ok(())
             }
@@ -152,7 +152,7 @@ mod tests {
             assert_eq!(s.stacks.status, "synced");
             assert_eq!(s.stacks.mode.as_deref(), Some("nakamoto"));
             assert_eq!(s.stacks.burn_block_height, Some(55));
-            assert!(s.stacks.last_sync_time > 0);
+            assert!(s.stacks.last_sync_timestamp > 0);
         }
 
         // Update height
