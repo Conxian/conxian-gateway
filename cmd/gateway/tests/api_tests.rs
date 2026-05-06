@@ -5,6 +5,7 @@ use axum::{
     body::Body,
     http::{Request, StatusCode},
 };
+use base64::prelude::*;
 use compliance::zkc::{ATTESTATION_SIGNING_DOMAIN, TEE_DEVICE_ID_PREFIX};
 use compliance::{IdentityManager, ZkcVerifier};
 use conxian_core::{
@@ -22,7 +23,36 @@ use tower::ServiceExt;
 const TEST_TOKEN: &str = "test-token";
 const TEST_FIAT_SECRET: &str = "test-fiat-secret";
 const TEST_SETTLEMENT_SECRET: &str = "test-settlement-secret";
-const TEST_X402_PROOF: &str = "proof-test-123";
+
+// Institutional x402 header generation for tests
+fn make_x402_header() -> (String, String) {
+    let payment_required = json!({
+        "accepts": [
+            {
+                "amount": "1000",
+                "asset": "sBTC",
+                "maxTimeoutSeconds": 600
+            }
+        ],
+        "challenge": "test-challenge"
+    });
+
+    let payment_signature = json!({
+        "payload": {
+            "authorization": {
+                "nonce": "test-challenge",
+                "validBefore": "2000000000"
+            },
+            "transaction": "0xdeadbeef"
+        },
+        "signature": "test-proof-signature"
+    });
+
+    (
+        BASE64_STANDARD.encode(serde_json::to_vec(&payment_required).unwrap()),
+        BASE64_STANDARD.encode(serde_json::to_vec(&payment_signature).unwrap()),
+    )
+}
 
 fn setup_app(state: SharedState) -> axum::Router {
     let fiat = Arc::new(FiatRouter::new(
@@ -102,7 +132,10 @@ fn make_attestation_header(device_id: &str, payload_hash: &str) -> String {
 }
 
 fn make_tee_attestation_header(payload_hash: &str) -> String {
-    make_attestation_header(&format!("{}test-123", TEE_DEVICE_ID_PREFIX), payload_hash)
+    make_attestation_header(
+        &format!("{}test-simulated-device", TEE_DEVICE_ID_PREFIX),
+        payload_hash,
+    )
 }
 
 #[tokio::test]
@@ -114,25 +147,6 @@ async fn test_health_check() {
         .oneshot(
             Request::builder()
                 .uri("/api/v1/health")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-}
-
-#[tokio::test]
-async fn test_get_state_authorized() {
-    let state = Arc::new(RwLock::new(GatewayState::default()));
-    let app = setup_app(state);
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/api/v1/state")
-                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -162,12 +176,31 @@ async fn test_get_metrics_authorized() {
 }
 
 #[tokio::test]
+async fn test_get_state_authorized() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/state")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
 async fn test_fiat_session_authorized() {
     let state = Arc::new(RwLock::new(GatewayState::default()));
     let app = setup_app(state);
 
     let payload = json!({
-        "wallet_address": "SP123...",
+        "wallet_address": "bc1qtest",
         "amount": 100.0,
         "currency": "USD",
         "provider": "ramp"
@@ -194,8 +227,7 @@ async fn test_fiat_webhook_authorized() {
     let state = Arc::new(RwLock::new(GatewayState::default()));
     let app = setup_app(state);
 
-    let raw_payload_content = r#"{"reference":"ref123","status":"SUCCESS"}"#;
-
+    let raw_payload_content = "{\"orderId\":\"123\"}";
     let mut mac = Hmac::<Sha256>::new_from_slice(TEST_FIAT_SECRET.as_bytes()).unwrap();
     mac.update(raw_payload_content.as_bytes());
     let signature = hex::encode(mac.finalize().into_bytes());
@@ -277,6 +309,7 @@ async fn test_ingress_iso20022_authorized() {
 
     let raw_payload_hash = hex::encode(Sha256::digest(xml_payload.as_bytes()));
     let tee_attestation = make_tee_attestation_header(&raw_payload_hash);
+    let (x402_req, x402_sig) = make_x402_header();
 
     let response = app
         .oneshot(
@@ -287,7 +320,8 @@ async fn test_ingress_iso20022_authorized() {
                 .header("Content-Type", "application/xml")
                 .header("x-iso20022-signature", signature)
                 .header("x-tee-attestation", tee_attestation)
-                .header("x-402-payment", TEST_X402_PROOF)
+                .header("x-402-payment-required", x402_req)
+                .header("x-402-payment-signature", x402_sig)
                 .body(Body::from(xml_payload))
                 .unwrap(),
         )
@@ -314,6 +348,7 @@ async fn test_sync_erp_ledger_odata() {
         ]
     });
     let raw_payload = serde_json::to_string(&payload).unwrap();
+    let (x402_req, x402_sig) = make_x402_header();
 
     let response = app
         .oneshot(
@@ -322,7 +357,8 @@ async fn test_sync_erp_ledger_odata() {
                 .method("POST")
                 .header("Authorization", format!("Bearer {}", TEST_TOKEN))
                 .header("Content-Type", "application/json")
-                .header("x-402-payment", TEST_X402_PROOF)
+                .header("x-402-payment-required", x402_req)
+                .header("x-402-payment-signature", x402_sig)
                 .body(Body::from(raw_payload))
                 .unwrap(),
         )
@@ -368,6 +404,8 @@ async fn test_settle_job_card_bitvm2() {
         "bitvm_attestation": bitvm_attestation
     });
 
+    let (x402_req, x402_sig) = make_x402_header();
+
     let response = app
         .oneshot(
             Request::builder()
@@ -375,7 +413,8 @@ async fn test_settle_job_card_bitvm2() {
                 .method("POST")
                 .header("Authorization", format!("Bearer {}", TEST_TOKEN))
                 .header("Content-Type", "application/json")
-                .header("x-402-payment", TEST_X402_PROOF)
+                .header("x-402-payment-required", x402_req)
+                .header("x-402-payment-signature", x402_sig)
                 .body(Body::from(serde_json::to_string(&payload).unwrap()))
                 .unwrap(),
         )
@@ -402,7 +441,7 @@ async fn test_x402_middleware_rejection() {
                 .method("POST")
                 .header("Authorization", format!("Bearer {}", TEST_TOKEN))
                 .header("Content-Type", "application/json")
-                // Missing x-402-payment header
+                // Missing x-402-payment headers
                 .body(Body::from("{}"))
                 .unwrap(),
         )
@@ -417,14 +456,7 @@ async fn test_x402_middleware_typed_payload() {
     let state = Arc::new(RwLock::new(GatewayState::default()));
     let app = setup_app(state);
 
-    let x402_payload = json!({
-        "amount_satoshi": 5000,
-        "asset": "sBTC",
-        "challenge": "challenge-xyz",
-        "expiry": 1744000000u64,
-        "proof_ref": "tx-abc-123"
-    });
-    let x402_header_val = serde_json::to_string(&x402_payload).unwrap();
+    let (x402_req, x402_sig) = make_x402_header();
 
     let response = app
         .oneshot(
@@ -433,7 +465,8 @@ async fn test_x402_middleware_typed_payload() {
                 .method("POST")
                 .header("Authorization", format!("Bearer {}", TEST_TOKEN))
                 .header("Content-Type", "application/json")
-                .header("x-402-payment", x402_header_val)
+                .header("x-402-payment-required", x402_req)
+                .header("x-402-payment-signature", x402_sig)
                 .body(Body::from("{}"))
                 .unwrap(),
         )
