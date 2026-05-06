@@ -388,3 +388,82 @@ pub trait SimulatedStacksRpcTrait: Send + Sync {
         args: Vec<serde_json::Value>,
     ) -> ConxianResult<serde_json::Value>;
 }
+
+/// CON-633: Institutional spending policy for Bitcoin/Stacks transactions.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SpendingPolicy {
+    pub max_amount_satoshi: u64,
+    pub daily_limit_satoshi: u64,
+    pub allowlisted_receivers: Vec<String>,
+    pub denylisted_receivers: Vec<String>,
+    pub require_m_of_n: Option<(u8, u8)>,
+}
+
+impl Default for SpendingPolicy {
+    fn default() -> Self {
+        Self {
+            max_amount_satoshi: 100_000_000,  // 1 BTC
+            daily_limit_satoshi: 500_000_000, // 5 BTC
+            allowlisted_receivers: vec![],
+            denylisted_receivers: vec![],
+            require_m_of_n: Some((2, 3)),
+        }
+    }
+}
+
+pub trait PolicyEvaluator: Send + Sync {
+    fn evaluate_transfer(
+        &self,
+        policy: &SpendingPolicy,
+        amount_satoshi: u64,
+        receiver: &str,
+    ) -> ConxianResult<bool>;
+}
+
+pub struct DefaultPolicyEngine;
+
+impl PolicyEvaluator for DefaultPolicyEngine {
+    fn evaluate_transfer(
+        &self,
+        policy: &SpendingPolicy,
+        amount_satoshi: u64,
+        receiver: &str,
+    ) -> ConxianResult<bool> {
+        if amount_satoshi > policy.max_amount_satoshi {
+            return Ok(false);
+        }
+        if policy.denylisted_receivers.iter().any(|r| r == receiver) {
+            return Ok(false);
+        }
+        if !policy.allowlisted_receivers.is_empty()
+            && !policy.allowlisted_receivers.iter().any(|r| r == receiver)
+        {
+            return Ok(false);
+        }
+        Ok(true)
+    }
+}
+
+#[cfg(test)]
+mod policy_tests {
+    use super::*;
+
+    #[test]
+    fn test_spending_policy_evaluation() {
+        let engine = DefaultPolicyEngine;
+        let mut policy = SpendingPolicy {
+            max_amount_satoshi: 1000,
+            allowlisted_receivers: vec!["VALID_ADDR".to_string()],
+            ..Default::default()
+        };
+
+        assert!(engine.evaluate_transfer(&policy, 500, "VALID_ADDR").unwrap());
+        assert!(!engine.evaluate_transfer(&policy, 1500, "VALID_ADDR").unwrap());
+        assert!(!engine.evaluate_transfer(&policy, 500, "INVALID_ADDR").unwrap());
+
+        policy.denylisted_receivers = vec!["BAD_ADDR".to_string()];
+        policy.allowlisted_receivers = vec![];
+        assert!(engine.evaluate_transfer(&policy, 500, "VALID_ADDR").unwrap());
+        assert!(!engine.evaluate_transfer(&policy, 500, "BAD_ADDR").unwrap());
+    }
+}
