@@ -1,49 +1,37 @@
-use axum::{
-    extract::Request,
-    http::{HeaderMap, StatusCode},
-    middleware::Next,
-    response::Response,
-    Json,
-};
-use base64::{
-    engine::general_purpose::{
-        STANDARD as BASE64_STANDARD, URL_SAFE as BASE64_URL_SAFE, URL_SAFE_NO_PAD,
-    },
-    Engine,
-};
-use serde_json::{json, Value};
-use std::{
-    collections::HashSet,
-    time::{SystemTime, UNIX_EPOCH},
-};
-use tracing::{info, warn};
+use axum::http::{HeaderMap, StatusCode};
+use base64::prelude::*;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::collections::HashSet;
+use std::time::{SystemTime, UNIX_EPOCH};
+use thiserror::Error;
 
-const PAYMENT_REQUIRED_HEADER: &str = "payment-required";
-const PAYMENT_SIGNATURE_HEADER: &str = "payment-signature";
-const PAYMENT_REQUIRED_ALIASES: &[&str] = &[PAYMENT_REQUIRED_HEADER, "x-payment-required"];
-const PAYMENT_SIGNATURE_ALIASES: &[&str] = &[PAYMENT_SIGNATURE_HEADER, "x-payment"];
+pub const PAYMENT_REQUIRED_HEADER: &str = "x-402-payment-required";
+pub const PAYMENT_SIGNATURE_HEADER: &str = "x-402-payment-signature";
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct X402PaymentPayload {
-    pub amount: u128,
+/// CON-492: [ATS-v14.0] x402 Payment-Required Typed Payload.
+/// Represents a verified payment proof for institutional access.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct X402Payload {
+    pub amount: u64,
     pub asset: String,
     pub challenge: String,
     pub expiry: u64,
     pub proof_refs: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Error, Debug, PartialEq, Eq)]
 pub enum X402ParseError {
-    MissingHeader {
-        header: &'static str,
-    },
-    MissingField {
-        field: &'static str,
-    },
+    #[error("Missing mandatory header: {header}")]
+    MissingHeader { header: &'static str },
+    #[error("Malformed header {header}: {detail}")]
     MalformedHeader {
         header: &'static str,
         detail: &'static str,
     },
+    #[error("Missing required field in payload: {field}")]
+    MissingField { field: &'static str },
+    #[error("Invalid field value for {field}: {detail}")]
     InvalidField {
         field: &'static str,
         detail: &'static str,
@@ -53,179 +41,96 @@ pub enum X402ParseError {
 impl X402ParseError {
     pub fn status_code(&self) -> StatusCode {
         match self {
-            Self::MissingHeader { .. } | Self::MissingField { .. } => StatusCode::PAYMENT_REQUIRED,
-            Self::MalformedHeader { .. } | Self::InvalidField { .. } => StatusCode::BAD_REQUEST,
+            X402ParseError::MissingHeader { .. } => StatusCode::PAYMENT_REQUIRED,
+            X402ParseError::MalformedHeader { .. } => StatusCode::BAD_REQUEST,
+            X402ParseError::MissingField { .. } => StatusCode::PAYMENT_REQUIRED,
+            X402ParseError::InvalidField { .. } => StatusCode::BAD_REQUEST,
         }
     }
 
     pub fn code(&self) -> &'static str {
         match self {
-            Self::MissingHeader { .. } => "x402_missing_header",
-            Self::MissingField { .. } => "x402_missing_field",
-            Self::MalformedHeader { .. } => "x402_malformed_header",
-            Self::InvalidField { .. } => "x402_invalid_field",
-        }
-    }
-
-    pub fn message(&self) -> String {
-        match self {
-            Self::MissingHeader { header } => format!("Missing required x402 header: {header}"),
-            Self::MissingField { field } => format!("Missing required x402 field: {field}"),
-            Self::MalformedHeader { header, detail } => {
-                format!("Malformed x402 header {header}: {detail}")
-            }
-            Self::InvalidField { field, detail } => {
-                format!("Invalid x402 field {field}: {detail}")
-            }
+            X402ParseError::MissingHeader { .. } => "x402_missing_header",
+            X402ParseError::MalformedHeader { .. } => "x402_malformed_header",
+            X402ParseError::MissingField { .. } => "x402_missing_field",
+            X402ParseError::InvalidField { .. } => "x402_invalid_field",
         }
     }
 }
 
-pub async fn x402_filter(
-    mut req: Request,
-    next: Next,
-) -> Result<Response, (StatusCode, Json<Value>)> {
-    match parse_x402_payload(req.headers()) {
-        Ok(payload) => {
-            info!(
-                path = %req.uri().path(),
-                amount = %payload.amount,
-                asset = %payload.asset,
-                expiry = %payload.expiry,
-                proof_ref_count = payload.proof_refs.len(),
-                "x402 payment intent accepted"
-            );
-            req.extensions_mut().insert(payload);
-            Ok(next.run(req).await)
-        }
-        Err(error) => {
-            warn!(
-                path = %req.uri().path(),
-                code = %error.code(),
-                status = %error.status_code(),
-                "x402 payment intent rejected: {}",
-                error.message()
-            );
-            Err((
-                error.status_code(),
-                Json(json!({
-                    "error": error.message(),
-                    "code": error.code(),
-                })),
-            ))
-        }
-    }
-}
+pub fn parse_x402_payload(headers: &HeaderMap) -> Result<X402Payload, X402ParseError> {
+    let raw_required = read_header(
+        headers,
+        &[PAYMENT_REQUIRED_HEADER, "x-payment-required"],
+        PAYMENT_REQUIRED_HEADER,
+    )?;
+    let raw_signature = read_header(
+        headers,
+        &[PAYMENT_SIGNATURE_HEADER, "x-payment-signature"],
+        PAYMENT_SIGNATURE_HEADER,
+    )?;
 
-pub fn parse_x402_payload(headers: &HeaderMap) -> Result<X402PaymentPayload, X402ParseError> {
-    // Canonical x402 field mapping with local/legacy compatibility:
-    // - amount: accepts[0].amount | accepts[0].maxAmountRequired | payload.authorization.value
-    // - asset: accepts[0].asset | payload.authorization.asset
-    // - challenge: challenge | nonce | payload.authorization.nonce
-    // - expiry: validBefore | expiry | accepts[0].maxTimeoutSeconds (derived absolute unix time)
-    // - proof refs: signature | payload.transaction | proofRef/proofRefs
-    let payment_required_header =
-        read_header(headers, PAYMENT_REQUIRED_ALIASES, PAYMENT_REQUIRED_HEADER)?;
-    let payment_signature_header =
-        read_header(headers, PAYMENT_SIGNATURE_ALIASES, PAYMENT_SIGNATURE_HEADER)?;
+    let payment_required = parse_header_json(raw_required, PAYMENT_REQUIRED_HEADER)?;
+    let payment_signature = parse_header_json(raw_signature, PAYMENT_SIGNATURE_HEADER)?;
 
-    let payment_required = parse_header_json(payment_required_header, PAYMENT_REQUIRED_HEADER)?;
-    let payment_signature = parse_header_json(payment_signature_header, PAYMENT_SIGNATURE_HEADER)?;
-
-    let amount = parse_amount(headers, &payment_required, &payment_signature)?;
-    let asset = parse_asset(headers, &payment_required, &payment_signature)?;
-    let challenge = parse_challenge(headers, &payment_required, &payment_signature)?;
-    let expiry = parse_expiry(headers, &payment_required, &payment_signature)?;
-    let proof_refs = parse_proof_refs(headers, &payment_required, &payment_signature)?;
-
-    Ok(X402PaymentPayload {
-        amount,
-        asset,
-        challenge,
-        expiry,
-        proof_refs,
+    Ok(X402Payload {
+        amount: parse_amount(&payment_required)?,
+        asset: parse_asset(&payment_required)?,
+        challenge: parse_challenge(&payment_required, &payment_signature)?,
+        expiry: parse_expiry(&payment_required, &payment_signature)?,
+        proof_refs: parse_proof_refs(headers, &payment_required, &payment_signature)?,
     })
 }
 
-fn parse_amount(
-    headers: &HeaderMap,
-    payment_required: &Value,
-    payment_signature: &Value,
-) -> Result<u128, X402ParseError> {
-    let amount_raw = first_string([
-        header_string(headers, &["x402-amount", "payment-required-amount"]),
-        value_to_string(payment_required.get("amount")),
-        first_accept_value(payment_required, "amount"),
-        first_accept_value(payment_required, "maxAmountRequired"),
-        value_to_string(payment_signature.pointer("/payload/authorization/value")),
-        value_to_string(payment_signature.get("amount")),
-    ])
-    .ok_or(X402ParseError::MissingField { field: "amount" })?;
+fn parse_amount(payment_required: &Value) -> Result<u64, X402ParseError> {
+    let amount_str = first_accept_value(payment_required, "amount")
+        .or_else(|| first_accept_value(payment_required, "maxAmountRequired"))
+        .ok_or(X402ParseError::MissingField { field: "amount" })?;
 
-    amount_raw
-        .parse::<u128>()
+    amount_str
+        .parse::<u64>()
         .map_err(|_| X402ParseError::InvalidField {
             field: "amount",
             detail: "must be an unsigned integer",
         })
 }
 
-fn parse_asset(
-    headers: &HeaderMap,
-    payment_required: &Value,
-    payment_signature: &Value,
-) -> Result<String, X402ParseError> {
-    first_string([
-        header_string(headers, &["x402-asset", "payment-required-asset"]),
-        value_to_string(payment_required.get("asset")),
-        first_accept_value(payment_required, "asset"),
-        value_to_string(payment_signature.pointer("/payload/authorization/asset")),
-        value_to_string(payment_signature.get("asset")),
-    ])
-    .ok_or(X402ParseError::MissingField { field: "asset" })
+fn parse_asset(payment_required: &Value) -> Result<String, X402ParseError> {
+    first_accept_value(payment_required, "asset")
+        .ok_or(X402ParseError::MissingField { field: "asset" })
 }
 
 fn parse_challenge(
-    headers: &HeaderMap,
     payment_required: &Value,
     payment_signature: &Value,
 ) -> Result<String, X402ParseError> {
     first_string([
-        header_string(headers, &["x402-challenge", "payment-required-challenge"]),
         value_to_string(payment_required.get("challenge")),
-        value_to_string(payment_required.get("nonce")),
-        value_to_string(payment_required.pointer("/extensions/sign-in-with-x/info/nonce")),
         value_to_string(payment_signature.pointer("/payload/authorization/nonce")),
-        value_to_string(payment_signature.pointer("/payload/nonce")),
-        value_to_string(payment_signature.get("challenge")),
+        value_to_string(payment_signature.get("nonce")),
     ])
     .ok_or(X402ParseError::MissingField { field: "challenge" })
 }
 
 fn parse_expiry(
-    headers: &HeaderMap,
     payment_required: &Value,
     payment_signature: &Value,
 ) -> Result<u64, X402ParseError> {
-    if let Some(raw_expiry) = first_string([
-        header_string(headers, &["x402-expiry", "payment-required-expiry"]),
-        value_to_string(payment_required.get("expiry")),
-        value_to_string(payment_required.get("expires_at")),
-        value_to_string(payment_required.get("expiresAt")),
-        value_to_string(payment_required.get("validBefore")),
+    if let Some(expiry) = first_string([
         value_to_string(payment_signature.pointer("/payload/authorization/validBefore")),
+        value_to_string(payment_signature.get("validBefore")),
         value_to_string(payment_signature.get("expiry")),
     ]) {
-        return raw_expiry
+        return expiry
             .parse::<u64>()
             .map_err(|_| X402ParseError::InvalidField {
                 field: "expiry",
-                detail: "must be a unix timestamp in seconds",
+                detail: "must be a unix timestamp",
             });
     }
 
-    if let Some(timeout_value) = first_accept_value(payment_required, "maxTimeoutSeconds") {
-        let timeout = timeout_value
+    if let Some(timeout_str) = first_accept_value(payment_required, "maxTimeoutSeconds") {
+        let timeout = timeout_str
             .parse::<u64>()
             .map_err(|_| X402ParseError::InvalidField {
                 field: "expiry",
@@ -337,14 +242,9 @@ fn parse_header_json(raw: &str, header: &'static str) -> Result<Value, X402Parse
         return Ok(value);
     }
 
-    for bytes in [
-        BASE64_STANDARD.decode(raw),
-        BASE64_URL_SAFE.decode(raw),
-        URL_SAFE_NO_PAD.decode(raw),
-    ]
-    .into_iter()
-    .flatten()
-    {
+    let decoders = [BASE64_STANDARD.decode(raw), BASE64_URL_SAFE.decode(raw)];
+
+    for bytes in decoders.into_iter().flatten() {
         if let Ok(as_str) = std::str::from_utf8(&bytes) {
             if let Ok(value) = serde_json::from_str::<Value>(as_str) {
                 return Ok(value);
@@ -398,6 +298,7 @@ fn value_to_string(value: Option<&Value>) -> Option<String> {
 mod tests {
     use super::*;
     use axum::http::{HeaderMap, HeaderValue};
+    use serde_json::json;
 
     fn build_headers(payment_required: Value, payment_signature: Value) -> HeaderMap {
         let mut headers = HeaderMap::new();
@@ -434,7 +335,7 @@ mod tests {
         let payment_signature = json!({
             "payload": {
                 "authorization": {
-                    "nonce": "nonce-abc",
+                    "nonce": "challenge-123",
                     "validBefore": "2000000000"
                 },
                 "transaction": "0xdeadbeef"
@@ -542,7 +443,7 @@ mod tests {
         let payment_signature = json!({
             "payload": {
                 "authorization": {
-                    "nonce": "nonce-1",
+                    "nonce": "challenge-1",
                     "validBefore": "2000000000"
                 }
             }

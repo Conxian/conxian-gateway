@@ -136,8 +136,19 @@ impl IdentityManager {
                 .await?;
 
             info!(res = ?res, "BNS resolution result");
+
+            // Extract owner from Clarity response
+            let address = res
+                .get("result")
+                .and_then(|r| r.get("value"))
+                .and_then(|v| v.get("owner"))
+                .and_then(|o| o.get("value"))
+                .and_then(|s| s.as_str())
+                .unwrap_or("unknown")
+                .to_string();
+
             Ok(IdentityResolutionResponse {
-                address: "SP...".to_string(), // Live owner resolved via Clarity
+                address,
                 provider: "bns".to_string(),
                 verified: true,
                 metadata: Some(serde_json::to_value(res).unwrap_or_default()),

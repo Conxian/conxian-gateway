@@ -1,3 +1,4 @@
+use crate::x402::{parse_x402_payload, X402ParseError};
 use crate::AppState;
 use axum::{
     extract::{Request, State},
@@ -6,7 +7,6 @@ use axum::{
     response::Response,
     Json,
 };
-use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::time::Instant;
 use tracing::{info, warn};
@@ -41,17 +41,8 @@ pub async fn latency_tracker(State(state): State<AppState>, req: Request, next: 
     response
 }
 
-/// CON-492: [ATS-v14.0] x402 Payment-Required Typed Payload
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct X402Payload {
-    pub amount_satoshi: u64,
-    pub asset: String,             // e.g., "BTC", "sBTC"
-    pub challenge: String,         // Nonce or invoice hash
-    pub expiry: u64,               // Unix timestamp
-    pub proof_ref: Option<String>, // sBTC txid or Lightning preimage
-}
-
-/// CON-492: x402 / Payment-Required Parser & Filter
+/// CON-492: Unified x402 / Payment-Required Parser & Filter.
+/// Utilizes the advanced parser from x402.rs to enforce institutional payment standards.
 pub async fn x402_filter(req: Request, next: Next) -> Result<Response, (StatusCode, Json<Value>)> {
     let headers = req.headers();
     let path = req.uri().path();
@@ -60,30 +51,16 @@ pub async fn x402_filter(req: Request, next: Next) -> Result<Response, (StatusCo
     let strictly_protected =
         path.contains("/settle") || path.contains("/ingress/") || path.contains("/erp/sync");
 
-    let x402_header = headers.get("x-402-payment").and_then(|v| v.to_str().ok());
-
-    match x402_header {
-        Some(token) => {
-            // Attempt to parse the token as a JSON payload
-            if serde_json::from_str::<X402Payload>(token).is_ok() {
-                info!("x402 payment payload verified");
-                Ok(next.run(req).await)
-            } else if token.starts_with("proof-") || token.starts_with("test-pay-") {
-                info!(token = %token, "x402 simple proof accepted");
-                Ok(next.run(req).await)
-            } else {
-                warn!(token = %token, "Invalid x402 payment token format");
-                Err((
-                    StatusCode::PAYMENT_REQUIRED,
-                    Json(json!({
-                        "error": "Invalid x402 payment token format",
-                        "code": "x402_malformed_token",
-                        "expected_format": "JSON X402Payload"
-                    })),
-                ))
-            }
+    match parse_x402_payload(headers) {
+        Ok(payload) => {
+            info!(
+                amount = %payload.amount,
+                asset = %payload.asset,
+                "x402 payment verified via advanced parser"
+            );
+            Ok(next.run(req).await)
         }
-        None if strictly_protected => {
+        Err(X402ParseError::MissingHeader { .. }) if strictly_protected => {
             warn!(path = %path, "Access denied: x402 Payment-Required");
             Err((
                 StatusCode::PAYMENT_REQUIRED,
@@ -96,9 +73,20 @@ pub async fn x402_filter(req: Request, next: Next) -> Result<Response, (StatusCo
                 })),
             ))
         }
-        None => {
-            // Non-strictly protected routes pass through
+        Err(X402ParseError::MissingHeader { .. }) => {
+            // Non-strictly protected routes pass through if header is missing
             Ok(next.run(req).await)
+        }
+        Err(e) => {
+            warn!(error = %e, "Invalid x402 payment payload");
+            Err((
+                e.status_code(),
+                Json(json!({
+                    "error": e.to_string(),
+                    "code": e.code(),
+                    "expected_format": "Institutional x402 Standard (ATS-v14.0)"
+                })),
+            ))
         }
     }
 }
