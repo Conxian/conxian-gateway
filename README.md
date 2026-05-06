@@ -3,7 +3,7 @@
 Institutional-grade middleware bridging Bitcoin/Stacks state logic with enterprise compliance, featuring mathematically verifiable state proofs and ZK-compliant auditing.
 
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Status](https://img.shields.io/badge/Status-v0.1.0-orange.svg)](#project-status)
+[![Status](https://img.shields.io/badge/Status-v0.1.3-orange.svg)](#project-status)
 
 ## 0. Governance & BOS Role
 **Business Unit**: Protocol & Institutional Infrastructure
@@ -28,7 +28,7 @@ Conxian is designed to capture the Total Addressable Market (TAM) of Bitcoin-nat
 - **D. Workload Identity Federation (WIF)**: TEE-based agent authentication without static keys.
 
 ## 2. Project Status
-Current Version: **v0.1.0**
+Current Version: **v0.1.3**
 
 This project is in active development. While it implements production-grade security and compliance features, users should consult the [Readiness Gates](docs/READINESS_GATES.md) before mainnet deployment.
 

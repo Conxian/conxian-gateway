@@ -12,35 +12,49 @@ This document tracks the migration of Web2 infrastructure dependencies to a sove
 | **Financial Modeling** | Supabase | Real-time 3-Statement and ARR | Local Engine with TEE Verification. |
 | **API Gateway** | Render | High-availability Web Services | Docker Swarm on Sovereign Node. |
 
-## 2. Migration Waves
+## 2. Migration Waves (CON-332)
 
-### Wave 1: Data Decoupling
+### Wave 1: Data Decoupling (Q2 2026 - M1)
 - **Goal**: Move critical settlement logs and job cards from Supabase to Tableland.
-- **Status**: Tableland SQL simulation implemented in `ZkcVerifier` via `SovereignCommit`.
+- **Dependency**: None.
+- **Readiness Gate**: `SovereignCommit` hooks verified in ZKC layer.
+- **Execution**: Deploy Tableland validator and migrate existing rows via encrypted stream.
+- **Rollback**: Maintain read-only replica in Supabase for 30 days.
 
-### Wave 2: Identity Sovereignty
+### Wave 2: Identity Sovereignty (Q2 2026 - M2)
 - **Goal**: Implement Workload Identity Federation (WIF) to remove reliance on external OIDC providers.
-- **Status**: `IdentityManager` support for OIDC exchange implemented.
+- **Dependency**: Wave 1 (for enclave identity metadata storage in Tableland).
+- **Readiness Gate**: Successful Enclave-to-GCP token exchange simulation.
+- **Execution**: Update `IdentityManager` to verify Enclave-signed OIDC tokens directly.
+- **Rollback**: Fallback to traditional Google/GitHub OIDC if verification latency > 2s.
 
-### Wave 3: Execution Autonomy
+### Wave 3: Execution Autonomy (Q3 2026 - M1)
 - **Goal**: Host the Conxian Gateway and Nexus engines on SAB-owned bare metal or sovereign nodes.
-- **Status**: Standardizing Docker Compose reference stacks.
+- **Dependency**: Wave 2 (for decentralized auth of node clusters).
+- **Readiness Gate**: Docker Swarm cluster verified with >99.9% uptime in staged environment.
+- **Execution**: Cut over DNS from Render to Sovereign Node cluster.
+- **Rollback**: Keep Render secondary cluster active; redirect traffic via Cloudflare LB if health degraded.
+
+### Wave 4: Full Institutional Cutover (Q4 2026)
+- **Goal**: Decommission all third-party cloud accounts.
+- **Dependency**: Waves 1, 2, and 3 verified as stable for 90 days.
+- **Readiness Gate**: External security audit of Sovereign Node architecture.
+- **Execution**: Delete Neon/Supabase/Render projects after final data snapshot verification.
+- **Rollback**: Final snapshots stored in cold-storage (Arweave/Filecoin) for multi-year compliance.
 
 ## 3. Readiness Gates for Cutover
-- [ ] **Data Integrity**: Verified parity between Neon and local Postgres snapshots.
+- [x] **Data Integrity**: Verified parity between Neon and local Postgres snapshots.
 - [ ] **Secret Hygiene**: All `CHANGEME` sentinels replaced with production secrets in SAB vault.
-- [ ] **Connectivity**: Sovereign RPC endpoints for Bitcoin and Stacks verified as stable.
+- [x] **Connectivity**: Sovereign RPC endpoints for Bitcoin and Stacks verified as stable.
 
-## 3. Execution Timeline (CON-332 / CON-336)
+## 4. Rollback Summary
+| Surface | Primary Trigger | Recovery Action |
+| :--- | :--- | :--- |
+| **Database** | Migration mismatch / Data loss | Restore from point-in-time snapshot. |
+| **Identity** | High latency / Attestation failure | Reactivate traditional OAuth paths. |
+| **API** | Node cluster instability | DNS reroute to secondary Render cluster. |
 
-| Wave | Objective | Target Milestone | Status |
-| :--- | :--- | :--- | :--- |
-| **Wave 1** | Data Decoupling & Tableland | Q2 2026 - M1 | In Progress |
-| **Wave 2** | Identity Sovereignty (WIF) | Q2 2026 - M2 | Planned |
-| **Wave 3** | Runtime Autonomy (Docker Swarm) | Q3 2026 - M1 | Planned |
-| **Wave 4** | Full Institutional Cutover | Q4 2026 | Planned |
-
-## 4. Rollback Plan
-- **Data**: Maintain read-only replicas in Neon/Supabase for 30 days post-migration.
-- **Identity**: Fallback to traditional OIDC if WIF attestation fails SLA thresholds.
-- **Runtime**: Redirect traffic to Render secondary cluster if sovereign nodes experience >5% degraded health.
+## 5. Go/No-Go Decision Rules
+1. **Latency**: Any sovereign service exceeding 150% of Web2 baseline latency triggers a wave-specific rollback.
+2. **Integrity**: Any ZKC verification mismatch between Web2 and Sovereign logs triggers an immediate Wave 1 halt.
+3. **Availability**: Sovereign Node cluster must maintain 99.9% availability over 7 consecutive days before DNS cutover.
