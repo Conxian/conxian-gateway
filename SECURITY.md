@@ -23,6 +23,6 @@ Conxian Gateway is an institutional-grade "Compliance Pipe". We prioritize:
 - **No PII Storage**: The gateway is designed to be stateless regarding user PII.
 - **Cryptographic Verification**: All attestations (ZKC) are verified using industry-standard libraries (secp256k1).
 - **Secure Communication**: All API endpoints must be served over TLS in production.
-- **Authentication**: Mandatory Bearer token authentication for all non-public endpoints. The gateway implements constant-time token comparison to prevent timing attacks.
+- **Authentication**: Mandatory Bearer token authentication for all non-public endpoints. The gateway enforces a minimum token length of 32 characters and implements constant-time token comparison to prevent timing attacks.
 - **DoS Protection**: A global 10MB request body limit is enforced on all API endpoints.
 - **Protected Metrics**: The `/metrics` endpoint is protected by Bearer token authentication to prevent exposure of sensitive institutional financial data.

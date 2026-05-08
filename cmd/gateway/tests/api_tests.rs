@@ -20,7 +20,7 @@ use sha2::{Digest, Sha256};
 use std::sync::{Arc, RwLock};
 use tower::ServiceExt;
 
-const TEST_TOKEN: &str = "test-token";
+const TEST_TOKEN: &str = "test-token-that-is-at-least-32-characters-long-for-prod";
 const TEST_FIAT_SECRET: &str = "test-fiat-secret";
 const TEST_SETTLEMENT_SECRET: &str = "test-settlement-secret";
 
@@ -475,6 +475,69 @@ async fn test_x402_middleware_typed_payload() {
 
     // Pass x402 filter
     assert_ne!(response.status(), StatusCode::PAYMENT_REQUIRED);
+}
+
+#[tokio::test]
+async fn test_auth_middleware_weak_token_rejection() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let fiat = Arc::new(FiatRouter::new(
+        "ramp".to_string(),
+        "id".to_string(),
+        "sec".to_string(),
+        "apid".to_string(),
+        "apsec".to_string(),
+        "bk".to_string(),
+        "bs".to_string(),
+    ));
+    let a2p = Arc::new(A2pRouter::new("a".into(), "b".into(), "c".into()));
+    let identity = Arc::new(IdentityManager::new());
+    let compliance = Arc::new(ZkcVerifier::new());
+    let alex = Arc::new(engine::stacks::alex::SimulatedAlexClient);
+
+    struct MockOfflineQueue;
+    impl conxian_core::OfflineQueue for MockOfflineQueue {
+        fn enqueue(&self, _r: &conxian_core::OfflineReceipt) -> conxian_core::ConxianResult<()> {
+            Ok(())
+        }
+        fn dequeue_pending(
+            &self,
+        ) -> conxian_core::ConxianResult<Vec<conxian_core::OfflineReceipt>> {
+            Ok(vec![])
+        }
+        fn mark_broadcasted(&self, _id: &str) -> conxian_core::ConxianResult<()> {
+            Ok(())
+        }
+    }
+
+    let app_state = AppState {
+        shared: state,
+        fiat,
+        a2p,
+        identity,
+        compliance,
+        alex,
+        fiat_webhook_secret: "secret".to_string(),
+        settlement_ingress_secret: "secret".to_string(),
+        settlement_log: new_settlement_log(),
+        offline_queue: Arc::new(MockOfflineQueue),
+    };
+
+    // Use a weak token
+    let app = configure_routes(app_state, "too-short-token".to_string());
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/metrics")
+                .header("Authorization", "Bearer too-short-token")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    // Should fail with 500 INTERNAL_SERVER_ERROR as per auth_middleware logic for insecure tokens
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
 }
 
 #[tokio::test]
