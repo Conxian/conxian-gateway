@@ -2,7 +2,7 @@ use conxian_core::{ConxianError, ConxianResult};
 use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
-use tracing::info;
+use tracing::{info, warn};
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -161,93 +161,58 @@ impl FiatRouter {
     }
 
     pub fn verify_webhook(&self, payload: &WebhookPayload, secret: &str) -> ConxianResult<bool> {
+        info!(
+            provider = %payload.provider,
+            reference = %payload.reference_id,
+            "Verifying fiat webhook signature"
+        );
+
         match payload.provider.as_str() {
-            "ramp" => self.verify_ramp_webhook(payload, secret),
-            "investec" => self.verify_investec_webhook(payload, secret),
-            "alchemypay" => self.verify_alchemypay_webhook(payload, secret),
-            "banxa" => self.verify_banxa_webhook(payload, secret),
-            _ => Err(ConxianError::Security(
-                "Unknown webhook provider".to_string(),
-            )),
+            "ramp" | "investec" | "alchemypay" | "banxa" => {
+                self.verify_hmac_signature(payload, secret)
+            }
+            _ => Err(ConxianError::Security(format!(
+                "Unsupported or unknown webhook provider: {}",
+                payload.provider
+            ))),
         }
     }
 
-    fn verify_ramp_webhook(&self, payload: &WebhookPayload, secret: &str) -> ConxianResult<bool> {
+    /// Unofficial HMAC-SHA256 signature verification for institutional webhooks.
+    /// Enforces cryptographic integrity for all configured fiat providers.
+    fn verify_hmac_signature(&self, payload: &WebhookPayload, secret: &str) -> ConxianResult<bool> {
         if payload.signature.is_empty() {
+            warn!(
+                provider = %payload.provider,
+                reference = %payload.reference_id,
+                "Webhook rejected: Missing signature"
+            );
             return Ok(false);
         }
 
-        info!(
-            "Verifying Ramp webhook HMAC signature for reference: {}",
-            payload.reference_id
-        );
-
         let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
-            .map_err(|e| ConxianError::Security(format!("HMAC error: {}", e)))?;
+            .map_err(|e| ConxianError::Security(format!("HMAC initialization error: {}", e)))?;
         mac.update(payload.raw_payload.as_bytes());
 
-        let sig_bytes = hex::decode(&payload.signature)
-            .map_err(|e| ConxianError::Security(format!("Invalid signature hex: {}", e)))?;
+        let sig_bytes = hex::decode(&payload.signature).map_err(|e| {
+            ConxianError::Security(format!("Invalid webhook signature hex format: {}", e))
+        })?;
 
-        Ok(mac.verify_slice(&sig_bytes).is_ok())
-    }
-
-    fn verify_investec_webhook(
-        &self,
-        payload: &WebhookPayload,
-        _secret: &str,
-    ) -> ConxianResult<bool> {
-        info!(
-            "Verifying Investec webhook signature for reference: {}",
-            payload.reference_id
-        );
-        Ok(true)
-    }
-
-    fn verify_alchemypay_webhook(
-        &self,
-        payload: &WebhookPayload,
-        secret: &str,
-    ) -> ConxianResult<bool> {
-        // Industry Enhancement: Alchemy Pay Signature Verification (CON-41)
-        if payload.signature.is_empty() {
-            return Ok(false);
+        if mac.verify_slice(&sig_bytes).is_ok() {
+            info!(
+                provider = %payload.provider,
+                reference = %payload.reference_id,
+                "Webhook signature verified successfully"
+            );
+            Ok(true)
+        } else {
+            warn!(
+                provider = %payload.provider,
+                reference = %payload.reference_id,
+                "Webhook signature verification failed: Cryptographic mismatch"
+            );
+            Ok(false)
         }
-
-        info!(
-            "Verifying Alchemy Pay webhook signature for reference: {}",
-            payload.reference_id
-        );
-
-        let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
-            .map_err(|e| ConxianError::Security(format!("HMAC error: {}", e)))?;
-        mac.update(payload.raw_payload.as_bytes());
-
-        let sig_bytes = hex::decode(&payload.signature)
-            .map_err(|e| ConxianError::Security(format!("Invalid signature hex: {}", e)))?;
-
-        Ok(mac.verify_slice(&sig_bytes).is_ok())
-    }
-
-    fn verify_banxa_webhook(&self, payload: &WebhookPayload, secret: &str) -> ConxianResult<bool> {
-        // Industry Enhancement: Banxa Signature Verification (CON-41)
-        if payload.signature.is_empty() {
-            return Ok(false);
-        }
-
-        info!(
-            "Verifying Banxa webhook signature for reference: {}",
-            payload.reference_id
-        );
-
-        let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
-            .map_err(|e| ConxianError::Security(format!("HMAC error: {}", e)))?;
-        mac.update(payload.raw_payload.as_bytes());
-
-        let sig_bytes = hex::decode(&payload.signature)
-            .map_err(|e| ConxianError::Security(format!("Invalid signature hex: {}", e)))?;
-
-        Ok(mac.verify_slice(&sig_bytes).is_ok())
     }
 }
 
@@ -394,5 +359,46 @@ mod tests {
 
         let valid = router.verify_webhook(&payload, secret).unwrap();
         assert!(valid);
+    }
+
+    #[tokio::test]
+    async fn test_verify_investec_webhook() {
+        let router = FiatRouter::new(
+            "test-key".to_string(),
+            "client-id".to_string(),
+            "secret".to_string(),
+            "ap-app-id".to_string(),
+            "ap-secret".to_string(),
+            "banxa-key".to_string(),
+            "banxa-secret".to_string(),
+        );
+
+        let secret = "investec-hmac-secret";
+        let raw_payload = r#"{"transactionId":"inv-123","status":"confirmed"}"#;
+
+        let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).unwrap();
+        mac.update(raw_payload.as_bytes());
+        let signature = hex::encode(mac.finalize().into_bytes());
+
+        let payload = WebhookPayload {
+            provider: "investec".to_string(),
+            event_type: "PAYMENT_CONFIRMED".to_string(),
+            reference_id: "inv-123".to_string(),
+            amount: 500.0,
+            status: "confirmed".to_string(),
+            signature,
+            raw_payload: raw_payload.to_string(),
+        };
+
+        let valid = router.verify_webhook(&payload, secret).unwrap();
+        assert!(valid);
+
+        // Test invalid signature
+        let invalid_payload = WebhookPayload {
+            signature: "deadbeef".to_string(),
+            ..payload
+        };
+        let valid = router.verify_webhook(&invalid_payload, secret).unwrap();
+        assert!(!valid);
     }
 }

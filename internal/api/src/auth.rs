@@ -12,12 +12,17 @@ pub async fn auth_middleware(
     next: Next,
     expected_token: String,
 ) -> Result<Response, StatusCode> {
-    // Insecure token check - must not be the sentinel or empty in production
-    if expected_token.is_empty()
+    // CON-492: Enhanced API token security standards.
+    // Minimum 32-character requirement and prohibited sentinel/insecure values.
+    if expected_token.len() < 32
         || expected_token == "REQUIRED_FOR_PROD_API_TOKEN"
         || expected_token == "institutional-default-token"
+        || expected_token.to_lowercase().contains("changeme")
     {
-        warn!("API_TOKEN is insecure or not set. Rejecting all private requests.");
+        warn!(
+            token_len = expected_token.len(),
+            "Rejecting private request: API_TOKEN is weak, insecure, or matches a prohibited sentinel value."
+        );
         return Err(StatusCode::INTERNAL_SERVER_ERROR);
     }
 

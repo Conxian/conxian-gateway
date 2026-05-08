@@ -54,7 +54,7 @@ async fn test_offline_pos_blackout_reconciliation() {
         offline_queue,
     };
 
-    let api_token = "test-token";
+    let api_token = "test-token-that-is-at-least-32-characters-long-for-prod";
     let app = configure_routes(app_state, api_token.to_string());
     let server = TestServer::new(app).unwrap();
 
