@@ -18,9 +18,10 @@ Thank you for your interest in contributing to Conxian! We welcome contributions
 1. Create a new branch for your changes: `git checkout -b my-feature`.
 2. Ensure your code passes linting: `cargo clippy --all-targets --all-features -- -D warnings`.
 3. Ensure your code is formatted: `cargo fmt --all -- --check`.
-4. Verify all tests pass: `cargo test`.
-5. Commit your changes with a descriptive message.
-6. Submit a Pull Request (PR) with a clear description of the problem solved or feature added.
+4. Verify all tests pass: `cargo test --workspace`.
+5. Run the contamination guard to ensure no stubs or placeholders enter production: `python3 scripts/verify_contamination_guard.py`.
+6. Commit your changes with a descriptive message.
+7. Submit a Pull Request (PR) with a clear description of the problem solved or feature added.
 
 ## Coding Standards
 - Use structured tracing for logging.

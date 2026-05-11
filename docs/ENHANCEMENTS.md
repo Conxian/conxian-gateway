@@ -23,7 +23,7 @@ This document outlines the discrepancies identified during the Systemic Alignmen
 
 ### Infrastructure Migration (CON-329)
 - **Gap**: Web2 dependencies (Neon, Supabase) needed clear mapping for sovereign transition.
-- **Enhancement**: Created canonical inventory in `docs/SAB_MIGRATION.md`. Implemented `SovereignCommit` hooks in the compliance layer to decouple from Web2 persistence.
+- **Enhancement**: Created canonical inventory in `docs/governance/SAB_MIGRATION.md`. Implemented `SovereignCommit` hooks in the compliance layer to decouple from Web2 persistence.
 
 ### Institutional Secrets Hardening
 - **Gap**: Single-token API authentication was insufficient for institutional SLAs.

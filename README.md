@@ -30,7 +30,7 @@ Conxian is designed to capture the Total Addressable Market (TAM) of Bitcoin-nat
 ## 2. Project Status
 Current Version: **v0.1.3**
 
-This project is in active development. While it implements production-grade security and compliance features, users should consult the [Readiness Gates](docs/READINESS_GATES.md) before mainnet deployment.
+This project is in active development. While it implements production-grade security and compliance features, users should consult the [Readiness Gates](docs/governance/READINESS_GATES.md) before mainnet deployment.
 
 ## 3. Architecture & Modules
 - `/cmd/gateway`: Entry point, configuration, and dependency injection wiring.
@@ -38,6 +38,7 @@ This project is in active development. While it implements production-grade secu
 - `/internal/api`: Institutional REST API, Auth middleware, and Axum handlers.
 - `/internal/compliance`: ZKC (Zero-Knowledge Compliance) attestation, BitVM verifier, and Identity Manager (WIF).
 - `/pkg/conxian-core`: Shared models, CJCS v2.0 schema, and atomic persistence layer.
+- `/docs`: Comprehensive system documentation, including [PRD](docs/PRD.md) and [Enhancement Plan](docs/ENHANCEMENTS.md).
 
 ## 4. API Endpoints
 The gateway exposes an institutional REST API at `/api/v1`. Most endpoints require Bearer token authentication.
@@ -125,7 +126,8 @@ Before submitting a pull request, ensure your changes pass the following checks:
 ```bash
 cargo clippy --all-targets --all-features -- -D warnings
 cargo fmt --all -- --check
-cargo test
+cargo test --workspace
+python3 scripts/verify_contamination_guard.py
 ```
 
 ## 7. Governance & Policies
@@ -134,6 +136,9 @@ cargo test
 - **[CONTRIBUTING.md](CONTRIBUTING.md)**: Contribution guidelines and coding standards.
 - **[CHANGELOG.md](CHANGELOG.md)**: Tracking development progress and releases.
 - **[CODEOWNERS](CODEOWNERS)**: Repository ownership and review assignments.
+- **[Repo Ownership](docs/governance/REPO_OWNERSHIP.md)**: Strategic boundaries and ownership rules.
+- **[Migration Guide](docs/governance/MIGRATION.md)**: Legacy system migration runbook.
+- **[Release Runbook](docs/governance/RELEASE.md)**: Versioning and deployment standards.
 
 ## 8. Support & Contact
 - **Institutional Support**: [support@conxian.io](mailto:support@conxian.io)
