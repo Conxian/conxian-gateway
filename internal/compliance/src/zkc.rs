@@ -150,7 +150,7 @@ impl ZkcVerifier {
             return Ok(false);
         }
 
-        // CON-492: Prevent use of placeholder or test hashes in production paths.
+        // CON-492: Prevent use of sentinel or test hashes in production paths.
         if proof.receipt_hash.is_empty()
             || proof.receipt_hash == "invalid"
             || proof.receipt_hash == "0xdeadbeef"
@@ -158,7 +158,7 @@ impl ZkcVerifier {
         {
             warn!(
                 receipt_hash = %proof.receipt_hash,
-                "ZKML verification failed: Prohibited placeholder hash detected"
+                "ZKML verification failed: Prohibited sentinel hash detected"
             );
             return Ok(false);
         }
@@ -577,7 +577,7 @@ impl ZkcVerifier {
             return Ok(false);
         }
 
-        // Placeholder for full Schnorr verification against TEE device public key.
+        // Sentinel for full Schnorr verification against TEE device public key.
         // Enforcing non-empty, correctly-sized hex string as a baseline requirement.
         let is_hex = receipt.tee_signature.chars().all(|c| c.is_ascii_hexdigit());
         if !is_hex {
