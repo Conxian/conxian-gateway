@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-04-24
+
 ### Added
 - Implemented ZKML-backed Guardian Attestation verification in `ZkcVerifier`.
 - Added `format_iso20022_pacs008_v8` to support ISO 20022 payment generation from Conxian Job Cards.

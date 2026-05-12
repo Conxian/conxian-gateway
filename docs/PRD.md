@@ -106,8 +106,8 @@ Conxian is designed to capture the Total Addressable Market (TAM) of Bitcoin-nat
 - **Mainnet Readiness Audit**: Completed audit of production execution and settlement paths. Verified mainnet-only guardrails for critical routes.
 - **Compliance Hardening**: Verified TEE-based proposal enforcement and 144-block institutional timelock logic. Verified Multi-Currency Jurisdictional Sharding implementation boundaries.
 - **Portfolio Mapping**: Created canonical portfolio map in `docs/PORTFOLIO_MAP.md`.
-- **Readiness Gates**: Defined repository-scoped readiness criteria in `docs/READINESS_GATES.md`. Branch promotion policy (`dev` as integration, `main` as mainnet-only) enforced.
-- **SAB Migration**: Mapped Web2 dependencies and sovereign target states in `docs/SAB_MIGRATION.md`.
+- **Readiness Gates**: Defined repository-scoped readiness criteria in `docs/governance/READINESS_GATES.md`. Branch promotion policy (`dev` as integration, `main` as mainnet-only) enforced.
+- **SAB Migration**: Mapped Web2 dependencies and sovereign target states in `docs/governance/SAB_MIGRATION.md`.
 
 - **R33 (ERP Sync)**: Replaced simulation with robust OData v4 field extraction logic supporting SAP/Oracle institutional standards, including x402 industrial intent and sector-specific metadata.
 - **R38 (Phase 7 Verifications)**: Integrated 364-segment BitVM2 SNARK checkpoints and Global Jurisdictional Sharding logic to track fiat and token compliance rules.
