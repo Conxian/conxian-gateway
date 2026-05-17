@@ -32,9 +32,12 @@ impl ZkcVerifier {
     ) -> conxian_core::ConxianResult<String> {
         info!("Formatting ISO 20022 (pacs.008.001.08) payment for job card...");
         let msg_id = format!("ISO-MSG-{}", uuid::Uuid::new_v4());
-        let amount = job_card.work_intent.amount_sbtc;
+        let amount_satoshi = job_card.work_intent.amount_satoshi;
+        let amount_btc = amount_satoshi as f64 / 100_000_000.0;
         let debtor = &job_card.work_intent.sender_address;
         let creditor = &job_card.work_intent.receiver_address;
+
+        let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
 
         let xml = format!(
             r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -42,7 +45,7 @@ impl ZkcVerifier {
     <FIToFICstmrCdtTrf>
         <GrpHdr>
             <MsgId>{}</MsgId>
-            <CreDtTm>2026-04-06T12:00:00Z</CreDtTm>
+            <CreDtTm>{}</CreDtTm>
             <NbOfTxs>1</NbOfTxs>
         </GrpHdr>
         <CdtTrfTxInf>
@@ -59,7 +62,7 @@ impl ZkcVerifier {
         </CdtTrfTxInf>
     </FIToFICstmrCdtTrf>
 </Document>"#,
-            msg_id, msg_id, amount, debtor, creditor
+            msg_id, now, msg_id, amount_btc, debtor, creditor
         );
 
         Ok(xml)
@@ -274,7 +277,7 @@ impl ZkcVerifier {
             message_id: Some(msg_id.clone()),
             settlement_amount: amount_str,
             settlement_currency: "sBTC".to_string(),
-            settlement_date: "2026-04-06".to_string(),
+            settlement_date: chrono::Utc::now().format("%Y-%m-%d").to_string(),
             ..Default::default()
         };
 
@@ -506,7 +509,7 @@ impl ZkcVerifier {
     pub fn sign_offline_receipt(
         &self,
         tx_hash: &str,
-        amount: f64,
+        amount_satoshi: u64,
         device_id: &str,
         attestation: AttestationRequest,
     ) -> ConxianResult<conxian_core::OfflineReceipt> {
@@ -522,13 +525,13 @@ impl ZkcVerifier {
         let mut hasher = Sha256::new();
         hasher.update(receipt_id.as_bytes());
         hasher.update(tx_hash.as_bytes());
-        hasher.update(amount.to_be_bytes());
+        hasher.update(amount_satoshi.to_be_bytes());
         let tee_signature = hex::encode(hasher.finalize().repeat(2));
 
         Ok(conxian_core::OfflineReceipt {
             receipt_id,
             tx_hash: tx_hash.to_string(),
-            amount_sbtc: amount,
+            amount_satoshi,
             timestamp,
             device_id: device_id.to_string(),
             tee_signature,
@@ -613,7 +616,7 @@ impl SovereignCommit for ZkcVerifier {
             "INSERT INTO job_cards (sender, receiver, amount) VALUES ({}, {}, {})",
             job_card.work_intent.sender_address,
             job_card.work_intent.receiver_address,
-            job_card.work_intent.amount_sbtc
+            job_card.work_intent.amount_satoshi
         );
         Ok(())
     }
@@ -779,7 +782,7 @@ mod tests {
             message_id: Some("msg-1".to_string()),
             settlement_amount: "100.00".to_string(),
             settlement_currency: "USD".to_string(),
-            settlement_date: "2026-04-06".to_string(),
+            settlement_date: chrono::Utc::now().format("%Y-%m-%d").to_string(),
             ..Default::default()
         };
 
@@ -798,7 +801,7 @@ mod tests {
         let mut receipt = conxian_core::OfflineReceipt {
             receipt_id: "rec-1".to_string(),
             tx_hash: "tx-1".to_string(),
-            amount_sbtc: 1.0,
+            amount_satoshi: 100_000_000,
             timestamp: 123456789,
             device_id: "dev-1".to_string(),
             tee_signature: "0".repeat(64),

@@ -453,7 +453,7 @@ pub async fn toggle_bounty_payouts(
 #[derive(Debug, serde::Deserialize)]
 pub struct OfflinePosRequest {
     pub tx_hash: String,
-    pub amount_sbtc: f64,
+    pub amount_satoshi: u64,
     pub device_id: String,
     pub passkey_attestation: conxian_core::AttestationRequest,
 }
@@ -466,7 +466,7 @@ pub async fn handle_offline_pos(
         .compliance
         .sign_offline_receipt(
             &payload.tx_hash,
-            payload.amount_sbtc,
+            payload.amount_satoshi,
             &payload.device_id,
             payload.passkey_attestation,
         )

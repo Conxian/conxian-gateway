@@ -173,7 +173,7 @@ pub struct JobCardSettlementRequest {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DlcBond {
     pub bond_id: String,
-    pub amount_btc: f64,
+    pub amount_satoshi: u64,
     pub interest_rate: f64,
     pub maturity_date: u64,
     pub sovereign_alignment: bool,
@@ -182,7 +182,7 @@ pub struct DlcBond {
 /// Industry Enhancement: Discrete Log Contract (DLC) Orchestrator (CON-62).
 pub trait DlcOrchestrator: Send + Sync {
     fn create_dlc_bond(&self, bond: &DlcBond) -> ConxianResult<String>;
-    fn settle_coupon(&self, bond_id: &str, amount_sbtc: f64) -> ConxianResult<bool>;
+    fn settle_coupon(&self, bond_id: &str, amount_satoshi: u64) -> ConxianResult<bool>;
 }
 
 /// Concrete implementation of Discrete Log Contract (DLC) Orchestrator for Bitcoin bonds (CON-72).
@@ -198,15 +198,18 @@ impl DlcManager {
 
 impl DlcOrchestrator for DlcManager {
     fn create_dlc_bond(&self, bond: &DlcBond) -> ConxianResult<String> {
-        info!("Creating DLC-backed Bitcoin bond: {} sBTC", bond.amount_btc);
+        info!(
+            "Creating DLC-backed Bitcoin bond: {} satoshis",
+            bond.amount_satoshi
+        );
         let bond_id = format!("dlc-bond-{}", uuid::Uuid::new_v4());
         Ok(bond_id)
     }
 
-    fn settle_coupon(&self, bond_id: &str, amount_sbtc: f64) -> ConxianResult<bool> {
+    fn settle_coupon(&self, bond_id: &str, amount_satoshi: u64) -> ConxianResult<bool> {
         info!(
-            "Settling coupon for DLC bond {}: {} sBTC",
-            bond_id, amount_sbtc
+            "Settling coupon for DLC bond {}: {} satoshis",
+            bond_id, amount_satoshi
         );
         Ok(true)
     }
@@ -305,7 +308,7 @@ pub struct AlexSwapRequest {
 pub struct OfflineReceipt {
     pub receipt_id: String,
     pub tx_hash: String,
-    pub amount_sbtc: f64,
+    pub amount_satoshi: u64,
     pub timestamp: u64,
     pub device_id: String,
     pub tee_signature: String, // TEE-signed commitment
@@ -343,7 +346,7 @@ pub struct ConxianJobCard {
 pub struct WorkIntent {
     pub sender_address: String,
     pub receiver_address: String,
-    pub amount_sbtc: f64,
+    pub amount_satoshi: u64,
     pub town_name: Option<String>,
     pub country_code: Option<String>,
 }
@@ -457,13 +460,21 @@ mod policy_tests {
             ..Default::default()
         };
 
-        assert!(engine.evaluate_transfer(&policy, 500, "VALID_ADDR").unwrap());
-        assert!(!engine.evaluate_transfer(&policy, 1500, "VALID_ADDR").unwrap());
-        assert!(!engine.evaluate_transfer(&policy, 500, "INVALID_ADDR").unwrap());
+        assert!(engine
+            .evaluate_transfer(&policy, 500, "VALID_ADDR")
+            .unwrap());
+        assert!(!engine
+            .evaluate_transfer(&policy, 1500, "VALID_ADDR")
+            .unwrap());
+        assert!(!engine
+            .evaluate_transfer(&policy, 500, "INVALID_ADDR")
+            .unwrap());
 
         policy.denylisted_receivers = vec!["BAD_ADDR".to_string()];
         policy.allowlisted_receivers = vec![];
-        assert!(engine.evaluate_transfer(&policy, 500, "VALID_ADDR").unwrap());
+        assert!(engine
+            .evaluate_transfer(&policy, 500, "VALID_ADDR")
+            .unwrap());
         assert!(!engine.evaluate_transfer(&policy, 500, "BAD_ADDR").unwrap());
     }
 }

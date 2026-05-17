@@ -17,7 +17,9 @@ pub async fn auth_middleware(
     if expected_token.len() < 32
         || expected_token == "REQUIRED_FOR_PROD_API_TOKEN"
         || expected_token == "institutional-default-token"
-        || expected_token.to_lowercase().contains(&["change", "me"].concat())
+        || expected_token
+            .to_lowercase()
+            .contains(&["change", "me"].concat())
     {
         warn!(
             token_len = expected_token.len(),

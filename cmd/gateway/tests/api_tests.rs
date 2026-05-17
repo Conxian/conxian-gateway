@@ -381,7 +381,7 @@ async fn test_settle_job_card_bitvm2() {
         work_intent: WorkIntent {
             sender_address: "SENDER".to_string(),
             receiver_address: "RECEIVER".to_string(),
-            amount_sbtc: 1000.5,
+            amount_satoshi: 100_050_000,
             town_name: None,
             country_code: None,
         },

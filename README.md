@@ -64,7 +64,7 @@ The gateway exposes an institutional REST API at `/api/v1`. Most endpoints requi
   - Query params (URL query string; URL-encoded; no request body):
     - `token_x` (string, required): Input token contract principal (value like `SP...token-x`). The gateway forwards this to ALEX using query param key `token-x`.
     - `token_y` (string, required): Output token contract principal (value like `SP...token-y`). The gateway forwards this to ALEX using query param key `token-y`.
-    - `amount` (decimal string, required): Unsigned integer amount of `token_x` in its smallest/base units. The gateway forwards this to ALEX using query param key `amount`.
+    - `amount` (decimal string, required): Unsigned integer amount of `token_x` in its smallest/base units (e.g., satoshis for sBTC). The gateway forwards this to ALEX using query param key `amount`.
     - `factor` (decimal string, required): Unsigned integer required by the request schema shared with `/api/v1/alex/swap`; currently ignored by `/api/v1/alex/quote` (reserved for `/api/v1/alex/swap`). If omitted, the gateway rejects the request with `400`. Use `1`.
     - `min_dy` (decimal string, optional): Unsigned integer minimum output amount in the smallest/base units of `token_y`. Accepted but currently ignored by `/api/v1/alex/quote` (reserved for `/api/v1/alex/swap`).
   - Example:
@@ -83,7 +83,7 @@ The gateway exposes an institutional REST API at `/api/v1`. Most endpoints requi
 - `POST /api/v1/ingress/papss`: Ingest PAPSS settlement signals (Authorized).
 - `POST /api/v1/ingress/brics`: Ingest BRICS settlement signals (Authorized).
 - `GET /api/v1/settlements/external`: Read recent externally ingested settlements (Authorized).
-- `POST /api/v1/pos/offline`: Submit offline POS receipt for signing and queueing (Authorized).
+- `POST /api/v1/pos/offline`: Submit offline POS receipt for signing and queueing (Authorized). Requires `amount_satoshi` (u64).
 - `POST /api/v1/pos/sync`: Sync pending offline POS receipts (Authorized).
 
 Full endpoint documentation can be found by inspecting the routes in `internal/api/src/routes.rs`.

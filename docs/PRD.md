@@ -90,6 +90,7 @@ Conxian is designed to capture the Total Addressable Market (TAM) of Bitcoin-nat
     - Remediated contamination guard failures by replacing simulated identifiers across the codebase.
     - Implemented ZKML-backed Guardian Attestation verification in ZkcVerifier.
     - Enhanced ISO 20022 support with pacs.008 payment generation from Job Cards.
+    - Hardened compliance and POS logic by shifting to satoshi-based integer precision and dynamic institutional timestamps.
     - Standardized release hygiene and validated workspace-wide version consistency.
     - Aligned all documentation with v1.9.2 standards.
 

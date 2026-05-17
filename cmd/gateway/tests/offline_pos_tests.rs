@@ -82,7 +82,7 @@ async fn test_offline_pos_blackout_reconciliation() {
         let tx_hash = format!("tx-offline-{}", i);
         let payload = json!({
             "tx_hash": tx_hash,
-            "amount_sbtc": 0.001,
+            "amount_satoshi": 100_000,
             "device_id": device_id,
             "passkey_attestation": {
                 "type": "Ecdsa",
