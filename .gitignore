@@ -23,3 +23,6 @@ gateway_state.json.tmp
 .DS_Store
 Thumbs.db
 *.db
+node_modules/
+test-results/
+playwright-report/
