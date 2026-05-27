@@ -128,13 +128,27 @@ cargo fmt --all -- --check
 cargo test
 ```
 
-## 7. Governance & Policies
+## 7. Governance, Control Boundaries & Policy Lifecycle (CON-695)
+- **API lifecycle ownership**: The Protocol & Institutional Infrastructure maintainers in [CODEOWNERS](CODEOWNERS) own `/api/v1` lifecycle decisions.
+- **Versioning/deprecation policy**:
+  - Additive, backward-compatible changes are allowed within `/api/v1`.
+  - Breaking changes require a new major route namespace (for example, `/api/v2`).
+  - Deprecated endpoints must remain available for at least two tagged releases with migration guidance documented in `CHANGELOG.md`.
+- **Policy-engine boundary**: Gateway route handlers are transport and verification boundaries only. Compliance policy decisions remain in `internal/compliance` and upstream institutional controls.
+- **Observability expectations**:
+  - `/api/v1/health` and `/api/v1/metrics` must remain operational in production.
+  - Security-relevant events (auth failures, webhook verification failures, replay rejections, settlement-ingress validation failures) must be logged with request context.
+- **Authority boundary (explicit)**: Conxian Gateway is **not** the protocol source-of-truth (Bitcoin/Stacks consensus is) and is **not** a custody authority for customer or treasury funds.
+- **Incident handling**: Follow [SECURITY.md](SECURITY.md) incident process and severity workflow.
+- **Release discipline sign-off**: Follow [RELEASE.md](RELEASE.md) control sign-off checklist before every tag.
+
+## 8. Governance & Policies
 - **[LICENSE](LICENSE)**: Licensed under the MIT License.
 - **[SECURITY.md](SECURITY.md)**: Security policy and vulnerability reporting.
 - **[CONTRIBUTING.md](CONTRIBUTING.md)**: Contribution guidelines and coding standards.
 - **[CHANGELOG.md](CHANGELOG.md)**: Tracking development progress and releases.
 - **[CODEOWNERS](CODEOWNERS)**: Repository ownership and review assignments.
 
-## 8. Support & Contact
+## 9. Support & Contact
 - **Institutional Support**: [support@conxian.io](mailto:support@conxian.io)
 - **Security Reports**: [security@conxian.io](mailto:security@conxian.io)

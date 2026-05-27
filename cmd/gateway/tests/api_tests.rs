@@ -16,7 +16,10 @@ use http_body_util::BodyExt;
 use secp256k1::{Message, Secp256k1, SecretKey};
 use serde_json::json;
 use sha2::{Digest, Sha256};
-use std::sync::{Arc, RwLock};
+use std::{
+    collections::HashSet,
+    sync::{Arc, Mutex, RwLock},
+};
 use tower::ServiceExt;
 
 const TEST_TOKEN: &str = "test-token";
@@ -43,7 +46,10 @@ fn setup_app(state: SharedState) -> axum::Router {
     let compliance = Arc::new(ZkcVerifier::new());
     let alex = Arc::new(engine::stacks::alex::SimulatedAlexClient);
 
-    struct MockOfflineQueue;
+    struct MockOfflineQueue {
+        replay_claims: Mutex<HashSet<String>>,
+    }
+
     impl conxian_core::OfflineQueue for MockOfflineQueue {
         fn enqueue(&self, _r: &conxian_core::OfflineReceipt) -> conxian_core::ConxianResult<()> {
             Ok(())
@@ -56,8 +62,19 @@ fn setup_app(state: SharedState) -> axum::Router {
         fn mark_broadcasted(&self, _id: &str) -> conxian_core::ConxianResult<()> {
             Ok(())
         }
+
+        fn claim_replay_key(
+            &self,
+            replay_key: &str,
+            _ttl_seconds: u64,
+        ) -> conxian_core::ConxianResult<bool> {
+            let mut claims = self.replay_claims.lock().unwrap();
+            Ok(claims.insert(replay_key.to_string()))
+        }
     }
-    let offline_queue = Arc::new(MockOfflineQueue);
+    let offline_queue = Arc::new(MockOfflineQueue {
+        replay_claims: Mutex::new(HashSet::new()),
+    });
 
     let app_state = AppState {
         shared: state,
@@ -225,6 +242,66 @@ async fn test_fiat_webhook_authorized() {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn test_fiat_webhook_duplicate_returns_conflict() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let raw_payload_content = r#"{"reference":"ref-dup-1","status":"SUCCESS"}"#;
+
+    let mut mac = Hmac::<Sha256>::new_from_slice(TEST_FIAT_SECRET.as_bytes()).unwrap();
+    mac.update(raw_payload_content.as_bytes());
+    let signature = hex::encode(mac.finalize().into_bytes());
+
+    let payload = json!({
+        "provider": "ramp",
+        "event_type": "ORDER_CREATED",
+        "reference_id": "ref-dup-1",
+        "amount": 100.0,
+        "status": "SUCCESS",
+        "signature": signature,
+        "raw_payload": raw_payload_content
+    });
+
+    let body = serde_json::to_string(&payload).unwrap();
+
+    let first = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/fiat/webhook")
+                .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("Content-Type", "application/json")
+                .header("x-ramp-signature", &signature)
+                .body(Body::from(body.clone()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(first.status(), StatusCode::OK);
+
+    let duplicate = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/fiat/webhook")
+                .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("Content-Type", "application/json")
+                .header("x-ramp-signature", &signature)
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(duplicate.status(), StatusCode::CONFLICT);
+    let duplicate_body = duplicate.into_body().collect().await.unwrap().to_bytes();
+    let duplicate_json: serde_json::Value = serde_json::from_slice(&duplicate_body).unwrap();
+    assert_eq!(duplicate_json["code"], "WEBHOOK_REPLAY_DETECTED");
 }
 
 #[tokio::test]

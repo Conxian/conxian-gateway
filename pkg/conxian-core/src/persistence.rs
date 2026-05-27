@@ -73,6 +73,23 @@ impl EncryptedOfflineQueue {
         )
         .map_err(|e| ConxianError::Io(format!("Failed to create table: {}", e)))?;
 
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS webhook_replay_keys (
+                replay_key TEXT PRIMARY KEY,
+                expires_at INTEGER NOT NULL,
+                created_at INTEGER NOT NULL
+            )",
+            [],
+        )
+        .map_err(|e| ConxianError::Io(format!("Failed to create replay table: {}", e)))?;
+
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_webhook_replay_keys_expires_at
+             ON webhook_replay_keys (expires_at)",
+            [],
+        )
+        .map_err(|e| ConxianError::Io(format!("Failed to create replay index: {}", e)))?;
+
         Ok(Self {
             conn: Mutex::new(conn),
             encryption_key: key,
@@ -160,5 +177,95 @@ impl crate::OfflineQueue for EncryptedOfflineQueue {
         )
         .map_err(|e| ConxianError::Io(format!("Update failed: {}", e)))?;
         Ok(())
+    }
+
+    fn claim_replay_key(&self, replay_key: &str, ttl_seconds: u64) -> ConxianResult<bool> {
+        if replay_key.trim().is_empty() {
+            return Err(ConxianError::Persistence(
+                "Replay key cannot be empty".to_string(),
+            ));
+        }
+
+        if ttl_seconds == 0 {
+            return Err(ConxianError::Persistence(
+                "Replay key TTL must be greater than zero".to_string(),
+            ));
+        }
+
+        let now_seconds = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| ConxianError::Persistence(format!("Clock error: {}", e)))?
+            .as_secs();
+
+        let expires_at = now_seconds
+            .checked_add(ttl_seconds)
+            .ok_or_else(|| ConxianError::Persistence("Replay key TTL overflow".to_string()))?;
+
+        let now_i64 = i64::try_from(now_seconds)
+            .map_err(|_| ConxianError::Persistence("Timestamp overflow".to_string()))?;
+        let expires_at_i64 = i64::try_from(expires_at)
+            .map_err(|_| ConxianError::Persistence("Expiry timestamp overflow".to_string()))?;
+
+        let conn = self.conn.lock().unwrap();
+
+        conn.execute(
+            "DELETE FROM webhook_replay_keys WHERE expires_at <= ?1",
+            params![now_i64],
+        )
+        .map_err(|e| ConxianError::Persistence(format!("Replay cleanup failed: {}", e)))?;
+
+        let affected = conn
+            .execute(
+                "INSERT INTO webhook_replay_keys (replay_key, expires_at, created_at)
+                 VALUES (?1, ?2, ?3)
+                 ON CONFLICT(replay_key) DO UPDATE SET
+                    expires_at = excluded.expires_at,
+                    created_at = excluded.created_at
+                 WHERE webhook_replay_keys.expires_at <= excluded.created_at",
+                params![replay_key, expires_at_i64, now_i64],
+            )
+            .map_err(|e| ConxianError::Persistence(format!("Replay claim failed: {}", e)))?;
+
+        Ok(affected > 0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::EncryptedOfflineQueue;
+    use crate::OfflineQueue;
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    fn tmp_db_path(prefix: &str) -> String {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        format!("{}_{}.db", prefix, suffix)
+    }
+
+    #[test]
+    fn claim_replay_key_rejects_duplicate_until_expiry() {
+        let db_path = tmp_db_path("replay_claim");
+        let queue = EncryptedOfflineQueue::new(&db_path, [7u8; 32]).unwrap();
+
+        assert!(queue.claim_replay_key("ramp:sig:hash", 1).unwrap());
+        assert!(!queue.claim_replay_key("ramp:sig:hash", 1).unwrap());
+
+        std::thread::sleep(Duration::from_secs(2));
+        assert!(queue.claim_replay_key("ramp:sig:hash", 1).unwrap());
+
+        let _ = std::fs::remove_file(db_path);
+    }
+
+    #[test]
+    fn claim_replay_key_allows_distinct_keys() {
+        let db_path = tmp_db_path("replay_distinct");
+        let queue = EncryptedOfflineQueue::new(&db_path, [3u8; 32]).unwrap();
+
+        assert!(queue.claim_replay_key("ramp:sig1:hash", 60).unwrap());
+        assert!(queue.claim_replay_key("ramp:sig2:hash", 60).unwrap());
+
+        let _ = std::fs::remove_file(db_path);
     }
 }

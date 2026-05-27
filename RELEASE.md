@@ -29,3 +29,11 @@
 - [ ] A GitHub release was created for `vX.Y.Z`.
 - [ ] The release body includes a link to `CHANGELOG.md`.
 - [ ] The changelog entry for `vX.Y.Z` is present and accurate.
+
+## Control sign-offs (required before tagging)
+
+- [ ] **API lifecycle owner sign-off**: confirms versioning/deprecation policy impact is documented.
+- [ ] **Security sign-off**: confirms security-sensitive changes and incident follow-ups are addressed.
+- [ ] **Compliance/policy boundary sign-off**: confirms policy-engine boundary remains unchanged or is explicitly approved.
+- [ ] **Observability sign-off**: confirms health/metrics endpoints and security-event logging expectations are met.
+- [ ] **Authority boundary check**: confirms release does not introduce custody behavior and does not redefine protocol source-of-truth.

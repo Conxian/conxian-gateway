@@ -195,13 +195,31 @@ impl FiatRouter {
     fn verify_investec_webhook(
         &self,
         payload: &WebhookPayload,
-        _secret: &str,
+        secret: &str,
     ) -> ConxianResult<bool> {
+        if secret.is_empty() {
+            return Err(ConxianError::Security(
+                "Investec webhook secret is not configured".to_string(),
+            ));
+        }
+
+        if payload.signature.is_empty() {
+            return Ok(false);
+        }
+
         info!(
-            "Verifying Investec webhook signature for reference: {}",
+            "Verifying Investec webhook HMAC signature for reference: {}",
             payload.reference_id
         );
-        Ok(true)
+
+        let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
+            .map_err(|e| ConxianError::Security(format!("HMAC error: {}", e)))?;
+        mac.update(payload.raw_payload.as_bytes());
+
+        let sig_bytes = hex::decode(&payload.signature)
+            .map_err(|e| ConxianError::Security(format!("Invalid signature hex: {}", e)))?;
+
+        Ok(mac.verify_slice(&sig_bytes).is_ok())
     }
 
     fn verify_alchemypay_webhook(
@@ -394,5 +412,64 @@ mod tests {
 
         let valid = router.verify_webhook(&payload, secret).unwrap();
         assert!(valid);
+    }
+
+    #[tokio::test]
+    async fn test_verify_investec_webhook() {
+        let router = FiatRouter::new(
+            "test-key".to_string(),
+            "client-id".to_string(),
+            "secret".to_string(),
+            "ap-app-id".to_string(),
+            "ap-secret".to_string(),
+            "banxa-key".to_string(),
+            "banxa-secret".to_string(),
+        );
+
+        let secret = "investec-secret";
+        let raw_payload = r#"{"reference":"investec-123","status":"approved"}"#;
+
+        let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).unwrap();
+        mac.update(raw_payload.as_bytes());
+        let signature = hex::encode(mac.finalize().into_bytes());
+
+        let payload = WebhookPayload {
+            provider: "investec".to_string(),
+            event_type: "PAYMENT_APPROVED".to_string(),
+            reference_id: "investec-123".to_string(),
+            amount: 300.0,
+            status: "approved".to_string(),
+            signature,
+            raw_payload: raw_payload.to_string(),
+        };
+
+        let valid = router.verify_webhook(&payload, secret).unwrap();
+        assert!(valid);
+    }
+
+    #[tokio::test]
+    async fn test_verify_investec_webhook_fails_closed_when_secret_missing() {
+        let router = FiatRouter::new(
+            "test-key".to_string(),
+            "client-id".to_string(),
+            "secret".to_string(),
+            "ap-app-id".to_string(),
+            "ap-secret".to_string(),
+            "banxa-key".to_string(),
+            "banxa-secret".to_string(),
+        );
+
+        let payload = WebhookPayload {
+            provider: "investec".to_string(),
+            event_type: "PAYMENT_APPROVED".to_string(),
+            reference_id: "investec-123".to_string(),
+            amount: 300.0,
+            status: "approved".to_string(),
+            signature: "aabbcc".to_string(),
+            raw_payload: r#"{"reference":"investec-123","status":"approved"}"#.to_string(),
+        };
+
+        let result = router.verify_webhook(&payload, "");
+        assert!(result.is_err());
     }
 }

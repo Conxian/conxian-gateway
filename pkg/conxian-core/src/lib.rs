@@ -327,6 +327,11 @@ pub trait OfflineQueue: Send + Sync {
     fn enqueue(&self, receipt: &OfflineReceipt) -> ConxianResult<()>;
     fn dequeue_pending(&self) -> ConxianResult<Vec<OfflineReceipt>>;
     fn mark_broadcasted(&self, receipt_id: &str) -> ConxianResult<()>;
+    /// Claims a webhook replay key for a bounded TTL window.
+    ///
+    /// Returns `true` when this caller successfully claimed the key (first
+    /// delivery in-window), and `false` when an unexpired claim already exists.
+    fn claim_replay_key(&self, replay_key: &str, ttl_seconds: u64) -> ConxianResult<bool>;
 }
 
 /// CON-73: [ATS-v12.0] Conxian Job Card Schema (CJCS) v2.0 JSON-LD

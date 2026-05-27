@@ -22,6 +22,12 @@ This document defines the required readiness gates across four control domains f
   - [x] **Regulatory**: Zero-PII pass-through verified for ZKC logic.
   - [x] **Legal**: Standardized MIT License and Security.md present.
   - [x] **ALEX Readiness**: `AlexClient` quote and swap paths implemented (CON-136).
+  - [x] **API Lifecycle Governance**: Owner, versioning, and deprecation policy documented in `README.md`.
+  - [x] **Policy-Engine Boundary**: Gateway transport/verification boundary and compliance decision boundary documented.
+  - [x] **Observability Control**: Health/metrics and security-event logging expectations documented.
+  - [x] **Incident Handling**: Security incident triage/containment/recovery process documented in `SECURITY.md`.
+  - [x] **Release Discipline**: Control sign-off checklist documented in `RELEASE.md`.
+  - [x] **Authority Boundary**: Explicit statement that gateway is not protocol source-of-truth and not custody authority.
 
 ### Layer 2: User Surface
 *Product interfaces delivering enclave-backed institutional experiences.*

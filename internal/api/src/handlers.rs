@@ -18,6 +18,7 @@ use tracing::{error, info, warn};
 
 pub const TEE_ATTESTATION_HEADER: &str = "x-tee-attestation";
 const SETTLEMENT_LOG_MAX_ENTRIES: usize = 1000;
+const WEBHOOK_REPLAY_TTL_SECONDS: u64 = 60 * 60 * 24;
 
 pub async fn get_health(State(state): State<AppState>) -> Json<Value> {
     let s = state.shared.read().unwrap();
@@ -122,7 +123,41 @@ pub async fn verify_fiat_webhook(
         .fiat
         .verify_webhook(&payload, &state.fiat_webhook_secret)
     {
-        Ok(true) => Ok(StatusCode::OK),
+        Ok(true) => {
+            let replay_key = compute_webhook_replay_key(&payload);
+            match state
+                .offline_queue
+                .claim_replay_key(&replay_key, WEBHOOK_REPLAY_TTL_SECONDS)
+            {
+                Ok(true) => Ok(StatusCode::OK),
+                Ok(false) => {
+                    warn!(
+                        provider = %payload.provider,
+                        reference_id = %payload.reference_id,
+                        "Rejected duplicate webhook delivery"
+                    );
+                    Err((
+                        StatusCode::CONFLICT,
+                        Json(json!({
+                            "error": "Duplicate webhook delivery rejected (replay detected)",
+                            "code": "WEBHOOK_REPLAY_DETECTED"
+                        })),
+                    ))
+                }
+                Err(e) => {
+                    error!(
+                        error = %e,
+                        provider = %payload.provider,
+                        reference_id = %payload.reference_id,
+                        "Failed to persist webhook replay claim"
+                    );
+                    Err((
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(json!({ "error": "Unable to persist webhook replay claim" })),
+                    ))
+                }
+            }
+        }
         _ => Err((
             StatusCode::UNAUTHORIZED,
             Json(json!({ "error": "Invalid signature" })),
@@ -546,6 +581,20 @@ fn sha256_hex(data: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(data);
     hex::encode(hasher.finalize())
+}
+
+fn compute_webhook_replay_key(payload: &crate::fiat::WebhookPayload) -> String {
+    let payload_hash = sha256_hex(payload.raw_payload.as_bytes());
+    let provider = payload.provider.to_ascii_lowercase();
+
+    let mut hasher = Sha256::new();
+    hasher.update(provider.as_bytes());
+    hasher.update([0u8]);
+    hasher.update(payload.signature.as_bytes());
+    hasher.update([0u8]);
+    hasher.update(payload_hash.as_bytes());
+
+    format!("fiat-webhook:{}", hex::encode(hasher.finalize()))
 }
 
 fn extract_industrial_intent(headers: &HeaderMap) -> Option<conxian_core::IndustrialIntent> {
