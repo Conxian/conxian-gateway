@@ -9,8 +9,8 @@ use conxian_core::persistence::FilePersistence;
 use conxian_core::{GatewayState, Persistence, SharedState};
 use engine::{
     stacks::alex::{AlexClient, AlexRpcClient},
-    BitcoinListener, BitcoinRpcClient, NttRelayer, StacksListener, StacksRpcClient,
-    TreasuryMonitor,
+    BitcoinListener, BitcoinRpcClient, FeeBumpPolicyConfig, MempoolOrchestrator, NttRelayer,
+    StacksListener, StacksRpcClient, TreasuryMonitor,
 };
 use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
@@ -55,6 +55,24 @@ async fn main() -> anyhow::Result<()> {
         state.clone(),
         persistence.clone(),
         config.bitcoin_sync_interval,
+    );
+
+    // Initialize mempool orchestrator (CON-718)
+    let mempool_rpc = BitcoinRpcClient::new(
+        &config.bitcoin_rpc_url,
+        &config.bitcoin_rpc_user,
+        &config.bitcoin_rpc_pass,
+    )?;
+    let mempool_orchestrator = MempoolOrchestrator::new(
+        mempool_rpc,
+        persistence.clone(),
+        config.mempool_orchestrator_interval,
+        FeeBumpPolicyConfig {
+            stuck_threshold_secs: config.mempool_stuck_threshold_secs,
+            max_attempts: config.mempool_max_fee_bump_attempts,
+            max_fee_rate_sat_vb: config.mempool_max_fee_rate_sat_vb,
+            min_bump_increment_sat_vb: config.mempool_min_bump_increment_sat_vb,
+        },
     );
 
     // Initialize Stacks listener
@@ -177,6 +195,20 @@ async fn main() -> anyhow::Result<()> {
             }
             _ = ntt_shutdown_rx.recv() => {
                 info!("NTT relayer stopping...");
+            }
+        }
+    });
+
+    let mut mempool_shutdown_rx = shutdown_tx.subscribe();
+    tokio::spawn(async move {
+        tokio::select! {
+            res = mempool_orchestrator.run() => {
+                if let Err(e) = res {
+                    error!("Mempool orchestrator failed: {}", e);
+                }
+            }
+            _ = mempool_shutdown_rx.recv() => {
+                info!("Mempool orchestrator stopping...");
             }
         }
     });

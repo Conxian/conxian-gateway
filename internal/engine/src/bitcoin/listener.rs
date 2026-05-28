@@ -1,5 +1,5 @@
 use crate::bitcoin::BitcoinRpc;
-use conxian_core::{ConxianResult, Persistence, PersistentState, SharedState};
+use conxian_core::{ConxianResult, Persistence, SharedState};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::time::{sleep, Duration};
@@ -71,10 +71,9 @@ impl<R: BitcoinRpc> BitcoinListener<R> {
                                 }
 
                                 // Save persistence
-                                let p_state = PersistentState {
-                                    bitcoin_height: block.height,
-                                    stacks_height: state.stacks.height,
-                                };
+                                let mut p_state = self.persistence.load().unwrap_or_default();
+                                p_state.bitcoin_height = block.height;
+                                p_state.stacks_height = state.stacks.height;
                                 let _ = self.persistence.save(&p_state);
                             }
                             Err(e) => {
@@ -118,7 +117,7 @@ impl<R: BitcoinRpc> BitcoinListener<R> {
 mod tests {
     use super::*;
     use async_trait::async_trait;
-    use conxian_core::{BlockInfo, GatewayState};
+    use conxian_core::{BlockInfo, GatewayState, PersistentState};
     use std::sync::{Arc, RwLock};
 
     struct MockBitcoinRpc {

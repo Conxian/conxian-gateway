@@ -8,6 +8,22 @@ pub trait BitcoinRpc: Send + Sync {
     async fn get_block_count(&self) -> ConxianResult<u64>;
     async fn get_block_info(&self, height: u64) -> ConxianResult<BlockInfo>;
     async fn get_network_info(&self) -> ConxianResult<String>;
+
+    async fn submit_rbf_replacement(
+        &self,
+        _txid: &str,
+        _target_fee_rate_sat_vb: u64,
+    ) -> ConxianResult<Option<String>> {
+        Ok(None)
+    }
+
+    async fn submit_cpfp_child(
+        &self,
+        _parent_txid: &str,
+        _target_fee_rate_sat_vb: u64,
+    ) -> ConxianResult<Option<String>> {
+        Ok(None)
+    }
 }
 
 pub struct BitcoinRpcClient {

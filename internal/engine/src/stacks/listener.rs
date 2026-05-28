@@ -1,5 +1,5 @@
 use crate::stacks::StacksRpc;
-use conxian_core::{ConxianResult, Persistence, PersistentState, SharedState};
+use conxian_core::{ConxianResult, Persistence, SharedState};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::time::{sleep, Duration};
@@ -52,10 +52,9 @@ impl<R: StacksRpc> StacksListener<R> {
                     state.stacks.burn_block_height = Some(info.burn_block_height);
 
                     // Save persistence
-                    let p_state = PersistentState {
-                        bitcoin_height: state.bitcoin.height,
-                        stacks_height: info.height,
-                    };
+                    let mut p_state = self.persistence.load().unwrap_or_default();
+                    p_state.bitcoin_height = state.bitcoin.height;
+                    p_state.stacks_height = info.height;
                     let _ = self.persistence.save(&p_state);
 
                     self.last_height = info.height;
@@ -93,7 +92,7 @@ mod tests {
     use super::*;
     use crate::stacks::rpc::StacksNetworkInfo;
     use async_trait::async_trait;
-    use conxian_core::GatewayState;
+    use conxian_core::{GatewayState, PersistentState};
     use std::sync::{Arc, RwLock};
 
     struct MockStacksRpc {

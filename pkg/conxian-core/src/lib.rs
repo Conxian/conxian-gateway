@@ -25,6 +25,47 @@ pub struct TransactionInfo {
     pub block_height: Option<u64>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum FeeBumpStrategy {
+    Rbf,
+    Cpfp,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum MempoolTxStatus {
+    Pending,
+    Stuck,
+    BumpBroadcasted,
+    GuardrailRejected,
+    Confirmed,
+}
+
+impl Default for MempoolTxStatus {
+    fn default() -> Self {
+        Self::Pending
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TrackedMempoolTx {
+    pub txid: String,
+    pub first_seen_at: u64,
+    pub last_evaluated_at: Option<u64>,
+    pub last_bump_at: Option<u64>,
+    pub bump_attempts: u32,
+    pub current_fee_rate_sat_vb: u64,
+    pub target_fee_rate_sat_vb: Option<u64>,
+    pub replaceable: bool,
+    pub cpfp_eligible: bool,
+    #[serde(default)]
+    pub status: MempoolTxStatus,
+    pub last_bump_strategy: Option<FeeBumpStrategy>,
+    pub last_error: Option<String>,
+    pub replacement_txid: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ChainState {
     pub height: u64,
@@ -248,6 +289,8 @@ pub struct GcpTokenRequest {
 pub struct PersistentState {
     pub bitcoin_height: u64,
     pub stacks_height: u64,
+    #[serde(default)]
+    pub mempool_pending_txs: Vec<TrackedMempoolTx>,
 }
 
 /// Trait for persistence of gateway state.
