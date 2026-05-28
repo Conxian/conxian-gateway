@@ -35,3 +35,22 @@ We are committed to a welcoming and inclusive community. Please be respectful an
 - **main**: Strictly Mainnet-only production code. No stubs, mocks, or placeholders.
 - **staged**: Mainnet production validation. All promotion to `main` must pass through `staged` with full mainnet-acceptance evidence.
 - **dev**: Testnet-only logic and non-production validation.
+
+## Governance-Sensitive Changes
+
+If your PR changes governance or security-control files, complete the PR security checklist and request CODEOWNERS review before merge.
+
+Sensitive files include:
+
+- `CODEOWNERS`
+- `SECURITY.md`
+- `SUPPORT.md`
+- `.github/ISSUE_TEMPLATE/**`
+- `.github/PULL_REQUEST_TEMPLATE*`
+- `.github/workflows/**`
+- `.github/release.yml`
+
+## Support and Security Routing
+
+- For support and governance-routing guidance, refer to [SUPPORT.md](SUPPORT.md).
+- For private vulnerability reporting requirements, refer to [SECURITY.md](SECURITY.md).
