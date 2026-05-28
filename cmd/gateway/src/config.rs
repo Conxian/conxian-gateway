@@ -44,6 +44,11 @@ pub struct Config {
     pub bitcoin_rpc_user: String,
     pub bitcoin_rpc_pass: String,
     pub bitcoin_sync_interval: u64,
+    pub mempool_orchestrator_interval: u64,
+    pub mempool_stuck_threshold_secs: u64,
+    pub mempool_max_fee_bump_attempts: u32,
+    pub mempool_max_fee_rate_sat_vb: u64,
+    pub mempool_min_bump_increment_sat_vb: u64,
     pub stacks_rpc_url: String,
     pub stacks_sync_interval: u64,
     pub api_port: u16,
@@ -131,6 +136,26 @@ impl Config {
                 .unwrap_or_else(|_| "10".to_string())
                 .parse()
                 .unwrap_or(10),
+            mempool_orchestrator_interval: env::var("MEMPOOL_ORCHESTRATOR_INTERVAL")
+                .unwrap_or_else(|_| "30".to_string())
+                .parse()
+                .unwrap_or(30),
+            mempool_stuck_threshold_secs: env::var("MEMPOOL_STUCK_THRESHOLD_SECS")
+                .unwrap_or_else(|_| "300".to_string())
+                .parse()
+                .unwrap_or(300),
+            mempool_max_fee_bump_attempts: env::var("MEMPOOL_MAX_FEE_BUMP_ATTEMPTS")
+                .unwrap_or_else(|_| "3".to_string())
+                .parse()
+                .unwrap_or(3),
+            mempool_max_fee_rate_sat_vb: env::var("MEMPOOL_MAX_FEE_RATE_SAT_VB")
+                .unwrap_or_else(|_| "150".to_string())
+                .parse()
+                .unwrap_or(150),
+            mempool_min_bump_increment_sat_vb: env::var("MEMPOOL_MIN_BUMP_INCREMENT_SAT_VB")
+                .unwrap_or_else(|_| "2".to_string())
+                .parse()
+                .unwrap_or(2),
             stacks_rpc_url: env::var("STACKS_RPC_URL").unwrap_or(stx_url),
             stacks_sync_interval: env::var("STACKS_SYNC_INTERVAL")
                 .unwrap_or_else(|_| "30".to_string())
@@ -196,6 +221,11 @@ mod tests {
                 "INFOBIP_API_KEY",
                 "HMAC_SECRET",
                 "OFFLINE_QUEUE_SECRET",
+                "MEMPOOL_ORCHESTRATOR_INTERVAL",
+                "MEMPOOL_STUCK_THRESHOLD_SECS",
+                "MEMPOOL_MAX_FEE_BUMP_ATTEMPTS",
+                "MEMPOOL_MAX_FEE_RATE_SAT_VB",
+                "MEMPOOL_MIN_BUMP_INCREMENT_SAT_VB",
             ];
             let vars = keys.into_iter().map(|k| (k, env::var(k).ok())).collect();
             Self { vars }
