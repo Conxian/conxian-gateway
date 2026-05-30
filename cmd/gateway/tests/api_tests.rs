@@ -417,7 +417,7 @@ async fn test_settle_job_card_bitvm2() {
     let app = setup_app(state);
 
     let job_card = ConxianJobCard {
-        context: "https://schema.conxian.io/jobcard/v2".to_string(),
+        context: "https://schema.conxian-labs.com/jobcard/v2".to_string(),
         r#type: "ConxianJobCard".to_string(),
         work_intent: WorkIntent {
             sender_address: "SENDER".to_string(),

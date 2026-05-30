@@ -13,7 +13,7 @@ The following versions of Conxian Gateway are currently being supported with sec
 We take the security of Conxian Gateway seriously. If you believe you have found a security vulnerability, please report it to us by following these steps:
 
 1. **Do not open a public issue.**
-2. Send an email to security@conxian.io with details of the vulnerability.
+2. Send an email to security@conxian-labs.com with details of the vulnerability.
 3. Include a description of the issue, steps to reproduce, and any potential impact.
 
 We will acknowledge your report within 48 hours and provide a timeline for a fix if applicable. We request that you follow responsible disclosure practices and give us reasonable time to address the issue before making any information public.

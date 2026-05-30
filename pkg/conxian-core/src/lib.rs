@@ -32,20 +32,15 @@ pub enum FeeBumpStrategy {
     Cpfp,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum MempoolTxStatus {
+    #[default]
     Pending,
     Stuck,
     BumpBroadcasted,
     GuardrailRejected,
     Confirmed,
-}
-
-impl Default for MempoolTxStatus {
-    fn default() -> Self {
-        Self::Pending
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

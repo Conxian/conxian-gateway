@@ -68,7 +68,7 @@ The gateway exposes an institutional REST API at `/api/v1`. Most endpoints requi
     - `min_dy` (decimal string, optional): Unsigned integer minimum output amount in the smallest/base units of `token_y`. Accepted but currently ignored by `/api/v1/alex/quote` (reserved for `/api/v1/alex/swap`).
   - Example:
     ```bash
-    curl -G 'https://<gateway-host>/api/v1/alex/quote' \
+    curl -G 'https://gateway.conxian-labs.com/api/v1/alex/quote' \
       -H 'Authorization: Bearer <API_TOKEN>' \
       --data-urlencode 'token_x=SP3FBR2AGKQK4H5JH8S0T2NQ9K0D8G2Q1YJ3Q0Y1.token-x' \
       --data-urlencode 'token_y=SP3FBR2AGKQK4H5JH8S0T2NQ9K0D8G2Q1YJ3Q0Y1.token-y' \
@@ -150,5 +150,5 @@ cargo test
 - **[CODEOWNERS](CODEOWNERS)**: Repository ownership and review assignments.
 
 ## 9. Support & Contact
-- **Institutional Support**: [support@conxian.io](mailto:support@conxian.io)
-- **Security Reports**: [security@conxian.io](mailto:security@conxian.io)
+- **Institutional Support**: [support@conxian-labs.com](mailto:support@conxian-labs.com)
+- **Security Reports**: [security@conxian-labs.com](mailto:security@conxian-labs.com)
