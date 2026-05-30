@@ -7,3 +7,5 @@ pub use fee_bump_policy::FeeBumpPolicyConfig;
 pub use listener::BitcoinListener;
 pub use mempool_orchestrator::MempoolOrchestrator;
 pub use rpc::{BitcoinRpc, BitcoinRpcClient};
+pub mod rgb_adapter;
+pub use rgb_adapter::NodeRgbAdapter;

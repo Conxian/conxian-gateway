@@ -391,6 +391,31 @@ pub struct WorkIntent {
     pub country_code: Option<String>,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub enum RolloutMode {
+    Disabled,
+    Shadow,
+    Active,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct RgbAdapterConfig {
+    pub mode: RolloutMode,
+    pub node_url: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ContractState {
+    pub contract_id: String,
+    pub schema_id: String,
+    pub state_data: serde_json::Value,
+}
+
+#[async_trait]
+pub trait RgbAdapter: Send + Sync {
+    async fn lookup_contract(&self, contract_id: &str) -> ConxianResult<Option<ContractState>>;
+    async fn verify_transition(&self, transition_id: &str) -> ConxianResult<bool>;
+}
 pub trait PersistentStateTrait: Send + Sync {
     fn save(&self, state: &GatewayState) -> ConxianResult<()>;
     fn load(&self) -> ConxianResult<GatewayState>;

@@ -14,6 +14,7 @@ pub struct MempoolOrchestrator<R: BitcoinRpc> {
     persistence: Arc<dyn Persistence>,
     poll_interval_secs: u64,
     policy_config: FeeBumpPolicyConfig,
+    rgb_adapter: Option<Arc<dyn conxian_core::RgbAdapter>>,
 }
 
 impl<R: BitcoinRpc> MempoolOrchestrator<R> {
@@ -22,12 +23,14 @@ impl<R: BitcoinRpc> MempoolOrchestrator<R> {
         persistence: Arc<dyn Persistence>,
         poll_interval_secs: u64,
         policy_config: FeeBumpPolicyConfig,
+        rgb_adapter: Option<Arc<dyn conxian_core::RgbAdapter>>,
     ) -> Self {
         Self {
             rpc,
             persistence,
             poll_interval_secs,
             policy_config,
+            rgb_adapter,
         }
     }
 
@@ -72,6 +75,11 @@ impl<R: BitcoinRpc> MempoolOrchestrator<R> {
 
         tx.last_evaluated_at = Some(now);
 
+        // CON-768: Shadow-mode RGB contract lookup
+        if let Some(ref rgb) = self.rgb_adapter {
+            let _ = rgb.lookup_contract(&format!("rgb:{}", tx.txid)).await;
+        }
+
         let candidate = FeeBumpCandidate {
             txid: tx.txid.clone(),
             first_seen_at: tx.first_seen_at,
@@ -99,8 +107,9 @@ impl<R: BitcoinRpc> MempoolOrchestrator<R> {
                 tx.last_error = Some(format!("{reason:?}"));
             }
             FeeBumpDecision::Execute(action) => {
-                tx.bump_attempts = tx.bump_attempts.saturating_add(1);
+                tx.bump_attempts += 1;
                 tx.last_bump_at = Some(now);
+
                 match self.execute_action(tx, &action).await {
                     ExecutionResult::Broadcasted {
                         strategy,
@@ -233,8 +242,11 @@ enum ExecutionResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bitcoin::NodeRgbAdapter;
     use async_trait::async_trait;
-    use conxian_core::{BlockInfo, ConxianError, ConxianResult, MempoolTxStatus, PersistentState};
+    use conxian_core::{
+        BlockInfo, ConxianError, ConxianResult, MempoolTxStatus, PersistentState, RolloutMode,
+    };
     use std::sync::Mutex;
 
     struct MockPersistence {
@@ -325,6 +337,10 @@ mod tests {
 
     #[tokio::test]
     async fn orchestrator_rbf_success_path() {
+        let rgb_adapter = Arc::new(NodeRgbAdapter::new(
+            RolloutMode::Shadow,
+            "http://localhost:8080".to_string(),
+        ));
         let persistence = Arc::new(MockPersistence::new(PersistentState {
             bitcoin_height: 0,
             stacks_height: 0,
@@ -339,6 +355,7 @@ mod tests {
             persistence.clone(),
             30,
             test_policy(),
+            Some(rgb_adapter),
         );
 
         orchestrator.tick().await.unwrap();
@@ -353,6 +370,10 @@ mod tests {
 
     #[tokio::test]
     async fn orchestrator_cpfp_fallback_when_rbf_unavailable() {
+        let rgb_adapter = Arc::new(NodeRgbAdapter::new(
+            RolloutMode::Shadow,
+            "http://localhost:8080".to_string(),
+        ));
         let persistence = Arc::new(MockPersistence::new(PersistentState {
             bitcoin_height: 0,
             stacks_height: 0,
@@ -367,6 +388,7 @@ mod tests {
             persistence.clone(),
             30,
             test_policy(),
+            Some(rgb_adapter),
         );
 
         orchestrator.tick().await.unwrap();
@@ -381,6 +403,10 @@ mod tests {
 
     #[tokio::test]
     async fn orchestrator_guardrail_rejection_path() {
+        let rgb_adapter = Arc::new(NodeRgbAdapter::new(
+            RolloutMode::Shadow,
+            "http://localhost:8080".to_string(),
+        ));
         let mut tx = tracked_tx();
         tx.bump_attempts = 3;
 
@@ -398,6 +424,7 @@ mod tests {
             persistence.clone(),
             30,
             test_policy(),
+            Some(rgb_adapter),
         );
 
         orchestrator.tick().await.unwrap();
