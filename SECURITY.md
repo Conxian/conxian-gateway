@@ -2,50 +2,42 @@
 
 ## Supported Versions
 
-The following versions of Conxian Gateway are currently being supported with security updates.
+The latest maintained release line receives security updates.
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 0.1.x   | :white_check_mark: |
+| Version | Supported |
+| ------- | --------- |
+| 0.1.x | ✅ |
 
 ## Reporting a Vulnerability
 
-We take the security of Conxian Gateway seriously. If you believe you have found a security vulnerability, please report it to us by following these steps:
+Do **not** open a public issue for security vulnerabilities.
 
-1. **Do not open a public issue.**
-2. Send an email to security@conxian.io with details of the vulnerability.
-3. Include a description of the issue, steps to reproduce, and any potential impact.
+Instead, report privately using one of these channels:
 
-We will acknowledge your report within 48 hours and provide a timeline for a fix if applicable. We request that you follow responsible disclosure practices and give us reasonable time to address the issue before making any information public.
+1. GitHub private vulnerability reporting for this repository.
+2. Email [security@conxian-labs.com](mailto:security@conxian-labs.com).
 
-## Incident Handling Process (Control Alignment)
+Please include:
 
-When a security or control incident is suspected, responders follow this sequence:
+- a clear description of the issue
+- steps to reproduce or a proof of concept
+- potential impact
+- suggested remediation, if known
 
-1. **Triage (within 1 business day)**
-   - Confirm incident class (security, integrity, availability, or governance-control breach).
-   - Assign an incident lead from repository owners in `CODEOWNERS`.
-2. **Containment**
-   - Revoke or rotate exposed credentials.
-   - Disable impacted webhook/provider pathways if verification cannot be trusted.
-3. **Eradication and Recovery**
-   - Land a reviewed fix with test coverage.
-   - Run `cargo fmt --all -- --check`, `cargo clippy --all-targets --all-features -- -D warnings`, and `cargo test` before release.
-4. **Post-incident governance**
-   - Record root cause, blast radius, and control gaps in release notes/changelog.
-   - Track corrective actions to closure before the next production promotion.
+We aim to acknowledge reports within 48 hours and will coordinate remediation and disclosure responsibly.
 
-Severity guidance:
+## Incident handling
 
-- **SEV-1**: Active exploit, custody risk, or signature-bypass class issue.
-- **SEV-2**: Material control degradation without confirmed exploit.
-- **SEV-3**: Minor weakness with low immediate impact.
+When a security or control incident is suspected:
 
-## Security Standards
-Conxian Gateway is an institutional-grade "Compliance Pipe". We prioritize:
-- **No PII Storage**: The gateway is designed to be stateless regarding user PII.
-- **Cryptographic Verification**: All attestations (ZKC) are verified using industry-standard libraries (secp256k1).
-- **Secure Communication**: All API endpoints must be served over TLS in production.
-- **Authentication**: Mandatory Bearer token authentication for all non-public endpoints. The gateway implements constant-time token comparison to prevent timing attacks.
-- **DoS Protection**: A global 10MB request body limit is enforced on all API endpoints.
-- **Protected Metrics**: The `/metrics` endpoint is protected by Bearer token authentication to prevent exposure of sensitive institutional financial data.
+1. triage the incident and assign an owner
+2. contain exposure and rotate affected secrets if needed
+3. land a reviewed fix with tests
+4. document follow-up actions in the changelog or release notes
+
+## Security expectations
+
+- no public disclosure before coordinated remediation
+- no real secrets committed to source control
+- production endpoints must use TLS
+- protected endpoints require authenticated access
