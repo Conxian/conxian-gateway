@@ -1,154 +1,78 @@
-# Conxian Gateway: Institutional Compliance Pipe
+# Conxian Gateway
 
-Institutional-grade middleware bridging Bitcoin/Stacks state logic with enterprise compliance, featuring mathematically verifiable state proofs and ZK-compliant auditing.
+Institutional-grade Rust middleware bridging Bitcoin and Stacks state with compliance, verification, and integration services.
 
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Status](https://img.shields.io/badge/Status-v0.1.0-orange.svg)](#project-status)
+[![Status](https://img.shields.io/badge/Status-v0.1.0-orange.svg)](#status)
 
-## 0. Governance & BOS Role
-**Business Unit**: Protocol & Institutional Infrastructure
-**BOS Role**: Canonical Blockchain State Listener & Compliance Pipe
-**Status**: Mainnet-Ready (Production)
-**Ownership**: @botshelomokoka @admin-conxian-labs
+## Purpose
 
-## 1. Overview & Vision
-Conxian Gateway is a high-performance Rust middleware designed to bridge Bitcoin/Stacks state logic with enterprise compliance. It succeeds `Anya-core` and `OPSource`, consolidating their core functionalities into a singular, audit-ready binary.
+Provide a public middleware and integration surface for indexing, verification, settlement workflows, and institutional connectivity around the Conxian ecosystem.
 
-Conxian is designed to capture the Total Addressable Market (TAM) of Bitcoin-native liquidity ($10B+), moving beyond the initial Stacks Serviceable Addressable Market (SAM).
+## Status
 
-### Intended Audience
-- **Institutional Developers**: Building high-integrity Bitcoin/Stacks infrastructure.
-- **Fintech Integrators**: Normalizing traditional finance (ISO 20022) with blockchain state.
-- **Sovereign Node Operators**: Running non-custodial gateway infrastructure.
+**Active development (v0.1.0).** Production intent exists, but deployment decisions should follow the readiness criteria documented in this repository.
 
-### Industry Enhancement Pillars
-- **A. sBTC "Suction" Pattern**: Incentivize native BTC-to-sBTC migrations via the Sovereign Yield Index (SYI).
-- **B. BitVM & DLC Bonds**: Trustless cross-chain state verification and non-custodial Bitcoin debt.
-- **C. Institutional ISO 20022 Egress**: Banking-standard messaging (pacs.008) for legacy egress.
-- **D. Workload Identity Federation (WIF)**: TEE-based agent authentication without static keys.
+## Scope
 
-## 2. Project Status
-Current Version: **v0.1.0**
+This repository contains gateway and middleware code. It is not the protocol source of truth, and it is not a custody authority for user or treasury funds.
 
-This project is in active development. While it implements production-grade security and compliance features, users should consult the [Readiness Gates](docs/READINESS_GATES.md) before mainnet deployment.
+## Governance relation
 
-## 3. Architecture & Modules
-- `/cmd/gateway`: Entry point, configuration, and dependency injection wiring.
-- `/internal/engine`: Blockchain listeners (Bitcoin/Stacks), Treasury monitor, and ALEX DEX client.
-- `/internal/api`: Institutional REST API, Auth middleware, and Axum handlers.
-- `/internal/compliance`: ZKC (Zero-Knowledge Compliance) attestation, BitVM verifier, and Identity Manager (WIF).
-- `/pkg/conxian-core`: Shared models, CJCS v2.0 schema, and atomic persistence layer.
+This repository is maintained by Conxian Labs as part of the public Conxian stack. It supports protocol access and integrations, while governance of the protocol is expected to decentralize progressively after mainnet.
 
-## 4. API Endpoints
-The gateway exposes an institutional REST API at `/api/v1`. Most endpoints require Bearer token authentication.
+## Intended audience
 
-- `GET /api/v1/health`: Service health check.
-- `GET /api/v1/version`: Gateway version string.
-- `GET /api/v1/metrics`: Prometheus-compatible metrics (Authorized).
-- `GET /api/v1/state`: Current gateway state snapshot (Authorized).
-- `POST /api/v1/verify`: Verify cryptographic attestations (ECDSA, Schnorr, ZKML, BitVM) (Authorized).
-- `POST /api/v1/identity/exchange`: Exchange Enclave-signed OIDC token for GCP access token (Authorized).
-- `POST /api/v1/identity/resolve`: Resolve identity for ENS, BNS, World ID, or Web3.bio (Authorized).
-- `POST /api/v1/iso20022/payment`: Generate standardized ISO 20022 egress messages (Authorized).
-- `POST /api/v1/iso20022/pacs008`: Ingest ISO 20022 pacs.008 settlement signals (Authorized).
-- `POST /api/v1/iso20022/pacs009`: Ingest ISO 20022 pacs.009 settlement signals (Authorized).
-- `POST /api/v1/settlement/papss`: Ingest PAPSS settlement signals (Authorized).
-- `POST /api/v1/settlement/brics`: Ingest BRICS settlement signals (Authorized).
-- `POST /api/v1/fiat/webhook`: Verify fiat provider webhook signatures (Authorized).
-- `POST /api/v1/a2p/otp`: Send stateless OTP via Infobip (Authorized).
-- `POST /api/v1/a2p/verify`: Verify stateless OTP via Infobip (Authorized).
-- `POST /api/v1/erp/sync`: Sync ERP ledger via OData v4 (Authorized).
-- `POST /api/v1/settle`: Verify and settle job card settlement request (Authorized).
-- `GET /api/v1/alex/quote`: Fetch swap quote from ALEX DEX (Authorized).
-  - Query params (URL query string; URL-encoded; no request body):
-    - `token_x` (string, required): Input token contract principal (value like `SP...token-x`). The gateway forwards this to ALEX using query param key `token-x`.
-    - `token_y` (string, required): Output token contract principal (value like `SP...token-y`). The gateway forwards this to ALEX using query param key `token-y`.
-    - `amount` (decimal string, required): Unsigned integer amount of `token_x` in its smallest/base units. The gateway forwards this to ALEX using query param key `amount`.
-    - `factor` (decimal string, required): Unsigned integer required by the request schema shared with `/api/v1/alex/swap`; currently ignored by `/api/v1/alex/quote` (reserved for `/api/v1/alex/swap`). If omitted, the gateway rejects the request with `400`. Use `1`.
-    - `min_dy` (decimal string, optional): Unsigned integer minimum output amount in the smallest/base units of `token_y`. Accepted but currently ignored by `/api/v1/alex/quote` (reserved for `/api/v1/alex/swap`).
-  - Example:
-    ```bash
-    curl -G 'https://gateway.conxian-labs.com/api/v1/alex/quote' \
-      -H 'Authorization: Bearer <API_TOKEN>' \
-      --data-urlencode 'token_x=SP3FBR2AGKQK4H5JH8S0T2NQ9K0D8G2Q1YJ3Q0Y1.token-x' \
-      --data-urlencode 'token_y=SP3FBR2AGKQK4H5JH8S0T2NQ9K0D8G2Q1YJ3Q0Y1.token-y' \
-      --data-urlencode 'amount=1000000' \
-      --data-urlencode 'factor=1'
-    ```
-  - Response: `{ "dy": "123456789" }` (quoted output amount in the smallest/base units of `token_y`, returned as a string).
-- `POST /api/v1/alex/swap`: Execute ALEX swap operation (Authorized; returns `501` until signer integration exists).
-- `POST /api/v1/bounties/payouts/toggle`: Maintainer control for bounty activation (Authorized).
-- `POST /api/v1/ingress/iso20022`: Ingest ISO 20022 settlement signals (Authorized).
-- `POST /api/v1/ingress/papss`: Ingest PAPSS settlement signals (Authorized).
-- `POST /api/v1/ingress/brics`: Ingest BRICS settlement signals (Authorized).
-- `GET /api/v1/settlements/external`: Read recent externally ingested settlements (Authorized).
-- `POST /api/v1/pos/offline`: Submit offline POS receipt for signing and queueing (Authorized).
-- `POST /api/v1/pos/sync`: Sync pending offline POS receipts (Authorized).
+- infrastructure engineers
+- institutional integrators
+- fintech and settlement partners
+- contributors building on Conxian services
 
-Full endpoint documentation can be found by inspecting the routes in `internal/api/src/routes.rs`.
+## Architecture overview
 
-## 5. Configuration
-Configuration is managed via environment variables. Copy the template to get started:
+- `/cmd/gateway`: entry point, configuration, dependency wiring
+- `/internal/engine`: chain listeners, treasury monitor, and execution services
+- `/internal/api`: REST API, auth middleware, and handlers
+- `/internal/compliance`: verification, attestation, and policy enforcement
+- `/pkg/conxian-core`: shared models and persistence primitives
+
+## Configuration
+
+Configuration is managed via environment variables.
 
 ```bash
 cp .env.example .env
 ```
 
-### Key Variables
-- `API_TOKEN`: Mandatory Bearer token for institutional access.
-- `BITCOIN_RPC_URL`: URL for the Bitcoin node (e.g., `https://bitcoin-rpc.publicnode.com`).
-- `STACKS_RPC_URL`: URL for the Stacks API (e.g., `https://api.mainnet.hiro.so`).
-- `FIAT_WEBHOOK_SECRET`: HMAC secret for verifying fiat provider webhooks.
+Use `.env.example` as the template. Do not commit real secrets.
 
-Refer to [.env.example](.env.example) for the full list of configuration options.
+## Development
 
-## 6. Development & Testing
-
-### Prerequisites
-- [Rust](https://www.rust-lang.org/) (latest stable)
-- [Cargo](https://doc.rust-lang.org/cargo/)
-
-### Quick Start
 ```bash
-# Build the gateway
 cargo build --release
-
-# Run the gateway
 cargo run --bin gateway
-
-# Run all tests
 cargo test --all-features
 ```
 
-### Quality Assurance
-Before submitting a pull request, ensure your changes pass the following checks:
+## Quality checks
+
 ```bash
 cargo clippy --all-targets --all-features -- -D warnings
 cargo fmt --all -- --check
 cargo test
 ```
 
-## 7. Governance, Control Boundaries & Policy Lifecycle (CON-695)
-- **API lifecycle ownership**: The Protocol & Institutional Infrastructure maintainers in [CODEOWNERS](CODEOWNERS) own `/api/v1` lifecycle decisions.
-- **Versioning/deprecation policy**:
-  - Additive, backward-compatible changes are allowed within `/api/v1`.
-  - Breaking changes require a new major route namespace (for example, `/api/v2`).
-  - Deprecated endpoints must remain available for at least two tagged releases with migration guidance documented in `CHANGELOG.md`.
-- **Policy-engine boundary**: Gateway route handlers are transport and verification boundaries only. Compliance policy decisions remain in `internal/compliance` and upstream institutional controls.
-- **Observability expectations**:
-  - `/api/v1/health` and `/api/v1/metrics` must remain operational in production.
-  - Security-relevant events (auth failures, webhook verification failures, replay rejections, settlement-ingress validation failures) must be logged with request context.
-- **Authority boundary (explicit)**: Conxian Gateway is **not** the protocol source-of-truth (Bitcoin/Stacks consensus is) and is **not** a custody authority for customer or treasury funds.
-- **Incident handling**: Follow [SECURITY.md](SECURITY.md) incident process and severity workflow.
-- **Release discipline sign-off**: Follow [RELEASE.md](RELEASE.md) control sign-off checklist before every tag.
+## Policies
 
-## 8. Governance & Policies
-- **[LICENSE](LICENSE)**: Licensed under the MIT License.
-- **[SECURITY.md](SECURITY.md)**: Security policy and vulnerability reporting.
-- **[CONTRIBUTING.md](CONTRIBUTING.md)**: Contribution guidelines and coding standards.
-- **[CHANGELOG.md](CHANGELOG.md)**: Tracking development progress and releases.
-- **[CODEOWNERS](CODEOWNERS)**: Repository ownership and review assignments.
+- [LICENSE](LICENSE)
+- [SECURITY.md](SECURITY.md)
+- [CONTRIBUTING.md](CONTRIBUTING.md)
+- [CHANGELOG.md](CHANGELOG.md)
+- [CODEOWNERS](CODEOWNERS)
+- [RELEASE.md](RELEASE.md)
 
-## 9. Support & Contact
-- **Institutional Support**: [support@conxian-labs.com](mailto:support@conxian-labs.com)
-- **Security Reports**: [security@conxian-labs.com](mailto:security@conxian-labs.com)
+## Contact
+
+- Support: [support@conxian-labs.com](mailto:support@conxian-labs.com)
+- Security: [security@conxian-labs.com](mailto:security@conxian-labs.com)
+- General: [info@conxian-labs.com](mailto:info@conxian-labs.com)
