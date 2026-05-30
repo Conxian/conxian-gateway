@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use bitcoincore_rpc::{Auth, Client, RpcApi};
 use conxian_core::{BlockInfo, ConxianError, ConxianResult};
+use serde_json::{json, Value};
 use std::sync::Arc;
 
 #[async_trait]
@@ -106,5 +107,79 @@ impl BitcoinRpc for BitcoinRpcClient {
         })
         .await
         .map_err(|e: tokio::task::JoinError| ConxianError::Internal(e.to_string()))?
+    }
+
+    async fn submit_rbf_replacement(
+        &self,
+        txid: &str,
+        target_fee_rate_sat_vb: u64,
+    ) -> ConxianResult<Option<String>> {
+        let txid = txid.trim().to_string();
+        if txid.is_empty() {
+            return Err(ConxianError::Bitcoin(
+                "Cannot bump fee: txid is empty".to_string(),
+            ));
+        }
+
+        if target_fee_rate_sat_vb == 0 {
+            return Err(ConxianError::Bitcoin(format!(
+                "Cannot bump fee for tx {}: target fee rate must be > 0 sat/vB",
+                txid
+            )));
+        }
+
+        let client = self.client.clone();
+        tokio::task::spawn_blocking(move || {
+            let params = vec![
+                json!(txid.clone()),
+                json!({
+                    "fee_rate": target_fee_rate_sat_vb,
+                }),
+            ];
+
+            let response: Value =
+                client
+                    .call("bumpfee", &params)
+                    .map_err(|e: bitcoincore_rpc::Error| {
+                        ConxianError::Bitcoin(format!(
+                            "Bitcoin Core bumpfee failed for tx {} at {} sat/vB: {}",
+                            txid, target_fee_rate_sat_vb, e
+                        ))
+                    })?;
+
+            let replacement_txid = response
+                .get("txid")
+                .and_then(Value::as_str)
+                .ok_or_else(|| {
+                    ConxianError::Bitcoin(format!(
+                        "Bitcoin Core bumpfee returned no replacement txid for tx {}",
+                        txid
+                    ))
+                })?
+                .to_string();
+
+            Ok(Some(replacement_txid))
+        })
+        .await
+        .map_err(|e: tokio::task::JoinError| ConxianError::Internal(e.to_string()))?
+    }
+
+    async fn submit_cpfp_child(
+        &self,
+        parent_txid: &str,
+        target_fee_rate_sat_vb: u64,
+    ) -> ConxianResult<Option<String>> {
+        let parent_txid = parent_txid.trim();
+        if parent_txid.is_empty() {
+            return Err(ConxianError::Bitcoin(
+                "CPFP child submission is not supported: parent txid is empty".to_string(),
+            ));
+        }
+
+        Err(ConxianError::Bitcoin(format!(
+            "CPFP child submission is not supported for parent tx {} at {} sat/vB: this adapter cannot safely construct and sign child transactions without wallet UTXO and key context",
+            parent_txid,
+            target_fee_rate_sat_vb
+        )))
     }
 }
