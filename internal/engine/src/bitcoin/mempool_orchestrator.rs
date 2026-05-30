@@ -164,7 +164,7 @@ impl<R: BitcoinRpc> MempoolOrchestrator<R> {
                     },
                     Ok(None) => ExecutionResult::NotBroadcasted {
                         strategy: FeeBumpStrategy::Cpfp,
-                        reason: "CPFP child broadcast not available (TODO: implement wallet signing + sendrawtransaction)".to_string(),
+                        reason: "CPFP child broadcast unavailable: adapter cannot construct/sign a child transaction with current context".to_string(),
                     },
                     Err(err) => ExecutionResult::NotBroadcasted {
                         strategy: FeeBumpStrategy::Cpfp,
@@ -200,7 +200,7 @@ impl<R: BitcoinRpc> MempoolOrchestrator<R> {
             Ok(None) => ExecutionResult::NotBroadcasted {
                 strategy: FeeBumpStrategy::Cpfp,
                 reason: format!(
-                    "{}; CPFP fallback not available (TODO: implement child tx construction + broadcast)",
+                    "{}; CPFP fallback unavailable: adapter cannot construct/sign a child transaction with current context",
                     reason
                 ),
             },
@@ -410,5 +410,40 @@ mod tests {
             .as_deref()
             .unwrap_or_default()
             .contains("MaxAttemptsReached"));
+    }
+
+    #[tokio::test]
+    async fn orchestrator_cpfp_not_available_records_stuck_reason() {
+        let mut tx = tracked_tx();
+        tx.replaceable = false;
+        tx.cpfp_eligible = true;
+
+        let persistence = Arc::new(MockPersistence::new(PersistentState {
+            bitcoin_height: 0,
+            stacks_height: 0,
+            mempool_pending_txs: vec![tx],
+        }));
+
+        let orchestrator = MempoolOrchestrator::new(
+            MockBitcoinRpc {
+                rbf_txid: None,
+                cpfp_txid: None,
+            },
+            persistence.clone(),
+            30,
+            test_policy(),
+        );
+
+        orchestrator.tick().await.unwrap();
+
+        let state = persistence.load().unwrap();
+        let tx = &state.mempool_pending_txs[0];
+        assert_eq!(tx.status, MempoolTxStatus::Stuck);
+        assert_eq!(tx.last_bump_strategy, Some(FeeBumpStrategy::Cpfp));
+        assert!(tx
+            .last_error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("CPFP child broadcast unavailable"));
     }
 }
