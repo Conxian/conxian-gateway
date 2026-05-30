@@ -149,7 +149,7 @@ impl FiatRouter {
         // Industry Enhancement: Banxa Integration (CON-41)
         let session_id = format!("banxa-{}", uuid::Uuid::new_v4());
         let redirect_url = format!(
-            "https://conxian.banxa.com/?walletAddress={}&coinAmount={}&coinType={}",
+            "https://conxian-labs.banxa.com/?walletAddress={}&coinAmount={}&coinType={}",
             request.wallet_address, request.amount, request.currency
         );
 
