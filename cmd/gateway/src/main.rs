@@ -9,8 +9,8 @@ use conxian_core::persistence::FilePersistence;
 use conxian_core::{GatewayState, Persistence, SharedState};
 use engine::{
     stacks::alex::{AlexClient, AlexRpcClient},
-    BitcoinListener, BitcoinRpcClient, FeeBumpPolicyConfig, MempoolOrchestrator, NttRelayer,
-    StacksListener, StacksRpcClient, TreasuryMonitor,
+    BitcoinListener, BitcoinRpcClient, FeeBumpPolicyConfig, MempoolOrchestrator, NodeRgbAdapter,
+    NttRelayer, StacksListener, StacksRpcClient, TreasuryMonitor,
 };
 use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
@@ -63,6 +63,18 @@ async fn main() -> anyhow::Result<()> {
         &config.bitcoin_rpc_user,
         &config.bitcoin_rpc_pass,
     )?;
+
+    // CON-768: Initialize RGB adapter
+    let rgb_adapter: Option<Arc<dyn conxian_core::RgbAdapter>> =
+        if config.rgb_mode != conxian_core::RolloutMode::Disabled {
+            Some(Arc::new(NodeRgbAdapter::new(
+                config.rgb_mode,
+                config.rgb_node_url.clone(),
+            )))
+        } else {
+            None
+        };
+
     let mempool_orchestrator = MempoolOrchestrator::new(
         mempool_rpc,
         persistence.clone(),
@@ -73,6 +85,7 @@ async fn main() -> anyhow::Result<()> {
             max_fee_rate_sat_vb: config.mempool_max_fee_rate_sat_vb,
             min_bump_increment_sat_vb: config.mempool_min_bump_increment_sat_vb,
         },
+        rgb_adapter,
     );
 
     // Initialize Stacks listener

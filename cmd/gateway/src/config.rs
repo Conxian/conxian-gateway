@@ -68,6 +68,8 @@ pub struct Config {
     pub alex_api_url: String,
     pub oracle_pubkey: String,
     pub offline_queue_secret: String,
+    pub rgb_mode: conxian_core::RolloutMode,
+    pub rgb_node_url: String,
     pub network: Network,
 }
 
@@ -104,6 +106,15 @@ impl Config {
         let oracle_pubkey = Self::get_mandatory_env("ORACLE_PUBKEY", ORACLE_PUBKEY_SENTINEL);
         let offline_queue_secret =
             Self::get_mandatory_env("OFFLINE_QUEUE_SECRET", OFFLINE_QUEUE_SECRET_SENTINEL);
+        let rgb_mode = match env::var("RGB_MODE")
+            .unwrap_or_else(|_| "disabled".to_string())
+            .to_lowercase()
+            .as_str()
+        {
+            "active" => conxian_core::RolloutMode::Active,
+            "shadow" => conxian_core::RolloutMode::Shadow,
+            _ => conxian_core::RolloutMode::Disabled,
+        };
         let network = Network::from_env();
 
         let (btc_url, stx_url, alex_url) = match network {
@@ -181,6 +192,9 @@ impl Config {
             settlement_ingress_secret,
             oracle_pubkey,
             offline_queue_secret,
+            rgb_mode,
+            rgb_node_url: env::var("RGB_NODE_URL")
+                .unwrap_or_else(|_| "http://localhost:8080".to_string()),
             network,
             alex_api_url: env::var("ALEX_API_URL").unwrap_or(alex_url),
         }
