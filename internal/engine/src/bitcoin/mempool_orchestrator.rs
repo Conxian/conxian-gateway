@@ -459,6 +459,7 @@ mod tests {
             persistence.clone(),
             30,
             test_policy(),
+            None,
         );
 
         orchestrator.tick().await.unwrap();

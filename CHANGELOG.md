@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-04-24
+
 ### Added
 - Implemented ZKML-backed Guardian Attestation verification in `ZkcVerifier`.
 - Added `format_iso20022_pacs008_v8` to support ISO 20022 payment generation from Conxian Job Cards.
@@ -15,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Remediated contamination guard failures by replacing "mock" identifiers with "simulated" across the codebase.
 - Standardized error handling in API handlers for better type inference and auditability.
 - Hardened TEE device ID verification to support simulated test vectors while rejecting unauthorized IDs.
+- Fixed build regression in `internal/engine` caused by signature change in `MempoolOrchestrator`.
+- Synchronized repository versioning to `v0.1.3`.
 
 ## [0.1.2] - 2026-04-15
 
