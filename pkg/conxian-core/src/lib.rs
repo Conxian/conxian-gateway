@@ -456,3 +456,74 @@ pub trait SimulatedStacksRpcTrait: Send + Sync {
         args: Vec<serde_json::Value>,
     ) -> ConxianResult<serde_json::Value>;
 }
+
+/// CON-775: Release approval request.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ReleaseApprovalRequest {
+    pub release_id: String,
+    pub artifact_hash: String,
+    pub environment: String,
+    pub requester: String,
+}
+
+/// CON-775: Release decision submission.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ReleaseDecisionRequest {
+    pub release_id: String,
+    pub decision: String, // "approved" or "rejected"
+    pub approver: String,
+    pub reason: Option<String>,
+}
+
+/// CON-775: Governance decision submission.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct GovernanceDecisionRequest {
+    pub proposal_id: String,
+    pub decision: String, // "approved", "rejected", or "abstain"
+    pub voter: String,
+    pub signature: String, // TEE or EOC signature
+}
+
+/// CON-775: Unified admin response.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AdminActionResponse {
+    pub action_id: String,
+    pub status: String,
+    pub audit_event_id: String,
+    pub message: String,
+}
+
+/// CON-771: Shared domain schema for Governance Actions.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct GovernanceAction {
+    pub action_id: String,
+    pub proposal_id: String,
+    pub action_type: String, // e.g., "parameter_change", "treasury_allocation"
+    pub payload: serde_json::Value,
+    pub status: String,
+    pub enacted_at: Option<u64>,
+}
+
+/// CON-771: Shared domain schema for Treasury Events.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TreasuryEvent {
+    pub event_id: String,
+    pub asset: String,
+    pub amount: u128,
+    pub direction: String, // "inflow" or "outflow"
+    pub reason: String,
+    pub timestamp: u64,
+    pub reference_id: Option<String>,
+}
+
+/// CON-771: Shared domain schema for Audit Events.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AuditEvent {
+    pub event_id: String,
+    pub domain: String, // "release", "governance", "treasury", "identity"
+    pub actor: String,
+    pub action: String,
+    pub outcome: String,
+    pub timestamp: u64,
+    pub metadata: serde_json::Value,
+}
