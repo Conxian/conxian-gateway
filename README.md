@@ -79,8 +79,9 @@ cargo test
 
 ## BOS Control Plane & Canonical Mapping (v1.9.2)
 
-The Conxian Gateway serves as the integration surface for the BOS control plane. Canonical references and migration paths are maintained in the following documents:
+The Conxian Gateway serves as the integration surface for the BOS control plane. Canonical references, mapping, and migration paths are maintained in the following documents:
 
+- [ADMIN_CONTRACTS_V1.md](docs/api/ADMIN_CONTRACTS_V1.md) — Admin API contracts for BOS workflows.
 - [PORTFOLIO_MAP.md](docs/PORTFOLIO_MAP.md) — Shared repository and domain mapping.
 - [SAB_MIGRATION.md](docs/SAB_MIGRATION.md) — Infrastructure sovereignty transition tracking.
 - [READINESS_GATES.md](docs/READINESS_GATES.md) — Institutional release criteria.

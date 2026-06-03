@@ -1,6 +1,6 @@
 # Contributing to Conxian Gateway
 
-Thank you for your interest in contributing to Conxian! We welcome contributions that align with our mission of bridging Bitcoin/Stacks with institutional compliance.
+Thank you for your interest in contributing to Conxian! We welcome contributions that align with our mission of bridging Bitcoin/Stacks with institutional compliance and the Unified Vault SDK Pivot.
 
 ## Development Principles
 - **Rust First**: All core logic is implemented in Rust (edition 2021).
