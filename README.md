@@ -76,3 +76,14 @@ cargo test
 - Support: [support@conxian-labs.com](mailto:support@conxian-labs.com)
 - Security: [security@conxian-labs.com](mailto:security@conxian-labs.com)
 - General: [info@conxian-labs.com](mailto:info@conxian-labs.com)
+
+## BOS Control Plane & Canonical Mapping (v1.9.2)
+
+The Conxian Gateway serves as the integration surface for the BOS control plane. Canonical references and migration paths are maintained in the following documents:
+
+- [PORTFOLIO_MAP.md](docs/PORTFOLIO_MAP.md) — Shared repository and domain mapping.
+- [SAB_MIGRATION.md](docs/SAB_MIGRATION.md) — Infrastructure sovereignty transition tracking.
+- [READINESS_GATES.md](docs/READINESS_GATES.md) — Institutional release criteria.
+- [RFC_RGB_ADAPTER.md](docs/RFC_RGB_ADAPTER.md) — Protocol adapter specification for RGB rails.
+
+Admin API v1 (bootstrap) is now available under `/admin/v1` for release governance and audit workflows.

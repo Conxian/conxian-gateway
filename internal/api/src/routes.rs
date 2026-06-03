@@ -1,7 +1,7 @@
 use crate::auth::auth_middleware;
-use crate::handlers;
 use crate::middleware::{latency_tracker, x402_filter};
 use crate::AppState;
+use crate::{admin, handlers};
 use axum::{
     extract::DefaultBodyLimit,
     middleware,
@@ -14,6 +14,18 @@ pub fn configure_routes(state: AppState, api_token: String) -> Router {
 
     let public_routes = Router::new()
         .route("/health", get(handlers::get_health))
+        .with_state(state.clone());
+
+    let admin_routes = Router::new()
+        .route(
+            "/releases/request-approval",
+            post(admin::request_release_approval),
+        )
+        .route("/releases/decision", post(admin::submit_release_decision))
+        .route(
+            "/governance/decision",
+            post(admin::submit_governance_decision),
+        )
         .with_state(state.clone());
 
     let private_routes = Router::new()
@@ -63,5 +75,6 @@ pub fn configure_routes(state: AppState, api_token: String) -> Router {
             latency_tracker,
         ))
         .nest("/api/v1", public_routes.merge(private_routes))
+        .nest("/admin/v1", admin_routes)
         .layer(DefaultBodyLimit::max(10 * 1024 * 1024)) // 10MB global body limit
 }

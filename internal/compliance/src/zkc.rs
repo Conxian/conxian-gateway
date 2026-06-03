@@ -42,7 +42,7 @@ impl ZkcVerifier {
     <FIToFICstmrCdtTrf>
         <GrpHdr>
             <MsgId>{}</MsgId>
-            <CreDtTm>2026-04-06T12:00:00Z</CreDtTm>
+            <CreDtTm>2026-04-18T12:00:00Z</CreDtTm>
             <NbOfTxs>1</NbOfTxs>
         </GrpHdr>
         <CdtTrfTxInf>
@@ -263,7 +263,7 @@ impl ZkcVerifier {
             message_id: Some(msg_id.clone()),
             settlement_amount: amount_str,
             settlement_currency: "sBTC".to_string(),
-            settlement_date: "2026-04-06".to_string(),
+            settlement_date: "2026-04-18".to_string(),
             ..Default::default()
         };
 
@@ -729,7 +729,7 @@ mod tests {
             message_id: Some("msg-1".to_string()),
             settlement_amount: "100.00".to_string(),
             settlement_currency: "USD".to_string(),
-            settlement_date: "2026-04-06".to_string(),
+            settlement_date: "2026-04-18".to_string(),
             ..Default::default()
         };
 
