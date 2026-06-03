@@ -579,3 +579,96 @@ async fn test_handoff_sequence() {
     // Should now point to treasury instead of bootstrap
     assert_ne!(body["treasury_destination"], body["bootstrap_wallet"]);
 }
+
+#[tokio::test]
+async fn test_admin_release_approval_request() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let payload = json!({
+        "release_id": "v1.9.2",
+        "artifact_hash": "sha256:abc...",
+        "environment": "production",
+        "requester": "jules"
+    });
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/admin/v1/releases/request-approval")
+                .method("POST")
+                .header("Content-Type", "application/json")
+                .body(Body::from(serde_json::to_string(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert!(body["action_id"].as_str().unwrap().starts_with("req-"));
+    assert_eq!(body["status"], "pending");
+}
+
+#[tokio::test]
+async fn test_admin_release_decision_submission() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let payload = json!({
+        "release_id": "v1.9.2",
+        "decision": "approved",
+        "approver": "sab-admin",
+        "reason": "Verified security gates"
+    });
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/admin/v1/releases/decision")
+                .method("POST")
+                .header("Content-Type", "application/json")
+                .body(Body::from(serde_json::to_string(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert!(body["action_id"].as_str().unwrap().starts_with("dec-"));
+    assert_eq!(body["status"], "approved");
+}
+
+#[tokio::test]
+async fn test_admin_governance_decision_submission() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let payload = json!({
+        "proposal_id": "gov-123",
+        "decision": "approved",
+        "voter": "dao-member-1",
+        "signature": "0x..."
+    });
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/admin/v1/governance/decision")
+                .method("POST")
+                .header("Content-Type", "application/json")
+                .body(Body::from(serde_json::to_string(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert!(body["action_id"].as_str().unwrap().starts_with("gov-"));
+    assert_eq!(body["status"], "approved");
+}
