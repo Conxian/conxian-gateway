@@ -18,6 +18,7 @@ serde_json.workspace = true
 tokio.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
+async-trait.workspace = true
 hex = "0.4.3"
 uuid = { workspace = true, features = ["v4", "serde"] }
 hmac = "0.12.1"

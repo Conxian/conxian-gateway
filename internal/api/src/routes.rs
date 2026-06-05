@@ -1,7 +1,7 @@
 use crate::auth::auth_middleware;
-use crate::middleware::{latency_tracker, x402_filter};
+use crate::middleware::latency_tracker;
 use crate::AppState;
-use crate::{admin, handlers};
+use crate::{admin, handlers, x402::x402_filter};
 use axum::{
     extract::DefaultBodyLimit,
     middleware,
@@ -62,7 +62,7 @@ pub fn configure_routes(state: AppState, api_token: String) -> Router {
         .route("/pos/sync", post(handlers::sync_offline_receipts))
         .route("/handoff/status", get(handlers::get_handoff_status))
         .route("/handoff/update", post(handlers::update_handoff_state))
-        .layer(middleware::from_fn(x402_filter))
+        .layer(middleware::from_fn_with_state(state.clone(), x402_filter))
         .layer(middleware::from_fn(move |req, next| {
             auth_middleware(req, next, token_for_auth.clone())
         }))
