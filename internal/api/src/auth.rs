@@ -4,23 +4,67 @@ use axum::{
     middleware::Next,
     response::Response,
 };
+use std::collections::HashMap;
+use std::sync::Arc;
 use subtle::ConstantTimeEq;
 use tracing::warn;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum AuthRole {
+    Auditor = 0,
+    Operator = 1,
+    Admin = 2,
+}
+
+#[derive(Clone)]
+pub struct AuthStore {
+    identities: Arc<HashMap<String, AuthRole>>,
+}
+
+impl AuthStore {
+    pub fn new() -> Self {
+        Self {
+            identities: Arc::new(HashMap::new()),
+        }
+    }
+
+    pub fn with_identity(mut self, token: String, role: AuthRole) -> Self {
+        if !token.is_empty() && !is_sentinel(&token) {
+            let mut map = (*self.identities).clone();
+            map.insert(token, role);
+            self.identities = Arc::new(map);
+        }
+        self
+    }
+
+    pub fn validate(&self, token: &str, required_role: AuthRole) -> bool {
+        for (expected_token, role) in self.identities.as_ref() {
+            // Constant-time comparison to prevent timing attacks
+            if token.as_bytes().len() == expected_token.as_bytes().len() {
+                let is_match = token
+                    .as_bytes()
+                    .ct_eq(expected_token.as_bytes())
+                    .unwrap_u8() == 1;
+
+                if is_match && *role >= required_role {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+}
+
+fn is_sentinel(token: &str) -> bool {
+    token == "REQUIRED_FOR_PROD_API_TOKEN" || token == "institutional-default-token"
+}
 
 pub async fn auth_middleware(
     req: Request,
     next: Next,
-    expected_token: String,
+    store: AuthStore,
+    required_role: AuthRole,
 ) -> Result<Response, StatusCode> {
-    // Insecure token check - must not be the sentinel or empty in production
-    if expected_token.is_empty()
-        || expected_token == "REQUIRED_FOR_PROD_API_TOKEN"
-        || expected_token == "institutional-default-token"
-    {
-        warn!("API_TOKEN is insecure or not set. Rejecting all private requests.");
-        return Err(StatusCode::INTERNAL_SERVER_ERROR);
-    }
-
     let auth_header = req
         .headers()
         .get(header::AUTHORIZATION)
@@ -29,16 +73,10 @@ pub async fn auth_middleware(
     match auth_header {
         Some(auth) if auth.starts_with("Bearer ") => {
             let provided_token = &auth[7..];
-            // Cryptographic constant-time comparison to prevent timing attacks
-            if provided_token
-                .as_bytes()
-                .ct_eq(expected_token.as_bytes())
-                .unwrap_u8()
-                == 1
-            {
+            if store.validate(provided_token, required_role) {
                 Ok(next.run(req).await)
             } else {
-                warn!("Unauthorized request: Invalid Bearer token");
+                warn!("Unauthorized request: Invalid token or insufficient role");
                 Err(StatusCode::UNAUTHORIZED)
             }
         }
