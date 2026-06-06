@@ -83,6 +83,40 @@ impl<R: BitcoinRpc> BitcoinListener<R> {
                         }
                     }
                     self.last_height = current_height;
+                } else if current_height == self.last_height {
+                    match self.rpc.get_block_info(current_height).await {
+                        Ok(block) => {
+                            let mut state = self.state.write().unwrap();
+                            if state.bitcoin.best_block_hash != block.hash {
+                                info!(
+                                    "Bitcoin tip change detected at height {}: {} -> {}",
+                                    block.height, state.bitcoin.best_block_hash, block.hash
+                                );
+                                state.bitcoin.height = block.height;
+                                state.bitcoin.last_updated = block.timestamp;
+                                state.bitcoin.last_sync_time = now;
+                                state.bitcoin.status = "synced".to_string();
+                                state.bitcoin.best_block_hash = block.hash;
+                                if let Some(ref n) = self.network {
+                                    state.bitcoin.network = n.clone();
+                                }
+
+                                let mut p_state = self.persistence.load().unwrap_or_default();
+                                p_state.bitcoin_height = state.bitcoin.height;
+                                p_state.stacks_height = state.stacks.height;
+                                let _ = self.persistence.save(&p_state);
+                            } else {
+                                state.bitcoin.last_sync_time = now;
+                            }
+                        }
+                        Err(e) => {
+                            error!(
+                                "Failed to refresh Bitcoin tip at height {}: {}",
+                                current_height, e
+                            );
+                            return Err(e);
+                        }
+                    }
                 } else {
                     let mut state = self.state.write().unwrap();
                     state.bitcoin.last_sync_time = now;
