@@ -1,6 +1,11 @@
 use api::a2p::A2pRouter;
 use api::fiat::FiatRouter;
-use api::{configure_routes, new_settlement_log, AppState};
+use api::lightning::{
+    LightningAdapter, LightningBackend, LightningBackendError, LightningSettlementRequest,
+    LightningSettlementResponse,
+};
+use api::{configure_routes, new_lightning_adapter, new_settlement_log, AppState};
+use async_trait::async_trait;
 use axum::{
     body::Body,
     http::{Request, StatusCode},
@@ -19,7 +24,9 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::HashSet,
     sync::{Arc, Mutex, RwLock},
+    time::Duration,
 };
+use tokio::time::sleep;
 use tower::ServiceExt;
 
 const TEST_TOKEN: &str = "test-token";
@@ -28,6 +35,10 @@ const TEST_SETTLEMENT_SECRET: &str = "test-settlement-secret";
 const TEST_X402_PROOF: &str = "proof-test-123";
 
 fn setup_app(state: SharedState) -> axum::Router {
+    setup_app_with_lightning(state, new_lightning_adapter())
+}
+
+fn setup_app_with_lightning(state: SharedState, lightning: Arc<LightningAdapter>) -> axum::Router {
     let fiat = Arc::new(FiatRouter::new(
         "ramp-key".to_string(),
         "investec-id".to_string(),
@@ -83,6 +94,7 @@ fn setup_app(state: SharedState) -> axum::Router {
         identity,
         compliance,
         alex,
+        lightning,
         fiat_webhook_secret: TEST_FIAT_SECRET.to_string(),
         settlement_ingress_secret: TEST_SETTLEMENT_SECRET.to_string(),
         settlement_log: new_settlement_log(),
@@ -120,6 +132,45 @@ fn make_attestation_header(device_id: &str, payload_hash: &str) -> String {
 
 fn make_tee_attestation_header(payload_hash: &str) -> String {
     make_attestation_header(&format!("{}test-123", TEE_DEVICE_ID_PREFIX), payload_hash)
+}
+
+#[derive(Clone)]
+struct SingleOutcomeBackend {
+    outcome: Result<LightningSettlementResponse, LightningBackendError>,
+}
+
+#[async_trait]
+impl LightningBackend for SingleOutcomeBackend {
+    async fn settle_payment(
+        &self,
+        _request: LightningSettlementRequest,
+    ) -> Result<LightningSettlementResponse, LightningBackendError> {
+        self.outcome.clone()
+    }
+}
+
+#[derive(Clone)]
+struct SlowSuccessBackend {
+    delay: Duration,
+}
+
+#[async_trait]
+impl LightningBackend for SlowSuccessBackend {
+    async fn settle_payment(
+        &self,
+        request: LightningSettlementRequest,
+    ) -> Result<LightningSettlementResponse, LightningBackendError> {
+        sleep(self.delay).await;
+        Ok(LightningSettlementResponse {
+            settled_amount: request.amount,
+            preimage: "preimage-timeout".to_string(),
+            proof: request
+                .proof_refs
+                .first()
+                .cloned()
+                .unwrap_or_else(|| "proof-timeout".to_string()),
+        })
+    }
 }
 
 #[tokio::test]
@@ -498,7 +549,7 @@ async fn test_x402_middleware_typed_payload() {
         "amount_satoshi": 5000,
         "asset": "sBTC",
         "challenge": "challenge-xyz",
-        "expiry": 1744000000u64,
+        "expiry": 4744000000u64,
         "proof_ref": "tx-abc-123"
     });
     let x402_header_val = serde_json::to_string(&x402_payload).unwrap();
@@ -519,6 +570,159 @@ async fn test_x402_middleware_typed_payload() {
 
     // Pass x402 filter
     assert_ne!(response.status(), StatusCode::PAYMENT_REQUIRED);
+}
+
+#[tokio::test]
+async fn test_x402_middleware_rejects_malformed_payload() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/settle")
+                .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("Content-Type", "application/json")
+                .header("x-402-payment", "{bad-json")
+                .body(Body::from("{}"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(payload["code"], "x402_malformed_header");
+}
+
+#[tokio::test]
+async fn test_x402_backend_unavailable_propagates_service_unavailable() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let adapter = Arc::new(
+        LightningAdapter::new(Arc::new(SingleOutcomeBackend {
+            outcome: Err(LightningBackendError::Unavailable),
+        }))
+        .with_retry_policy(0, Duration::from_millis(10)),
+    );
+    let app = setup_app_with_lightning(state, adapter);
+
+    let x402_payload = json!({
+        "amount_satoshi": 5000,
+        "asset": "sBTC",
+        "challenge": "challenge-unavailable",
+        "expiry": 4_744_000_000u64,
+        "proof_ref": "proof-unavailable"
+    });
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/settle")
+                .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("Content-Type", "application/json")
+                .header(
+                    "x-402-payment",
+                    serde_json::to_string(&x402_payload).unwrap(),
+                )
+                .body(Body::from("{}"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(payload["code"], "lightning_backend_unavailable");
+}
+
+#[tokio::test]
+async fn test_x402_partial_failure_returns_bad_gateway() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let adapter = Arc::new(
+        LightningAdapter::new(Arc::new(SingleOutcomeBackend {
+            outcome: Err(LightningBackendError::PartialFailure {
+                detail: "node committed but receipt write failed".to_string(),
+            }),
+        }))
+        .with_retry_policy(0, Duration::from_millis(10)),
+    );
+    let app = setup_app_with_lightning(state, adapter);
+
+    let x402_payload = json!({
+        "amount_satoshi": 5000,
+        "asset": "sBTC",
+        "challenge": "challenge-partial-failure",
+        "expiry": 4_744_000_000u64,
+        "proof_ref": "proof-partial"
+    });
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/settle")
+                .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("Content-Type", "application/json")
+                .header(
+                    "x-402-payment",
+                    serde_json::to_string(&x402_payload).unwrap(),
+                )
+                .body(Body::from("{}"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(payload["code"], "lightning_partial_failure");
+}
+
+#[tokio::test]
+async fn test_x402_backend_timeout_returns_gateway_timeout() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let adapter = Arc::new(
+        LightningAdapter::new(Arc::new(SlowSuccessBackend {
+            delay: Duration::from_millis(50),
+        }))
+        .with_retry_policy(0, Duration::from_millis(1)),
+    );
+    let app = setup_app_with_lightning(state, adapter);
+
+    let x402_payload = json!({
+        "amount_satoshi": 5000,
+        "asset": "sBTC",
+        "challenge": "challenge-timeout",
+        "expiry": 4_744_000_000u64,
+        "proof_ref": "proof-timeout"
+    });
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/settle")
+                .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("Content-Type", "application/json")
+                .header(
+                    "x-402-payment",
+                    serde_json::to_string(&x402_payload).unwrap(),
+                )
+                .body(Body::from("{}"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::GATEWAY_TIMEOUT);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(payload["code"], "lightning_backend_timeout");
 }
 
 #[tokio::test]

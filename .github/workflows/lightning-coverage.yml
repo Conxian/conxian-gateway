@@ -1,0 +1,63 @@
+name: Lightning Adapter Verification
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  lightning-coverage:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.90.0
+          components: rustfmt, clippy
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Install llvm-tools-preview
+        run: rustup component add llvm-tools-preview
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Run tests
+        run: cargo test --workspace --all-features
+
+      - name: Enforce Lightning scoped coverage gate
+        run: ./scripts/lightning_coverage_gate.sh 90
+
+      - name: Publish Lightning coverage summary
+        if: always()
+        run: |
+          if [ -f target/lightning-coverage/summary.md ]; then
+            cat target/lightning-coverage/summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Lightning coverage summary missing" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload Lightning coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lightning-coverage-summary
+          path: target/lightning-coverage
+          if-no-files-found: warn

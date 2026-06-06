@@ -1,4 +1,4 @@
-use api::{configure_routes, new_settlement_log, AppState};
+use api::{configure_routes, new_lightning_adapter, new_settlement_log, AppState};
 use axum::http::StatusCode;
 use axum_test::TestServer;
 use compliance::zkc::ATTESTATION_SIGNING_DOMAIN;
@@ -48,6 +48,7 @@ async fn test_offline_pos_blackout_reconciliation() {
         identity: identity_manager,
         compliance: zkc_verifier,
         alex: alex_client,
+        lightning: new_lightning_adapter(),
         fiat_webhook_secret: "secret".into(),
         settlement_ingress_secret: "secret".into(),
         settlement_log: new_settlement_log(),

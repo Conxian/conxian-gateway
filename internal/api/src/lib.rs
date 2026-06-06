@@ -6,6 +6,7 @@ pub mod admin;
 pub mod auth;
 pub mod fiat;
 pub mod handlers;
+pub mod lightning;
 pub mod middleware;
 pub mod routes;
 pub mod x402;
@@ -14,6 +15,7 @@ pub use routes::configure_routes;
 
 use crate::a2p::A2pRouter;
 use crate::fiat::FiatRouter;
+use crate::lightning::{LightningAdapter, SimulatedLightningBackend};
 use compliance::{IdentityManager, ZkcVerifier};
 use conxian_core::{SettlementProposal, SharedState};
 pub use engine::stacks::alex::AlexClient;
@@ -29,10 +31,15 @@ pub struct AppState {
     pub identity: Arc<IdentityManager>,
     pub compliance: Arc<ZkcVerifier>,
     pub alex: Arc<dyn AlexClient>,
+    pub lightning: Arc<LightningAdapter>,
     pub fiat_webhook_secret: String,
     pub settlement_ingress_secret: String,
     pub settlement_log: Arc<RwLock<VecDeque<SettlementProposal>>>,
     pub offline_queue: Arc<dyn conxian_core::OfflineQueue>,
+}
+
+pub fn new_lightning_adapter() -> Arc<LightningAdapter> {
+    Arc::new(LightningAdapter::new(Arc::new(SimulatedLightningBackend)))
 }
 
 pub fn new_settlement_log() -> Arc<RwLock<VecDeque<SettlementProposal>>> {

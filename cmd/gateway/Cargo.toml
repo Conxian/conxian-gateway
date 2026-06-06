@@ -31,3 +31,4 @@ sha2 = "0.10.8"
 hex = "0.4.3"
 secp256k1 = { workspace = true }
 axum-test = "17.1.0"
+async-trait.workspace = true
