@@ -16,7 +16,7 @@ export default function AuditPage() {
       <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-800/20">
         <div className="p-4 bg-slate-800/50 border-b border-slate-800 flex justify-between items-center">
           <div className="flex gap-4">
-            <input type="text" placeholder="Filter events..." className="bg-slate-900 border border-slate-700 rounded px-3 py-1 text-sm focus:outline-none focus:border-indigo-500" />
+            <input type="text" placeholder="sentinel: Filter events..." className="bg-slate-900 border border-slate-700 rounded px-3 py-1 text-sm focus:outline-none focus:border-indigo-500" />
             <select className="bg-slate-900 border border-slate-700 rounded px-3 py-1 text-sm focus:outline-none focus:border-indigo-500">
               <option>All Statuses</option>
               <option>Success</option>
