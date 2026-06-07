@@ -13,6 +13,12 @@ Provide a public middleware and integration surface for indexing, verification, 
 
 **Active development (v0.1.3).** Production intent exists, but deployment decisions should follow the readiness criteria documented in this repository.
 
+### Readiness framing
+
+- This repository contains real runtime code and release history.
+- Some components and verification paths have transitioned from mock naming to explicit simulated naming to avoid overstating production enforcement.
+- Production readiness should be claimed only for the specific subsystems that satisfy the documented readiness gates and environment-backed verification requirements.
+
 ## Scope
 
 This repository contains gateway and middleware code. It is not the protocol source of truth, and it is not a custody authority for user or treasury funds.
