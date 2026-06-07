@@ -50,6 +50,13 @@ Sensitive files include:
 - `.github/workflows/**`
 - `.github/release.yml`
 
+## Security and dependency hygiene
+
+- Never commit `.env*` files, private keys, or API tokens.
+- Use `.env.example` only as a non-secret template.
+- Pull requests and protected branches are scanned with `gitleaks`.
+- Dependency changes are reviewed through dependency review and Dependabot updates.
+
 ## Support and Security Routing
 
 - For support and governance-routing guidance, refer to [SUPPORT.md](SUPPORT.md).
