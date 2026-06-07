@@ -73,3 +73,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Hardened repository hygiene by removing legacy backup files and updating `.gitignore`.
 - Refactored API layer to use dependency injection via `AppState`, removing hardcoded mocks.
 - Hardened security boundaries and aligned system wallets with mainnet prefixes (`SP`).
+
+## [0.1.4] - 2026-06-07
+
+### Added
+- Implemented comprehensive Control-Plane UI in `apps/control-plane` with Next.js 14.
+- Added modular sub-pages for Release Governance, Audit Log, Policy Approvals, System Metrics, and Settings.
+- Integrated Tailwind CSS for an institutional-grade dark-mode dashboard experience.
+- Created `ClientButton` component for interactive, state-aware dashboard actions.
+- Added system status indicators and throughput visualization to the dashboard.
+
+### Changed
+- Refactored Control-Plane navigation to use a persistent sidebar with functional iconography.
+- Updated documentation for the Control-Plane application.
