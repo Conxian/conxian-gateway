@@ -1,4 +1,3 @@
-use api::auth::{AuthRole, AuthStore};
 use api::{configure_routes, new_lightning_adapter, new_settlement_log, AppState};
 use axum::http::StatusCode;
 use axum_test::TestServer;
@@ -42,12 +41,8 @@ async fn test_offline_pos_blackout_reconciliation() {
     let offline_queue =
         Arc::new(conxian_core::persistence::EncryptedOfflineQueue::new(&db_path, key).unwrap());
 
-    let api_token = "test-token-32-chars-long-for-institutional-standard";
-    let auth = AuthStore::new().with_identity(api_token.to_string(), AuthRole::Admin);
-
     let app_state = AppState {
         shared: state.clone(),
-        auth,
         fiat: fiat_router,
         a2p: a2p_router,
         identity: identity_manager,
@@ -60,7 +55,8 @@ async fn test_offline_pos_blackout_reconciliation() {
         offline_queue,
     };
 
-    let app = configure_routes(app_state);
+    let api_token = "test-token";
+    let app = configure_routes(app_state, api_token.to_string());
     let server = TestServer::new(app).unwrap();
 
     let device_id = "conxius-mock-device-1";

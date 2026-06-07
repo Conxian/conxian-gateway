@@ -14,7 +14,6 @@ pub mod x402;
 pub use routes::configure_routes;
 
 use crate::a2p::A2pRouter;
-use crate::auth::AuthStore;
 use crate::fiat::FiatRouter;
 use crate::lightning::{LightningAdapter, SimulatedLightningBackend};
 use compliance::{IdentityManager, ZkcVerifier};
@@ -27,7 +26,6 @@ use tokio::sync::RwLock;
 #[derive(Clone)]
 pub struct AppState {
     pub shared: SharedState,
-    pub auth: AuthStore,
     pub fiat: Arc<FiatRouter>,
     pub a2p: Arc<A2pRouter>,
     pub identity: Arc<IdentityManager>,

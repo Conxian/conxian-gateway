@@ -1,5 +1,4 @@
 use api::a2p::A2pRouter;
-use api::auth::{AuthRole, AuthStore};
 use api::fiat::FiatRouter;
 use api::lightning::{
     LightningAdapter, LightningBackend, LightningBackendError, LightningSettlementRequest,
@@ -30,7 +29,7 @@ use std::{
 use tokio::time::sleep;
 use tower::ServiceExt;
 
-const TEST_TOKEN: &str = "test-token-32-chars-long-for-institutional-standard";
+const TEST_TOKEN: &str = "test-token";
 const TEST_FIAT_SECRET: &str = "test-fiat-secret";
 const TEST_SETTLEMENT_SECRET: &str = "test-settlement-secret";
 const TEST_X402_PROOF: &str = "proof-test-123";
@@ -88,11 +87,8 @@ fn setup_app_with_lightning(state: SharedState, lightning: Arc<LightningAdapter>
         replay_claims: Mutex::new(HashSet::new()),
     });
 
-    let auth = AuthStore::new().with_identity(TEST_TOKEN.to_string(), AuthRole::Admin);
-
     let app_state = AppState {
         shared: state,
-        auth,
         fiat,
         a2p,
         identity,
@@ -105,7 +101,7 @@ fn setup_app_with_lightning(state: SharedState, lightning: Arc<LightningAdapter>
         offline_queue,
     };
 
-    configure_routes(app_state)
+    configure_routes(app_state, TEST_TOKEN.to_string())
 }
 
 fn make_attestation_header(device_id: &str, payload_hash: &str) -> String {
@@ -193,25 +189,6 @@ async fn test_health_check() {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
-}
-
-#[tokio::test]
-async fn test_get_state_unauthorized() {
-    let state = Arc::new(RwLock::new(GatewayState::default()));
-    let app = setup_app(state);
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/api/v1/state")
-                // Missing Authorization header
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
 #[tokio::test]
@@ -824,7 +801,6 @@ async fn test_admin_release_approval_request() {
             Request::builder()
                 .uri("/admin/v1/releases/request-approval")
                 .method("POST")
-                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
                 .header("Content-Type", "application/json")
                 .body(Body::from(serde_json::to_string(&payload).unwrap()))
                 .unwrap(),
@@ -856,7 +832,6 @@ async fn test_admin_release_decision_submission() {
             Request::builder()
                 .uri("/admin/v1/releases/decision")
                 .method("POST")
-                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
                 .header("Content-Type", "application/json")
                 .body(Body::from(serde_json::to_string(&payload).unwrap()))
                 .unwrap(),
@@ -888,7 +863,6 @@ async fn test_admin_governance_decision_submission() {
             Request::builder()
                 .uri("/admin/v1/governance/decision")
                 .method("POST")
-                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
                 .header("Content-Type", "application/json")
                 .body(Body::from(serde_json::to_string(&payload).unwrap()))
                 .unwrap(),

@@ -1,7 +1,6 @@
 mod config;
 
 use api::a2p::A2pRouter;
-use api::auth::{AuthRole, AuthStore};
 use api::fiat::FiatRouter;
 use api::{configure_routes, new_lightning_adapter, new_settlement_log, AppState};
 use compliance::{IdentityManager, ZkcVerifier};
@@ -140,13 +139,9 @@ async fn main() -> anyhow::Result<()> {
         offline_key[0..secret_bytes.len()].copy_from_slice(secret_bytes);
     }
 
-    // Initialize AuthStore with identities from environment
-    let auth_store = AuthStore::new().with_identity(config.api_token.clone(), AuthRole::Admin);
-
     // Create AppState
     let app_state = AppState {
         shared: state.clone(),
-        auth: auth_store,
         fiat: fiat_router,
         a2p: a2p_router,
         identity: identity_manager,
@@ -233,7 +228,7 @@ async fn main() -> anyhow::Result<()> {
     });
 
     // Configure and start API server
-    let app = configure_routes(app_state);
+    let app = configure_routes(app_state, config.api_token);
     let addr = SocketAddr::from(([0, 0, 0, 0], config.api_port));
     info!("API server listening on {}", addr);
 

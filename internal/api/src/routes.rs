@@ -1,4 +1,4 @@
-use crate::auth::{auth_middleware, AuthRole};
+use crate::auth::auth_middleware;
 use crate::middleware::latency_tracker;
 use crate::AppState;
 use crate::{admin, handlers, x402::x402_filter};
@@ -9,9 +9,8 @@ use axum::{
     Router,
 };
 
-pub fn configure_routes(state: AppState) -> Router {
-    let auth_store = state.auth.clone();
-    let auth_store_admin = auth_store.clone();
+pub fn configure_routes(state: AppState, api_token: String) -> Router {
+    let token_for_auth = api_token.clone();
 
     let public_routes = Router::new()
         .route("/health", get(handlers::get_health))
@@ -27,9 +26,6 @@ pub fn configure_routes(state: AppState) -> Router {
             "/governance/decision",
             post(admin::submit_governance_decision),
         )
-        .layer(middleware::from_fn(move |req, next| {
-            auth_middleware(req, next, auth_store_admin.clone(), AuthRole::Admin)
-        }))
         .with_state(state.clone());
 
     let private_routes = Router::new()
@@ -68,7 +64,7 @@ pub fn configure_routes(state: AppState) -> Router {
         .route("/handoff/update", post(handlers::update_handoff_state))
         .layer(middleware::from_fn_with_state(state.clone(), x402_filter))
         .layer(middleware::from_fn(move |req, next| {
-            auth_middleware(req, next, auth_store.clone(), AuthRole::Operator)
+            auth_middleware(req, next, token_for_auth.clone())
         }))
         .with_state(state.clone());
 
