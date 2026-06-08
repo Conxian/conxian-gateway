@@ -1,11 +1,13 @@
 pub mod persistence;
 pub mod settlement;
+pub mod trust_policy;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 pub use settlement::*;
 use std::sync::{Arc, RwLock};
 use thiserror::Error;
 use tracing::info;
+pub use trust_policy::*;
 
 /// Current version of the Conxian Gateway core library.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -84,6 +86,8 @@ pub struct Metrics {
     pub verification_success: u64,
     pub verification_failure: u64,
     pub total_requests: u64,
+    pub trust_policy_allow: u64,
+    pub trust_policy_block: u64,
     /// Research enhancement: Treasury metrics
     pub treasury_balance_stx: f64,
     pub treasury_balance_btc: f64,

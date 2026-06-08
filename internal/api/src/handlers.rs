@@ -7,8 +7,8 @@ use axum::{
 };
 use compliance::SovereignCommit;
 use conxian_core::{
-    AttestationRequest, ConxianError, JobCardSettlementRequest, SettlementEnvelope,
-    SettlementProposal,
+    evaluate_trust_metadata_json, AttestationRequest, ConxianError, JobCardSettlementRequest,
+    SettlementEnvelope, SettlementProposal, TrustPolicyDecision, TrustPolicyReasonCode,
 };
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
@@ -17,6 +17,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{error, info, warn};
 
 pub const TEE_ATTESTATION_HEADER: &str = "x-tee-attestation";
+pub const TRUST_METADATA_HEADER: &str = "x-conxian-trust-metadata";
 const SETTLEMENT_LOG_MAX_ENTRIES: usize = 1000;
 const WEBHOOK_REPLAY_TTL_SECONDS: u64 = 60 * 60 * 24;
 
@@ -76,6 +77,8 @@ pub async fn get_metrics(State(state): State<AppState>) -> Json<Value> {
         "verification_success": s.metrics.verification_success,
         "verification_failure": s.metrics.verification_failure,
         "total_requests": s.metrics.total_requests,
+        "trust_policy_allow": s.metrics.trust_policy_allow,
+        "trust_policy_block": s.metrics.trust_policy_block,
         "treasury": {
             "balance_stx": s.metrics.treasury_balance_stx,
             "balance_btc": s.metrics.treasury_balance_btc,
@@ -200,6 +203,8 @@ pub async fn ingress_iso20022(
     State(state): State<AppState>,
     body: Body,
 ) -> Result<Json<SettlementProposal>, (StatusCode, Json<Value>)> {
+    enforce_ingress_trust_policy(&state, &headers)?;
+
     let raw_payload = body
         .collect()
         .await
@@ -326,6 +331,79 @@ pub async fn get_external_settlements(
     let log = state.settlement_log.read().await;
     let list: Vec<SettlementProposal> = log.iter().cloned().collect();
     Json(list)
+}
+
+fn enforce_ingress_trust_policy(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<(), (StatusCode, Json<Value>)> {
+    let decision = evaluate_trust_policy_from_headers(headers);
+    record_trust_policy_metric(state, decision);
+
+    match decision {
+        TrustPolicyDecision::Allow => Ok(()),
+        TrustPolicyDecision::Block(reason) => {
+            warn!(
+                code = reason.as_str(),
+                "Ingress request rejected by trust-tier policy"
+            );
+            Err(trust_policy_error_response(reason))
+        }
+    }
+}
+
+fn evaluate_trust_policy_from_headers(headers: &HeaderMap) -> TrustPolicyDecision {
+    let now_epoch_secs = unix_epoch_secs();
+    let raw_metadata = match headers.get(TRUST_METADATA_HEADER) {
+        Some(value) => match value.to_str() {
+            Ok(raw) => Some(raw),
+            Err(_) => {
+                return TrustPolicyDecision::Block(TrustPolicyReasonCode::MetadataInvalid);
+            }
+        },
+        None => None,
+    };
+
+    evaluate_trust_metadata_json(raw_metadata, now_epoch_secs)
+}
+
+fn record_trust_policy_metric(state: &AppState, decision: TrustPolicyDecision) {
+    if let Ok(mut s) = state.shared.write() {
+        match decision {
+            TrustPolicyDecision::Allow => s.metrics.trust_policy_allow += 1,
+            TrustPolicyDecision::Block(_) => s.metrics.trust_policy_block += 1,
+        }
+    }
+}
+
+fn trust_policy_error_response(reason: TrustPolicyReasonCode) -> (StatusCode, Json<Value>) {
+    (
+        StatusCode::FORBIDDEN,
+        Json(json!({
+            "code": reason.as_str(),
+            "message": trust_policy_message(reason),
+        })),
+    )
+}
+
+fn trust_policy_message(reason: TrustPolicyReasonCode) -> &'static str {
+    match reason {
+        TrustPolicyReasonCode::MetadataMissing => {
+            "Missing required x-conxian-trust-metadata header"
+        }
+        TrustPolicyReasonCode::MetadataInvalid => "Invalid x-conxian-trust-metadata header payload",
+        TrustPolicyReasonCode::MetadataStale => "Trust metadata is stale or expired",
+        TrustPolicyReasonCode::PolicyBlocked => {
+            "Trust tier policy blocks this bridge system and tier combination"
+        }
+    }
+}
+
+fn unix_epoch_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
 }
 
 fn verify_tee_settlement_attestation(
@@ -672,6 +750,8 @@ pub async fn ingress_papss(
     State(state): State<AppState>,
     body: Body,
 ) -> Result<Json<SettlementProposal>, (StatusCode, Json<Value>)> {
+    enforce_ingress_trust_policy(&state, &headers)?;
+
     let raw_payload = body
         .collect()
         .await
@@ -724,6 +804,8 @@ pub async fn ingress_brics(
     State(state): State<AppState>,
     body: Body,
 ) -> Result<Json<SettlementProposal>, (StatusCode, Json<Value>)> {
+    enforce_ingress_trust_policy(&state, &headers)?;
+
     let raw_payload = body
         .collect()
         .await
