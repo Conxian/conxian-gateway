@@ -555,7 +555,7 @@ mod tests {
                 .pop_front()
                 .unwrap_or_else(|| {
                     MockOutcome::Error(LightningBackendError::Rejected {
-                        detail: "no mock response available".to_string(),
+                        detail: "no simulated response available".to_string(),
                     })
                 });
 
