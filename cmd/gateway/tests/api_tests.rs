@@ -24,7 +24,7 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::HashSet,
     sync::{Arc, Mutex, RwLock},
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tokio::time::sleep;
 use tower::ServiceExt;
@@ -134,6 +134,32 @@ fn make_tee_attestation_header(payload_hash: &str) -> String {
     make_attestation_header(&format!("{}test-123", TEE_DEVICE_ID_PREFIX), payload_hash)
 }
 
+fn make_trust_metadata_header(system: &str, trust_tier: &str, allowed_systems: &[&str]) -> String {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    serde_json::to_string(&json!({
+        "system": system,
+        "trust_tier": trust_tier,
+        "policy": {
+            "policy_id": "CON-791",
+            "policy_version": "2026-06-01",
+            "allowed_systems": allowed_systems,
+        },
+        "evidence": {
+            "source": "gateway-api-tests",
+            "reference": "trust-tier-check"
+        },
+        "freshness": {
+            "observed_at_epoch_secs": now,
+            "max_age_secs": 600
+        }
+    }))
+    .unwrap()
+}
+
 #[derive(Clone)]
 struct SingleOutcomeBackend {
     outcome: Result<LightningSettlementResponse, LightningBackendError>,
@@ -227,6 +253,10 @@ async fn test_get_metrics_authorized() {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(payload["trust_policy_allow"], 0);
+    assert_eq!(payload["trust_policy_block"], 0);
 }
 
 #[tokio::test]
@@ -405,6 +435,45 @@ async fn test_ingress_iso20022_authorized() {
 
     let raw_payload_hash = hex::encode(Sha256::digest(xml_payload.as_bytes()));
     let tee_attestation = make_tee_attestation_header(&raw_payload_hash);
+    let trust_metadata = make_trust_metadata_header("IBC", "T2", &[]);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/ingress/iso20022")
+                .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("Content-Type", "application/xml")
+                .header("x-iso20022-signature", signature)
+                .header("x-tee-attestation", tee_attestation)
+                .header("x-conxian-trust-metadata", trust_metadata)
+                .header("x-402-payment", TEST_X402_PROOF)
+                .body(Body::from(xml_payload))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn test_ingress_iso20022_missing_trust_metadata_blocked() {
+    let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
+    {
+        let mut s = state.write().unwrap();
+        s.stacks.burn_block_height = Some(55);
+    }
+    let app = setup_app(state);
+
+    let xml_payload = r#"<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pacs.008.001.08"><FIToFICstmrCdtTrf><GrpHdr><MsgId>TX-123</MsgId></GrpHdr><CdtTrfTxInf><IntrBkSttlmAmt Ccy="sBTC">0.5</IntrBkSttlmAmt><Dbtr><Nm>SENDER</Nm></Dbtr><Cdtr><Nm>RECEIVER</Nm></Cdtr></CdtTrfTxInf></FIToFICstmrCdtTrf></Document>"#;
+
+    let mut mac = Hmac::<Sha256>::new_from_slice(TEST_SETTLEMENT_SECRET.as_bytes()).unwrap();
+    mac.update(xml_payload.as_bytes());
+    let signature = hex::encode(mac.finalize().into_bytes());
+
+    let raw_payload_hash = hex::encode(Sha256::digest(xml_payload.as_bytes()));
+    let tee_attestation = make_tee_attestation_header(&raw_payload_hash);
 
     let response = app
         .oneshot(
@@ -422,7 +491,52 @@ async fn test_ingress_iso20022_authorized() {
         .await
         .unwrap();
 
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(payload["code"], "TRUST_METADATA_MISSING");
+}
+
+#[tokio::test]
+async fn test_ingress_iso20022_denied_combo_blocked() {
+    let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
+    {
+        let mut s = state.write().unwrap();
+        s.stacks.burn_block_height = Some(55);
+    }
+    let app = setup_app(state);
+
+    let xml_payload = r#"<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pacs.008.001.08"><FIToFICstmrCdtTrf><GrpHdr><MsgId>TX-123</MsgId></GrpHdr><CdtTrfTxInf><IntrBkSttlmAmt Ccy="sBTC">0.5</IntrBkSttlmAmt><Dbtr><Nm>SENDER</Nm></Dbtr><Cdtr><Nm>RECEIVER</Nm></Cdtr></CdtTrfTxInf></FIToFICstmrCdtTrf></Document>"#;
+
+    let mut mac = Hmac::<Sha256>::new_from_slice(TEST_SETTLEMENT_SECRET.as_bytes()).unwrap();
+    mac.update(xml_payload.as_bytes());
+    let signature = hex::encode(mac.finalize().into_bytes());
+
+    let raw_payload_hash = hex::encode(Sha256::digest(xml_payload.as_bytes()));
+    let tee_attestation = make_tee_attestation_header(&raw_payload_hash);
+    let trust_metadata = make_trust_metadata_header("HYPERLANE", "T1", &[]);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/ingress/iso20022")
+                .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("Content-Type", "application/xml")
+                .header("x-iso20022-signature", signature)
+                .header("x-tee-attestation", tee_attestation)
+                .header("x-conxian-trust-metadata", trust_metadata)
+                .header("x-402-payment", TEST_X402_PROOF)
+                .body(Body::from(xml_payload))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(payload["code"], "TRUST_POLICY_BLOCKED");
 }
 
 #[tokio::test]
