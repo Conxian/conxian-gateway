@@ -26,3 +26,8 @@ Thumbs.db
 node_modules/
 test-results/
 playwright-report/
+.idx/
+.jules/
+.Jules/
+.gemini/
+.vscode/
