@@ -1,3 +1,4 @@
+use hmac::KeyInit;
 use conxian_core::{ConxianError, ConxianResult};
 use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};

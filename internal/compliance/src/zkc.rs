@@ -1,3 +1,4 @@
+use hmac::KeyInit;
 use crate::SovereignCommit;
 use conxian_core::{
     Attestation, AttestationRequest, ConxianError, ConxianJobCard, ConxianResult, IndustrialIntent,

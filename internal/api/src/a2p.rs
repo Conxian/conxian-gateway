@@ -1,3 +1,4 @@
+use hmac::KeyInit;
 use conxian_core::{ConxianError, ConxianResult};
 use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
@@ -196,8 +197,7 @@ fn generate_otp_code() -> String {
 
 #[cfg(not(test))]
 fn generate_otp_code() -> String {
-    use rand::{rngs::OsRng, Rng};
-    format!("{:06}", OsRng.gen_range(0..1_000_000))
+    format!("{:06}", rand::random_range(0..1_000_000))
 }
 
 #[cfg(test)]

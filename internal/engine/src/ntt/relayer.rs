@@ -105,9 +105,9 @@ mod tests {
     use super::*;
     use conxian_core::GatewayState;
     use serde_json::json;
-    use std::sync::{Arc, Mutex, RwLock};
+    use std::sync::{Arc, RwLock};
 
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
+    static ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
     fn set_env_var(key: &str, value: String) {
         #[allow(unused_unsafe)]
@@ -146,7 +146,7 @@ mod tests {
 
     #[tokio::test]
     async fn submit_vaa_blocks_when_metadata_is_denied() {
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = ENV_LOCK.lock().await;
         let metadata = trust_metadata("WORMHOLE_NTT", "T4");
         set_env_var(NTT_TRUST_METADATA_ENV, metadata);
 
@@ -163,7 +163,7 @@ mod tests {
 
     #[tokio::test]
     async fn submit_vaa_allows_when_metadata_passes_policy() {
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = ENV_LOCK.lock().await;
         let metadata = trust_metadata("WORMHOLE_NTT", "T2");
         set_env_var(NTT_TRUST_METADATA_ENV, metadata);
 

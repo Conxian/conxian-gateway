@@ -57,7 +57,7 @@ async fn test_offline_pos_blackout_reconciliation() {
 
     let api_token = "test-token";
     let app = configure_routes(app_state, api_token.to_string());
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     let device_id = "conxius-mock-device-1";
     let passkey_payload = "mock-payload";
