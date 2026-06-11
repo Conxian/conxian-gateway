@@ -11,15 +11,20 @@ Thank you for your interest in contributing to Conxian! We welcome contributions
 ## Getting Started
 1. Fork the repository and clone it to your local machine.
 2. Install the latest stable Rust toolchain: `rustup update stable`.
-3. Build the project: `cargo build`.
-4. Run tests: `cargo test`.
+3. Install Node.js (v20+) and PNPM: `npm install -g pnpm`.
+4. Build the project: `cargo build` and `pnpm install && pnpm build`.
+5. Run tests: `cargo test --workspace` and `pnpm test`.
 
 ## Submission Process
 1. Create a new branch for your changes: `git checkout -b my-feature`.
-2. Ensure your code passes linting: `cargo clippy --all-targets --all-features -- -D warnings`.
-3. Ensure your code is formatted: `cargo fmt --all -- --check`.
-4. Verify all tests pass: `cargo test`.
-5. Commit your changes with a descriptive message.
+2. Ensure Rust code passes quality checks:
+   - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+   - `cargo fmt --all -- --check`
+   - `cargo test --workspace`
+3. Ensure TypeScript code passes quality checks:
+   - `pnpm lint`
+   - `pnpm test`
+4. Commit your changes with a descriptive message.
 6. Submit a Pull Request (PR) with a clear description of the problem solved or feature added.
 
 ## Coding Standards

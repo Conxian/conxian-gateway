@@ -19,3 +19,7 @@
 /CHANGELOG.md @botshelomokoka @admin-conxian-labs
 /docs/READINESS_GATES.md @botshelomokoka @admin-conxian-labs
 /docs/** @botshelomokoka @admin-conxian-labs
+
+# Workspace components
+/apps/** @botshelomokoka @admin-conxian-labs
+/packages/** @botshelomokoka @admin-conxian-labs
