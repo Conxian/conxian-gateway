@@ -1,7 +1,9 @@
+pub mod lightning;
 pub mod persistence;
 pub mod settlement;
 pub mod trust_policy;
 use async_trait::async_trait;
+pub use lightning::*;
 use serde::{Deserialize, Serialize};
 pub use settlement::*;
 use std::sync::{Arc, RwLock};
