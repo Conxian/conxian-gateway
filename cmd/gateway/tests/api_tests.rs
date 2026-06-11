@@ -1,4 +1,3 @@
-use hmac::KeyInit;
 use api::a2p::A2pRouter;
 use api::fiat::FiatRouter;
 use api::lightning::{
@@ -17,6 +16,7 @@ use conxian_core::{
     Attestation, AttestationRequest, BitVmAttestation, ConxianJobCard, GatewayState, SharedState,
     WorkIntent,
 };
+use hmac::KeyInit;
 use hmac::{Hmac, Mac};
 use http_body_util::BodyExt;
 use secp256k1::{Message, Secp256k1, SecretKey};

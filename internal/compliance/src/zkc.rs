@@ -1,10 +1,10 @@
-use hmac::KeyInit;
 use crate::SovereignCommit;
 use conxian_core::{
     Attestation, AttestationRequest, ConxianError, ConxianJobCard, ConxianResult, IndustrialIntent,
     JobCardSettlementRequest, NormalizedSettlement, SettlementEnvelope, SettlementFinality,
     SettlementIdentifiers, SettlementSource, SettlementStatus, SETTLEMENT_ENVELOPE_VERSION_CURRENT,
 };
+use hmac::KeyInit;
 use hmac::{Hmac, Mac};
 use secp256k1::{Message, PublicKey, Secp256k1};
 use sha2::{Digest, Sha256};

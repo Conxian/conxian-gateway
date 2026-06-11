@@ -7,6 +7,7 @@ from typing import Dict, Tuple
 DEFAULT_SCOPE_FILES = [
     "internal/api/src/lightning.rs",
     "internal/api/src/x402.rs",
+    "pkg/conxian-core/src/lightning.rs",
 ]
 
 
