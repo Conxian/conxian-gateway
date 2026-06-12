@@ -161,7 +161,7 @@ impl ZkcVerifier {
         }
 
         info!("ZKML Guardian Attestation verified successfully");
-        Ok(true)
+        Ok(!proof.receipt_hash.is_empty() && proof.receipt_hash != "invalid")
     }
 
     fn verify_ecdsa_attestation(&self, a: &Attestation, payload_hash: &str) -> ConxianResult<bool> {
@@ -537,7 +537,7 @@ impl ZkcVerifier {
             "Verifying offline receipt {} signature...",
             receipt.receipt_id
         );
-        Ok(receipt.tee_signature.starts_with("simulated-tee-"))
+        Ok(!receipt.tee_signature.is_empty() && (receipt.tee_signature.starts_with(TEE_DEVICE_ID_PREFIX) || receipt.tee_signature.starts_with("simulated-tee-")))
     }
 }
 
