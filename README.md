@@ -36,11 +36,14 @@ This repository is maintained by Conxian Labs as part of the public Conxian stac
 
 ## Architecture overview
 
-- `/cmd/gateway`: entry point, configuration, dependency wiring
-- `/internal/engine`: chain listeners, treasury monitor, and execution services
-- `/internal/api`: REST API, auth middleware, and handlers
-- `/internal/compliance`: verification, attestation, and policy enforcement
-- `/pkg/conxian-core`: shared models and persistence primitives
+- `/apps/control-plane`: Next.js management dashboard for the gateway.
+- `/cmd/gateway`: entry point, configuration, dependency wiring.
+- `/internal/engine`: chain listeners, treasury monitor, and execution services.
+- `/internal/api`: REST API, auth middleware, and handlers.
+- `/internal/compliance`: verification, attestation, and policy enforcement.
+- `/packages/client-sdk`: TypeScript SDK for Conxian integrations.
+- `/packages/schemas`: Shared JSON-LD schemas and type definitions.
+- `/pkg/conxian-core`: shared Rust models and persistence primitives.
 
 ## Configuration
 
@@ -54,18 +57,33 @@ Use `.env.example` as the template. Do not commit real secrets.
 
 ## Development
 
+### Rust (Gateway)
 ```bash
 cargo build --release
 cargo run --bin gateway
-cargo test --all-features
+cargo test --workspace
+```
+
+### TypeScript (Control-Plane & SDK)
+```bash
+pnpm install
+pnpm build
+pnpm --filter control-plane dev
 ```
 
 ## Quality checks
 
+### Rust
 ```bash
-cargo clippy --all-targets --all-features -- -D warnings
+cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo fmt --all -- --check
-cargo test
+cargo test --workspace
+```
+
+### TypeScript
+```bash
+pnpm lint
+pnpm test
 ```
 
 ## Policies
