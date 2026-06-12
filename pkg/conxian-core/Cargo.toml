@@ -13,3 +13,4 @@ hex = "0.4.3"
 rusqlite = { workspace = true }
 aes-gcm = { workspace = true }
 async-trait = { workspace = true }
+chrono = { workspace = true }

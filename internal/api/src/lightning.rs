@@ -1,6 +1,7 @@
 use crate::x402::X402PaymentPayload;
 use async_trait::async_trait;
 use axum::http::StatusCode;
+use conxian_core::{FailureTaxonomy, PaymentIntent, PaymentLifecycle};
 use std::{
     collections::HashSet,
     sync::{Arc, Mutex},
@@ -136,6 +137,23 @@ impl LightningAdapterError {
             }
         }
     }
+
+    pub fn taxonomy(&self) -> FailureTaxonomy {
+        match self {
+            Self::ExpiredInvoice { .. }
+            | Self::UnsupportedAsset { .. }
+            | Self::AmountMismatch { .. }
+            | Self::ProofMismatch
+            | Self::BackendRejected { .. }
+            | Self::ReplayDetected { .. } => FailureTaxonomy::Permanent,
+            Self::BackendUnavailable | Self::BackendTimeout | Self::ReplayStoreFailure { .. } => {
+                FailureTaxonomy::Transient
+            }
+            Self::PartialFailure { .. } | Self::MissingPreimage | Self::MissingProof => {
+                FailureTaxonomy::Indeterminate
+            }
+        }
+    }
 }
 
 pub trait ReplayGuard: Send + Sync {
@@ -244,6 +262,14 @@ impl LightningAdapter {
         let now = (self.now)();
         validate_request(payload, now)?;
 
+        let mut intent = PaymentIntent::new(
+            uuid::Uuid::new_v4().to_string(),
+            payload.challenge.clone(),
+            payload.amount as u64,
+            payload.asset.clone(),
+            payload.expiry,
+        );
+
         let replay_key = replay_key(payload);
         let claimed = self
             .replay_guard
@@ -256,6 +282,10 @@ impl LightningAdapter {
             });
         }
 
+        intent
+            .transition(PaymentLifecycle::Pending)
+            .expect("Valid transition");
+
         let request = LightningSettlementRequest {
             challenge: payload.challenge.clone(),
             amount: payload.amount,
@@ -264,7 +294,7 @@ impl LightningAdapter {
             proof_refs: payload.proof_refs.clone(),
         };
 
-        match self.settle_with_retries(request.clone()).await {
+        match self.settle_with_retries(request.clone(), &mut intent).await {
             Ok(response) => match validate_response(payload, &response) {
                 Ok(()) => {
                     info!(
@@ -272,6 +302,9 @@ impl LightningAdapter {
                         amount = %response.settled_amount,
                         "Lightning payment settled"
                     );
+                    intent
+                        .transition(PaymentLifecycle::Settled)
+                        .expect("Valid transition");
                     Ok(LightningExecutionReceipt {
                         challenge: payload.challenge.clone(),
                         settled_amount: response.settled_amount,
@@ -280,11 +313,29 @@ impl LightningAdapter {
                     })
                 }
                 Err(error) => {
+                    intent.failure_reason = Some(error.taxonomy());
+                    intent.last_error = Some(error.message());
+                    intent
+                        .transition(match intent.failure_reason {
+                            Some(FailureTaxonomy::Indeterminate) => PaymentLifecycle::Stuck,
+                            _ => PaymentLifecycle::Failed,
+                        })
+                        .expect("Valid transition");
+
                     release_replay_claim(&*self.replay_guard, &replay_key);
                     Err(error)
                 }
             },
             Err(error) => {
+                intent.failure_reason = Some(error.taxonomy());
+                intent.last_error = Some(error.message());
+                intent
+                    .transition(match intent.failure_reason {
+                        Some(FailureTaxonomy::Indeterminate) => PaymentLifecycle::Stuck,
+                        _ => PaymentLifecycle::Failed,
+                    })
+                    .expect("Valid transition");
+
                 release_replay_claim(&*self.replay_guard, &replay_key);
                 Err(error)
             }
@@ -294,8 +345,10 @@ impl LightningAdapter {
     async fn settle_with_retries(
         &self,
         request: LightningSettlementRequest,
+        intent: &mut PaymentIntent,
     ) -> Result<LightningSettlementResponse, LightningAdapterError> {
         for attempt in 0..=self.max_retries {
+            intent.retry_count = attempt as u32;
             let backend = self.backend.clone();
             let request_clone = request.clone();
 
@@ -908,5 +961,21 @@ mod tests {
             assert_eq!(error.code(), code);
             assert!(error.message().contains(message_fragment));
         }
+    }
+
+    #[test]
+    fn test_failure_taxonomy_mapping() {
+        assert_eq!(
+            LightningAdapterError::BackendTimeout.taxonomy(),
+            FailureTaxonomy::Transient
+        );
+        assert_eq!(
+            LightningAdapterError::MissingProof.taxonomy(),
+            FailureTaxonomy::Indeterminate
+        );
+        assert_eq!(
+            LightningAdapterError::ProofMismatch.taxonomy(),
+            FailureTaxonomy::Permanent
+        );
     }
 }
