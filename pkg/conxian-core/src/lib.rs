@@ -250,7 +250,7 @@ impl DlcOrchestrator for DlcManager {
             "Settling coupon for DLC bond {}: {} sBTC",
             bond_id, amount_sbtc
         );
-        Ok(true)
+        Ok(!bond_id.is_empty())
     }
 }
 
