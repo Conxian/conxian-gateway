@@ -31,8 +31,8 @@ use tokio::time::sleep;
 use tower::ServiceExt;
 
 const TEST_TOKEN: &str = "test-token";
-const TEST_FIAT_SECRET: &str = "test-fiat-secret";
-const TEST_SETTLEMENT_SECRET: &str = "test-settlement-secret";
+const TEST_FIAT_SECRET: &str = "fake";
+const TEST_SETTLEMENT_SECRET: &str = "stub";
 const TEST_X402_PROOF: &str = "proof-test-123";
 
 fn setup_app(state: SharedState) -> axum::Router {
