@@ -1,7 +1,7 @@
 use api::{configure_routes, new_lightning_adapter, new_settlement_log, AppState};
 use axum::http::StatusCode;
 use axum_test::TestServer;
-use compliance::zkc::{ATTESTATION_SIGNING_DOMAIN, TEE_DEVICE_ID_PREFIX};
+use compliance::zkc::ATTESTATION_SIGNING_DOMAIN;
 use compliance::{IdentityManager, ZkcVerifier};
 use conxian_core::{GatewayState, SharedState};
 use engine::stacks::alex::SimulatedAlexClient;
@@ -59,7 +59,7 @@ async fn test_offline_pos_blackout_reconciliation() {
     let app = configure_routes(app_state, api_token.to_string());
     let server = TestServer::new(app);
 
-    let device_id = format!("{TEE_DEVICE_ID_PREFIX}mock-device-1");
+    let device_id = "conxius-tee-device-1";
     let passkey_payload = "mock-payload";
 
     let secp = Secp256k1::new();
@@ -69,13 +69,14 @@ async fn test_offline_pos_blackout_reconciliation() {
 
     let mut hasher = Sha256::new();
     hasher.update(ATTESTATION_SIGNING_DOMAIN);
-    hasher.update(passkey_payload.as_bytes());
     hasher.update(device_id.as_bytes());
+    hasher.update([0u8]);
+    hasher.update(passkey_payload.as_bytes());
 
     let digest = hasher.finalize();
     let message = Message::from_digest_slice(&digest).unwrap();
     let signature = secp.sign_ecdsa(&message, &secret_key);
-    let signature_hex = hex::encode(signature.serialize_compact());
+    let signature_hex = hex::encode(signature.serialize_der());
 
     let count = 10;
     for i in 0..count {
@@ -83,11 +84,11 @@ async fn test_offline_pos_blackout_reconciliation() {
         let payload = json!({
             "tx_hash": tx_hash,
             "amount_sbtc": 0.001,
-            "device_id": &device_id,
+            "device_id": device_id,
             "passkey_attestation": {
                 "type": "Ecdsa",
                 "data": {
-                    "device_id": &device_id,
+                    "device_id": device_id,
                     "signature": signature_hex,
                     "payload": passkey_payload,
                     "public_key": public_key_hex

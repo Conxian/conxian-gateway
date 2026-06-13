@@ -124,18 +124,18 @@ impl ZkcVerifier {
 
                 let mut hasher = Sha256::new();
                 hasher.update(ATTESTATION_SIGNING_DOMAIN);
-                hasher.update(att.payload.as_bytes());
                 hasher.update(att.device_id.as_bytes());
+                hasher.update([0u8]);
+                hasher.update(att.payload.as_bytes());
                 let msg = Message::from_digest(hasher.finalize().into());
 
-                let sig = secp256k1::ecdsa::Signature::from_compact(
-                    &hex::decode(&att.signature).map_err(|e| {
-                        ConxianError::Compliance(format!("Invalid signature hex: {}", e))
-                    })?,
-                )
-                .map_err(|e| {
-                    ConxianError::Compliance(format!("Invalid signature format: {}", e))
-                })?;
+                let sig =
+                    secp256k1::ecdsa::Signature::from_der(&hex::decode(&att.signature).map_err(
+                        |e| ConxianError::Compliance(format!("Invalid signature hex: {}", e)),
+                    )?)
+                    .map_err(|e| {
+                        ConxianError::Compliance(format!("Invalid signature format: {}", e))
+                    })?;
 
                 self.secp.verify_ecdsa(&msg, &sig, &pubkey).map_err(|e| {
                     ConxianError::Compliance(format!("Signature verification failed: {}", e))
