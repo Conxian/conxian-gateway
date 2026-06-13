@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Added `docs/research/UNIVERSAL_CHAIN_RESEARCH.md` covering multi-chain adapter patterns and event bus delivery logic.
+
+### Changed
+- Hardened `internal/api/src/auth.rs` by replacing insecure sentinel strings with compliant production identifiers.
+- Integrated dynamic `chrono::Utc` timestamps in `ZkcVerifier` for ISO 20022 message generation, replacing hardcoded legacy dates.
+- Updated `docker-compose.yml` with hardened sentinel values for webhook and ingress secrets.
+
 ### Documentation
 - Clarified readiness language so real runtime code, simulated validation paths, and production-enforced controls are not conflated in status messaging.
 

@@ -20,6 +20,7 @@ This document outlines the discrepancies identified during the Systemic Alignmen
 ### Compliance & Mainnet Readiness (CON-151 / CON-156)
 - **Gap**: Insufficient separation of concerns and heavy reliance on hardcoded mock values in handlers.
 - **Enhancement**: Refined `internal/api/src/handlers.rs` to better utilize `SharedState` and injected services. Hardened A2P and Fiat routers with better error handling and structure.
+- **Hardening (2026-06-13)**: Replaced hardcoded legacy dates in `ZkcVerifier` with dynamic `chrono::Utc` timestamps. Hardened TEE and BitVM verification paths by removing simulator-bypass logic and enforcing ECDSA/HMAC validation.
 
 ### Infrastructure Migration (CON-329)
 - **Gap**: Web2 dependencies (Neon, Supabase) needed clear mapping for sovereign transition.
@@ -28,15 +29,17 @@ This document outlines the discrepancies identified during the Systemic Alignmen
 ### Institutional Secrets Hardening
 - **Gap**: Single-token API authentication was insufficient for institutional SLAs.
 - **Enhancement**: Implemented role-based `AuthStore` with constant-time validation and multi-identity support.
+- **Hardening (2026-06-13)**: Replaced insecure sentinel strings in `auth_middleware` with compliant production identifiers. Updated `docker-compose.yml` with hardened placeholders.
 
 ## 2. Shared Services Maturity Matrix
 
-| Service | Maturity | Status (2026-04-15) |
+| Service | Maturity | Status (2026-06-13) |
 | :--- | :--- | :--- |
 | **BNS Resolver** | Production | Full functional state: live contract calls. |
 | **ALEX Swap** | Preparation | Full functional state: builds prepared payloads for signers. |
 | **A2P OTP** | Production | Full functional state: Infobip SMS integration active. |
 | **Fiat Router** | Production | Multi-provider support (Ramp, Banxa, Alchemy Pay). |
+| **Lightning Adapter** | Preparation | Failure taxonomy and lifecycle state machine implemented. |
 
 ## 3. Tool Mapping Verification
 

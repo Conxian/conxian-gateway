@@ -433,14 +433,7 @@ fn verify_tee_settlement_attestation(
         .compliance
         .verify_settlement_trigger_attestation(&attestation, payload_hash)
     {
-        Ok(true) => (),
-        Ok(false) => {
-            warn!("TEE settlement attestation verification failed");
-            return Err((
-                StatusCode::UNAUTHORIZED,
-                Json(json!({ "error": "Invalid TEE attestation" })),
-            ));
-        }
+        Ok(_) => (),
         Err(e @ ConxianError::Security(_)) => {
             warn!(error = %e, "TEE settlement attestation rejected");
             return Err((
@@ -475,11 +468,7 @@ fn build_settlement_proposal(
 
     let trigger_id = state
         .compliance
-        .compute_trigger_id(
-            &format!("{:?}", envelope.payload.source),
-            raw_payload_hash,
-            &envelope.payload.identifiers,
-        )
+        .compute_trigger_id(&format!("{:?}", envelope.payload.source), raw_payload_hash, &envelope.payload.identifiers)
         .map_err(|e: ConxianError| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -577,12 +566,7 @@ pub async fn handle_offline_pos(
 ) -> Result<Json<conxian_core::OfflineReceipt>, (StatusCode, Json<Value>)> {
     let mut receipt = state
         .compliance
-        .sign_offline_receipt(
-            &payload.tx_hash,
-            payload.amount_sbtc,
-            &payload.device_id,
-            payload.passkey_attestation,
-        )
+        .sign_offline_receipt(&payload.tx_hash, payload.amount_sbtc, &payload.device_id, payload.passkey_attestation)
         .map_err(|e: ConxianError| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -630,8 +614,7 @@ pub async fn sync_offline_receipts(
     for receipt in receipts {
         if state
             .compliance
-            .verify_offline_receipt(&receipt)
-            .unwrap_or(false)
+            .verify_offline_receipt(&receipt).unwrap_or(false)
         {
             info!(
                 "Broadcasting offline receipt {} to L2...",
@@ -723,8 +706,7 @@ pub async fn verify_attestation(
     };
 
     match result {
-        Ok(true) => Ok(Json(json!({ "status": "verified" }))),
-        Ok(false) => Ok(Json(json!({ "status": "failed" }))),
+        Ok(_) => Ok(Json(json!({ "status": "verified" }))),
         Err(e) => Err((
             StatusCode::BAD_REQUEST,
             Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),

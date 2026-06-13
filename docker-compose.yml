@@ -11,8 +11,8 @@ services:
       - API_TOKEN=${SOVEREIGN_API_TOKEN:-local-dev-token}
       - BITCOIN_RPC_URL=${BITCOIN_RPC_URL:-https://bitcoin-rpc.publicnode.com}
       - STACKS_RPC_URL=${STACKS_RPC_URL:-https://api.mainnet.hiro.so}
-      - FIAT_WEBHOOK_SECRET=${FIAT_WEBHOOK_SECRET:-changeme_fiat}
-      - SETTLEMENT_INGRESS_SECRET=${SETTLEMENT_INGRESS_SECRET:-changeme_ingress}
+      - FIAT_WEBHOOK_SECRET=${FIAT_WEBHOOK_SECRET:-sentinel_fiat_secret}
+      - SETTLEMENT_INGRESS_SECRET=${SETTLEMENT_INGRESS_SECRET:-sentinel_ingress_secret}
     ports:
       - "3000:3000"
     volumes:
