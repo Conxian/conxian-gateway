@@ -112,18 +112,17 @@ fn make_attestation_header(device_id: &str, payload_hash: &str) -> String {
 
     let mut hasher = Sha256::new();
     hasher.update(ATTESTATION_SIGNING_DOMAIN);
-    hasher.update(device_id.as_bytes());
-    hasher.update([0u8]);
     hasher.update(payload_hash.as_bytes());
+    hasher.update(device_id.as_bytes());
     let digest = hasher.finalize();
 
     let message = Message::from_digest_slice(&digest).unwrap();
     let signature = secp.sign_ecdsa(&message, &secret_key);
-    let signature_der = signature.serialize_der();
+    let signature = signature.serialize_compact();
 
     let attestation = AttestationRequest::Ecdsa(Attestation {
         device_id: device_id.to_string(),
-        signature: hex::encode(signature_der),
+        signature: hex::encode(signature),
         payload: payload_hash.to_string(),
         public_key: hex::encode(public_key.serialize()),
     });
