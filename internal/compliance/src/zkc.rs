@@ -1,17 +1,17 @@
 use crate::SovereignCommit;
 use conxian_core::{
     Attestation, AttestationRequest, ConxianError, ConxianJobCard, ConxianResult, IndustrialIntent,
-    JobCardSettlementRequest, NormalizedSettlement, SettlementEnvelope, SettlementFinality,
-    SettlementIdentifiers, SettlementSource, SettlementStatus, SETTLEMENT_ENVELOPE_VERSION_CURRENT,
-    OfflineReceipt, OfflineReceiptStatus
+    JobCardSettlementRequest, NormalizedSettlement, OfflineReceipt, OfflineReceiptStatus,
+    SettlementEnvelope, SettlementFinality, SettlementIdentifiers, SettlementSource,
+    SettlementStatus, SETTLEMENT_ENVELOPE_VERSION_CURRENT,
 };
 use hmac::KeyInit;
 use hmac::{Hmac, Mac};
 use secp256k1::{Message, PublicKey, Secp256k1};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{info, warn};
-use serde_json::Value;
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -104,7 +104,10 @@ impl ZkcVerifier {
         Ok(true)
     }
 
-    pub fn verify_tee_attestation(&self, request: &AttestationRequest) -> ConxianResult<Attestation> {
+    pub fn verify_tee_attestation(
+        &self,
+        request: &AttestationRequest,
+    ) -> ConxianResult<Attestation> {
         match request {
             AttestationRequest::Ecdsa(att) => {
                 if !att.device_id.starts_with(TEE_DEVICE_ID_PREFIX) {
@@ -126,19 +129,24 @@ impl ZkcVerifier {
                 let msg = Message::from_digest(hasher.finalize().into());
 
                 let sig = secp256k1::ecdsa::Signature::from_compact(
-                    &hex::decode(&att.signature)
-                        .map_err(|e| ConxianError::Compliance(format!("Invalid signature hex: {}", e)))?,
+                    &hex::decode(&att.signature).map_err(|e| {
+                        ConxianError::Compliance(format!("Invalid signature hex: {}", e))
+                    })?,
                 )
-                .map_err(|e| ConxianError::Compliance(format!("Invalid signature format: {}", e)))?;
+                .map_err(|e| {
+                    ConxianError::Compliance(format!("Invalid signature format: {}", e))
+                })?;
 
-                self.secp
-                    .verify_ecdsa(&msg, &sig, &pubkey)
-                    .map_err(|e| ConxianError::Compliance(format!("Signature verification failed: {}", e)))?;
+                self.secp.verify_ecdsa(&msg, &sig, &pubkey).map_err(|e| {
+                    ConxianError::Compliance(format!("Signature verification failed: {}", e))
+                })?;
 
                 info!(device_id = %att.device_id, "TEE attestation verified");
                 Ok(att.clone())
             }
-            _ => Err(ConxianError::Compliance("Unsupported attestation type for TEE verification".to_string())),
+            _ => Err(ConxianError::Compliance(
+                "Unsupported attestation type for TEE verification".to_string(),
+            )),
         }
     }
 
@@ -150,11 +158,15 @@ impl ZkcVerifier {
         match request {
             AttestationRequest::Ecdsa(att) => {
                 if att.payload != payload_hash {
-                    return Err(ConxianError::Security("Attestation payload hash mismatch".to_string()));
+                    return Err(ConxianError::Security(
+                        "Attestation payload hash mismatch".to_string(),
+                    ));
                 }
                 self.verify_tee_attestation(request)
             }
-            _ => Err(ConxianError::Compliance("Unsupported attestation type for trigger verification".to_string())),
+            _ => Err(ConxianError::Compliance(
+                "Unsupported attestation type for trigger verification".to_string(),
+            )),
         }
     }
 
@@ -177,7 +189,6 @@ impl ZkcVerifier {
             settlement_amount: amount.to_string(),
             settlement_currency: "sBTC".to_string(),
             settlement_date: chrono::Utc::now().format("%Y-%m-%d").to_string(),
-            ..Default::default()
         };
 
         Ok(NormalizedSettlement {
@@ -259,10 +270,12 @@ impl ZkcVerifier {
 
         let identifiers = SettlementIdentifiers {
             message_id: Some(msg_id.clone()),
+            transaction_reference: None,
+            settlement_reference: None,
+            end_to_end_id: None,
             settlement_amount: amount_str,
             settlement_currency: "sBTC".to_string(),
             settlement_date: chrono::Utc::now().format("%Y-%m-%d").to_string(),
-            ..Default::default()
         };
 
         let timestamp = SystemTime::now()
@@ -298,16 +311,21 @@ impl ZkcVerifier {
         raw_payload_hash: String,
     ) -> ConxianResult<SettlementEnvelope> {
         info!("Normalizing PAPSS ingress...");
-        let txid = json["transaction_id"].as_str().unwrap_or("unknown").to_string();
+        let txid = json["transaction_id"]
+            .as_str()
+            .unwrap_or("unknown")
+            .to_string();
         let amount = json["amount"].as_u64().unwrap_or(0);
         let sender = json["sender"].as_str().unwrap_or("unknown").to_string();
 
         let identifiers = SettlementIdentifiers {
+            message_id: None,
             transaction_reference: Some(txid.clone()),
+            settlement_reference: None,
+            end_to_end_id: None,
             settlement_amount: amount.to_string(),
             settlement_currency: "USD".to_string(),
             settlement_date: chrono::Utc::now().format("%Y-%m-%d").to_string(),
-            ..Default::default()
         };
 
         let timestamp = SystemTime::now()
@@ -348,11 +366,13 @@ impl ZkcVerifier {
         let sender = json["sender"].as_str().unwrap_or("unknown").to_string();
 
         let identifiers = SettlementIdentifiers {
+            message_id: None,
+            transaction_reference: None,
             settlement_reference: Some(txid.clone()),
+            end_to_end_id: None,
             settlement_amount: amount.to_string(),
             settlement_currency: "RUB".to_string(),
             settlement_date: chrono::Utc::now().format("%Y-%m-%d").to_string(),
-            ..Default::default()
         };
 
         let timestamp = SystemTime::now()
@@ -398,10 +418,12 @@ impl ZkcVerifier {
 
                 let identifiers = SettlementIdentifiers {
                     message_id: Some(txid.clone()),
+                    transaction_reference: None,
+                    settlement_reference: None,
+                    end_to_end_id: None,
                     settlement_amount: amount.to_string(),
                     settlement_currency: currency.clone(),
                     settlement_date: chrono::Utc::now().format("%Y-%m-%d").to_string(),
-                    ..Default::default()
                 };
 
                 let timestamp = SystemTime::now()
@@ -435,7 +457,12 @@ impl ZkcVerifier {
         Ok(envelopes)
     }
 
-    pub fn compute_trigger_id(&self, source_info: &str, payload_hash: &str, identifiers: &SettlementIdentifiers) -> ConxianResult<String> {
+    pub fn compute_trigger_id(
+        &self,
+        source_info: &str,
+        payload_hash: &str,
+        identifiers: &SettlementIdentifiers,
+    ) -> ConxianResult<String> {
         let mut hasher = Sha256::new();
         hasher.update(source_info.as_bytes());
         hasher.update(payload_hash.as_bytes());
@@ -467,11 +494,17 @@ impl ZkcVerifier {
         })
     }
 
-    pub fn verify_offline_receipt(&self, receipt: &conxian_core::OfflineReceipt) -> ConxianResult<bool> {
+    pub fn verify_offline_receipt(
+        &self,
+        receipt: &conxian_core::OfflineReceipt,
+    ) -> ConxianResult<bool> {
         Ok(receipt.device_id.starts_with(TEE_DEVICE_ID_PREFIX))
     }
 
-    pub fn simulate_mesh_gossip(&self, receipt: &mut conxian_core::OfflineReceipt) -> ConxianResult<()> {
+    pub fn simulate_mesh_gossip(
+        &self,
+        receipt: &mut conxian_core::OfflineReceipt,
+    ) -> ConxianResult<()> {
         receipt.status = OfflineReceiptStatus::Gossiped;
         info!(
             device_id = %receipt.device_id,
@@ -492,9 +525,7 @@ impl SovereignCommit for ZkcVerifier {
     }
 
     fn commit_job_card(&self, _job_card: &ConxianJobCard) -> ConxianResult<()> {
-        info!(
-            "Committing job card to decentralized sovereign sharding (Tableland)"
-        );
+        info!("Committing job card to decentralized sovereign sharding (Tableland)");
         Ok(())
     }
 }

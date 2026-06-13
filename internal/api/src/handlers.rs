@@ -468,7 +468,11 @@ fn build_settlement_proposal(
 
     let trigger_id = state
         .compliance
-        .compute_trigger_id(&format!("{:?}", envelope.payload.source), raw_payload_hash, &envelope.payload.identifiers)
+        .compute_trigger_id(
+            &format!("{:?}", envelope.payload.source),
+            raw_payload_hash,
+            &envelope.payload.identifiers,
+        )
         .map_err(|e: ConxianError| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -566,7 +570,12 @@ pub async fn handle_offline_pos(
 ) -> Result<Json<conxian_core::OfflineReceipt>, (StatusCode, Json<Value>)> {
     let mut receipt = state
         .compliance
-        .sign_offline_receipt(&payload.tx_hash, payload.amount_sbtc, &payload.device_id, payload.passkey_attestation)
+        .sign_offline_receipt(
+            &payload.tx_hash,
+            payload.amount_sbtc,
+            &payload.device_id,
+            payload.passkey_attestation,
+        )
         .map_err(|e: ConxianError| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -614,7 +623,8 @@ pub async fn sync_offline_receipts(
     for receipt in receipts {
         if state
             .compliance
-            .verify_offline_receipt(&receipt).unwrap_or(false)
+            .verify_offline_receipt(&receipt)
+            .unwrap_or(false)
         {
             info!(
                 "Broadcasting offline receipt {} to L2...",

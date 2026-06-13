@@ -14,7 +14,8 @@ pub async fn auth_middleware(
 ) -> Result<Response, StatusCode> {
     // Insecure token check - must not be the sentinel or empty in production
     if expected_token.is_empty()
-        || expected_token == "sentinel_prod_api_token" || expected_token == format!("{}{}", "sentinel", "api_token")
+        || expected_token == "sentinel_prod_api_token"
+        || expected_token == format!("{}{}", "sentinel", "api_token")
         || expected_token == "sentinel_default_token"
     {
         warn!("API_TOKEN is insecure or not set. Rejecting all private requests.");

@@ -168,14 +168,16 @@ pub struct InMemoryReplayGuard {
 
 impl ReplayGuard for InMemoryReplayGuard {
     fn claim(&self, key: &str) -> Result<bool, String> {
-        let mut claims = self.claims
+        let mut claims = self
+            .claims
             .lock()
             .map_err(|_| "replay lock poisoned".to_string())?;
         Ok(claims.insert(key.to_string()))
     }
 
     fn release(&self, key: &str) -> Result<(), String> {
-        let mut claims = self.claims
+        let mut claims = self
+            .claims
             .lock()
             .map_err(|_| "replay lock poisoned".to_string())?;
         claims.remove(key);
@@ -311,7 +313,11 @@ impl LightningAdapter {
                 "Requesting Lightning settlement from backend"
             );
 
-            let outcome = timeout(self.backend_timeout, self.backend.settle_payment(settlement_req)).await;
+            let outcome = timeout(
+                self.backend_timeout,
+                self.backend.settle_payment(settlement_req),
+            )
+            .await;
 
             match outcome {
                 Ok(Ok(response)) => {
@@ -334,7 +340,9 @@ impl LightningAdapter {
                         break Err(LightningAdapterError::ProofMismatch);
                     }
 
-                    intent.transition(PaymentLifecycle::Settled).unwrap_or_default();
+                    intent
+                        .transition(PaymentLifecycle::Settled)
+                        .unwrap_or_default();
                     break Ok(LightningExecutionReceipt {
                         challenge: payload.challenge.clone(),
                         settled_amount: response.settled_amount,
@@ -437,7 +445,10 @@ mod tests {
 
     #[async_trait]
     impl LightningBackend for SequenceBackend {
-        async fn settle_payment(&self, _req: LightningSettlementRequest) -> Result<LightningSettlementResponse, LightningBackendError> {
+        async fn settle_payment(
+            &self,
+            _req: LightningSettlementRequest,
+        ) -> Result<LightningSettlementResponse, LightningBackendError> {
             let mut calls = self.calls.lock().unwrap();
             *calls += 1;
             let mut outcomes = self.outcomes.lock().unwrap();
@@ -452,7 +463,9 @@ mod tests {
             preimage: "preimage".to_string(),
             proof: "proof".to_string(),
         };
-        let backend = SequenceBackend::new(vec![MockOutcome { result: Ok(response) }]);
+        let backend = SequenceBackend::new(vec![MockOutcome {
+            result: Ok(response),
+        }]);
         let adapter = LightningAdapter::new(Arc::new(backend)).with_clock(|| 1000);
 
         let payload = X402PaymentPayload {
