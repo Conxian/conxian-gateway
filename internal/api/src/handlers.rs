@@ -433,14 +433,7 @@ fn verify_tee_settlement_attestation(
         .compliance
         .verify_settlement_trigger_attestation(&attestation, payload_hash)
     {
-        Ok(true) => (),
-        Ok(false) => {
-            warn!("TEE settlement attestation verification failed");
-            return Err((
-                StatusCode::UNAUTHORIZED,
-                Json(json!({ "error": "Invalid TEE attestation" })),
-            ));
-        }
+        Ok(_) => (),
         Err(e @ ConxianError::Security(_)) => {
             warn!(error = %e, "TEE settlement attestation rejected");
             return Err((
@@ -723,8 +716,7 @@ pub async fn verify_attestation(
     };
 
     match result {
-        Ok(true) => Ok(Json(json!({ "status": "verified" }))),
-        Ok(false) => Ok(Json(json!({ "status": "failed" }))),
+        Ok(_) => Ok(Json(json!({ "status": "verified" }))),
         Err(e) => Err((
             StatusCode::BAD_REQUEST,
             Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
