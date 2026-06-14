@@ -31,3 +31,8 @@ playwright-report/
 .Jules/
 .gemini/
 .vscode/
+
+# Agent artifacts
+.jules/
+.Jules/
+.gemini/
