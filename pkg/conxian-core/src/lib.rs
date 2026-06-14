@@ -383,8 +383,9 @@ pub trait OfflineQueue: Send + Sync {
 pub struct ConxianJobCard {
     #[serde(rename = "@context", default)]
     pub context: String,
+    #[serde(rename = "@type")]
     pub r#type: String,
-    #[serde(rename = "@type", default)]
+    #[serde(default)]
     pub work_intent: WorkIntent,
 }
 

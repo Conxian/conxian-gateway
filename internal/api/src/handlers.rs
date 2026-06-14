@@ -20,6 +20,25 @@ pub const TEE_ATTESTATION_HEADER: &str = "x-tee-attestation";
 pub const TRUST_METADATA_HEADER: &str = "x-conxian-trust-metadata";
 const SETTLEMENT_LOG_MAX_ENTRIES: usize = 1000;
 const WEBHOOK_REPLAY_TTL_SECONDS: u64 = 60 * 60 * 24;
+const SATOSHIS_PER_SBTC: u64 = 100_000_000;
+
+fn amount_sbtc_to_satoshis(amount_sbtc: f64) -> Result<u64, &'static str> {
+    if !amount_sbtc.is_finite() || amount_sbtc < 0.0 {
+        return Err("amount_sbtc must be a finite, non-negative number");
+    }
+
+    let scaled = amount_sbtc * SATOSHIS_PER_SBTC as f64;
+    if !scaled.is_finite() || scaled > u64::MAX as f64 {
+        return Err("amount_sbtc is out of range");
+    }
+
+    let rounded = scaled.round();
+    if (scaled - rounded).abs() > 1e-6 {
+        return Err("amount_sbtc must not exceed 8 decimal places");
+    }
+
+    Ok(rounded as u64)
+}
 
 pub async fn get_health(State(state): State<AppState>) -> Json<Value> {
     let s = state.shared.read().unwrap();
@@ -559,7 +578,8 @@ pub async fn toggle_bounty_payouts(
 #[derive(Debug, serde::Deserialize)]
 pub struct OfflinePosRequest {
     pub tx_hash: String,
-    pub amount_sbtc: f64,
+    pub amount_sbtc: Option<f64>,
+    pub amount_satoshi: Option<u64>,
     pub device_id: String,
     pub passkey_attestation: conxian_core::AttestationRequest,
 }
@@ -568,11 +588,25 @@ pub async fn handle_offline_pos(
     State(state): State<AppState>,
     Json(payload): Json<OfflinePosRequest>,
 ) -> Result<Json<conxian_core::OfflineReceipt>, (StatusCode, Json<Value>)> {
+    let amount_satoshi = if let Some(sats) = payload.amount_satoshi {
+        sats
+    } else if let Some(amount_sbtc) = payload.amount_sbtc {
+        amount_sbtc_to_satoshis(amount_sbtc)
+            .map_err(|message| (StatusCode::BAD_REQUEST, Json(json!({ "error": message }))))?
+    } else {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "error": "Either amount_satoshi or amount_sbtc is required"
+            })),
+        ));
+    };
+
     let mut receipt = state
         .compliance
         .sign_offline_receipt(
             &payload.tx_hash,
-            (payload.amount_sbtc * 100_000_000.0) as u64,
+            amount_satoshi,
             &payload.device_id,
             payload.passkey_attestation,
         )

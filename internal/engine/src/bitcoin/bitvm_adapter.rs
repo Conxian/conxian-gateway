@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use conxian_core::{ChainAdapter, ConxianResult};
 use serde_json::{json, Value};
-use tracing::{info};
+use tracing::info;
 
 /// Protocol Adapter for BitVM (Partner Lane - CON-713)
 pub struct BitVmAdapter {
