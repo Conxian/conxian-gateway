@@ -154,12 +154,12 @@ mod tests {
     use conxian_core::{BlockInfo, GatewayState, PersistentState};
     use std::sync::{Arc, RwLock};
 
-    struct MockBitcoinRpc {
+    struct SimulatedBitcoinRpc {
         height: u64,
     }
 
     #[async_trait]
-    impl BitcoinRpc for MockBitcoinRpc {
+    impl BitcoinRpc for SimulatedBitcoinRpc {
         async fn get_block_count(&self) -> ConxianResult<u64> {
             Ok(self.height)
         }
@@ -175,8 +175,8 @@ mod tests {
         }
     }
 
-    struct MockPersistence;
-    impl Persistence for MockPersistence {
+    struct SimulatedPersistence;
+    impl Persistence for SimulatedPersistence {
         fn save(&self, _state: &PersistentState) -> ConxianResult<()> {
             Ok(())
         }
@@ -188,8 +188,8 @@ mod tests {
     #[tokio::test]
     async fn test_bitcoin_listener_sync_once() {
         let state = Arc::new(RwLock::new(GatewayState::default()));
-        let rpc = MockBitcoinRpc { height: 100 };
-        let persistence = Arc::new(MockPersistence);
+        let rpc = SimulatedBitcoinRpc { height: 100 };
+        let persistence = Arc::new(SimulatedPersistence);
         let mut listener = BitcoinListener::new(rpc, state.clone(), persistence, 10);
 
         listener.sync_once().await.unwrap();

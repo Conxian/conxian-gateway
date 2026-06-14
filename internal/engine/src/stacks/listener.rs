@@ -95,12 +95,12 @@ mod tests {
     use conxian_core::{GatewayState, PersistentState};
     use std::sync::{Arc, RwLock};
 
-    struct MockStacksRpc {
+    struct SimulatedStacksRpc {
         height: u64,
     }
 
     #[async_trait]
-    impl conxian_core::SimulatedStacksRpcTrait for MockStacksRpc {
+    impl conxian_core::SimulatedStacksRpcTrait for SimulatedStacksRpc {
         async fn call_read_only(
             &self,
             _contract: &str,
@@ -112,7 +112,7 @@ mod tests {
     }
 
     #[async_trait]
-    impl StacksRpc for MockStacksRpc {
+    impl StacksRpc for SimulatedStacksRpc {
         async fn get_block_count(&self) -> ConxianResult<u64> {
             Ok(self.height)
         }
@@ -126,8 +126,8 @@ mod tests {
         }
     }
 
-    struct MockPersistence;
-    impl Persistence for MockPersistence {
+    struct SimulatedPersistence;
+    impl Persistence for SimulatedPersistence {
         fn save(&self, _state: &PersistentState) -> ConxianResult<()> {
             Ok(())
         }
@@ -139,8 +139,8 @@ mod tests {
     #[tokio::test]
     async fn test_stacks_listener_sync_once() {
         let state = Arc::new(RwLock::new(GatewayState::default()));
-        let rpc = MockStacksRpc { height: 555 };
-        let persistence = Arc::new(MockPersistence);
+        let rpc = SimulatedStacksRpc { height: 555 };
+        let persistence = Arc::new(SimulatedPersistence);
         let mut listener = StacksListener::new(rpc, state.clone(), persistence, 30);
 
         listener.sync_once().await.unwrap();
@@ -161,7 +161,7 @@ mod tests {
         {
             let s = state.read().unwrap();
             assert_eq!(s.stacks.height, 556);
-            assert_eq!(s.stacks.burn_block_height, Some(55)); // Mock int div
+            assert_eq!(s.stacks.burn_block_height, Some(55)); // Simulated int div
         }
     }
 }

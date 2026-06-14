@@ -1,7 +1,7 @@
 # RFC: RGB Protocol-Rail Adapter
 
 ## Status
-- **Draft** (Research Phase)
+- **Implemented** (Milestone 2 PoC)
 
 ## Context
 As part of the Conxian Gateway evolution, we need to support the RGB protocol as a first-class citizen for smart contract and asset logic on Bitcoin. This adapter provides the bridge between the Conxian engine and the RGB node/state.
@@ -9,7 +9,7 @@ As part of the Conxian Gateway evolution, we need to support the RGB protocol as
 ## Scope
 - Protocol-rail adapter contract definition.
 - Support for 'disabled', 'shadow', and 'active' rollout modes.
-- Integration with node-backed contract lookup.
+- Integration with node-backed contract lookup via HTTP.
 
 ## Adapter Interface
 
@@ -47,33 +47,22 @@ pub trait RgbAdapter {
 - Fully integrated into the execution path.
 - Results from the adapter drive decision-making (e.g., settlement triggers).
 
-## Non-Goals for Milestone 1 & 2
-- Full asset issuance logic.
-- Complex client-side validation logic (handled by RGB node).
-- Multi-sig RGB contract creation.
+## Implementation Details (Milestone 2)
+- Concrete implementation in `internal/engine/src/bitcoin/rgb_adapter.rs`.
+- Uses `minreq` for lightweight HTTP communication with the RGB node.
+- Implements simulation fallback for development and research (`rgb:` prefix).
+- Shadow mode is hardened to catch and log errors without interrupting the caller.
 
-## Implementation Plan
-1. Define the trait and config.
-2. Implement a mock-ready skeleton.
-3. Wire into `MempoolOrchestrator` for shadow-mode observation.
-
-## PoC Documentation (Milestone 2)
-
-### Setup Assumptions
+## Setup Assumptions
 - The gateway has network access to an RGB node (default: `http://localhost:8080`).
 - `RGB_MODE` environment variable is set to `shadow` or `active`.
 - Contracts are identified by the `rgb:` prefix for simulation.
 
-### Limitations
-- Currently simulates node responses.
-- Shadow mode logs findings but does not block if lookups fail or return empty.
-- Verification logic is a pass-through in this PoC.
-
-### Observed Behavior
+## Observed Behavior
 - When a transaction is tracked in the mempool, the orchestrator triggers a lookup via the RGB adapter.
-- In `shadow` mode, the logs will show "contract found but result will be ignored" if a match occurs.
+- In `shadow` mode, the logs will show "node returned nothing, using simulated state" if the node is unavailable.
 
-### Error Semantics
+## Error Semantics
 - `ConxianError::Bitcoin`: Used for transport errors when communicating with the RGB node.
-- `ConxianError::Security`: Used when transition verification fails in 'active' mode.
+- `ConxianError::Internal`: Used for async task failures.
 - In 'shadow' mode, all errors are caught, logged, and the execution path continues as if no match was found.

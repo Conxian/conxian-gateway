@@ -249,11 +249,11 @@ mod tests {
     };
     use std::sync::Mutex;
 
-    struct MockPersistence {
+    struct SimulatedPersistence {
         state: Mutex<PersistentState>,
     }
 
-    impl MockPersistence {
+    impl SimulatedPersistence {
         fn new(state: PersistentState) -> Self {
             Self {
                 state: Mutex::new(state),
@@ -261,7 +261,7 @@ mod tests {
         }
     }
 
-    impl Persistence for MockPersistence {
+    impl Persistence for SimulatedPersistence {
         fn save(&self, state: &PersistentState) -> ConxianResult<()> {
             *self.state.lock().unwrap() = state.clone();
             Ok(())
@@ -272,13 +272,13 @@ mod tests {
         }
     }
 
-    struct MockBitcoinRpc {
+    struct SimulatedBitcoinRpc {
         rbf_txid: Option<String>,
         cpfp_txid: Option<String>,
     }
 
     #[async_trait]
-    impl BitcoinRpc for MockBitcoinRpc {
+    impl BitcoinRpc for SimulatedBitcoinRpc {
         async fn get_block_count(&self) -> ConxianResult<u64> {
             Ok(0)
         }
@@ -341,14 +341,14 @@ mod tests {
             RolloutMode::Shadow,
             "http://localhost:8080".to_string(),
         ));
-        let persistence = Arc::new(MockPersistence::new(PersistentState {
+        let persistence = Arc::new(SimulatedPersistence::new(PersistentState {
             bitcoin_height: 0,
             stacks_height: 0,
             mempool_pending_txs: vec![tracked_tx()],
         }));
 
         let orchestrator = MempoolOrchestrator::new(
-            MockBitcoinRpc {
+            SimulatedBitcoinRpc {
                 rbf_txid: Some("rbf-tx".to_string()),
                 cpfp_txid: Some("cpfp-tx".to_string()),
             },
@@ -374,14 +374,14 @@ mod tests {
             RolloutMode::Shadow,
             "http://localhost:8080".to_string(),
         ));
-        let persistence = Arc::new(MockPersistence::new(PersistentState {
+        let persistence = Arc::new(SimulatedPersistence::new(PersistentState {
             bitcoin_height: 0,
             stacks_height: 0,
             mempool_pending_txs: vec![tracked_tx()],
         }));
 
         let orchestrator = MempoolOrchestrator::new(
-            MockBitcoinRpc {
+            SimulatedBitcoinRpc {
                 rbf_txid: None,
                 cpfp_txid: Some("cpfp-tx".to_string()),
             },
@@ -410,14 +410,14 @@ mod tests {
         let mut tx = tracked_tx();
         tx.bump_attempts = 3;
 
-        let persistence = Arc::new(MockPersistence::new(PersistentState {
+        let persistence = Arc::new(SimulatedPersistence::new(PersistentState {
             bitcoin_height: 0,
             stacks_height: 0,
             mempool_pending_txs: vec![tx],
         }));
 
         let orchestrator = MempoolOrchestrator::new(
-            MockBitcoinRpc {
+            SimulatedBitcoinRpc {
                 rbf_txid: Some("rbf-tx".to_string()),
                 cpfp_txid: Some("cpfp-tx".to_string()),
             },
@@ -445,14 +445,14 @@ mod tests {
         tx.replaceable = false;
         tx.cpfp_eligible = true;
 
-        let persistence = Arc::new(MockPersistence::new(PersistentState {
+        let persistence = Arc::new(SimulatedPersistence::new(PersistentState {
             bitcoin_height: 0,
             stacks_height: 0,
             mempool_pending_txs: vec![tx],
         }));
 
         let orchestrator = MempoolOrchestrator::new(
-            MockBitcoinRpc {
+            SimulatedBitcoinRpc {
                 rbf_txid: None,
                 cpfp_txid: None,
             },

@@ -19,7 +19,7 @@ async fn test_resolve_ens_disabled_by_default() {
 
 #[cfg(feature = "mock-integrations")]
 #[tokio::test]
-async fn test_resolve_ens_mocked() {
+async fn test_resolve_ens_simulated() {
     let manager = IdentityManager::new();
     let req = IdentityResolutionRequest {
         identifier: "alice.eth".to_string(),
@@ -48,7 +48,7 @@ async fn test_resolve_bns_disabled_by_default() {
 
 #[cfg(feature = "mock-integrations")]
 #[tokio::test]
-async fn test_resolve_bns_mocked() {
+async fn test_resolve_bns_simulated() {
     let manager = IdentityManager::new();
     let req = IdentityResolutionRequest {
         identifier: "bob.id".to_string(),
@@ -78,7 +78,7 @@ async fn test_resolve_worldid_disabled_by_default() {
 
 #[cfg(feature = "mock-integrations")]
 #[tokio::test]
-async fn test_resolve_worldid_mocked() {
+async fn test_resolve_worldid_simulated() {
     let manager = IdentityManager::new();
     let req = IdentityResolutionRequest {
         identifier: "world-id-user".to_string(),

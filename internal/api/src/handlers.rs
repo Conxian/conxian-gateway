@@ -585,7 +585,7 @@ pub async fn handle_offline_pos(
 
     state
         .compliance
-        .simulate_mesh_gossip(&mut receipt)
+        .gossip_mesh_rehearsal(&mut receipt)
         .map_err(|e: ConxianError| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,

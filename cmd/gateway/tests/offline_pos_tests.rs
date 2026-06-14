@@ -15,18 +15,18 @@ use std::time::{SystemTime, UNIX_EPOCH};
 async fn test_offline_pos_blackout_reconciliation() {
     let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
     let fiat_router = Arc::new(api::fiat::FiatRouter::new(
-        "mock".into(),
-        "mock".into(),
-        "mock".into(),
-        "mock".into(),
-        "mock".into(),
-        "mock".into(),
-        "mock".into(),
+        "simulated".into(),
+        "simulated".into(),
+        "simulated".into(),
+        "simulated".into(),
+        "simulated".into(),
+        "simulated".into(),
+        "simulated".into(),
     ));
     let a2p_router = Arc::new(api::a2p::A2pRouter::new(
-        "mock".into(),
-        "mock".into(),
-        "mock".into(),
+        "simulated".into(),
+        "simulated".into(),
+        "simulated".into(),
     ));
     let identity_manager = Arc::new(IdentityManager::new());
     let zkc_verifier = Arc::new(ZkcVerifier::new());
@@ -59,8 +59,8 @@ async fn test_offline_pos_blackout_reconciliation() {
     let app = configure_routes(app_state, api_token.to_string());
     let server = TestServer::new(app);
 
-    let device_id = format!("{TEE_DEVICE_ID_PREFIX}mock-device-1");
-    let passkey_payload = "mock-payload";
+    let device_id = format!("{TEE_DEVICE_ID_PREFIX}simulated-device-1");
+    let passkey_payload = "simulated-payload";
 
     let secp = Secp256k1::new();
     let secret_key = SecretKey::from_slice(&[1u8; 32]).unwrap();

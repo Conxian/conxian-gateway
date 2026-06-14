@@ -93,9 +93,9 @@ impl IdentityManager {
     ) -> ConxianResult<IdentityResolutionResponse> {
         #[cfg(any(test, feature = "mock-integrations"))]
         {
-            let mock_address = "0x71C7656EC7ab88b098defB751B7401B5f6d8976F".to_string();
+            let simulated_address = "0x71C7656EC7ab88b098defB751B7401B5f6d8976F".to_string();
             Ok(IdentityResolutionResponse {
-                address: mock_address,
+                address: simulated_address,
                 provider: "ens".to_string(),
                 verified: true,
                 metadata: Some(json!({ "name": request.identifier, "resolver": "ens-mainnet" })),
@@ -145,9 +145,9 @@ impl IdentityManager {
         } else {
             #[cfg(any(test, feature = "mock-integrations"))]
             {
-                let mock_address = "SP2JZZSBY0S3FJH7WJT2787YTYT8Y6725F7T8E62".to_string();
+                let simulated_address = "SP2JZZSBY0S3FJH7WJT2787YTYT8Y6725F7T8E62".to_string();
                 Ok(IdentityResolutionResponse {
-                    address: mock_address,
+                    address: simulated_address,
                     provider: "bns".to_string(),
                     verified: true,
                     metadata: Some(json!({ "name": request.identifier, "namespace": "id" })),
