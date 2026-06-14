@@ -23,6 +23,16 @@ pub enum Network {
     Simulated,
 }
 
+impl std::fmt::Display for Network {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Mainnet => write!(f, "mainnet"),
+            Self::Testnet => write!(f, "testnet"),
+            Self::Simulated => write!(f, "simulated"),
+        }
+    }
+}
+
 impl Network {
     pub fn from_env() -> Self {
         match env::var("CONXIAN_NETWORK")
@@ -71,6 +81,8 @@ pub struct Config {
     pub rgb_mode: conxian_core::RolloutMode,
     pub rgb_node_url: String,
     pub network: Network,
+    pub liquid_rpc_url: String,
+    pub rootstock_rpc_url: String,
 }
 
 impl Config {
@@ -116,6 +128,10 @@ impl Config {
             _ => conxian_core::RolloutMode::Disabled,
         };
         let network = Network::from_env();
+        let liquid_rpc_url =
+            env::var("LIQUID_RPC_URL").unwrap_or_else(|_| "http://localhost:18843".to_string());
+        let rootstock_rpc_url =
+            env::var("ROOTSTOCK_RPC_URL").unwrap_or_else(|_| "http://localhost:4444".to_string());
 
         let (btc_url, stx_url, alex_url) = match network {
             Network::Mainnet => (
@@ -197,6 +213,8 @@ impl Config {
                 .unwrap_or_else(|_| "http://localhost:8080".to_string()),
             network,
             alex_api_url: env::var("ALEX_API_URL").unwrap_or(alex_url),
+            liquid_rpc_url,
+            rootstock_rpc_url,
         }
     }
 }

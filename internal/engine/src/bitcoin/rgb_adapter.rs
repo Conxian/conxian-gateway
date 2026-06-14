@@ -30,7 +30,10 @@ impl NodeRgbAdapter {
                 }
                 Ok(res) if res.status_code == 404 => Ok(None),
                 Ok(res) => {
-                    warn!(status = res.status_code, "RGB node returned unexpected status");
+                    warn!(
+                        status = res.status_code,
+                        "RGB node returned unexpected status"
+                    );
                     Err(conxian_core::ConxianError::Bitcoin(format!(
                         "RGB node error: status {}",
                         res.status_code

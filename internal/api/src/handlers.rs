@@ -1,7 +1,7 @@
 use crate::AppState;
 use axum::{
     body::Body,
-    extract::{Query, State},
+    extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     Json,
 };
@@ -572,7 +572,7 @@ pub async fn handle_offline_pos(
         .compliance
         .sign_offline_receipt(
             &payload.tx_hash,
-            payload.amount_sbtc,
+            (payload.amount_sbtc * 100_000_000.0) as u64,
             &payload.device_id,
             payload.passkey_attestation,
         )
@@ -871,4 +871,50 @@ pub async fn update_handoff_state(
         "old_state": old_state,
         "new_state": new_state
     })))
+}
+
+pub async fn list_supported_chains(State(state): State<AppState>) -> Json<Value> {
+    let chains: Vec<String> = state.multi_chain.keys().cloned().collect();
+    Json(json!({ "supported_chains": chains }))
+}
+
+pub async fn get_chain_height(
+    Path(chain): Path<String>,
+    State(state): State<AppState>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let adapter = state.multi_chain.get(&chain).ok_or_else(|| {
+        (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": format!("Chain adapter not found for: {}", chain) })),
+        )
+    })?;
+
+    match adapter.get_latest_height().await {
+        Ok(height) => Ok(Json(json!({ "chain": chain, "height": height }))),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
+        )),
+    }
+}
+
+pub async fn prepare_chain_tx(
+    Path(chain): Path<String>,
+    State(state): State<AppState>,
+    Json(payload): Json<Value>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let adapter = state.multi_chain.get(&chain).ok_or_else(|| {
+        (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": format!("Chain adapter not found for: {}", chain) })),
+        )
+    })?;
+
+    match adapter.prepare_unsigned_transaction(payload).await {
+        Ok(prepared) => Ok(Json(prepared)),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
+        )),
+    }
 }

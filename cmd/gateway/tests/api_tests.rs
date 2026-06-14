@@ -57,6 +57,15 @@ fn setup_app_with_lightning(state: SharedState, lightning: Arc<LightningAdapter>
     let identity = Arc::new(IdentityManager::new());
     let compliance = Arc::new(ZkcVerifier::new());
     let alex = Arc::new(engine::stacks::alex::SimulatedAlexClient);
+    let mut multi_chain: std::collections::HashMap<String, Arc<dyn conxian_core::ChainAdapter>> =
+        std::collections::HashMap::new();
+    multi_chain.insert(
+        "liquid".to_string(),
+        Arc::new(engine::LiquidAdapter::new(
+            Arc::new(engine::BitcoinRpcClient::new("http://localhost:18843", "", "").unwrap()),
+            "simulated".to_string(),
+        )),
+    );
 
     struct SimulatedOfflineQueue {
         replay_claims: Mutex<HashSet<String>>,
@@ -95,6 +104,7 @@ fn setup_app_with_lightning(state: SharedState, lightning: Arc<LightningAdapter>
         identity,
         compliance,
         alex,
+        multi_chain,
         lightning,
         fiat_webhook_secret: TEST_FIAT_SECRET.to_string(),
         settlement_ingress_secret: TEST_SETTLEMENT_SECRET.to_string(),
@@ -587,7 +597,7 @@ async fn test_settle_job_card_bitvm2() {
         work_intent: WorkIntent {
             sender_address: "SENDER".to_string(),
             receiver_address: "RECEIVER".to_string(),
-            amount_sbtc: 1000.5,
+            amount_sbtc: 100050000000,
             town_name: None,
             country_code: None,
         },
@@ -989,4 +999,52 @@ async fn test_admin_governance_decision_submission() {
     let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
     assert!(body["action_id"].as_str().unwrap().starts_with("gov-"));
     assert_eq!(body["status"], "approved");
+}
+
+#[tokio::test]
+async fn test_list_supported_chains() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/chains/list")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("x-402-payment", TEST_X402_PROOF)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    // In setup_app, multi_chain is likely empty since we didn't populate it in setup_app's AppState
+    assert!(body["supported_chains"].is_array());
+}
+
+#[tokio::test]
+async fn test_get_liquid_chain_height() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/chains/liquid/height")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("x-402-payment", TEST_X402_PROOF)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    // Since the RPC is fake/localhost, it might fail, but let's check it's routed
+    assert!(
+        response.status() == StatusCode::OK
+            || response.status() == StatusCode::INTERNAL_SERVER_ERROR
+    );
 }

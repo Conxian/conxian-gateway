@@ -62,6 +62,9 @@ pub fn configure_routes(state: AppState, api_token: String) -> Router {
         .route("/pos/sync", post(handlers::sync_offline_receipts))
         .route("/handoff/status", get(handlers::get_handoff_status))
         .route("/handoff/update", post(handlers::update_handoff_state))
+        .route("/chains/list", get(handlers::list_supported_chains))
+        .route("/chains/{chain}/height", get(handlers::get_chain_height))
+        .route("/chains/{chain}/prepare", post(handlers::prepare_chain_tx))
         .layer(middleware::from_fn_with_state(state.clone(), x402_filter))
         .layer(middleware::from_fn(move |req, next| {
             auth_middleware(req, next, token_for_auth.clone())

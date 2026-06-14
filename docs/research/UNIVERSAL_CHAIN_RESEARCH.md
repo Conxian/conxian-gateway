@@ -26,3 +26,29 @@ Decided families for initial execution:
 - **Layer 1**: Protocol coordination (Nexus) manages canonical state.
 - **Layer 2**: Compliance pipe (Gateway) listens for state transitions and enforces trust policies.
 - **Shared**: Core primitives in `lib-conxian-core` ensure consistency across adapters.
+
+## 5. Pilot Lane Integration Patterns (Rootstock & Liquid)
+As part of the CON-710 and CON-711 pilot lanes, specific integration patterns are identified for sidechain environments.
+
+### Rootstock (RSK) - CON-711
+- **EVM Compatibility**: RSK follows the EVM family pattern, allowing reuse of  adapter logic for state lookup and transaction preparation.
+- **Bitcoin Merged Mining**: Integration requires monitoring both RSK blocks and Bitcoin anchors to verify merged mining finality.
+- **Powpeg Coordination**: Trust-tier mapping must account for the Powpeg federation vs. native Bitcoin proofs.
+
+### Liquid Network - CON-710
+- **Elements-based UTXO**: Liquid utilizes the Elements platform (UTXO-based with Confidential Transactions).
+- **Peg-in/Peg-out Observability**: Adapters must explicitly track 1-to-1 peg transitions between Bitcoin L1 and Liquid.
+- **Confidential Assets**: Implementation must handle asset-blinded transactions while maintaining compliance-ready state proofs for the gateway.
+
+## 5. Pilot Lane Integration Patterns (Rootstock & Liquid)
+As part of the CON-710 and CON-711 pilot lanes, specific integration patterns are identified for sidechain environments.
+
+### Rootstock (RSK) - CON-711
+- **EVM Compatibility**: RSK follows the EVM family pattern, allowing reuse of `EVM` adapter logic for state lookup and transaction preparation.
+- **Bitcoin Merged Mining**: Integration requires monitoring both RSK blocks and Bitcoin anchors to verify merged mining finality.
+- **Powpeg Coordination**: Trust-tier mapping must account for the Powpeg federation vs. native Bitcoin proofs.
+
+### Liquid Network - CON-710
+- **Elements-based UTXO**: Liquid utilizes the Elements platform (UTXO-based with Confidential Transactions).
+- **Peg-in/Peg-out Observability**: Adapters must explicitly track 1-to-1 peg transitions between Bitcoin L1 and Liquid.
+- **Confidential Assets**: Implementation must handle asset-blinded transactions while maintaining compliance-ready state proofs for the gateway.
