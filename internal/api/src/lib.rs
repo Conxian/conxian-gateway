@@ -31,6 +31,7 @@ pub struct AppState {
     pub identity: Arc<IdentityManager>,
     pub compliance: Arc<ZkcVerifier>,
     pub alex: Arc<dyn AlexClient>,
+    pub multi_chain: std::collections::HashMap<String, Arc<dyn conxian_core::ChainAdapter>>,
     pub lightning: Arc<LightningAdapter>,
     pub fiat_webhook_secret: String,
     pub settlement_ingress_secret: String,

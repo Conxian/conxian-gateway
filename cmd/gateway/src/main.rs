@@ -12,6 +12,7 @@ use engine::{
     BitcoinListener, BitcoinRpcClient, FeeBumpPolicyConfig, MempoolOrchestrator, NodeRgbAdapter,
     NttRelayer, StacksListener, StacksRpcClient, TreasuryMonitor,
 };
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
 use tokio::signal;
@@ -152,6 +153,29 @@ async fn main() -> anyhow::Result<()> {
         settlement_ingress_secret: config.settlement_ingress_secret.clone(),
         settlement_log: new_settlement_log(),
         offline_queue: api::new_offline_queue(offline_key),
+        multi_chain: {
+            let mut chains: HashMap<String, Arc<dyn conxian_core::ChainAdapter>> = HashMap::new();
+
+            let liquid_rpc = BitcoinRpcClient::new(&config.liquid_rpc_url, "", "")
+                .expect("Failed to init Liquid RPC");
+            chains.insert(
+                "liquid".to_string(),
+                Arc::new(engine::LiquidAdapter::new(
+                    Arc::new(liquid_rpc),
+                    config.network.to_string(),
+                )),
+            );
+
+            chains.insert(
+                "rootstock".to_string(),
+                Arc::new(engine::RootstockAdapter::new(
+                    config.rootstock_rpc_url.clone(),
+                    config.network.to_string(),
+                )),
+            );
+
+            chains
+        },
     };
 
     // Create a cancellation token for graceful shutdown of listeners

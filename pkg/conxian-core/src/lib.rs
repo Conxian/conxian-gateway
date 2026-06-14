@@ -92,7 +92,7 @@ pub struct Metrics {
     pub trust_policy_block: u64,
     /// Research enhancement: Treasury metrics
     pub treasury_balance_stx: f64,
-    pub treasury_balance_btc: f64,
+    pub treasury_balance_btc: u64,
     pub last_treasury_update: u64,
     /// Industry Enhancement: TAM Capture Metrics
     pub sbtc_liquidity: f64,
@@ -215,7 +215,7 @@ pub struct JobCardSettlementRequest {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DlcBond {
     pub bond_id: String,
-    pub amount_btc: f64,
+    pub amount_btc: u64,
     pub interest_rate: f64,
     pub maturity_date: u64,
     pub sovereign_alignment: bool,
@@ -224,7 +224,7 @@ pub struct DlcBond {
 /// Industry Enhancement: Discrete Log Contract (DLC) Orchestrator (CON-62).
 pub trait DlcOrchestrator: Send + Sync {
     fn create_dlc_bond(&self, bond: &DlcBond) -> ConxianResult<String>;
-    fn settle_coupon(&self, bond_id: &str, amount_sbtc: f64) -> ConxianResult<bool>;
+    fn settle_coupon(&self, bond_id: &str, amount_sbtc: u64) -> ConxianResult<bool>;
 }
 
 /// Concrete implementation of Discrete Log Contract (DLC) Orchestrator for Bitcoin bonds (CON-72).
@@ -245,9 +245,9 @@ impl DlcOrchestrator for DlcManager {
         Ok(bond_id)
     }
 
-    fn settle_coupon(&self, bond_id: &str, amount_sbtc: f64) -> ConxianResult<bool> {
+    fn settle_coupon(&self, bond_id: &str, amount_sbtc: u64) -> ConxianResult<bool> {
         info!(
-            "Settling coupon for DLC bond {}: {} sBTC",
+            "Settling coupon for DLC bond {}: {} satoshis",
             bond_id, amount_sbtc
         );
         Ok(!bond_id.is_empty())
@@ -349,7 +349,7 @@ pub struct AlexSwapRequest {
 pub struct OfflineReceipt {
     pub receipt_id: String,
     pub tx_hash: String,
-    pub amount_sbtc: f64,
+    pub amount_sbtc: u64,
     pub timestamp: u64,
     pub device_id: String,
     pub tee_signature: String, // TEE-signed commitment
@@ -383,16 +383,16 @@ pub trait OfflineQueue: Send + Sync {
 pub struct ConxianJobCard {
     #[serde(rename = "@context", default)]
     pub context: String,
-    #[serde(rename = "@type", default)]
     pub r#type: String,
+    #[serde(rename = "@type", default)]
     pub work_intent: WorkIntent,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct WorkIntent {
     pub sender_address: String,
     pub receiver_address: String,
-    pub amount_sbtc: f64,
+    pub amount_sbtc: u64,
     pub town_name: Option<String>,
     pub country_code: Option<String>,
 }
@@ -451,6 +451,19 @@ impl SystemWallets {
             _ => &self.treasury,
         }
     }
+}
+
+#[async_trait]
+#[async_trait]
+#[async_trait]
+pub trait ChainAdapter: Send + Sync {
+    async fn get_latest_height(&self) -> ConxianResult<u64>;
+    async fn get_chain_identity(&self) -> String;
+    async fn prepare_unsigned_transaction(
+        &self,
+        tx_details: serde_json::Value,
+    ) -> ConxianResult<serde_json::Value>;
+    async fn verify_state_proof(&self, proof_metadata: serde_json::Value) -> ConxianResult<bool>;
 }
 
 #[async_trait]

@@ -34,8 +34,8 @@ impl TreasuryMonitor {
         if s.metrics.treasury_balance_stx == 0.0 {
             s.metrics.treasury_balance_stx = 1_000_000.0;
         }
-        if s.metrics.treasury_balance_btc == 0.0 {
-            s.metrics.treasury_balance_btc = 10.5;
+        if s.metrics.treasury_balance_btc == 0 {
+            s.metrics.treasury_balance_btc = 1_050_000_000; // 10.5 BTC in satoshis
         }
 
         // Industry Enhancement: The sBTC "Suction" Pattern

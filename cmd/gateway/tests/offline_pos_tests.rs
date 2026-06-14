@@ -48,6 +48,7 @@ async fn test_offline_pos_blackout_reconciliation() {
         identity: identity_manager,
         compliance: zkc_verifier,
         alex: alex_client,
+        multi_chain: std::collections::HashMap::new(),
         lightning: new_lightning_adapter(),
         fiat_webhook_secret: "secret".into(),
         settlement_ingress_secret: "secret".into(),

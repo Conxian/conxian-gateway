@@ -527,7 +527,7 @@ impl ZkcVerifier {
     pub fn sign_offline_receipt(
         &self,
         tx_hash: &str,
-        amount_sbtc: f64,
+        amount_sbtc: u64,
         device_id: &str,
         passkey_attestation: AttestationRequest,
     ) -> ConxianResult<OfflineReceipt> {
