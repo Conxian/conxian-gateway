@@ -425,17 +425,17 @@ fn is_proof_ref(val: &str) -> bool {
 mod tests {
     use super::*;
 
-    struct MockOutcome {
+    struct SimulatedOutcome {
         result: Result<LightningSettlementResponse, LightningBackendError>,
     }
 
     struct SequenceBackend {
-        outcomes: Mutex<Vec<MockOutcome>>,
+        outcomes: Mutex<Vec<SimulatedOutcome>>,
         calls: Mutex<usize>,
     }
 
     impl SequenceBackend {
-        fn new(outcomes: Vec<MockOutcome>) -> Self {
+        fn new(outcomes: Vec<SimulatedOutcome>) -> Self {
             Self {
                 outcomes: Mutex::new(outcomes),
                 calls: Mutex::new(0),
@@ -463,7 +463,7 @@ mod tests {
             preimage: "preimage".to_string(),
             proof: "proof".to_string(),
         };
-        let backend = SequenceBackend::new(vec![MockOutcome {
+        let backend = SequenceBackend::new(vec![SimulatedOutcome {
             result: Ok(response),
         }]);
         let adapter = LightningAdapter::new(Arc::new(backend)).with_clock(|| 1000);

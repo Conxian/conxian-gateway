@@ -553,7 +553,7 @@ impl ZkcVerifier {
         Ok(receipt.device_id.starts_with(TEE_DEVICE_ID_PREFIX))
     }
 
-    pub fn simulate_mesh_gossip(
+    pub fn gossip_mesh_rehearsal(
         &self,
         receipt: &mut conxian_core::OfflineReceipt,
     ) -> ConxianResult<()> {

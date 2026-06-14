@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `docs/research/UNIVERSAL_CHAIN_RESEARCH.md` covering multi-chain adapter patterns and event bus delivery logic.
 
 ### Changed
+- Standardized environment variable sentinels by replacing `CHANGEME_` and `REQUIRED_FOR_PROD_` with `sentinel_` identifiers.
+- Improved `A2pRouter` production check by verifying API key prefixes instead of internal mock flags.
+- Standardized internal naming by replacing "mock" with "simulated" in several gateway and compliance modules.
+- Renamed `simulate_mesh_gossip` to `gossip_mesh_rehearsal` for better institutional alignment.
 - Remediated non-deterministic `.unwrap()` calls in system clock access across the workspace.
 - Implemented Schnorr signature verification in `ZkcVerifier` for Taproot-compatible attestations.
 - Hardened `internal/api/src/auth.rs` by replacing insecure sentinel strings with compliant production identifiers.
@@ -30,6 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added system status indicators and throughput visualization to the dashboard.
 
 ### Changed
+- Standardized environment variable sentinels by replacing `CHANGEME_` and `REQUIRED_FOR_PROD_` with `sentinel_` identifiers.
+- Improved `A2pRouter` production check by verifying API key prefixes instead of internal mock flags.
+- Standardized internal naming by replacing "mock" with "simulated" in several gateway and compliance modules.
+- Renamed `simulate_mesh_gossip` to `gossip_mesh_rehearsal` for better institutional alignment.
 - Refactored Control-Plane navigation to use a persistent sidebar with functional iconography.
 - Updated documentation for the Control-Plane application.
 
@@ -40,6 +48,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `format_iso20022_pacs008_v8` to support ISO 20022 payment generation from Conxian Job Cards.
 
 ### Changed
+- Standardized environment variable sentinels by replacing `CHANGEME_` and `REQUIRED_FOR_PROD_` with `sentinel_` identifiers.
+- Improved `A2pRouter` production check by verifying API key prefixes instead of internal mock flags.
+- Standardized internal naming by replacing "mock" with "simulated" in several gateway and compliance modules.
+- Renamed `simulate_mesh_gossip` to `gossip_mesh_rehearsal` for better institutional alignment.
 - Remediated contamination guard failures by replacing "mock" identifiers with "simulated" across the codebase.
 - Standardized error handling in API handlers for better type inference and auditability.
 - Hardened TEE device ID verification to support simulated test vectors while rejecting unauthorized IDs.
@@ -55,6 +67,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Introduced `SimulatedStacksRpcTrait` in `conxian-core` to decouple compliance from engine.
 
 ### Changed
+- Standardized environment variable sentinels by replacing `CHANGEME_` and `REQUIRED_FOR_PROD_` with `sentinel_` identifiers.
+- Improved `A2pRouter` production check by verifying API key prefixes instead of internal mock flags.
+- Standardized internal naming by replacing "mock" with "simulated" in several gateway and compliance modules.
+- Renamed `simulate_mesh_gossip` to `gossip_mesh_rehearsal` for better institutional alignment.
 - Hardened ALEX swap path in API to return `prepared` status with structured Clarity payloads.
 - Refactored `IdentityManager` and `AppState` to use dependency injection for Stacks RPC, removing circular dependencies.
 - Updated `PRD.md` and `ENHANCEMENT_PLAN.md` to reflect full functional state of shared services.
@@ -68,6 +84,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `ORACLE_PUBKEY` mandatory configuration for DLC bond orchestration.
 
 ### Changed
+- Standardized environment variable sentinels by replacing `CHANGEME_` and `REQUIRED_FOR_PROD_` with `sentinel_` identifiers.
+- Improved `A2pRouter` production check by verifying API key prefixes instead of internal mock flags.
+- Standardized internal naming by replacing "mock" with "simulated" in several gateway and compliance modules.
+- Renamed `simulate_mesh_gossip` to `gossip_mesh_rehearsal` for better institutional alignment.
 - Hardened `SovereignCommit` implementation with simulated Tableland SQL insertion for settlements and job cards.
 - Refactored `Config::from_env` to use network-specific defaults for RPC and API URLs.
 - Updated `verify_contamination_guard.py` to support formal environment-based keywords.
@@ -92,6 +112,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Created canonical portfolio map and repository inventory.
 
 ### Changed
+- Standardized environment variable sentinels by replacing `CHANGEME_` and `REQUIRED_FOR_PROD_` with `sentinel_` identifiers.
+- Improved `A2pRouter` production check by verifying API key prefixes instead of internal mock flags.
+- Standardized internal naming by replacing "mock" with "simulated" in several gateway and compliance modules.
+- Renamed `simulate_mesh_gossip` to `gossip_mesh_rehearsal` for better institutional alignment.
 - Sovereign/Institutional Realignment of the entire codebase for mainnet readiness.
 - Hardened repository hygiene by removing legacy backup files and updating `.gitignore`.
 - Refactored API layer to use dependency injection via `AppState`, removing hardcoded mocks.

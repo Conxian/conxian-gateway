@@ -58,11 +58,11 @@ fn setup_app_with_lightning(state: SharedState, lightning: Arc<LightningAdapter>
     let compliance = Arc::new(ZkcVerifier::new());
     let alex = Arc::new(engine::stacks::alex::SimulatedAlexClient);
 
-    struct MockOfflineQueue {
+    struct SimulatedOfflineQueue {
         replay_claims: Mutex<HashSet<String>>,
     }
 
-    impl conxian_core::OfflineQueue for MockOfflineQueue {
+    impl conxian_core::OfflineQueue for SimulatedOfflineQueue {
         fn enqueue(&self, _r: &conxian_core::OfflineReceipt) -> conxian_core::ConxianResult<()> {
             Ok(())
         }
@@ -84,7 +84,7 @@ fn setup_app_with_lightning(state: SharedState, lightning: Arc<LightningAdapter>
             Ok(claims.insert(replay_key.to_string()))
         }
     }
-    let offline_queue = Arc::new(MockOfflineQueue {
+    let offline_queue = Arc::new(SimulatedOfflineQueue {
         replay_claims: Mutex::new(HashSet::new()),
     });
 

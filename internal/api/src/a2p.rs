@@ -71,7 +71,7 @@ impl A2pRouter {
                 channel = %request.channel,
                 "Sending OTP via simulated A2P provider"
             );
-            self.send_otp_internal(request, true).await
+            self.send_otp_internal(request).await
         }
         #[cfg(not(any(test, feature = "mock-integrations")))]
         {
@@ -80,14 +80,13 @@ impl A2pRouter {
                 channel = %request.channel,
                 "Sending OTP via Infobip"
             );
-            self.send_otp_internal(request, false).await
+            self.send_otp_internal(request).await
         }
     }
 
     async fn send_otp_internal(
         &self,
         request: OtpRequest,
-        is_mock: bool,
     ) -> ConxianResult<(OtpResponse, String, u64)> {
         let otp_code = generate_otp_code();
 
@@ -99,7 +98,7 @@ impl A2pRouter {
         let hmac_value = self.generate_hmac(&request.phone_number, &otp_code, timestamp)?;
         let session_id = uuid::Uuid::new_v4().to_string();
 
-        if !is_mock {
+        if !self.infobip_api_key.is_empty() && !self.infobip_api_key.starts_with("sentinel_") && !self.infobip_api_key.contains("infobip-key") {
             let api_url = format!("{}/sms/2/text/advanced", self.infobip_base_url);
             let payload = InfobipSmsRequest {
                 messages: vec![InfobipMessage {
