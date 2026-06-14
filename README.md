@@ -3,7 +3,7 @@
 Institutional-grade Rust middleware bridging Bitcoin and Stacks state with compliance, verification, and integration services.
 
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Status](https://img.shields.io/badge/Status-v0.1.3-orange.svg)](#status)
+[![Status](https://img.shields.io/badge/Status-v0.1.4-orange.svg)](#status)
 
 ## Purpose
 
@@ -11,7 +11,7 @@ Provide a public middleware and integration surface for indexing, verification, 
 
 ## Status
 
-**Active development (v0.1.3).** Production intent exists, but deployment decisions should follow the readiness criteria documented in this repository.
+**Active development (v0.1.4).** Production intent exists, but deployment decisions should follow the readiness criteria documented in this repository.
 
 ### Readiness framing
 

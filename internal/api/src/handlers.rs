@@ -36,7 +36,7 @@ pub async fn get_health(State(state): State<AppState>) -> Json<Value> {
 
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("system clock moved backwards")
         .as_secs();
 
     let mut overall = "ok";
@@ -402,7 +402,7 @@ fn trust_policy_message(reason: TrustPolicyReasonCode) -> &'static str {
 fn unix_epoch_secs() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("system clock moved backwards")
         .as_secs()
 }
 
@@ -463,7 +463,7 @@ fn build_settlement_proposal(
     let burn_height = s.stacks.burn_block_height.unwrap_or(0);
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("system clock moved backwards")
         .as_secs();
 
     let trigger_id = state

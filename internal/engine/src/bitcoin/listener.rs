@@ -44,7 +44,7 @@ impl<R: BitcoinRpc> BitcoinListener<R> {
             Ok(current_height) => {
                 let now = SystemTime::now()
                     .duration_since(UNIX_EPOCH)
-                    .unwrap()
+                    .expect("system clock moved backwards")
                     .as_secs();
 
                 if current_height > self.last_height || self.last_height == 0 {

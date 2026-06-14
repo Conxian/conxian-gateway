@@ -34,7 +34,7 @@ async fn test_offline_pos_blackout_reconciliation() {
 
     let ts = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("system clock moved backwards")
         .as_nanos();
     let db_path = format!("offline_queue_{}.db", ts);
     let key = [0u8; 32];

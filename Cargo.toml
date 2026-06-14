@@ -16,7 +16,7 @@ license = "MIT"
 description = "Institutional-grade Bitcoin/Stacks Gateway"
 
 [workspace.dependencies]
-rusqlite = { version = "0.40.1", features = ["bundled"] }
+rusqlite = { version = "=0.31.0", features = ["bundled"] }
 aes-gcm = "0.10.3"
 # Bitcoin & Stacks
 bitcoin = { version = "0.32.100", features = ["std", "serde", "rand", "secp-recovery"] }

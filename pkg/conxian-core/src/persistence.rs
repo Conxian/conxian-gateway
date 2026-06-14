@@ -239,7 +239,7 @@ mod tests {
     fn tmp_db_path(prefix: &str) -> String {
         let suffix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .expect("system clock moved backwards")
             .as_nanos();
         format!("{}_{}.db", prefix, suffix)
     }

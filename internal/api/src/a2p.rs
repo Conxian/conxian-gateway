@@ -93,7 +93,7 @@ impl A2pRouter {
 
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .expect("system clock moved backwards")
             .as_secs();
 
         let hmac_value = self.generate_hmac(&request.phone_number, &otp_code, timestamp)?;
@@ -146,7 +146,7 @@ impl A2pRouter {
     pub fn verify_otp(&self, request: OtpVerificationRequest) -> ConxianResult<bool> {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .expect("system clock moved backwards")
             .as_secs();
 
         // Check expiration (e.g., 5 minutes)

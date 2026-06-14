@@ -137,7 +137,7 @@ fn make_tee_attestation_header(payload_hash: &str) -> String {
 fn make_trust_metadata_header(system: &str, trust_tier: &str, allowed_systems: &[&str]) -> String {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("system clock moved backwards")
         .as_secs();
 
     serde_json::to_string(&json!({

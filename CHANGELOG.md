@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `docs/research/UNIVERSAL_CHAIN_RESEARCH.md` covering multi-chain adapter patterns and event bus delivery logic.
 
 ### Changed
+- Remediated non-deterministic `.unwrap()` calls in system clock access across the workspace.
+- Implemented Schnorr signature verification in `ZkcVerifier` for Taproot-compatible attestations.
 - Hardened `internal/api/src/auth.rs` by replacing insecure sentinel strings with compliant production identifiers.
 - Integrated dynamic `chrono::Utc` timestamps in `ZkcVerifier` for ISO 20022 message generation, replacing hardcoded legacy dates.
 - Updated `docker-compose.yml` with hardened sentinel values for webhook and ingress secrets.
