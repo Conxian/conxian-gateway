@@ -410,7 +410,7 @@ fn validate_request(payload: &X402PaymentPayload, now: u64) -> Result<(), Lightn
 fn now_unix_secs() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("system clock moved backwards")
         .as_secs()
 }
 

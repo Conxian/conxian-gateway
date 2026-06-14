@@ -29,3 +29,8 @@ Audit-readiness is a core pillar of the Conxian Gateway. Tracked backup files (`
 
 ## Approval Note
 The repository is now cleaner and more aligned with institutional standards. Legacy artifacts have been removed, and hygiene rules are hardened.
+
+## Hardening Update (2026-06-14)
+- **Clock Access**: Replaced all non-deterministic `.unwrap()` calls in system clock access with descriptive `.expect("system clock moved backwards")` to improve system robustness.
+- **Attestation Logic**: Implemented Schnorr signature verification in `ZkcVerifier` to support Taproot-compatible attestations (CON-1174/CON-810).
+- **Test Coverage**: Added unit tests for ECDSA and Schnorr TEE attestation verification in the compliance module.

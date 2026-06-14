@@ -7,7 +7,7 @@ use conxian_core::{
 };
 use hmac::KeyInit;
 use hmac::{Hmac, Mac};
-use secp256k1::{Message, PublicKey, Secp256k1};
+use secp256k1::{schnorr, Message, PublicKey, Secp256k1, XOnlyPublicKey};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -144,6 +144,50 @@ impl ZkcVerifier {
                 info!(device_id = %att.device_id, "TEE attestation verified");
                 Ok(att.clone())
             }
+            AttestationRequest::Schnorr(att) => {
+                if !att.device_id.starts_with(TEE_DEVICE_ID_PREFIX) {
+                    return Err(ConxianError::Compliance(
+                        "Invalid TEE device ID prefix".to_string(),
+                    ));
+                }
+
+                let pubkey = XOnlyPublicKey::from_slice(
+                    &hex::decode(&att.x_only_public_key)
+                        .map_err(|e| ConxianError::Compliance(format!("Invalid hex: {}", e)))?,
+                )
+                .map_err(|e| {
+                    ConxianError::Compliance(format!("Invalid X-only public key: {}", e))
+                })?;
+
+                let mut hasher = Sha256::new();
+                hasher.update(ATTESTATION_SIGNING_DOMAIN);
+                hasher.update(att.payload.as_bytes());
+                hasher.update(att.device_id.as_bytes());
+                let msg = Message::from_digest(hasher.finalize().into());
+
+                let sig =
+                    schnorr::Signature::from_slice(&hex::decode(&att.signature).map_err(|e| {
+                        ConxianError::Compliance(format!("Invalid signature hex: {}", e))
+                    })?)
+                    .map_err(|e| {
+                        ConxianError::Compliance(format!("Invalid signature format: {}", e))
+                    })?;
+
+                self.secp.verify_schnorr(&sig, &msg, &pubkey).map_err(|e| {
+                    ConxianError::Compliance(format!(
+                        "Schnorr signature verification failed: {}",
+                        e
+                    ))
+                })?;
+
+                info!(device_id = %att.device_id, "TEE Schnorr attestation verified");
+                Ok(Attestation {
+                    device_id: att.device_id.clone(),
+                    signature: att.signature.clone(),
+                    payload: att.payload.clone(),
+                    public_key: att.x_only_public_key.clone(),
+                })
+            }
             _ => Err(ConxianError::Compliance(
                 "Unsupported attestation type for TEE verification".to_string(),
             )),
@@ -157,6 +201,14 @@ impl ZkcVerifier {
     ) -> ConxianResult<Attestation> {
         match request {
             AttestationRequest::Ecdsa(att) => {
+                if att.payload != payload_hash {
+                    return Err(ConxianError::Security(
+                        "Attestation payload hash mismatch".to_string(),
+                    ));
+                }
+                self.verify_tee_attestation(request)
+            }
+            AttestationRequest::Schnorr(att) => {
                 if att.payload != payload_hash {
                     return Err(ConxianError::Security(
                         "Attestation payload hash mismatch".to_string(),
@@ -178,7 +230,7 @@ impl ZkcVerifier {
     ) -> ConxianResult<NormalizedSettlement> {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .expect("system clock moved backwards")
             .as_secs();
 
         let identifiers = SettlementIdentifiers {
@@ -280,7 +332,7 @@ impl ZkcVerifier {
 
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .expect("system clock moved backwards")
             .as_secs();
 
         Ok(SettlementEnvelope {
@@ -330,7 +382,7 @@ impl ZkcVerifier {
 
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .expect("system clock moved backwards")
             .as_secs();
 
         Ok(SettlementEnvelope {
@@ -377,7 +429,7 @@ impl ZkcVerifier {
 
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .expect("system clock moved backwards")
             .as_secs();
 
         Ok(SettlementEnvelope {
@@ -428,7 +480,7 @@ impl ZkcVerifier {
 
                 let timestamp = SystemTime::now()
                     .duration_since(UNIX_EPOCH)
-                    .unwrap()
+                    .expect("system clock moved backwards")
                     .as_secs();
 
                 envelopes.push(SettlementEnvelope {
@@ -485,7 +537,7 @@ impl ZkcVerifier {
             amount_sbtc,
             timestamp: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap()
+                .expect("system clock moved backwards")
                 .as_secs(),
             device_id: device_id.to_string(),
             tee_signature: format!("sig-{}", uuid::Uuid::new_v4()),
@@ -527,5 +579,104 @@ impl SovereignCommit for ZkcVerifier {
     fn commit_job_card(&self, _job_card: &ConxianJobCard) -> ConxianResult<()> {
         info!("Committing job card to decentralized sovereign sharding (Tableland)");
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod zkc_tests {
+    use super::*;
+    use conxian_core::SchnorrAttestation;
+    use secp256k1::Keypair;
+
+    #[test]
+    fn test_verify_schnorr_attestation_success() {
+        let secp = Secp256k1::new();
+        let keypair = Keypair::new(&secp, &mut secp256k1::rand::thread_rng());
+        let (pubkey, _) = keypair.x_only_public_key();
+        let device_id = format!("{}test-device", TEE_DEVICE_ID_PREFIX);
+        let payload = "test-payload";
+
+        let mut hasher = Sha256::new();
+        hasher.update(ATTESTATION_SIGNING_DOMAIN);
+        hasher.update(payload.as_bytes());
+        hasher.update(device_id.as_bytes());
+        let msg = Message::from_digest(hasher.finalize().into());
+
+        let sig = secp.sign_schnorr(&msg, &keypair);
+
+        let att = SchnorrAttestation {
+            device_id: device_id.clone(),
+            signature: hex::encode(sig.as_ref()),
+            payload: payload.to_string(),
+            x_only_public_key: hex::encode(pubkey.serialize()),
+        };
+
+        let verifier = ZkcVerifier::new();
+        let request = AttestationRequest::Schnorr(att);
+        let result = verifier.verify_tee_attestation(&request).unwrap();
+
+        assert_eq!(result.device_id, device_id);
+        assert_eq!(result.payload, payload);
+    }
+
+    #[test]
+    fn test_verify_schnorr_trigger_success() {
+        let secp = Secp256k1::new();
+        let keypair = Keypair::new(&secp, &mut secp256k1::rand::thread_rng());
+        let (pubkey, _) = keypair.x_only_public_key();
+        let device_id = format!("{}trigger-device", TEE_DEVICE_ID_PREFIX);
+        let payload = "trigger-payload";
+
+        let mut hasher = Sha256::new();
+        hasher.update(ATTESTATION_SIGNING_DOMAIN);
+        hasher.update(payload.as_bytes());
+        hasher.update(device_id.as_bytes());
+        let msg = Message::from_digest(hasher.finalize().into());
+
+        let sig = secp.sign_schnorr(&msg, &keypair);
+
+        let att = SchnorrAttestation {
+            device_id: device_id.clone(),
+            signature: hex::encode(sig.as_ref()),
+            payload: payload.to_string(),
+            x_only_public_key: hex::encode(pubkey.serialize()),
+        };
+
+        let verifier = ZkcVerifier::new();
+        let request = AttestationRequest::Schnorr(att);
+        let result = verifier
+            .verify_settlement_trigger_attestation(&request, payload)
+            .unwrap();
+
+        assert_eq!(result.device_id, device_id);
+    }
+
+    #[test]
+    fn test_verify_ecdsa_attestation_success() {
+        let secp = Secp256k1::new();
+        let (secret_key, pubkey) = secp.generate_keypair(&mut secp256k1::rand::thread_rng());
+        let device_id = format!("{}ecdsa-device", TEE_DEVICE_ID_PREFIX);
+        let payload = "ecdsa-payload";
+
+        let mut hasher = Sha256::new();
+        hasher.update(ATTESTATION_SIGNING_DOMAIN);
+        hasher.update(payload.as_bytes());
+        hasher.update(device_id.as_bytes());
+        let msg = Message::from_digest(hasher.finalize().into());
+
+        let sig = secp.sign_ecdsa(&msg, &secret_key);
+
+        let att = Attestation {
+            device_id: device_id.clone(),
+            signature: hex::encode(sig.serialize_compact()),
+            payload: payload.to_string(),
+            public_key: hex::encode(pubkey.serialize()),
+        };
+
+        let verifier = ZkcVerifier::new();
+        let request = AttestationRequest::Ecdsa(att);
+        let result = verifier.verify_tee_attestation(&request).unwrap();
+
+        assert_eq!(result.device_id, device_id);
     }
 }
