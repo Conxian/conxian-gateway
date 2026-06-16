@@ -1,13 +1,13 @@
 # Conxian Gateway
 
-Institutional-grade Rust middleware bridging Bitcoin and Stacks state with compliance, verification, and integration services.
+Integration and middleware surface for the broader Conxian ecosystem.
 
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Status](https://img.shields.io/badge/Status-v0.1.4-orange.svg)](#status)
 
 ## Purpose
 
-Provide a public middleware and integration surface for indexing, verification, settlement workflows, and institutional connectivity around the Conxian ecosystem.
+Provide a public middleware and integration surface for indexing, verification, settlement workflows, and external connectivity around Conxian.
 
 ## Status
 
@@ -21,16 +21,16 @@ Provide a public middleware and integration surface for indexing, verification, 
 
 ## Scope
 
-This repository contains gateway and middleware code. It is not the protocol source of truth, and it is not a custody authority for user or treasury funds.
+This repository contains gateway and middleware code. It is a support and integration layer. It is not the protocol source of truth, and it is not the governance or ownership center of the ecosystem.
 
 ## Governance relation
 
-This repository is maintained by Conxian Labs as part of the public Conxian stack. It supports protocol access and integrations, while governance of the protocol is expected to decentralize progressively after mainnet.
+This repository is maintained by Conxian-Labs as a public support and integration surface around Conxian. It helps systems interact with the protocol without replacing the protocol's DAO-facing authority.
 
 ## Intended audience
 
 - infrastructure engineers
-- institutional integrators
+- integrators
 - fintech and settlement partners
 - contributors building on Conxian services
 
@@ -100,15 +100,3 @@ pnpm test
 - Support: [support@conxian-labs.com](mailto:support@conxian-labs.com)
 - Security: [security@conxian-labs.com](mailto:security@conxian-labs.com)
 - General: [info@conxian-labs.com](mailto:info@conxian-labs.com)
-
-## BOS Control Plane & Canonical Mapping (v1.9.2)
-
-The Conxian Gateway serves as the integration surface for the BOS control plane. Canonical references, mapping, and migration paths are maintained in the following documents:
-
-- [ADMIN_CONTRACTS_V1.md](docs/api/ADMIN_CONTRACTS_V1.md) — Admin API contracts for BOS workflows.
-- [PORTFOLIO_MAP.md](docs/PORTFOLIO_MAP.md) — Shared repository and domain mapping.
-- [SAB_MIGRATION.md](docs/SAB_MIGRATION.md) — Infrastructure sovereignty transition tracking.
-- [READINESS_GATES.md](docs/READINESS_GATES.md) — Institutional release criteria.
-- [RFC_RGB_ADAPTER.md](docs/RFC_RGB_ADAPTER.md) — Protocol adapter specification for RGB rails.
-
-Admin API v1 (bootstrap) is now available under `/admin/v1` for release governance and audit workflows.
