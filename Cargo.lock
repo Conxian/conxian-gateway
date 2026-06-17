@@ -81,7 +81,7 @@ checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
 name = "api"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -736,9 +736,10 @@ dependencies = [
 
 [[package]]
 name = "compliance"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
+ "async-trait",
  "base64 0.22.1",
  "bincode",
  "bitcoin",
@@ -776,7 +777,7 @@ checksum = "a6ef517f0926dd24a1582492c791b6a4818a4d94e789a334894aa15b0d12f55c"
 
 [[package]]
 name = "conxian-core"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "aes-gcm",
  "async-trait",
@@ -1019,7 +1020,7 @@ checksum = "edd0f118536f44f5ccd48bcb8b111bdc3de888b58c74639dfb034a357d0f206d"
 
 [[package]]
 name = "engine"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1239,7 +1240,7 @@ dependencies = [
 
 [[package]]
 name = "gateway"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "api",

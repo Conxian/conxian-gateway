@@ -8,13 +8,13 @@ use axum::{
 use compliance::SovereignCommit;
 use conxian_core::{
     evaluate_trust_metadata_json, AttestationRequest, ConxianError, JobCardSettlementRequest,
-    SettlementEnvelope, SettlementProposal, TrustPolicyDecision, TrustPolicyReasonCode,
+    SettlementEnvelope, SettlementProposal, TrustPolicyDecision,
 };
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 pub const TEE_ATTESTATION_HEADER: &str = "x-tee-attestation";
 pub const TRUST_METADATA_HEADER: &str = "x-conxian-trust-metadata";
@@ -76,7 +76,7 @@ pub async fn get_health(State(state): State<AppState>) -> Json<Value> {
         "stacks": {
             "status": stacks_status,
             "height": s.stacks.height,
-            "epoch": s.stacks.epoch,
+            "epoch": s.stacks.epoch.clone(),
         }
     }))
 }
@@ -98,14 +98,8 @@ pub async fn get_metrics(State(state): State<AppState>) -> Json<Value> {
         "total_requests": s.metrics.total_requests,
         "trust_policy_allow": s.metrics.trust_policy_allow,
         "trust_policy_block": s.metrics.trust_policy_block,
-        "treasury": {
-            "balance_stx": s.metrics.treasury_balance_stx,
-            "balance_btc": s.metrics.treasury_balance_btc,
-            "last_update": s.metrics.last_treasury_update,
-            "sbtc_liquidity": s.metrics.sbtc_liquidity,
-            "syi_index": s.metrics.syi_index,
-        },
-        "bounty_payouts_enabled": s.metrics.bounty_payouts_enabled
+        "treasury_balance_stx": s.metrics.treasury_balance_stx,
+        "treasury_balance_btc": s.metrics.treasury_balance_btc,
     }))
 }
 
@@ -113,11 +107,6 @@ pub async fn create_fiat_session(
     State(state): State<AppState>,
     Json(payload): Json<crate::fiat::OnRampSessionRequest>,
 ) -> Result<Json<crate::fiat::OnRampSessionResponse>, (StatusCode, Json<Value>)> {
-    info!(
-        "Creating fiat on-ramp session for provider: {}",
-        payload.provider
-    );
-
     match state.fiat.create_session(payload).await {
         Ok(res) => Ok(Json(res)),
         Err(e) => Err((
@@ -141,10 +130,7 @@ pub async fn verify_fiat_webhook(
         payload.signature = sig.to_string();
     }
 
-    match state
-        .fiat
-        .verify_webhook(&payload, &state.fiat_webhook_secret)
-    {
+    match state.fiat.verify_webhook(&payload, &state.fiat_webhook_secret) {
         Ok(true) => {
             let replay_key = compute_webhook_replay_key(&payload);
             match state
@@ -160,29 +146,25 @@ pub async fn verify_fiat_webhook(
                     );
                     Err((
                         StatusCode::CONFLICT,
-                        Json(json!({
-                            "error": "Duplicate webhook delivery rejected (replay detected)",
-                            "code": "WEBHOOK_REPLAY_DETECTED"
-                        })),
+                        Json(json!({ "error": "duplicate_webhook" })),
                     ))
                 }
-                Err(e) => {
-                    error!(
-                        error = %e,
-                        provider = %payload.provider,
-                        reference_id = %payload.reference_id,
-                        "Failed to persist webhook replay claim"
-                    );
-                    Err((
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(json!({ "error": "Unable to persist webhook replay claim" })),
-                    ))
-                }
+                Err(e) => Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
+                )),
             }
         }
-        _ => Err((
-            StatusCode::UNAUTHORIZED,
-            Json(json!({ "error": "Invalid signature" })),
+        Ok(false) => {
+            warn!("Invalid fiat webhook signature");
+            Err((
+                StatusCode::UNAUTHORIZED,
+                Json(json!({ "error": "invalid_signature" })),
+            ))
+        }
+        Err(e) => Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
         )),
     }
 }
@@ -192,7 +174,12 @@ pub async fn send_otp(
     Json(payload): Json<crate::a2p::OtpRequest>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     match state.a2p.send_otp(payload).await {
-        Ok((res, _hmac, _expiry)) => Ok(Json(json!(res))),
+        Ok((res, hmac, ts)) => Ok(Json(json!({
+            "session_id": res.session_id,
+            "status": res.status,
+            "hmac": hmac,
+            "timestamp": ts
+        }))),
         Err(e) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
@@ -205,13 +192,93 @@ pub async fn verify_otp(
     Json(payload): Json<crate::a2p::OtpVerificationRequest>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     match state.a2p.verify_otp(payload) {
-        Ok(true) => Ok(Json(json!({ "status": "verified" }))),
-        Ok(false) => Err((
-            StatusCode::UNAUTHORIZED,
-            Json(json!({ "error": "Invalid OTP or HMAC" })),
+        Ok(valid) => Ok(Json(json!({ "valid": valid }))),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
         )),
+    }
+}
+
+pub async fn sync_erp_ledger(
+    State(state): State<AppState>,
+    Json(payload): Json<Value>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let raw_payload_hash = sha256_hex(&serde_json::to_vec(&payload).unwrap());
+
+    match state
+        .compliance
+        .normalize_erp_ingress(&payload, raw_payload_hash)
+    {
+        Ok(envelopes) => {
+            for envelope in &envelopes {
+                let _ = state.compliance.commit_settlement(envelope);
+            }
+            Ok(Json(json!({ "status": "success", "count": envelopes.len() })))
+        }
         Err(e) => Err((
             StatusCode::BAD_REQUEST,
+            Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
+        )),
+    }
+}
+
+pub async fn settle_job_card(
+    State(state): State<AppState>,
+    Json(payload): Json<JobCardSettlementRequest>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    match state.compliance.verify_bitvm2_settlement(&payload) {
+        Ok(txid) => {
+            let _ = state.compliance.commit_job_card(&payload.job_card);
+            Ok(Json(json!({ "status": "success", "txid": txid })))
+        }
+        Err(e) => Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
+        )),
+    }
+}
+
+pub async fn generate_iso_payment(
+    State(state): State<AppState>,
+    Json(payload): Json<Value>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let amount_sbtc = payload["amount_sbtc"].as_f64().ok_or((
+        StatusCode::BAD_REQUEST,
+        Json(json!({ "error": "amount_sbtc is required" })),
+    ))?;
+
+    let amount_satoshis = amount_sbtc_to_satoshis(amount_sbtc).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": e })),
+        )
+    })?;
+
+    let receiver = payload["receiver"].as_str().ok_or((
+        StatusCode::BAD_REQUEST,
+        Json(json!({ "error": "receiver is required" })),
+    ))?;
+
+    let job_card = conxian_core::ConxianJobCard {
+        context: "https://conxian.org/ns/job-card/v2".to_string(),
+        r#type: "PaymentJob".to_string(),
+        work_intent: conxian_core::WorkIntent {
+            sender_address: "GENERATED".to_string(),
+            receiver_address: receiver.to_string(),
+            amount_sbtc: amount_satoshis,
+            town_name: None,
+            country_code: None,
+        },
+    };
+
+    match state
+        .compliance
+        .format_iso20022_pacs008_v8(&job_card)
+    {
+        Ok(xml) => Ok(Json(json!({ "xml": xml }))),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
         )),
     }
@@ -239,16 +306,16 @@ pub async fn ingress_iso20022(
     let tee_attestation = verify_tee_settlement_attestation(&state, &headers, &raw_payload_hash)?;
     let industrial_intent = extract_industrial_intent(&headers);
 
-    let xml_str = std::str::from_utf8(&raw_payload).map_err(|_| {
+    let xml_payload = String::from_utf8(raw_payload.to_vec()).map_err(|_| {
         (
             StatusCode::BAD_REQUEST,
-            Json(json!({ "error": "Invalid UTF-8 in XML" })),
+            Json(json!({ "error": "Invalid UTF-8 in XML payload" })),
         )
     })?;
 
     match state
         .compliance
-        .normalize_iso20022_ingress(xml_str, raw_payload_hash.clone())
+        .normalize_iso20022_ingress(&xml_payload, raw_payload_hash.clone())
     {
         Ok(mut envelope) => {
             if let Some(intent) = industrial_intent {
@@ -264,506 +331,6 @@ pub async fn ingress_iso20022(
             let _ = state.compliance.commit_settlement(&proposal.envelope);
             Ok(Json(proposal))
         }
-        Err(e) => Err((
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
-        )),
-    }
-}
-
-pub async fn sync_erp_ledger(
-    State(state): State<AppState>,
-    Json(payload): Json<Value>,
-) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    info!("Syncing ERP ledger via OData v4...");
-
-    let payload_bytes = serde_json::to_vec(&payload).map_err(|e: serde_json::Error| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": format!("Serialization error: {}", e) })),
-        )
-    })?;
-    let mut hasher = Sha256::new();
-    hasher.update(&payload_bytes);
-    let raw_payload_hash = hex::encode(hasher.finalize());
-
-    let envelopes = state
-        .compliance
-        .normalize_erp_ingress(&payload, raw_payload_hash)
-        .map_err(|e: ConxianError| {
-            (
-                StatusCode::BAD_REQUEST,
-                Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
-            )
-        })?;
-
-    let count = envelopes.len();
-    Ok(Json(json!({ "status": "synced", "count": count })))
-}
-
-pub async fn settle_job_card(
-    State(state): State<AppState>,
-    Json(payload): Json<Value>,
-) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    info!("Executing BitVM2-backed settlement...");
-
-    let request: JobCardSettlementRequest = serde_json::from_value(payload).map_err(|e| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": format!("Invalid settlement request: {}", e) })),
-        )
-    })?;
-
-    match state.compliance.verify_bitvm2_settlement(&request) {
-        Ok(true) => {
-            info!(
-                "BitVM2 settlement verified for job: {}",
-                request.bitvm_attestation.commitment_hash
-            );
-            Ok(Json(json!({
-                "status": "settled",
-                "verified": true,
-                "txid": format!("bitvm-{}", request.bitvm_attestation.proof_hash)
-            })))
-        }
-        Ok(false) => {
-            warn!("BitVM2 settlement verification failed");
-            Ok(Json(json!({
-                "status": "failed",
-                "verified": false,
-                "error": "Commitment or proof mismatch"
-            })))
-        }
-        Err(e) => {
-            error!(error = %e, "BitVM2 settlement error");
-            Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
-            ))
-        }
-    }
-}
-
-pub async fn get_external_settlements(
-    State(state): State<AppState>,
-) -> Json<Vec<SettlementProposal>> {
-    let log = state.settlement_log.read().await;
-    let list: Vec<SettlementProposal> = log.iter().cloned().collect();
-    Json(list)
-}
-
-fn enforce_ingress_trust_policy(
-    state: &AppState,
-    headers: &HeaderMap,
-) -> Result<(), (StatusCode, Json<Value>)> {
-    let decision = evaluate_trust_policy_from_headers(headers);
-    record_trust_policy_metric(state, decision);
-
-    match decision {
-        TrustPolicyDecision::Allow => Ok(()),
-        TrustPolicyDecision::Block(reason) => {
-            warn!(
-                code = reason.as_str(),
-                "Ingress request rejected by trust-tier policy"
-            );
-            Err(trust_policy_error_response(reason))
-        }
-    }
-}
-
-fn evaluate_trust_policy_from_headers(headers: &HeaderMap) -> TrustPolicyDecision {
-    let now_epoch_secs = unix_epoch_secs();
-    let raw_metadata = match headers.get(TRUST_METADATA_HEADER) {
-        Some(value) => match value.to_str() {
-            Ok(raw) => Some(raw),
-            Err(_) => {
-                return TrustPolicyDecision::Block(TrustPolicyReasonCode::MetadataInvalid);
-            }
-        },
-        None => None,
-    };
-
-    evaluate_trust_metadata_json(raw_metadata, now_epoch_secs)
-}
-
-fn record_trust_policy_metric(state: &AppState, decision: TrustPolicyDecision) {
-    if let Ok(mut s) = state.shared.write() {
-        match decision {
-            TrustPolicyDecision::Allow => s.metrics.trust_policy_allow += 1,
-            TrustPolicyDecision::Block(_) => s.metrics.trust_policy_block += 1,
-        }
-    }
-}
-
-fn trust_policy_error_response(reason: TrustPolicyReasonCode) -> (StatusCode, Json<Value>) {
-    (
-        StatusCode::FORBIDDEN,
-        Json(json!({
-            "code": reason.as_str(),
-            "message": trust_policy_message(reason),
-        })),
-    )
-}
-
-fn trust_policy_message(reason: TrustPolicyReasonCode) -> &'static str {
-    match reason {
-        TrustPolicyReasonCode::MetadataMissing => {
-            "Missing required x-conxian-trust-metadata header"
-        }
-        TrustPolicyReasonCode::MetadataInvalid => "Invalid x-conxian-trust-metadata header payload",
-        TrustPolicyReasonCode::MetadataStale => "Trust metadata is stale or expired",
-        TrustPolicyReasonCode::PolicyBlocked => {
-            "Trust tier policy blocks this bridge system and tier combination"
-        }
-    }
-}
-
-fn unix_epoch_secs() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock moved backwards")
-        .as_secs()
-}
-
-fn verify_tee_settlement_attestation(
-    state: &AppState,
-    headers: &HeaderMap,
-    payload_hash: &str,
-) -> Result<AttestationRequest, (StatusCode, Json<Value>)> {
-    let attestation_raw = headers
-        .get(TEE_ATTESTATION_HEADER)
-        .and_then(|h| h.to_str().ok())
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or((
-            StatusCode::UNAUTHORIZED,
-            Json(json!({ "error": "Missing TEE attestation" })),
-        ))?;
-
-    let attestation: AttestationRequest =
-        serde_json::from_str(attestation_raw).map_err(|e: serde_json::Error| {
-            (
-                StatusCode::BAD_REQUEST,
-                Json(json!({ "error": format!("Invalid TEE attestation format: {e}") })),
-            )
-        })?;
-
-    match state
-        .compliance
-        .verify_settlement_trigger_attestation(&attestation, payload_hash)
-    {
-        Ok(_) => (),
-        Err(e @ ConxianError::Security(_)) => {
-            warn!(error = %e, "TEE settlement attestation rejected");
-            return Err((
-                StatusCode::UNAUTHORIZED,
-                Json(json!({ "error": "Invalid TEE attestation" })),
-            ));
-        }
-        Err(e) => {
-            error!(error = %e, "TEE settlement attestation verification error");
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": "TEE attestation verification failed" })),
-            ));
-        }
-    }
-
-    Ok(attestation)
-}
-
-fn build_settlement_proposal(
-    state: &AppState,
-    envelope: SettlementEnvelope,
-    tee_attestation: AttestationRequest,
-    raw_payload_hash: &str,
-) -> Result<SettlementProposal, (StatusCode, Json<Value>)> {
-    let s = state.shared.read().unwrap();
-    let burn_height = s.stacks.burn_block_height.unwrap_or(0);
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock moved backwards")
-        .as_secs();
-
-    let trigger_id = state
-        .compliance
-        .compute_trigger_id(
-            &format!("{:?}", envelope.payload.source),
-            raw_payload_hash,
-            &envelope.payload.identifiers,
-        )
-        .map_err(|e: ConxianError| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
-            )
-        })?;
-
-    SettlementProposal::new(trigger_id, envelope, tee_attestation, burn_height, now).map_err(
-        |e: ConxianError| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
-            )
-        },
-    )
-}
-
-async fn record_settlement(state: &AppState, proposal: &SettlementProposal) {
-    let mut log = state.settlement_log.write().await;
-    log.push_back(proposal.clone());
-    if log.len() > SETTLEMENT_LOG_MAX_ENTRIES {
-        log.pop_front();
-    }
-}
-
-pub async fn generate_iso_payment(
-    State(state): State<AppState>,
-    Json(job_card): Json<conxian_core::ConxianJobCard>,
-) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    match state.compliance.format_iso20022_pacs008_v8(&job_card) {
-        Ok(xml) => Ok(Json(json!({ "xml": xml, "schema": "pacs.008.001.08" }))),
-        Err(e) => Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
-        )),
-    }
-}
-
-pub async fn get_alex_quote(
-    State(state): State<AppState>,
-    Query(request): Query<conxian_core::AlexSwapRequest>,
-) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    match state.alex.get_swap_quote(request).await {
-        Ok(amount) => Ok(Json(json!({ "dy": amount.to_string() }))),
-        Err(e) => Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
-        )),
-    }
-}
-
-pub async fn execute_alex_swap(
-    State(state): State<AppState>,
-    Json(payload): Json<conxian_core::AlexSwapRequest>,
-) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    info!("Building ALEX swap payload for preparation...");
-
-    match state.alex.build_swap_payload(payload).await {
-        Ok(preparation) => {
-            warn!("ALEX swap execution paused: signer-enclave integration required for broadcast");
-            Ok(Json(json!({
-                "status": "prepared",
-                "preparation": preparation,
-                "message": "Payload built successfully. Signer integration required for final execution."
-            })))
-        }
-        Err(e) => Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
-        )),
-    }
-}
-
-pub async fn toggle_bounty_payouts(
-    State(state): State<AppState>,
-    Json(enabled): Json<bool>,
-) -> Json<Value> {
-    let mut s = state.shared.write().unwrap();
-    s.metrics.bounty_payouts_enabled = enabled;
-    info!("Bounty payouts enabled: {}", enabled);
-    Json(json!({ "status": "success", "bounty_payouts_enabled": enabled }))
-}
-
-#[derive(Debug, serde::Deserialize)]
-pub struct OfflinePosRequest {
-    pub tx_hash: String,
-    pub amount_sbtc: Option<f64>,
-    pub amount_satoshi: Option<u64>,
-    pub device_id: String,
-    pub passkey_attestation: conxian_core::AttestationRequest,
-}
-
-pub async fn handle_offline_pos(
-    State(state): State<AppState>,
-    Json(payload): Json<OfflinePosRequest>,
-) -> Result<Json<conxian_core::OfflineReceipt>, (StatusCode, Json<Value>)> {
-    let amount_satoshi = if let Some(sats) = payload.amount_satoshi {
-        sats
-    } else if let Some(amount_sbtc) = payload.amount_sbtc {
-        amount_sbtc_to_satoshis(amount_sbtc)
-            .map_err(|message| (StatusCode::BAD_REQUEST, Json(json!({ "error": message }))))?
-    } else {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            Json(json!({
-                "error": "Either amount_satoshi or amount_sbtc is required"
-            })),
-        ));
-    };
-
-    let mut receipt = state
-        .compliance
-        .sign_offline_receipt(
-            &payload.tx_hash,
-            amount_satoshi,
-            &payload.device_id,
-            payload.passkey_attestation,
-        )
-        .map_err(|e: ConxianError| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
-            )
-        })?;
-
-    state
-        .compliance
-        .gossip_mesh_rehearsal(&mut receipt)
-        .map_err(|e: ConxianError| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
-            )
-        })?;
-
-    state
-        .offline_queue
-        .enqueue(&receipt)
-        .map_err(|e: ConxianError| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
-            )
-        })?;
-
-    Ok(Json(receipt))
-}
-
-pub async fn sync_offline_receipts(
-    State(state): State<AppState>,
-) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    let receipts = state
-        .offline_queue
-        .dequeue_pending()
-        .map_err(|e: ConxianError| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
-            )
-        })?;
-
-    let mut synced_count = 0;
-    for receipt in receipts {
-        if state
-            .compliance
-            .verify_offline_receipt(&receipt)
-            .unwrap_or(false)
-        {
-            info!(
-                "Broadcasting offline receipt {} to L2...",
-                receipt.receipt_id
-            );
-            state
-                .offline_queue
-                .mark_broadcasted(&receipt.receipt_id)
-                .map_err(|e: ConxianError| {
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
-                    )
-                })?;
-            synced_count += 1;
-        }
-    }
-
-    Ok(Json(
-        json!({ "status": "success", "synced_count": synced_count }),
-    ))
-}
-
-fn sha256_hex(data: &[u8]) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(data);
-    hex::encode(hasher.finalize())
-}
-
-fn compute_webhook_replay_key(payload: &crate::fiat::WebhookPayload) -> String {
-    let payload_hash = sha256_hex(payload.raw_payload.as_bytes());
-    let provider = payload.provider.to_ascii_lowercase();
-
-    let mut hasher = Sha256::new();
-    hasher.update(provider.as_bytes());
-    hasher.update([0u8]);
-    hasher.update(payload.signature.as_bytes());
-    hasher.update([0u8]);
-    hasher.update(payload_hash.as_bytes());
-
-    format!("fiat-webhook:{}", hex::encode(hasher.finalize()))
-}
-
-fn extract_industrial_intent(headers: &HeaderMap) -> Option<conxian_core::IndustrialIntent> {
-    headers
-        .get("x-industrial-intent")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| serde_json::from_str(v).ok())
-}
-
-pub async fn exchange_identity(
-    State(state): State<AppState>,
-    Json(payload): Json<conxian_core::GcpTokenRequest>,
-) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    match state.identity.exchange_token(&payload).await {
-        Ok(token) => Ok(Json(json!({ "access_token": token }))),
-        Err(e) => Err((
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
-        )),
-    }
-}
-
-pub async fn verify_attestation(
-    State(state): State<AppState>,
-    Json(payload): Json<AttestationRequest>,
-) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    let result = match &payload {
-        AttestationRequest::Ecdsa(a) => state
-            .compliance
-            .verify_settlement_trigger_attestation(&payload, &a.payload),
-        AttestationRequest::Zkml(p) => state
-            .compliance
-            .verify_settlement_trigger_attestation(&payload, &p.receipt_hash),
-        AttestationRequest::BitVm(_b) => {
-            return Ok(Json(json!({
-                "status": "partial",
-                "message": "BitVM attestation requires JobCard context; use /api/v1/settle for full verification"
-            })));
-        }
-        _ => {
-            return Err((
-                StatusCode::NOT_IMPLEMENTED,
-                Json(json!({
-                    "error": "General verification not implemented for this attestation type"
-                })),
-            ))
-        }
-    };
-
-    match result {
-        Ok(_) => Ok(Json(json!({ "status": "verified" }))),
-        Err(e) => Err((
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
-        )),
-    }
-}
-
-pub async fn resolve_identity_v1(
-    State(state): State<AppState>,
-    Json(payload): Json<conxian_core::IdentityResolutionRequest>,
-) -> Result<Json<conxian_core::IdentityResolutionResponse>, (StatusCode, Json<Value>)> {
-    match state.identity.resolve_identity(&payload).await {
-        Ok(res) => Ok(Json(res)),
         Err(e) => Err((
             StatusCode::BAD_REQUEST,
             Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
@@ -879,6 +446,225 @@ pub async fn ingress_brics(
     }
 }
 
+pub async fn get_external_settlements(State(state): State<AppState>) -> Json<Vec<SettlementProposal>> {
+    let log = state.settlement_log.read().await;
+    Json(log.iter().cloned().collect())
+}
+
+pub async fn get_alex_quote(
+    State(state): State<AppState>,
+    Query(params): Query<Value>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let token_x = params["token_x"].as_str().unwrap_or("sBTC");
+    let token_y = params["token_y"].as_str().unwrap_or("STX");
+    let amount_str = params["amount"].as_str().unwrap_or("0");
+    let amount = amount_str.parse::<u128>().map_err(|_| (
+        StatusCode::BAD_REQUEST,
+        Json(json!({ "error": "Invalid amount format" })),
+    ))?;
+
+    let req = conxian_core::AlexSwapRequest {
+        token_x: token_x.to_string(),
+        token_y: token_y.to_string(),
+        factor: 100_000_000,
+        amount,
+        min_dy: None,
+    };
+
+    match state.alex.get_swap_quote(req).await {
+        Ok(quote) => Ok(Json(json!({ "quote": quote.to_string() }))),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
+        )),
+    }
+}
+
+pub async fn execute_alex_swap(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Json(payload): Json<conxian_core::AlexSwapRequest>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let _ = parse_gateway_x402_payload(&headers).map_err(|e: crate::x402::X402ParseError| {
+        (
+            e.status_code(),
+            Json(json!({ "error": e.message(), "code": e.code() })),
+        )
+    })?;
+
+    match state.alex.build_swap_payload(payload).await {
+        Ok(prepared) => Ok(Json(json!({
+            "status": "prepared",
+            "payload": prepared
+        }))),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
+        )),
+    }
+}
+
+pub async fn toggle_bounty_payouts(
+    State(state): State<AppState>,
+    Json(payload): Json<Value>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let enabled = payload["enabled"].as_bool().ok_or((
+        StatusCode::BAD_REQUEST,
+        Json(json!({ "error": "enabled boolean is required" })),
+    ))?;
+
+    let mut s = state.shared.write().unwrap();
+    s.metrics.bounty_payouts_enabled = enabled;
+
+    info!(enabled = %enabled, "Bounty payouts toggled");
+
+    Ok(Json(json!({ "status": "success", "bounty_payouts_enabled": enabled })))
+}
+
+pub async fn handle_offline_pos(
+    State(state): State<AppState>,
+    Json(payload): Json<conxian_core::OfflineReceipt>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    if !state.compliance.verify_offline_receipt(&payload).unwrap_or(false) {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Invalid TEE device ID" })),
+        ));
+    }
+
+    match state.offline_queue.enqueue(&payload) {
+        Ok(_) => Ok(Json(json!({ "status": "enqueued", "receipt_id": payload.receipt_id }))),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
+        )),
+    }
+}
+
+pub async fn sync_offline_receipts(
+    State(state): State<AppState>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let pending = state.offline_queue.dequeue_pending().map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
+        )
+    })?;
+
+    let mut synced_count = 0;
+    for mut receipt in pending {
+        if let Ok(_) = state.compliance.gossip_mesh_rehearsal(&mut receipt) {
+            info!(
+                "Rehearsal: Broadcasting offline receipt {} to L2...",
+                receipt.receipt_id
+            );
+            state
+                .offline_queue
+                .mark_broadcasted(&receipt.receipt_id)
+                .map_err(|e: ConxianError| {
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
+                    )
+                })?;
+            synced_count += 1;
+        }
+    }
+
+    Ok(Json(
+        json!({ "status": "success", "synced_count": synced_count }),
+    ))
+}
+
+fn sha256_hex(data: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(data);
+    hex::encode(hasher.finalize())
+}
+
+fn compute_webhook_replay_key(payload: &crate::fiat::WebhookPayload) -> String {
+    let payload_hash = sha256_hex(payload.raw_payload.as_bytes());
+    let provider = payload.provider.to_ascii_lowercase();
+
+    let mut hasher = Sha256::new();
+    hasher.update(provider.as_bytes());
+    hasher.update([0u8]);
+    hasher.update(payload.signature.as_bytes());
+    hasher.update([0u8]);
+    hasher.update(payload_hash.as_bytes());
+
+    format!("fiat-webhook:{}", hex::encode(hasher.finalize()))
+}
+
+fn extract_industrial_intent(headers: &HeaderMap) -> Option<conxian_core::IndustrialIntent> {
+    headers
+        .get("x-industrial-intent")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| serde_json::from_str(v).ok())
+}
+
+pub async fn exchange_identity(
+    State(state): State<AppState>,
+    Json(payload): Json<conxian_core::GcpTokenRequest>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    match state.identity.exchange_token(&payload).await {
+        Ok(token) => Ok(Json(json!({ "access_token": token }))),
+        Err(e) => Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
+        )),
+    }
+}
+
+pub async fn verify_attestation(
+    State(state): State<AppState>,
+    Json(payload): Json<AttestationRequest>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let result = match &payload {
+        AttestationRequest::Ecdsa(a) => state
+            .compliance
+            .verify_settlement_trigger_attestation(&payload, &a.payload),
+        AttestationRequest::Zkml(p) => state
+            .compliance
+            .verify_settlement_trigger_attestation(&payload, &p.receipt_hash),
+        AttestationRequest::BitVm(_b) => {
+            return Ok(Json(json!({
+                "status": "partial",
+                "message": "BitVM attestation requires JobCard context; use /api/v1/settle for full verification"
+            })));
+        }
+        _ => {
+            return Err((
+                StatusCode::NOT_IMPLEMENTED,
+                Json(json!({
+                    "error": "General verification not implemented for this attestation type"
+                })),
+            ))
+        }
+    };
+
+    match result {
+        Ok(_) => Ok(Json(json!({ "status": "verified" }))),
+        Err(e) => Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
+        )),
+    }
+}
+
+pub async fn resolve_identity_v1(
+    State(state): State<AppState>,
+    Json(payload): Json<conxian_core::IdentityResolutionRequest>,
+) -> Result<Json<conxian_core::IdentityResolutionResponse>, (StatusCode, Json<Value>)> {
+    match state.identity.resolve_identity(&payload).await {
+        Ok(res) => Ok(Json(res)),
+        Err(e) => Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
+        )),
+    }
+}
+
 pub async fn get_handoff_status(State(state): State<AppState>) -> Json<Value> {
     let s = state.shared.read().unwrap();
     Json(json!({
@@ -951,4 +737,140 @@ pub async fn prepare_chain_tx(
             Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
         )),
     }
+}
+
+pub async fn verify_state_proof(
+    Path(chain): Path<String>,
+    State(state): State<AppState>,
+    Json(payload): Json<Value>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    match state.verifier.verify_state_proof(&chain, payload).await {
+        Ok(verified) => Ok(Json(json!({ "chain": chain, "verified": verified }))),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
+        )),
+    }
+}
+
+fn build_settlement_proposal(
+    state: &AppState,
+    envelope: SettlementEnvelope,
+    tee_attestation: AttestationRequest,
+    raw_payload_hash: &str,
+) -> Result<SettlementProposal, (StatusCode, Json<Value>)> {
+    let _trigger_id = state
+        .compliance
+        .compute_trigger_id(
+            &format!("{:?}", envelope.payload.source),
+            raw_payload_hash,
+            &envelope.payload.identifiers,
+        )
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": format!("Failed to compute trigger ID: {}", e) })),
+            )
+        })?;
+
+    let s = state.shared.read().unwrap();
+    let current_burn_height = s.stacks.burn_block_height.unwrap_or(0);
+
+    SettlementProposal::new(
+        format!("prop-{}", uuid::Uuid::new_v4()),
+        envelope,
+        tee_attestation,
+        current_burn_height,
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs(),
+    )
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": format!("Failed to build proposal: {}", e) })),
+        )
+    })
+}
+
+async fn record_settlement(state: &AppState, proposal: &SettlementProposal) {
+    let mut log = state.settlement_log.write().await;
+    log.push_back(proposal.clone());
+    if log.len() > SETTLEMENT_LOG_MAX_ENTRIES {
+        log.pop_front();
+    }
+}
+
+fn enforce_ingress_trust_policy(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<(), (StatusCode, Json<Value>)> {
+    let metadata_json = headers
+        .get(TRUST_METADATA_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .ok_or((
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Missing trust metadata header" })),
+        ))?;
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    let decision = evaluate_trust_metadata_json(Some(metadata_json), now);
+
+    let mut s = state.shared.write().unwrap();
+    match decision {
+        TrustPolicyDecision::Allow => {
+            s.metrics.trust_policy_allow += 1;
+            Ok(())
+        }
+        TrustPolicyDecision::Block(reason) => {
+            s.metrics.trust_policy_block += 1;
+            warn!(reason = ?reason, "Ingress blocked by trust policy");
+            Err((
+                StatusCode::FORBIDDEN,
+                Json(json!({ "error": "blocked_by_trust_policy", "code": reason.as_str() })),
+            ))
+        }
+    }
+}
+
+fn verify_tee_settlement_attestation(
+    state: &AppState,
+    headers: &HeaderMap,
+    payload_hash: &str,
+) -> Result<AttestationRequest, (StatusCode, Json<Value>)> {
+    let att_json = headers
+        .get("x-conxian-attestation")
+        .and_then(|v| v.to_str().ok())
+        .ok_or((
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Missing TEE attestation header" })),
+        ))?;
+
+    let att: AttestationRequest = serde_json::from_str(att_json).map_err(|_| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "Invalid TEE attestation format" })),
+        )
+    })?;
+
+    state
+        .compliance
+        .verify_settlement_trigger_attestation(&att, payload_hash)
+        .map_err(|e| {
+            (
+                StatusCode::FORBIDDEN,
+                Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
+            )
+        })?;
+
+    Ok(att)
+}
+
+fn parse_gateway_x402_payload(headers: &HeaderMap) -> Result<crate::x402::X402PaymentPayload, crate::x402::X402ParseError> {
+    crate::x402::parse_gateway_x402_payload(headers)
 }

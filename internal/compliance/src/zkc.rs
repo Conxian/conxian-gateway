@@ -680,3 +680,10 @@ mod zkc_tests {
         assert_eq!(result.device_id, device_id);
     }
 }
+
+#[async_trait::async_trait]
+impl crate::verifier::CoreVerifier for ZkcVerifier {
+    async fn verify_attestation_v2(&self, request: &AttestationRequest) -> ConxianResult<bool> {
+        self.verify_tee_attestation(request).map(|_| true)
+    }
+}

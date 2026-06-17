@@ -3,7 +3,7 @@ mod config;
 use api::a2p::A2pRouter;
 use api::fiat::FiatRouter;
 use api::{configure_routes, new_lightning_adapter, new_settlement_log, AppState};
-use compliance::{IdentityManager, ZkcVerifier};
+use compliance::{CoreVerifier, IdentityManager, UniversalVerifier, ZkcVerifier};
 use config::Config;
 use conxian_core::persistence::FilePersistence;
 use conxian_core::{GatewayState, Persistence, SharedState};
@@ -140,6 +140,31 @@ async fn main() -> anyhow::Result<()> {
         offline_key[0..secret_bytes.len()].copy_from_slice(secret_bytes);
     }
 
+    let mut multi_chain: HashMap<String, Arc<dyn conxian_core::ChainAdapter>> = HashMap::new();
+
+    let liquid_rpc =
+        BitcoinRpcClient::new(&config.liquid_rpc_url, "", "").expect("Failed to init Liquid RPC");
+    multi_chain.insert(
+        "liquid".to_string(),
+        Arc::new(engine::LiquidAdapter::new(
+            Arc::new(liquid_rpc),
+            config.network.to_string(),
+        )),
+    );
+
+    multi_chain.insert(
+        "rootstock".to_string(),
+        Arc::new(engine::RootstockAdapter::new(
+            config.rootstock_rpc_url.clone(),
+            config.network.to_string(),
+        )),
+    );
+
+    let verifier = Arc::new(UniversalVerifier::new(
+        zkc_verifier.clone() as Arc<dyn CoreVerifier>,
+        multi_chain.clone(),
+    ));
+
     // Create AppState
     let app_state = AppState {
         shared: state.clone(),
@@ -147,35 +172,14 @@ async fn main() -> anyhow::Result<()> {
         a2p: a2p_router,
         identity: identity_manager,
         compliance: zkc_verifier,
+        verifier,
         alex: alex_client,
         lightning: new_lightning_adapter(),
         fiat_webhook_secret: config.fiat_webhook_secret.clone(),
         settlement_ingress_secret: config.settlement_ingress_secret.clone(),
         settlement_log: new_settlement_log(),
         offline_queue: api::new_offline_queue(offline_key),
-        multi_chain: {
-            let mut chains: HashMap<String, Arc<dyn conxian_core::ChainAdapter>> = HashMap::new();
-
-            let liquid_rpc = BitcoinRpcClient::new(&config.liquid_rpc_url, "", "")
-                .expect("Failed to init Liquid RPC");
-            chains.insert(
-                "liquid".to_string(),
-                Arc::new(engine::LiquidAdapter::new(
-                    Arc::new(liquid_rpc),
-                    config.network.to_string(),
-                )),
-            );
-
-            chains.insert(
-                "rootstock".to_string(),
-                Arc::new(engine::RootstockAdapter::new(
-                    config.rootstock_rpc_url.clone(),
-                    config.network.to_string(),
-                )),
-            );
-
-            chains
-        },
+        multi_chain,
     };
 
     // Create a cancellation token for graceful shutdown of listeners

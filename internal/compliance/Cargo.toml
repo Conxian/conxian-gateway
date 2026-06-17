@@ -29,3 +29,4 @@ borsh = "=1.6.1"
 memchr = "2.8.1"
 bytemuck = "1.21.0"
 bincode = "=2.0.1"
+async-trait = { workspace = true }

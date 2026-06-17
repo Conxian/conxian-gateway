@@ -11,12 +11,14 @@ Implement a `UniversalVerifier` service that utilizes the `ChainAdapter` trait t
 - **Adapter Delegation**: The `UniversalVerifier` identifies the target chain from the proof metadata and calls `adapter.verify_state_proof()`.
 - **Trust Policy Integration**: Automatically apply `TrustPolicy` decisions based on the verification result and the adapter's trust tier.
 
-## 3. Implementation Plan
-1. Refactor `internal/compliance/src/zkc.rs` to extract general-purpose verification logic into a `CoreVerifier` trait.
-2. Update `AppState` to include the `UniversalVerifier`.
-3. Migrate `/api/v1/verify` to use the `UniversalVerifier` for all proof types.
+## 3. Implementation (Completed 2026-06-17)
+1. **Refactored compliance layer**: Extracted general-purpose verification logic into a `CoreVerifier` trait in `internal/compliance/src/verifier.rs`.
+2. **Implemented UniversalVerifier**: A service that manages chain adapters and delegates heterogeneous proof verification.
+3. **API Integration**: Added `POST /api/v1/chains/{chain}/verify` to `internal/api/src/routes.rs` and implemented the handler in `handlers.rs`.
+4. **SDK & Schemas**: Updated `@conxian/client-sdk` and `@conxian/schemas` to support universal verification requests.
+5. **Hardened X402 Middleware**: Updated middleware to correctly route and validate payments for new heterogeneous verification endpoints.
 
 ## 4. Expected Outcomes
 - Reduced duplication in verification logic.
-- Faster integration of new chain families.
+- Faster integration of new chain families (Liquid and Rootstock adapters are now fully integrated into the verification pipeline).
 - Consistent trust-tier enforcement across the entire gateway.
