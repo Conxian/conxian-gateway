@@ -1,3 +1,4 @@
+use uuid;
 use crate::AppState;
 use axum::{
     body::Body,
@@ -15,7 +16,6 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{info, warn};
-use uuid;
 
 pub const TEE_ATTESTATION_HEADER: &str = "x-tee-attestation";
 pub const TRUST_METADATA_HEADER: &str = "x-conxian-trust-metadata";
