@@ -11,10 +11,10 @@ use axum::{
     http::{Request, StatusCode},
 };
 use compliance::zkc::{ATTESTATION_SIGNING_DOMAIN, TEE_DEVICE_ID_PREFIX};
-use compliance::{IdentityManager, ZkcVerifier, UniversalVerifier, CoreVerifier};
+use compliance::{CoreVerifier, IdentityManager, UniversalVerifier, ZkcVerifier};
 use conxian_core::{
-    Attestation, AttestationRequest, BitVmAttestation, ConxianJobCard, GatewayState, SharedState,
-    WorkIntent, JobCardSettlementRequest,
+    Attestation, AttestationRequest, BitVmAttestation, ConxianJobCard, GatewayState,
+    JobCardSettlementRequest, SharedState, WorkIntent,
 };
 use hmac::KeyInit;
 use hmac::{Hmac, Mac};
@@ -69,7 +69,10 @@ fn setup_app_with_lightning(state: SharedState, lightning: Arc<LightningAdapter>
         )),
     );
 
-    let verifier = Arc::new(UniversalVerifier::new(compliance.clone() as Arc<dyn CoreVerifier>, multi_chain.clone()));
+    let verifier = Arc::new(UniversalVerifier::new(
+        compliance.clone() as Arc<dyn CoreVerifier>,
+        multi_chain.clone(),
+    ));
 
     struct SimulatedOfflineQueue {
         replay_claims: Mutex<HashSet<String>>,
@@ -172,7 +175,12 @@ async fn test_health_check() {
     let app = setup_app(state);
 
     let response = app
-        .oneshot(Request::builder().uri("/api/v1/health").body(Body::empty()).unwrap())
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/health")
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
 
@@ -480,7 +488,10 @@ async fn test_ingress_iso20022_authorized() {
                 .header("Authorization", format!("Bearer {}", TEST_TOKEN))
                 .header("x-402-payment", "proof-test")
                 .header("x-conxian-attestation", attestation_header)
-                .header("x-conxian-trust-metadata", serde_json::to_string(&trust_metadata).unwrap())
+                .header(
+                    "x-conxian-trust-metadata",
+                    serde_json::to_string(&trust_metadata).unwrap(),
+                )
                 .header("Content-Type", "application/xml")
                 .body(Body::from(xml_payload))
                 .unwrap(),
@@ -547,7 +558,10 @@ async fn test_ingress_iso20022_denied_combo_blocked() {
                 .method("POST")
                 .header("Authorization", format!("Bearer {}", TEST_TOKEN))
                 .header("x-402-payment", "proof-test")
-                .header("x-conxian-trust-metadata", serde_json::to_string(&trust_metadata).unwrap())
+                .header(
+                    "x-conxian-trust-metadata",
+                    serde_json::to_string(&trust_metadata).unwrap(),
+                )
                 .body(Body::from("<xml></xml>"))
                 .unwrap(),
         )

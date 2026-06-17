@@ -1,3 +1,4 @@
+use uuid;
 use crate::AppState;
 use axum::{
     body::Body,
@@ -130,7 +131,10 @@ pub async fn verify_fiat_webhook(
         payload.signature = sig.to_string();
     }
 
-    match state.fiat.verify_webhook(&payload, &state.fiat_webhook_secret) {
+    match state
+        .fiat
+        .verify_webhook(&payload, &state.fiat_webhook_secret)
+    {
         Ok(true) => {
             let replay_key = compute_webhook_replay_key(&payload);
             match state
@@ -151,7 +155,9 @@ pub async fn verify_fiat_webhook(
                 }
                 Err(e) => Err((
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
+                    Json(
+                        json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) }),
+                    ),
                 )),
             }
         }
@@ -214,7 +220,9 @@ pub async fn sync_erp_ledger(
             for envelope in &envelopes {
                 let _ = state.compliance.commit_settlement(envelope);
             }
-            Ok(Json(json!({ "status": "success", "count": envelopes.len() })))
+            Ok(Json(
+                json!({ "status": "success", "count": envelopes.len() }),
+            ))
         }
         Err(e) => Err((
             StatusCode::BAD_REQUEST,
@@ -248,12 +256,8 @@ pub async fn generate_iso_payment(
         Json(json!({ "error": "amount_sbtc is required" })),
     ))?;
 
-    let amount_satoshis = amount_sbtc_to_satoshis(amount_sbtc).map_err(|e| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": e })),
-        )
-    })?;
+    let amount_satoshis = amount_sbtc_to_satoshis(amount_sbtc)
+        .map_err(|e| (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))))?;
 
     let receiver = payload["receiver"].as_str().ok_or((
         StatusCode::BAD_REQUEST,
@@ -272,10 +276,7 @@ pub async fn generate_iso_payment(
         },
     };
 
-    match state
-        .compliance
-        .format_iso20022_pacs008_v8(&job_card)
-    {
+    match state.compliance.format_iso20022_pacs008_v8(&job_card) {
         Ok(xml) => Ok(Json(json!({ "xml": xml }))),
         Err(e) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -446,7 +447,9 @@ pub async fn ingress_brics(
     }
 }
 
-pub async fn get_external_settlements(State(state): State<AppState>) -> Json<Vec<SettlementProposal>> {
+pub async fn get_external_settlements(
+    State(state): State<AppState>,
+) -> Json<Vec<SettlementProposal>> {
     let log = state.settlement_log.read().await;
     Json(log.iter().cloned().collect())
 }
@@ -458,10 +461,12 @@ pub async fn get_alex_quote(
     let token_x = params["token_x"].as_str().unwrap_or("sBTC");
     let token_y = params["token_y"].as_str().unwrap_or("STX");
     let amount_str = params["amount"].as_str().unwrap_or("0");
-    let amount = amount_str.parse::<u128>().map_err(|_| (
-        StatusCode::BAD_REQUEST,
-        Json(json!({ "error": "Invalid amount format" })),
-    ))?;
+    let amount = amount_str.parse::<u128>().map_err(|_| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "Invalid amount format" })),
+        )
+    })?;
 
     let req = conxian_core::AlexSwapRequest {
         token_x: token_x.to_string(),
@@ -518,14 +523,20 @@ pub async fn toggle_bounty_payouts(
 
     info!(enabled = %enabled, "Bounty payouts toggled");
 
-    Ok(Json(json!({ "status": "success", "bounty_payouts_enabled": enabled })))
+    Ok(Json(
+        json!({ "status": "success", "bounty_payouts_enabled": enabled }),
+    ))
 }
 
 pub async fn handle_offline_pos(
     State(state): State<AppState>,
     Json(payload): Json<conxian_core::OfflineReceipt>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    if !state.compliance.verify_offline_receipt(&payload).unwrap_or(false) {
+    if !state
+        .compliance
+        .verify_offline_receipt(&payload)
+        .unwrap_or(false)
+    {
         return Err((
             StatusCode::FORBIDDEN,
             Json(json!({ "error": "Invalid TEE device ID" })),
@@ -533,7 +544,9 @@ pub async fn handle_offline_pos(
     }
 
     match state.offline_queue.enqueue(&payload) {
-        Ok(_) => Ok(Json(json!({ "status": "enqueued", "receipt_id": payload.receipt_id }))),
+        Ok(_) => Ok(Json(
+            json!({ "status": "enqueued", "receipt_id": payload.receipt_id }),
+        )),
         Err(e) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
@@ -553,7 +566,7 @@ pub async fn sync_offline_receipts(
 
     let mut synced_count = 0;
     for mut receipt in pending {
-        if let Ok(_) = state.compliance.gossip_mesh_rehearsal(&mut receipt) {
+        if state.compliance.gossip_mesh_rehearsal(&mut receipt).is_ok() {
             info!(
                 "Rehearsal: Broadcasting offline receipt {} to L2...",
                 receipt.receipt_id
@@ -871,6 +884,8 @@ fn verify_tee_settlement_attestation(
     Ok(att)
 }
 
-fn parse_gateway_x402_payload(headers: &HeaderMap) -> Result<crate::x402::X402PaymentPayload, crate::x402::X402ParseError> {
+fn parse_gateway_x402_payload(
+    headers: &HeaderMap,
+) -> Result<crate::x402::X402PaymentPayload, crate::x402::X402ParseError> {
     crate::x402::parse_gateway_x402_payload(headers)
 }
