@@ -15,7 +15,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 const TEST_TOKEN: &str = "test-token";
 
-fn setup_app(state: SharedState, offline_queue: Arc<dyn conxian_core::OfflineQueue>) -> axum::Router {
+fn setup_app(
+    state: SharedState,
+    offline_queue: Arc<dyn conxian_core::OfflineQueue>,
+) -> axum::Router {
     let fiat = Arc::new(FiatRouter::new(
         "simulated".into(),
         "simulated".into(),
