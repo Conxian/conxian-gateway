@@ -8,9 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Implemented **Universal Chain Verification (UCV-1)** in the compliance layer, unifying heterogeneous proof verification across multi-chain adapters.
+- Added `UniversalVerifier` service and `CoreVerifier` trait to support heterogeneous chain-state proofs.
+- Exposed `POST /api/v1/chains/{chain}/verify` endpoint for multi-chain proof validation.
+- Updated `@conxian/client-sdk` with `verifyStateProof` method and added supporting TypeScript schemas.
 - Added `docs/research/UNIVERSAL_CHAIN_RESEARCH.md` covering multi-chain adapter patterns and event bus delivery logic.
 
 ### Changed
+- **Hardened X402 (Payment Required) middleware** to support flexible payload formats (numeric/string Satoshis/expiry) and protected nested API paths.
+- Refactored API handlers for ALEX, A2P, and ISO 20022 paths to align with updated `conxian-core` schemas and fix type mismatches.
 - Standardized environment variable sentinels by replacing `CHANGEME_` and `REQUIRED_FOR_PROD_` with `sentinel_` identifiers.
 - Improved `A2pRouter` production check by verifying API key prefixes instead of internal mock flags.
 - Standardized internal naming by replacing "mock" with "simulated" in several gateway and compliance modules.
@@ -22,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated `docker-compose.yml` with hardened sentinel values for webhook and ingress secrets.
 
 ### Documentation
+- Updated `docs/research/ENHANCEMENT_PLAN.md` and `docs/research/VERIFICATION_IMPROVEMENT_PROPOSAL.md` with UCV-1 implementation results.
 - Clarified readiness language so real runtime code, simulated validation paths, and production-enforced controls are not conflated in status messaging.
 
 ## [0.1.4] - 2026-06-07

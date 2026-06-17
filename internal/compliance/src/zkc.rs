@@ -582,6 +582,13 @@ impl SovereignCommit for ZkcVerifier {
     }
 }
 
+
+#[async_trait::async_trait]
+impl crate::verifier::CoreVerifier for ZkcVerifier {
+    async fn verify_attestation_v2(&self, request: &AttestationRequest) -> ConxianResult<bool> {
+        self.verify_tee_attestation(request).map(|_| true)
+    }
+}
 #[cfg(test)]
 mod zkc_tests {
     use super::*;

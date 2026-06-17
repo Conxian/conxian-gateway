@@ -13,18 +13,15 @@ This document outlines the discrepancies identified during the Systemic Alignmen
 - **Gap**: Functional logic for DLC Bond lifecycle was missing from the gateway core.
 - **Enhancement**: Defined `DlcOrchestrator` trait in `conxian-core` to formalize the lifecycle of Bitcoin-native DLC bonds and coupon distribution.
 
-### Sovereign Sharding (CON-69)
-- **Gap**: Tableland persistence was only mentioned in documentation.
-- **Enhancement**: Added `commit_to_tableland` (now part of `SovereignCommit`) to `ZkcVerifier` to simulate decentralized SQL state commitments for off-shore yield routing.
+### Universal Chain Verification (UCV-1)
+- **Gap**: Verification logic was fragmented across multiple handlers and specific methods (BitVM, ZKC, TEE).
+- **Enhancement**: Implemented `UniversalVerifier` and `CoreVerifier` trait to unify heterogeneous proof verification. Added `/api/v1/chains/{chain}/verify` endpoint to delegate verification to multi-chain adapters.
+- **Status (2026-06-17)**: Fully implemented and integrated into the API layer. SDK and Schemas updated to support universal verification.
 
 ### Compliance & Mainnet Readiness (CON-151 / CON-156)
 - **Gap**: Insufficient separation of concerns and heavy reliance on hardcoded mock values in handlers.
 - **Enhancement**: Refined `internal/api/src/handlers.rs` to better utilize `SharedState` and injected services. Hardened A2P and Fiat routers with better error handling and structure.
-- **Hardening (2026-06-13)**: Replaced hardcoded legacy dates in `ZkcVerifier` with dynamic `chrono::Utc` timestamps. Hardened TEE and BitVM verification paths by removing simulator-bypass logic and enforcing ECDSA/HMAC validation.
-
-### Infrastructure Migration (CON-329)
-- **Gap**: Web2 dependencies (Neon, Supabase) needed clear mapping for sovereign transition.
-- **Enhancement**: Created canonical inventory in `docs/SAB_MIGRATION.md`. Implemented `SovereignCommit` hooks in the compliance layer to decouple from Web2 persistence.
+- **Hardening (2026-06-17)**: Hardened X402 (Payment Required) middleware to support flexible payload formats and nested API paths. Unified ALEX swap and quote paths.
 
 ### Institutional Secrets Hardening
 - **Gap**: Single-token API authentication was insufficient for institutional SLAs.
@@ -33,12 +30,13 @@ This document outlines the discrepancies identified during the Systemic Alignmen
 
 ## 2. Shared Services Maturity Matrix
 
-| Service | Maturity | Status (2026-06-13) |
+| Service | Maturity | Status (2026-06-17) |
 | :--- | :--- | :--- |
 | **BNS Resolver** | Production | Full functional state: live contract calls. |
-| **ALEX Swap** | Preparation | Full functional state: builds prepared payloads for signers. |
+| **ALEX Swap** | Production | Full functional state: builds prepared payloads for signers. |
 | **A2P OTP** | Production | Full functional state: Infobip SMS integration active. |
 | **Fiat Router** | Production | Multi-provider support (Ramp, Banxa, Alchemy Pay). |
+| **Universal Verifier** | Production | UCV-1 implementation unified across chain adapters. |
 | **Lightning Adapter** | Preparation | Failure taxonomy and lifecycle state machine implemented. |
 
 ## 3. Tool Mapping Verification

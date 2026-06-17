@@ -1,8 +1,10 @@
+use api::a2p::A2pRouter;
+use api::fiat::FiatRouter;
 use api::{configure_routes, new_lightning_adapter, new_settlement_log, AppState};
 use axum::http::StatusCode;
 use axum_test::TestServer;
 use compliance::zkc::{ATTESTATION_SIGNING_DOMAIN, TEE_DEVICE_ID_PREFIX};
-use compliance::{IdentityManager, ZkcVerifier};
+use compliance::{CoreVerifier, IdentityManager, UniversalVerifier, ZkcVerifier};
 use conxian_core::{GatewayState, SharedState};
 use engine::stacks::alex::SimulatedAlexClient;
 use secp256k1::{Message, PublicKey, Secp256k1, SecretKey};
@@ -11,26 +13,56 @@ use sha2::{Digest, Sha256};
 use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+const TEST_TOKEN: &str = "test-token";
+
+fn setup_app(state: SharedState, offline_queue: Arc<dyn conxian_core::OfflineQueue>) -> axum::Router {
+    let fiat = Arc::new(FiatRouter::new(
+        "simulated".into(),
+        "simulated".into(),
+        "simulated".into(),
+        "simulated".into(),
+        "simulated".into(),
+        "simulated".into(),
+        "simulated".into(),
+    ));
+    let a2p = Arc::new(A2pRouter::new(
+        "simulated".into(),
+        "simulated".into(),
+        "simulated".into(),
+    ));
+    let identity = Arc::new(IdentityManager::new());
+    let compliance = Arc::new(ZkcVerifier::new());
+    let alex = Arc::new(SimulatedAlexClient);
+    let multi_chain: std::collections::HashMap<String, Arc<dyn conxian_core::ChainAdapter>> =
+        std::collections::HashMap::new();
+
+    let verifier = Arc::new(UniversalVerifier::new(
+        compliance.clone() as Arc<dyn CoreVerifier>,
+        multi_chain.clone(),
+    ));
+
+    let app_state = AppState {
+        shared: state,
+        fiat,
+        a2p,
+        identity,
+        compliance,
+        verifier,
+        alex,
+        multi_chain,
+        lightning: new_lightning_adapter(),
+        fiat_webhook_secret: "secret".into(),
+        settlement_ingress_secret: "secret".into(),
+        settlement_log: new_settlement_log(),
+        offline_queue,
+    };
+
+    configure_routes(app_state, TEST_TOKEN.to_string())
+}
+
 #[tokio::test]
 async fn test_offline_pos_blackout_reconciliation() {
     let state: SharedState = Arc::new(RwLock::new(GatewayState::default()));
-    let fiat_router = Arc::new(api::fiat::FiatRouter::new(
-        "simulated".into(),
-        "simulated".into(),
-        "simulated".into(),
-        "simulated".into(),
-        "simulated".into(),
-        "simulated".into(),
-        "simulated".into(),
-    ));
-    let a2p_router = Arc::new(api::a2p::A2pRouter::new(
-        "simulated".into(),
-        "simulated".into(),
-        "simulated".into(),
-    ));
-    let identity_manager = Arc::new(IdentityManager::new());
-    let zkc_verifier = Arc::new(ZkcVerifier::new());
-    let alex_client = Arc::new(SimulatedAlexClient);
 
     let ts = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -41,23 +73,7 @@ async fn test_offline_pos_blackout_reconciliation() {
     let offline_queue =
         Arc::new(conxian_core::persistence::EncryptedOfflineQueue::new(&db_path, key).unwrap());
 
-    let app_state = AppState {
-        shared: state.clone(),
-        fiat: fiat_router,
-        a2p: a2p_router,
-        identity: identity_manager,
-        compliance: zkc_verifier,
-        alex: alex_client,
-        multi_chain: std::collections::HashMap::new(),
-        lightning: new_lightning_adapter(),
-        fiat_webhook_secret: "secret".into(),
-        settlement_ingress_secret: "secret".into(),
-        settlement_log: new_settlement_log(),
-        offline_queue,
-    };
-
-    let api_token = "test-token";
-    let app = configure_routes(app_state, api_token.to_string());
+    let app = setup_app(state.clone(), offline_queue);
     let server = TestServer::new(app);
 
     let device_id = format!("{TEE_DEVICE_ID_PREFIX}simulated-device-1");
@@ -82,9 +98,12 @@ async fn test_offline_pos_blackout_reconciliation() {
     for i in 0..count {
         let tx_hash = format!("tx-offline-{}", i);
         let payload = json!({
+            "receipt_id": format!("rec-{}", i),
             "tx_hash": tx_hash,
-            "amount_sbtc": 0.001,
+            "amount_sbtc": 100000,
+            "timestamp": 123456789,
             "device_id": &device_id,
+            "tee_signature": "sim-sig",
             "passkey_attestation": {
                 "type": "Ecdsa",
                 "data": {
@@ -93,12 +112,13 @@ async fn test_offline_pos_blackout_reconciliation() {
                     "payload": passkey_payload,
                     "public_key": public_key_hex
                 }
-            }
+            },
+            "status": "PENDING"
         });
 
         server
             .post("/api/v1/pos/offline")
-            .add_header("Authorization", format!("Bearer {}", api_token))
+            .add_header("Authorization", format!("Bearer {}", TEST_TOKEN))
             .json(&payload)
             .await
             .assert_status(StatusCode::OK);
@@ -106,7 +126,7 @@ async fn test_offline_pos_blackout_reconciliation() {
 
     let sync_response = server
         .post("/api/v1/pos/sync")
-        .add_header("Authorization", format!("Bearer {}", api_token))
+        .add_header("Authorization", format!("Bearer {}", TEST_TOKEN))
         .await;
 
     sync_response.assert_status(StatusCode::OK);

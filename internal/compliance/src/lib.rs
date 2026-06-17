@@ -2,9 +2,11 @@
 compile_error!("feature mock-integrations must not be enabled in release builds");
 
 pub mod identity;
+pub mod verifier;
 pub mod zkc;
 
 pub use identity::IdentityManager;
+pub use verifier::{CoreVerifier, UniversalVerifier};
 pub use zkc::ZkcVerifier;
 
 pub trait SovereignCommit: Send + Sync {

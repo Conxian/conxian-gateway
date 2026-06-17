@@ -65,6 +65,7 @@ pub fn configure_routes(state: AppState, api_token: String) -> Router {
         .route("/chains/list", get(handlers::list_supported_chains))
         .route("/chains/{chain}/height", get(handlers::get_chain_height))
         .route("/chains/{chain}/prepare", post(handlers::prepare_chain_tx))
+        .route("/chains/{chain}/verify", post(handlers::verify_state_proof))
         .layer(middleware::from_fn_with_state(state.clone(), x402_filter))
         .layer(middleware::from_fn(move |req, next| {
             auth_middleware(req, next, token_for_auth.clone())
