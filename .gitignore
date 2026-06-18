@@ -1,38 +1,7 @@
-# Rust build artifacts
 /target
-
-# Environment variables
-.env
-.env.*
-!.env.example
-
-# IDE specific files
-*.bak
-.vscode/*
-!.vscode/settings.json
-.idea/
-*.swp
-*.swo
-
-# Runtime artifacts
-gateway_state.json
-gateway_state.json.tmp
+/node_modules
+.next
+dist
 *.log
-
-# OS generated files
-.DS_Store
-Thumbs.db
-*.db
-node_modules/
-test-results/
-playwright-report/
-.idx/
-.jules/
-.Jules/
-.gemini/
-.vscode/
-
-# Agent artifacts
-.jules/
-.Jules/
-.gemini/
+gateway_state.json
+offline_queue.db

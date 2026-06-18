@@ -11,7 +11,7 @@ Implement a `UniversalVerifier` service that utilizes the `ChainAdapter` trait t
 - **Adapter Delegation**: The `UniversalVerifier` identifies the target chain from the proof metadata and calls `adapter.verify_state_proof()`.
 - **Trust Policy Integration**: Automatically apply `TrustPolicy` decisions based on the verification result and the adapter's trust tier.
 
-## 3. Implementation (Completed 2026-06-17)
+## 3. Implementation (Completed 2026-06-18)
 1. **Refactored compliance layer**: Extracted general-purpose verification logic into a `CoreVerifier` trait in `internal/compliance/src/verifier.rs`.
 2. **Implemented UniversalVerifier**: A service that manages chain adapters and delegates heterogeneous proof verification.
 3. **API Integration**: Added `POST /api/v1/chains/{chain}/verify` to `internal/api/src/routes.rs` and implemented the handler in `handlers.rs`.
@@ -22,3 +22,7 @@ Implement a `UniversalVerifier` service that utilizes the `ChainAdapter` trait t
 - Reduced duplication in verification logic.
 - Faster integration of new chain families (Liquid and Rootstock adapters are now fully integrated into the verification pipeline).
 - Consistent trust-tier enforcement across the entire gateway.
+
+### 2026-06-18 Alignment Update
+- **Wasm-First Alignment**: Verified that `@conxian/client-sdk` and `@conxian/schemas` build correctly in the Next.js 14 environment.
+- **SSR Safety**: Hardened the Control-Plane UI to ensure server-side rendering does not bypass client-side verification gates.

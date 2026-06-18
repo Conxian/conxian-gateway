@@ -55,3 +55,17 @@ export interface AdminActionResponse {
   audit_event_id: string;
   message: string;
 }
+
+/**
+ * UCV-1: Universal Chain Verification types.
+ */
+export interface StateProofVerificationRequest {
+  chain: string;
+  proof_metadata: any;
+}
+
+export interface StateProofVerificationResponse {
+  chain: string;
+  verified: boolean;
+  error?: string;
+}

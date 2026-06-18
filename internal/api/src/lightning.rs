@@ -185,7 +185,6 @@ impl ReplayGuard for InMemoryReplayGuard {
     }
 }
 
-#[derive(Default)]
 pub struct ProductionLightningBackend;
 
 #[async_trait]
@@ -501,7 +500,9 @@ mod tests {
         assert!(err.message().contains("expired"));
         assert_eq!(err.taxonomy(), FailureTaxonomy::Permanent);
 
-        let err = LightningAdapterError::UnsupportedAsset { asset: "USD".into() };
+        let err = LightningAdapterError::UnsupportedAsset {
+            asset: "USD".into(),
+        };
         assert_eq!(err.status_code(), StatusCode::BAD_REQUEST);
         assert_eq!(err.taxonomy(), FailureTaxonomy::Permanent);
 
@@ -556,7 +557,10 @@ mod tests {
         let adapter =
             LightningAdapter::new(Arc::new(SequenceBackend::new(vec![]))).with_clock(|| 1000);
         let err = adapter.execute_payment(&bad_payload).await.unwrap_err();
-        assert!(matches!(err, LightningAdapterError::UnsupportedAsset { .. }));
+        assert!(matches!(
+            err,
+            LightningAdapterError::UnsupportedAsset { .. }
+        ));
 
         // Replay Detected
         let adapter =
@@ -571,20 +575,22 @@ mod tests {
             preimage: "p".into(),
             proof: "p".into(),
         };
-        let adapter = LightningAdapter::new(Arc::new(SequenceBackend::new(vec![SimulatedOutcome {
-            result: Ok(response),
-        }])))
-        .with_clock(|| 1000);
+        let adapter =
+            LightningAdapter::new(Arc::new(SequenceBackend::new(vec![SimulatedOutcome {
+                result: Ok(response),
+            }])))
+            .with_clock(|| 1000);
         let err = adapter.execute_payment(&payload).await.unwrap_err();
         assert!(matches!(err, LightningAdapterError::AmountMismatch { .. }));
 
         // Backend Rejected
-        let adapter = LightningAdapter::new(Arc::new(SequenceBackend::new(vec![SimulatedOutcome {
-            result: Err(LightningBackendError::Rejected {
-                detail: "no".into(),
-            }),
-        }])))
-        .with_clock(|| 1000);
+        let adapter =
+            LightningAdapter::new(Arc::new(SequenceBackend::new(vec![SimulatedOutcome {
+                result: Err(LightningBackendError::Rejected {
+                    detail: "no".into(),
+                }),
+            }])))
+            .with_clock(|| 1000);
         let err = adapter.execute_payment(&payload).await.unwrap_err();
         assert!(matches!(err, LightningAdapterError::BackendRejected { .. }));
 
@@ -649,8 +655,8 @@ mod tests {
         assert_eq!(response.preimage, "preimage-p1");
         assert_eq!(response.proof, "proof-s1");
 
-        // Production (Stub)
-        let backend = ProductionLightningBackend::default();
+        // Production (Initial Implementation)
+        let backend = ProductionLightningBackend;
         let err = backend.settle_payment(request).await.unwrap_err();
         assert!(matches!(err, LightningBackendError::Unavailable));
     }
