@@ -1,3 +1,5 @@
+"use client";
+
 import ClientButton from "../../components/ClientButton";
 
 export default function IdentityPage() {

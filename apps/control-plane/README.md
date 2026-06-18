@@ -1,29 +1,33 @@
-# Conxian BOS Control-Plane
+# Conxian Control-Plane
 
-The Conxian BOS Control-Plane is the central management interface for the Conxian Gateway. It provides institutional-grade visibility and orchestration across the sovereign business operations system.
+Institutional management dashboard for the Conxian Gateway.
+
+## Purpose
+The Control-Plane provides a secure, role-based interface for managing release governance, policy approvals, identity resolution, and treasury monitoring. It acts as the human-in-the-loop coordination layer for the Conxian BOS (Sovereign Business Operations System).
+
+## Status
+**Active Development.** Currently used for simulated governance and release promotion rehearsals. Aligned with v0.1.4 gateway standards.
+
+## Audience
+- **Operators**: Managing daily gateway operations and configuration.
+- **Auditors**: Reviewing settlement logs and governance decisions.
+- **Admins**: Requesting and approving release promotions.
 
 ## Core Modules
-
-- **Dashboard**: High-level overview of system health, sync status, and compliance posture.
-- **Release Governance**: Managed promotion gates for moving code from `dev` to `main`.
-- **Audit Log**: Immutable, high-integrity record of all system events and actor interactions.
-- **Policy Approvals**: Lifecycle management for institutional governance proposals and mandates.
-- **System Metrics**: Real-time telemetry including settlement volumes, TAM capture, and latency tracking.
-
-## Technology Stack
-
-- **Framework**: Next.js 14 (App Router)
-- **Styling**: Tailwind CSS
-- **Compliance**: Zero Secret Egress (ZSE) compliant UI
-- **Deployment**: Integrated with the Conxian Docker Swarm distribution
+- **Release Governance**: Managed promotion gates from `dev` to `main`.
+- **Policy Approvals**: Jurisdictional sharding and enclave enforcement.
+- **Identity Resolution**: BNS, ENS, and World ID (WIF) management.
+- **Treasury Pulse**: Real-time liquidity monitoring for sBTC/BTC.
 
 ## Development
+This is a Next.js application using Tailwind CSS and the Conxian Schema library.
 
 ```bash
 pnpm install
 pnpm dev
 ```
 
-## Institutional Readiness
-
-This interface is certified for institutional use, enforcing mandatory review periods, timelocks, and multi-signature approvals for critical operations.
+## Readiness Gates
+- **SSR Safety**: All client-side interactions must use the `"use client"` directive.
+- **Schema Alignment**: Must utilize `@conxian/schemas` for all domain objects.
+- **Auth Hardening**: Enforces role-based access control via the Gateway AuthStore.

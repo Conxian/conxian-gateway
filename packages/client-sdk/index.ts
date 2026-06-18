@@ -3,18 +3,13 @@
  * Institutional-grade helpers for bridging Bitcoin and Stacks state logic.
  */
 
+import {
+    ChainAdapterInfo,
+    PreparedTransaction,
+    StateProofVerificationResponse
+} from "@conxian/schemas";
+
 export const GATEWAY_API_VERSION = "v1";
-
-export interface ChainAdapterInfo {
-    supported_chains: string[];
-}
-
-export interface PreparedTransaction {
-    chain: string;
-    status: string;
-    payload: any;
-    [key: string]: any;
-}
 
 export class ConxianClient {
     private baseUrl: string;
@@ -56,6 +51,16 @@ export class ConxianClient {
         return this.request<PreparedTransaction>(`/chains/${chain}/prepare`, {
             method: "POST",
             body: JSON.stringify(details),
+        });
+    }
+
+    /**
+     * UCV-1: Verify a state proof for a specific chain.
+     */
+    async verifyStateProof(chain: string, proofMetadata: any): Promise<StateProofVerificationResponse> {
+        return this.request<StateProofVerificationResponse>(`/chains/${chain}/verify`, {
+            method: "POST",
+            body: JSON.stringify(proofMetadata),
         });
     }
 
