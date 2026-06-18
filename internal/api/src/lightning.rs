@@ -480,4 +480,235 @@ mod tests {
         assert_eq!(receipt.settled_amount, 1000);
         assert_eq!(receipt.preimage, "preimage");
     }
+
+    #[test]
+    fn test_in_memory_replay_guard() {
+        let guard = InMemoryReplayGuard::default();
+        assert!(guard.claim("key1").unwrap());
+        assert!(!guard.claim("key1").unwrap());
+        guard.release("key1").unwrap();
+        assert!(guard.claim("key1").unwrap());
+    }
+
+    #[test]
+    fn test_lightning_adapter_error_methods() {
+        let err = LightningAdapterError::ExpiredInvoice {
+            expiry: 100,
+            now: 200,
+        };
+        assert_eq!(err.status_code(), StatusCode::PAYMENT_REQUIRED);
+        assert_eq!(err.code(), "lightning_expired_invoice");
+        assert!(err.message().contains("expired"));
+        assert_eq!(err.taxonomy(), FailureTaxonomy::Permanent);
+
+        let err = LightningAdapterError::UnsupportedAsset { asset: "USD".into() };
+        assert_eq!(err.status_code(), StatusCode::BAD_REQUEST);
+        assert_eq!(err.taxonomy(), FailureTaxonomy::Permanent);
+
+        let err = LightningAdapterError::ReplayDetected {
+            challenge: "c1".into(),
+        };
+        assert_eq!(err.status_code(), StatusCode::CONFLICT);
+        assert_eq!(err.taxonomy(), FailureTaxonomy::Permanent);
+
+        let err = LightningAdapterError::BackendUnavailable;
+        assert_eq!(err.status_code(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(err.taxonomy(), FailureTaxonomy::Transient);
+
+        let err = LightningAdapterError::BackendTimeout;
+        assert_eq!(err.status_code(), StatusCode::GATEWAY_TIMEOUT);
+        assert_eq!(err.taxonomy(), FailureTaxonomy::Transient);
+
+        let err = LightningAdapterError::PartialFailure {
+            detail: "part".into(),
+        };
+        assert_eq!(err.status_code(), StatusCode::BAD_GATEWAY);
+        assert_eq!(err.taxonomy(), FailureTaxonomy::Indeterminate);
+
+        let err = LightningAdapterError::ReplayStoreFailure {
+            detail: "fail".into(),
+        };
+        assert_eq!(err.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(err.taxonomy(), FailureTaxonomy::Transient);
+    }
+
+    #[tokio::test]
+    async fn test_execute_payment_failure_paths() {
+        let payload = X402PaymentPayload {
+            amount: 1000,
+            asset: "BTC".into(),
+            challenge: "fail-c1".into(),
+            expiry: 2000,
+            proof_refs: vec![],
+        };
+
+        // Expired
+        let backend = SequenceBackend::new(vec![]);
+        let adapter = LightningAdapter::new(Arc::new(backend)).with_clock(|| 3000);
+        let err = adapter.execute_payment(&payload).await.unwrap_err();
+        assert!(matches!(err, LightningAdapterError::ExpiredInvoice { .. }));
+
+        // Unsupported Asset
+        let bad_payload = X402PaymentPayload {
+            asset: "GOL".into(),
+            ..payload.clone()
+        };
+        let adapter =
+            LightningAdapter::new(Arc::new(SequenceBackend::new(vec![]))).with_clock(|| 1000);
+        let err = adapter.execute_payment(&bad_payload).await.unwrap_err();
+        assert!(matches!(err, LightningAdapterError::UnsupportedAsset { .. }));
+
+        // Replay Detected
+        let adapter =
+            LightningAdapter::new(Arc::new(SequenceBackend::new(vec![]))).with_clock(|| 1000);
+        adapter.replay_guard.claim(&payload.challenge).unwrap();
+        let err = adapter.execute_payment(&payload).await.unwrap_err();
+        assert!(matches!(err, LightningAdapterError::ReplayDetected { .. }));
+
+        // Amount Mismatch
+        let response = LightningSettlementResponse {
+            settled_amount: 500,
+            preimage: "p".into(),
+            proof: "p".into(),
+        };
+        let adapter = LightningAdapter::new(Arc::new(SequenceBackend::new(vec![SimulatedOutcome {
+            result: Ok(response),
+        }])))
+        .with_clock(|| 1000);
+        let err = adapter.execute_payment(&payload).await.unwrap_err();
+        assert!(matches!(err, LightningAdapterError::AmountMismatch { .. }));
+
+        // Backend Rejected
+        let adapter = LightningAdapter::new(Arc::new(SequenceBackend::new(vec![SimulatedOutcome {
+            result: Err(LightningBackendError::Rejected {
+                detail: "no".into(),
+            }),
+        }])))
+        .with_clock(|| 1000);
+        let err = adapter.execute_payment(&payload).await.unwrap_err();
+        assert!(matches!(err, LightningAdapterError::BackendRejected { .. }));
+
+        // Use a backend that actually hangs to trigger timeout
+        struct HangingBackend;
+        #[async_trait]
+        impl LightningBackend for HangingBackend {
+            async fn settle_payment(
+                &self,
+                _req: LightningSettlementRequest,
+            ) -> Result<LightningSettlementResponse, LightningBackendError> {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                Err(LightningBackendError::Unavailable)
+            }
+        }
+        let adapter = LightningAdapter::new(Arc::new(HangingBackend))
+            .with_clock(|| 1000)
+            .with_retry_policy(0, Duration::from_millis(10));
+        let err = adapter.execute_payment(&payload).await.unwrap_err();
+        assert!(matches!(err, LightningAdapterError::BackendTimeout));
+
+        // Backend Unavailable (Retry Exhaustion)
+        let adapter = LightningAdapter::new(Arc::new(SequenceBackend::new(vec![
+            SimulatedOutcome {
+                result: Err(LightningBackendError::Unavailable),
+            },
+            SimulatedOutcome {
+                result: Err(LightningBackendError::Unavailable),
+            },
+        ])))
+        .with_clock(|| 1000)
+        .with_retry_policy(1, Duration::from_millis(100));
+        let err = adapter.execute_payment(&payload).await.unwrap_err();
+        assert!(matches!(err, LightningAdapterError::BackendUnavailable));
+    }
+
+    #[test]
+    fn test_utility_functions() {
+        assert!(is_preimage_ref("preimage-123"));
+        assert!(is_preimage_ref(&"a".repeat(64)));
+        assert!(!is_preimage_ref("too-short"));
+
+        assert!(is_proof_ref("proof-123"));
+        assert!(is_proof_ref(&"b".repeat(64)));
+        assert!(!is_proof_ref("short"));
+    }
+
+    #[tokio::test]
+    async fn test_backend_implementations() {
+        let request = LightningSettlementRequest {
+            challenge: "c1".into(),
+            amount: 100,
+            asset: "BTC".into(),
+            expiry: 1000,
+            proof_refs: vec!["preimage-p1".into(), "proof-s1".into()],
+        };
+
+        // Simulated
+        let backend = SimulatedLightningBackend;
+        let response = backend.settle_payment(request.clone()).await.unwrap();
+        assert_eq!(response.settled_amount, 100);
+        assert_eq!(response.preimage, "preimage-p1");
+        assert_eq!(response.proof, "proof-s1");
+
+        // Production (Stub)
+        let backend = ProductionLightningBackend::default();
+        let err = backend.settle_payment(request).await.unwrap_err();
+        assert!(matches!(err, LightningBackendError::Unavailable));
+    }
+
+    #[tokio::test]
+    async fn test_execute_payment_mismatches_and_missing() {
+        let payload = X402PaymentPayload {
+            amount: 1000,
+            asset: "BTC".into(),
+            challenge: "fail-c2".into(),
+            expiry: 2000,
+            proof_refs: vec!["wanted-proof".into()],
+        };
+
+        // Missing Preimage
+        let backend = SequenceBackend::new(vec![SimulatedOutcome {
+            result: Ok(LightningSettlementResponse {
+                settled_amount: 1000,
+                preimage: "".into(),
+                proof: "proof".into(),
+            }),
+        }]);
+        let adapter = LightningAdapter::new(Arc::new(backend)).with_clock(|| 1000);
+        let err = adapter.execute_payment(&payload).await.unwrap_err();
+        assert!(matches!(err, LightningAdapterError::MissingPreimage));
+
+        // Missing Proof
+        let backend = SequenceBackend::new(vec![SimulatedOutcome {
+            result: Ok(LightningSettlementResponse {
+                settled_amount: 1000,
+                preimage: "preimage".into(),
+                proof: "".into(),
+            }),
+        }]);
+        let adapter = LightningAdapter::new(Arc::new(backend)).with_clock(|| 1000);
+        let err = adapter.execute_payment(&payload).await.unwrap_err();
+        assert!(matches!(err, LightningAdapterError::MissingProof));
+
+        // Proof Mismatch
+        let backend = SequenceBackend::new(vec![SimulatedOutcome {
+            result: Ok(LightningSettlementResponse {
+                settled_amount: 1000,
+                preimage: "wrong-preimage".into(),
+                proof: "wrong-proof".into(),
+            }),
+        }]);
+        let adapter = LightningAdapter::new(Arc::new(backend)).with_clock(|| 1000);
+        let err = adapter.execute_payment(&payload).await.unwrap_err();
+        assert!(matches!(err, LightningAdapterError::ProofMismatch));
+
+        // Partial Failure
+        let backend = SequenceBackend::new(vec![SimulatedOutcome {
+            result: Err(LightningBackendError::PartialFailure {
+                detail: "oops".into(),
+            }),
+        }]);
+        let adapter = LightningAdapter::new(Arc::new(backend)).with_clock(|| 1000);
+        let err = adapter.execute_payment(&payload).await.unwrap_err();
+        assert!(matches!(err, LightningAdapterError::PartialFailure { .. }));
+    }
 }

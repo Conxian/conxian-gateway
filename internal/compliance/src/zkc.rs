@@ -582,7 +582,6 @@ impl SovereignCommit for ZkcVerifier {
     }
 }
 
-
 #[async_trait::async_trait]
 impl crate::verifier::CoreVerifier for ZkcVerifier {
     async fn verify_attestation_v2(&self, request: &AttestationRequest) -> ConxianResult<bool> {
