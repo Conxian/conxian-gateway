@@ -69,3 +69,20 @@ export interface StateProofVerificationResponse {
   verified: boolean;
   error?: string;
 }
+
+/**
+ * UCV-1: Chain Adapter Information.
+ */
+export interface ChainAdapterInfo {
+    supported_chains: string[];
+}
+
+/**
+ * UCV-1: Prepared transaction structure.
+ */
+export interface PreparedTransaction {
+    chain: string;
+    unsigned_tx: string;
+    fee_estimate: string;
+    metadata?: any;
+}
