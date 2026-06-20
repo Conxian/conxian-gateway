@@ -5,6 +5,9 @@ useDefault = true
 
 [allowlist]
 description = "Allowlist false positives or known examples in history"
+commits = [
+  "58ea2ffc728cf8433dab28c9ba35414e4343c92b"
+]
 regexes = [
   '''(?i)public_key.{0,64}0[23][0-9a-f]{64}''',
   '''0[23][0-9a-f]{64}''',
