@@ -5,3 +5,6 @@ dist
 *.log
 gateway_state.json
 offline_queue.db
+.env
+.env.local
+.env.*.local

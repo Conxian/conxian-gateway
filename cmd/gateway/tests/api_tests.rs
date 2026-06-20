@@ -68,6 +68,14 @@ fn setup_app_with_lightning(state: SharedState, lightning: Arc<LightningAdapter>
             "simulated".to_string(),
         )),
     );
+    multi_chain.insert(
+        "babylon".to_string(),
+        Arc::new(engine::BabylonAdapter::new("simulated".to_string())),
+    );
+    multi_chain.insert(
+        "bitvm".to_string(),
+        Arc::new(engine::BitVmAdapter::new("simulated".to_string())),
+    );
 
     let verifier = Arc::new(UniversalVerifier::new(
         compliance.clone() as Arc<dyn CoreVerifier>,
@@ -1003,4 +1011,65 @@ async fn test_get_liquid_chain_height() {
         response.status() == StatusCode::OK
             || response.status() == StatusCode::INTERNAL_SERVER_ERROR
     );
+}
+
+#[tokio::test]
+async fn test_verify_state_proof_babylon() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let payload = json!({
+        "type": "finality_gadget",
+        "evidence": "0x..."
+    });
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/chains/babylon/verify")
+                .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("Content-Type", "application/json")
+                .header("x-402-payment", "proof-test")
+                .body(Body::from(serde_json::to_string(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(body["chain"], "babylon");
+    assert_eq!(body["verified"], true);
+}
+
+#[tokio::test]
+async fn test_verify_state_proof_bitvm() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let payload = json!({
+        "root_hash": "0xabc..."
+    });
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/chains/bitvm/verify")
+                .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("Content-Type", "application/json")
+                .header("x-402-payment", "proof-test")
+                .body(Body::from(serde_json::to_string(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(body["chain"], "bitvm");
+    assert_eq!(body["verified"], true);
 }

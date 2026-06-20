@@ -160,6 +160,16 @@ async fn main() -> anyhow::Result<()> {
         )),
     );
 
+    multi_chain.insert(
+        "babylon".to_string(),
+        Arc::new(engine::BabylonAdapter::new(config.network.to_string())),
+    );
+
+    multi_chain.insert(
+        "bitvm".to_string(),
+        Arc::new(engine::BitVmAdapter::new(config.network.to_string())),
+    );
+
     let verifier = Arc::new(UniversalVerifier::new(
         zkc_verifier.clone() as Arc<dyn CoreVerifier>,
         multi_chain.clone(),

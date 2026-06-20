@@ -57,3 +57,7 @@ This document outlines the discrepancies identified during the Systemic Alignmen
 - **Build Hardening**: Resolved Next.js 14 SSR/Client boundary violations in the control-plane.
 - **Dependency Synergy**: Implemented `synergy-test.js` to ensure cross-language (Rust/TS) consistency.
 - **UCV-1 Expansion**: Prepared SDK and Schemas for heterogeneous chain verification payloads.
+
+### 2026-06-19 Hardening Update
+- **Security Baseline**: Completed repository hardening sweep (CON-1251/CON-1245). All GitHub Actions are now pinned to immutable SHAs.
+- **Hygiene Standards**: Aligned `.gitignore` and local persistence logic with institutional mainnet requirements, ensuring zero-leakage of local state artifacts.
