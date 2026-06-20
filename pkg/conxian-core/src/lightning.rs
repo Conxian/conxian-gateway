@@ -201,4 +201,38 @@ mod tests {
         let json = serde_json::to_string(&fail).unwrap();
         assert_eq!(json, "\"PERMANENT\"");
     }
+
+    #[test]
+    fn test_display_implementations() {
+        assert_eq!(format!("{}", FailureTaxonomy::Permanent), "PERMANENT");
+        assert_eq!(format!("{}", FailureTaxonomy::Transient), "TRANSIENT");
+        assert_eq!(format!("{}", FailureTaxonomy::Indeterminate), "INDETERMINATE");
+
+        assert_eq!(format!("{}", PaymentLifecycle::Created), "Created");
+        assert_eq!(format!("{}", PaymentLifecycle::Pending), "Pending");
+    }
+
+    #[test]
+    fn test_payment_event_model() {
+        let event = PaymentEvent {
+            event_id: "e1".into(),
+            intent_id: "i1".into(),
+            from_state: PaymentLifecycle::Created,
+            to_state: PaymentLifecycle::Pending,
+            timestamp: Utc::now(),
+            detail: Some("details".into()),
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        let decoded: PaymentEvent = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.event_id, "e1");
+    }
+
+    #[test]
+    fn test_payment_state_error_display() {
+        let err = PaymentStateError::InvalidTransition {
+            from: PaymentLifecycle::Settled,
+            to: PaymentLifecycle::Created,
+        };
+        assert!(format!("{}", err).contains("Invalid transition"));
+    }
 }

@@ -32,7 +32,7 @@ use tower::ServiceExt;
 
 const TEST_TOKEN: &str = "test-token";
 const TEST_FIAT_SECRET: &str = "fake";
-const TEST_SETTLEMENT_SECRET: &str = "stub";
+const TEST_SETTLEMENT_SECRET: &str = "simulated";
 const TEST_X402_PROOF: &str = "proof-test-123";
 
 type HmacSha256 = Hmac<Sha256>;
