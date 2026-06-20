@@ -16,19 +16,19 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
 
       - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@e732dd5d71b7c0146305a7674254f15d91834220 # v1
         with:
           toolchain: 1.94.0
           components: rustfmt, clippy
 
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@23bce30071988890ae5738b22300b850231908bc # v2.7.3
 
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cargo-llvm-cov
+        uses: taiki-e/install-action@b7849c7f1a8e1329d9e685f651c68f6a96e622b7 # v2
 
       - name: Install llvm-tools-preview
         run: rustup component add llvm-tools-preview
@@ -56,7 +56,7 @@ jobs:
 
       - name: Upload Lightning coverage artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@834a144ee995460fba8ed112a2fc961b36a5ec5a # v4.3.6
         with:
           name: lightning-coverage-summary
           path: target/lightning-coverage

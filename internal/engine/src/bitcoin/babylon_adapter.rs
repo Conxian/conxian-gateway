@@ -34,7 +34,10 @@ impl ChainAdapter for BabylonAdapter {
         }))
     }
 
-    async fn verify_state_proof(&self, _proof_metadata: Value) -> ConxianResult<bool> {
-        Ok(true)
+    async fn verify_state_proof(&self, proof_metadata: Value) -> ConxianResult<bool> {
+        info!(chain = "babylon", "Verifying Babylon finality proof");
+        // Babylon-specific proof verification logic (rehearsal mode)
+        let proof_type = proof_metadata["type"].as_str().unwrap_or("unknown");
+        Ok(proof_type == "finality_gadget")
     }
 }

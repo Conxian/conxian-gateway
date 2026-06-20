@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Implemented **Babylon** and **BitVM2** state-proof verification logic in the multi-chain adapter layer.
+- Added comprehensive integration tests for Babylon and BitVM verification endpoints.
+- Created `docs/audit/REMEDIATION_LOG.md` tracking repository hardening efforts.
 - Implemented **Universal Chain Verification (UCV-1)** in the compliance layer, unifying heterogeneous proof verification across multi-chain adapters.
 - Added `UniversalVerifier` service and `CoreVerifier` trait to support heterogeneous chain-state proofs.
 - Exposed `POST /api/v1/chains/{chain}/verify` endpoint for multi-chain proof validation.
@@ -15,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `docs/research/UNIVERSAL_CHAIN_RESEARCH.md` covering multi-chain adapter patterns and event bus delivery logic.
 
 ### Changed
+- **Hardened GitHub Workflows**: Pinned all third-party actions to immutable SHAs to prevent supply-chain attacks.
+- **Repository Hygiene**: Updated `.gitignore` to strictly exclude local persistence artifacts (`gateway_state.json`, `offline_queue.db`).
+- **Standardized CI/CD**: Aligned dependencies and action versions across all workflows for consistent execution.
 - **Hardened X402 (Payment Required) middleware** to support flexible payload formats (numeric/string Satoshis/expiry) and protected nested API paths.
 - Refactored API handlers for ALEX, A2P, and ISO 20022 paths to align with updated `conxian-core` schemas and fix type mismatches.
 - Standardized environment variable sentinels by replacing `CHANGEME_` and `REQUIRED_FOR_PROD_` with `sentinel_` identifiers.

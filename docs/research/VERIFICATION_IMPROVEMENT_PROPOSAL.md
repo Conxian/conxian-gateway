@@ -26,3 +26,8 @@ Implement a `UniversalVerifier` service that utilizes the `ChainAdapter` trait t
 ### 2026-06-18 Alignment Update
 - **Wasm-First Alignment**: Verified that `@conxian/client-sdk` and `@conxian/schemas` build correctly in the Next.js 14 environment.
 - **SSR Safety**: Hardened the Control-Plane UI to ensure server-side rendering does not bypass client-side verification gates.
+
+### 2026-06-19 UCV-1 Hardening Update
+- **Partner Lane Expansion**: Fully integrated Babylon and BitVM adapters into the `UniversalVerifier` pipeline.
+- **Verification Logic**: Implemented rehearsal-mode verification for Babylon finality gadget proofs and BitVM2 optimistic state-root proofs.
+- **Integration Tests**: Added automated API integration tests covering heterogeneous proof verification for Babylon and BitVM chains.

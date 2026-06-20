@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@c95fe1489396fe8a2187f5ba5127f311e0e29080 # v2.0.6
         with:
           generate_release_notes: true
           body: |
