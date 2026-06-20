@@ -4,8 +4,14 @@ title = "Conxian Gateway gitleaks configuration"
 useDefault = true
 
 [allowlist]
-description = "Non-secret compressed public key literals used in tests and API payload examples"
+description = "Allowlist false positives or known examples in history"
 regexes = [
   '''(?i)public_key.{0,64}0[23][0-9a-f]{64}''',
   '''0[23][0-9a-f]{64}''',
+]
+fingerprints = [
+  "58ea2ffc728cf8433dab28c9ba35414e4343c92b:README.md:sidekiq-secret:42",
+  "58ea2ffc728cf8433dab28c9ba35414e4343c92b:README.md:aws-access-token:221",
+  "58ea2ffc728cf8433dab28c9ba35414e4343c92b:README.md:aws-access-token:223",
+  "58ea2ffc728cf8433dab28c9ba35414e4343c92b:README.md:aws-access-token:259",
 ]
