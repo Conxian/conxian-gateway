@@ -16,19 +16,19 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v4.1.7
 
       - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@e732dd5d71b7c0146305a7674254f15d91834220 # v1
+        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # v1
         with:
           toolchain: 1.94.0
           components: rustfmt, clippy
 
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@23bce30071988890ae5738b22300b850231908bc # v2.7.3
+        uses: Swatinem/rust-cache@baf1a810e98b6a3001d0d7234864ed75a17c42fb # v2.7.3
 
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@b7849c7f1a8e1329d9e685f651c68f6a96e622b7 # v2
+        uses: taiki-e/install-action@8b3c737da4b541bf0fb5a3e0488ff20535badac9 # v2
 
       - name: Install llvm-tools-preview
         run: rustup component add llvm-tools-preview
@@ -38,7 +38,6 @@ jobs:
 
       - name: Run clippy
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
-
 
       - name: Enforce Lightning scoped coverage gate
         run: ./scripts/lightning_coverage_gate.sh 90
