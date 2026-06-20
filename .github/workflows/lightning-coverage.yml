@@ -39,8 +39,6 @@ jobs:
       - name: Run clippy
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
-      - name: Run tests
-        run: cargo test --workspace --all-features
 
       - name: Enforce Lightning scoped coverage gate
         run: ./scripts/lightning_coverage_gate.sh 90

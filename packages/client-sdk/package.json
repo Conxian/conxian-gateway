@@ -5,6 +5,13 @@
   "description": "Internal API client helpers for Conxian Gateway",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "scripts": {
+    "test": "vitest run",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@conxian/schemas": "workspace:*"
+  },
   "devDependencies": {
     "typescript": "^5.9.3"
   }
