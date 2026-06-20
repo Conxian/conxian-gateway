@@ -1,6 +1,6 @@
 use crate::x402::X402PaymentPayload;
-use axum::http::StatusCode;
 use async_trait::async_trait;
+use axum::http::StatusCode;
 use conxian_core::{FailureTaxonomy, PaymentIntent, PaymentLifecycle};
 use std::{
     collections::HashSet,
@@ -726,15 +726,60 @@ mod additional_lightning_tests {
     #[test]
     fn test_lightning_adapter_error_codes_and_taxonomy() {
         let cases = vec![
-            (LightningAdapterError::BackendRejected { detail: "no".into() }, "lightning_backend_rejected", FailureTaxonomy::Permanent),
-            (LightningAdapterError::AmountMismatch { expected: 1, settled: 2 }, "lightning_amount_mismatch", FailureTaxonomy::Permanent),
-            (LightningAdapterError::MissingPreimage, "lightning_missing_preimage", FailureTaxonomy::Indeterminate),
-            (LightningAdapterError::MissingProof, "lightning_missing_proof", FailureTaxonomy::Indeterminate),
-            (LightningAdapterError::ProofMismatch, "lightning_proof_mismatch", FailureTaxonomy::Permanent),
-            (LightningAdapterError::BackendUnavailable, "lightning_backend_unavailable", FailureTaxonomy::Transient),
-            (LightningAdapterError::BackendTimeout, "lightning_backend_timeout", FailureTaxonomy::Transient),
-            (LightningAdapterError::PartialFailure { detail: "part".into() }, "lightning_partial_failure", FailureTaxonomy::Indeterminate),
-            (LightningAdapterError::ReplayStoreFailure { detail: "fail".into() }, "lightning_replay_store_failure", FailureTaxonomy::Transient),
+            (
+                LightningAdapterError::BackendRejected {
+                    detail: "no".into(),
+                },
+                "lightning_backend_rejected",
+                FailureTaxonomy::Permanent,
+            ),
+            (
+                LightningAdapterError::AmountMismatch {
+                    expected: 1,
+                    settled: 2,
+                },
+                "lightning_amount_mismatch",
+                FailureTaxonomy::Permanent,
+            ),
+            (
+                LightningAdapterError::MissingPreimage,
+                "lightning_missing_preimage",
+                FailureTaxonomy::Indeterminate,
+            ),
+            (
+                LightningAdapterError::MissingProof,
+                "lightning_missing_proof",
+                FailureTaxonomy::Indeterminate,
+            ),
+            (
+                LightningAdapterError::ProofMismatch,
+                "lightning_proof_mismatch",
+                FailureTaxonomy::Permanent,
+            ),
+            (
+                LightningAdapterError::BackendUnavailable,
+                "lightning_backend_unavailable",
+                FailureTaxonomy::Transient,
+            ),
+            (
+                LightningAdapterError::BackendTimeout,
+                "lightning_backend_timeout",
+                FailureTaxonomy::Transient,
+            ),
+            (
+                LightningAdapterError::PartialFailure {
+                    detail: "part".into(),
+                },
+                "lightning_partial_failure",
+                FailureTaxonomy::Indeterminate,
+            ),
+            (
+                LightningAdapterError::ReplayStoreFailure {
+                    detail: "fail".into(),
+                },
+                "lightning_replay_store_failure",
+                FailureTaxonomy::Transient,
+            ),
         ];
 
         for (err, expected_code, expected_taxonomy) in cases {

@@ -206,7 +206,10 @@ mod tests {
     fn test_display_implementations() {
         assert_eq!(format!("{}", FailureTaxonomy::Permanent), "PERMANENT");
         assert_eq!(format!("{}", FailureTaxonomy::Transient), "TRANSIENT");
-        assert_eq!(format!("{}", FailureTaxonomy::Indeterminate), "INDETERMINATE");
+        assert_eq!(
+            format!("{}", FailureTaxonomy::Indeterminate),
+            "INDETERMINATE"
+        );
 
         assert_eq!(format!("{}", PaymentLifecycle::Created), "Created");
         assert_eq!(format!("{}", PaymentLifecycle::Pending), "Pending");
