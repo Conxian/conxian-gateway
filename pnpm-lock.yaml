@@ -59,6 +59,10 @@ importers:
         version: 5.9.3
 
   packages/client-sdk:
+    dependencies:
+      '@conxian/schemas':
+        specifier: workspace:*
+        version: link:../schemas
     devDependencies:
       typescript:
         specifier: ^5.9.3

@@ -1,6 +1,10 @@
 {
-	"devDependencies": {
-		"typescript": "^5.9.3",
-		"vitest": "^4.1.9"
-	}
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.9"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "build": "pnpm -r run build"
+  }
 }
