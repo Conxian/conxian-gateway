@@ -28,5 +28,4 @@ base64 = "0.22.1"
 borsh = "=1.7.0"
 memchr = "2.8.1"
 bytemuck = "1.21.0"
-bincode = "=3.0.0"
 async-trait = { workspace = true }
