@@ -134,11 +134,13 @@ impl crate::OfflineQueue for EncryptedOfflineQueue {
 
         let (encrypted, nonce) = self.encrypt(&json)?;
         let status = format!("{:?}", receipt.status);
+        let timestamp = i64::try_from(receipt.timestamp)
+            .map_err(|_| ConxianError::Io("Timestamp overflow".to_string()))?;
 
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "INSERT INTO offline_receipts (id, encrypted_payload, nonce, status, timestamp) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![receipt.receipt_id, encrypted, nonce.to_vec(), status, receipt.timestamp],
+            params![receipt.receipt_id, encrypted, nonce.to_vec(), status, timestamp],
         ).map_err(|e| ConxianError::Io(format!("Enqueue failed: {}", e)))?;
 
         Ok(())
