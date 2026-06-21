@@ -2,15 +2,3 @@ title = "Conxian Gateway gitleaks configuration"
 
 [extend]
 useDefault = true
-
-[allowlist]
-description = "Allowlist known false positives with scoped fingerprints"
-fingerprints = [
-  "58ea2ffc728cf8433dab28c9ba35414e4343c92b:README.md:sidekiq-secret:42",
-  "58ea2ffc728cf8433dab28c9ba35414e4343c92b:README.md:aws-access-token:221",
-  "58ea2ffc728cf8433dab28c9ba35414e4343c92b:README.md:aws-access-token:223",
-  "58ea2ffc728cf8433dab28c9ba35414e4343c92b:README.md:aws-access-token:259",
-  "176cd78c4e565fafdbabe011e50bcd7d319a723e:cmd/gateway/tests/api_tests.rs:generic-api-key:98",
-  "8262fdbcac191af966d18d219844b8702e1b5e6a:internal/api/src/handlers.rs:generic-api-key:64",
-  "8262fdbcac191af966d18d219844b8702e1b5e6a:cmd/gateway/tests/api_tests.rs:generic-api-key:98",
-]
