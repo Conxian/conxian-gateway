@@ -11,6 +11,6 @@ tokio.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
 async-trait.workspace = true
-minreq = { version = "2.14.1", features = ["https"] }
+minreq = { version = "3.0.0", features = ["https"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
