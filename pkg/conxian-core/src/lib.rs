@@ -468,10 +468,13 @@ pub trait ChainAdapter: Send + Sync {
 }
 
 #[async_trait]
+#[allow(async_fn_in_trait)]
 pub trait Bip322Verifier: Send + Sync {
     fn verify_message(&self, address: &str, message: &str, signature: &str) -> ConxianResult<bool>;
 }
 
+#[async_trait]
+#[allow(async_fn_in_trait)]
 pub trait SimulatedStacksRpcTrait: Send + Sync {
     async fn call_read_only(
         &self,
