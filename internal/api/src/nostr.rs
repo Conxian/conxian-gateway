@@ -16,12 +16,20 @@ impl NwcConnection {
         info!("Parsing NWC connection URI: {}", uri);
 
         if !uri.starts_with("nostr+walletconnect://") {
-            return Err(ConxianError::Compliance("Invalid NWC URI scheme".to_string()));
+            return Err(ConxianError::Compliance(
+                "Invalid NWC URI scheme".to_string(),
+            ));
         }
 
-        let parts: Vec<&str> = uri.strip_prefix("nostr+walletconnect://").unwrap().split('?').collect();
+        let parts: Vec<&str> = uri
+            .strip_prefix("nostr+walletconnect://")
+            .unwrap()
+            .split('?')
+            .collect();
         if parts.is_empty() {
-            return Err(ConxianError::Compliance("Invalid NWC URI format".to_string()));
+            return Err(ConxianError::Compliance(
+                "Invalid NWC URI format".to_string(),
+            ));
         }
 
         let pubkey = parts[0].to_string();
@@ -35,7 +43,9 @@ impl NwcConnection {
                 if kv.len() == 2 {
                     let key = kv[0];
                     let val = urlencoding::decode(kv[1])
-                        .map_err(|e| ConxianError::Compliance(format!("Invalid URL encoding: {}", e)))?
+                        .map_err(|e| {
+                            ConxianError::Compliance(format!("Invalid URL encoding: {}", e))
+                        })?
                         .into_owned();
                     match key {
                         "relay" => relay = val,
@@ -48,7 +58,9 @@ impl NwcConnection {
         }
 
         if pubkey.is_empty() || relay.is_empty() || secret.is_empty() {
-             return Err(ConxianError::Compliance("Missing mandatory NWC URI parameters".to_string()));
+            return Err(ConxianError::Compliance(
+                "Missing mandatory NWC URI parameters".to_string(),
+            ));
         }
 
         Ok(Self {

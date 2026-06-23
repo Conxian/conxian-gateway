@@ -1,6 +1,5 @@
 use conxian_core::{
-    ConxianResult, GcpTokenRequest, IdentityResolutionRequest,
-    IdentityResolutionResponse,
+    ConxianResult, GcpTokenRequest, IdentityResolutionRequest, IdentityResolutionResponse,
 };
 #[cfg(any(test, feature = "mock-integrations"))]
 use serde_json::json;
@@ -181,17 +180,24 @@ impl IdentityManager {
         }
         #[cfg(not(any(test, feature = "mock-integrations")))]
         {
-            let app_id = std::env::var("WORLDID_APP_ID")
-                .map_err(|_| conxian_core::ConxianError::Compliance("WORLDID_APP_ID not set".to_string()))?;
+            let app_id = std::env::var("WORLDID_APP_ID").map_err(|_| {
+                conxian_core::ConxianError::Compliance("WORLDID_APP_ID not set".to_string())
+            })?;
 
             // CON-1284: Production-ready World ID proof verification
             let proof_json = request.signature.as_ref().ok_or_else(|| {
-                conxian_core::ConxianError::Compliance("World ID proof (signature) is required".to_string())
+                conxian_core::ConxianError::Compliance(
+                    "World ID proof (signature) is required".to_string(),
+                )
             })?;
 
-            let mut proof_payload: serde_json::Value = serde_json::from_str(proof_json).map_err(|e| {
-                conxian_core::ConxianError::Compliance(format!("Invalid World ID proof JSON: {}", e))
-            })?;
+            let mut proof_payload: serde_json::Value =
+                serde_json::from_str(proof_json).map_err(|e| {
+                    conxian_core::ConxianError::Compliance(format!(
+                        "Invalid World ID proof JSON: {}",
+                        e
+                    ))
+                })?;
 
             // Inject app_id and action into the payload if not present
             if proof_payload.get("app_id").is_none() {
@@ -212,14 +218,25 @@ impl IdentityManager {
             })
             .await
             .map_err(|e| conxian_core::ConxianError::Compliance(format!("Task panic: {}", e)))?
-            .map_err(|e| conxian_core::ConxianError::Compliance(format!("World ID API request failed: {}", e)))?;
+            .map_err(|e| {
+                conxian_core::ConxianError::Compliance(format!(
+                    "World ID API request failed: {}",
+                    e
+                ))
+            })?;
 
             if res.status_code == 200 {
                 let body = res.as_str().map_err(|e| {
-                    conxian_core::ConxianError::Compliance(format!("Failed to read World ID response: {}", e))
+                    conxian_core::ConxianError::Compliance(format!(
+                        "Failed to read World ID response: {}",
+                        e
+                    ))
                 })?;
                 let val: serde_json::Value = serde_json::from_str(body).map_err(|e| {
-                    conxian_core::ConxianError::Compliance(format!("Invalid World ID response JSON: {}", e))
+                    conxian_core::ConxianError::Compliance(format!(
+                        "Invalid World ID response JSON: {}",
+                        e
+                    ))
                 })?;
 
                 Ok(IdentityResolutionResponse {
@@ -230,7 +247,11 @@ impl IdentityManager {
                 })
             } else {
                 let error_body = res.as_str().unwrap_or("Unknown error");
-                tracing::error!(status = res.status_code, body = error_body, "World ID verification failed");
+                tracing::error!(
+                    status = res.status_code,
+                    body = error_body,
+                    "World ID verification failed"
+                );
                 Err(conxian_core::ConxianError::Compliance(format!(
                     "World ID verification failed ({}): {}",
                     res.status_code, error_body
@@ -259,19 +280,28 @@ impl IdentityManager {
 
             info!("Resolving identity via Web3.bio: {}", api_url);
 
-            let res = tokio::task::spawn_blocking(move || {
-                minreq::get(&api_url).send()
-            })
-            .await
-            .map_err(|e| conxian_core::ConxianError::Compliance(format!("Task panic: {}", e)))?
-            .map_err(|e| conxian_core::ConxianError::Compliance(format!("Web3.bio API request failed: {}", e)))?;
+            let res = tokio::task::spawn_blocking(move || minreq::get(&api_url).send())
+                .await
+                .map_err(|e| conxian_core::ConxianError::Compliance(format!("Task panic: {}", e)))?
+                .map_err(|e| {
+                    conxian_core::ConxianError::Compliance(format!(
+                        "Web3.bio API request failed: {}",
+                        e
+                    ))
+                })?;
 
             if res.status_code == 200 {
                 let body = res.as_str().map_err(|e| {
-                    conxian_core::ConxianError::Compliance(format!("Failed to read World ID response: {}", e))
+                    conxian_core::ConxianError::Compliance(format!(
+                        "Failed to read World ID response: {}",
+                        e
+                    ))
                 })?;
                 let val: serde_json::Value = serde_json::from_str(body).map_err(|e| {
-                    conxian_core::ConxianError::Compliance(format!("Invalid Web3.bio response JSON: {}", e))
+                    conxian_core::ConxianError::Compliance(format!(
+                        "Invalid Web3.bio response JSON: {}",
+                        e
+                    ))
                 })?;
 
                 Ok(IdentityResolutionResponse {

@@ -1,6 +1,7 @@
 use compliance::IdentityManager;
 use conxian_core::IdentityResolutionRequest;
 
+#[cfg(feature = "mock-integrations")]
 #[tokio::test]
 async fn test_resolve_ens_simulated() {
     let manager = IdentityManager::new();
@@ -14,6 +15,7 @@ async fn test_resolve_ens_simulated() {
     assert!(res.verified);
 }
 
+#[cfg(feature = "mock-integrations")]
 #[tokio::test]
 async fn test_resolve_bns_simulated() {
     let manager = IdentityManager::new();
@@ -27,6 +29,7 @@ async fn test_resolve_bns_simulated() {
     assert!(res.verified);
 }
 
+#[cfg(feature = "mock-integrations")]
 #[tokio::test]
 async fn test_resolve_worldid_simulated() {
     let manager = IdentityManager::new();
