@@ -222,6 +222,7 @@ mod tests {
         let manager = IdentityManager::new();
         let req = IdentityResolutionRequest {
             identifier: "alice.eth".to_string(),
+            signature: None,
             provider: "ens".to_string(),
         };
         let res = manager.resolve_identity(&req).await.unwrap();
@@ -234,6 +235,7 @@ mod tests {
         let manager = IdentityManager::new();
         let req = IdentityResolutionRequest {
             identifier: "bob.id".to_string(),
+            signature: None,
             provider: "bns".to_string(),
         };
         let res = manager.resolve_identity(&req).await.unwrap();

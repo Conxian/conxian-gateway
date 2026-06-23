@@ -20,6 +20,7 @@ pub enum SettlementSource {
     Papss,
     Brics,
     Erp,
+    DlcBond,
 }
 
 impl SettlementSource {
@@ -29,6 +30,7 @@ impl SettlementSource {
             Self::Papss => "PAPSS",
             Self::Brics => "BRICS",
             Self::Erp => "ERP",
+            Self::DlcBond => "DLC_BOND",
         }
     }
 }
