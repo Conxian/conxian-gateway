@@ -9,6 +9,7 @@ mock-integrations = []
 [dependencies]
 conxian-core.workspace = true
 serde.workspace = true
+serde_json = { workspace = true }
 anyhow.workspace = true
 tracing.workspace = true
 secp256k1 = { workspace = true, features = ["global-context", "rand-std"] }
@@ -16,7 +17,6 @@ bitcoin = { workspace = true }
 hex = "0.4.3"
 rand = "0.10"
 chrono = { workspace = true }
-serde_json = { workspace = true }
 serde_jcs = "0.2.0"
 uuid = { version = "1.23.2", features = ["v4"] }
 tokio = { workspace = true, features = ["full"] }
@@ -29,3 +29,5 @@ borsh = "=1.7.0"
 memchr = "2.8.1"
 bytemuck = "1.21.0"
 async-trait = { workspace = true }
+blake2 = { workspace = true }
+minreq = { workspace = true, features = ["https"] }

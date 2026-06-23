@@ -8,6 +8,7 @@ pub mod fiat;
 pub mod handlers;
 pub mod lightning;
 pub mod middleware;
+pub mod nostr;
 pub mod routes;
 pub mod x402;
 
