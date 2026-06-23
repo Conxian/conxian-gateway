@@ -7,6 +7,7 @@ async fn test_resolve_ens_disabled_by_default() {
     let manager = IdentityManager::new();
     let req = IdentityResolutionRequest {
         identifier: "alice.eth".to_string(),
+        signature: None,
         provider: "ens".to_string(),
     };
 
@@ -23,6 +24,7 @@ async fn test_resolve_ens_simulated() {
     let manager = IdentityManager::new();
     let req = IdentityResolutionRequest {
         identifier: "alice.eth".to_string(),
+        signature: None,
         provider: "ens".to_string(),
     };
     let res = manager.resolve_identity(&req).await.unwrap();
@@ -36,6 +38,7 @@ async fn test_resolve_bns_disabled_by_default() {
     let manager = IdentityManager::new();
     let req = IdentityResolutionRequest {
         identifier: "bob.id".to_string(),
+        signature: None,
         provider: "bns".to_string(),
     };
 
@@ -52,6 +55,7 @@ async fn test_resolve_bns_simulated() {
     let manager = IdentityManager::new();
     let req = IdentityResolutionRequest {
         identifier: "bob.id".to_string(),
+        signature: None,
         provider: "bns".to_string(),
     };
     let res = manager.resolve_identity(&req).await.unwrap();
@@ -65,6 +69,7 @@ async fn test_resolve_worldid_disabled_by_default() {
     let manager = IdentityManager::new();
     let req = IdentityResolutionRequest {
         identifier: "world-id-user".to_string(),
+        signature: None,
         provider: "worldid".to_string(),
     };
 
@@ -82,6 +87,7 @@ async fn test_resolve_worldid_simulated() {
     let manager = IdentityManager::new();
     let req = IdentityResolutionRequest {
         identifier: "world-id-user".to_string(),
+        signature: None,
         provider: "worldid".to_string(),
     };
     let res = manager.resolve_identity(&req).await.unwrap();

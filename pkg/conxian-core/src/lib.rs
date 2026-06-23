@@ -1,4 +1,5 @@
 pub mod lightning;
+pub mod musig2;
 pub mod persistence;
 pub mod settlement;
 pub mod trust_policy;
@@ -258,7 +259,8 @@ impl DlcOrchestrator for DlcManager {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct IdentityResolutionRequest {
     pub identifier: String,
-    pub provider: String, // "ens", "bns", "worldid", or "web3bio"
+    pub provider: String, // "ens", "bns", "worldid", or "web3bio",
+    pub signature: Option<String>,
 }
 
 /// CON-66: Identity resolution response.

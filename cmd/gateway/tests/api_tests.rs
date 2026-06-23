@@ -1073,3 +1073,77 @@ async fn test_verify_state_proof_bitvm() {
     assert_eq!(body["chain"], "bitvm");
     assert_eq!(body["verified"], true);
 }
+
+#[tokio::test]
+async fn test_resolve_identity_with_invalid_bip322_signature() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let payload = json!({
+        "identifier": "bc1q9v6v5p29n8lyat3tcmz2x7a9k9p0p2v6v5p29n",
+        "provider": "web3bio",
+        "signature": "dGVzdA=="
+    });
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/identity/resolve")
+                .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("Content-Type", "application/json")
+                .header("x-402-payment", "proof-test")
+                .body(Body::from(serde_json::to_string(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn test_map_dlc_bond_to_usi_in_compliance() {
+    let verifier = ZkcVerifier::new();
+    let bond = conxian_core::DlcBond {
+        bond_id: "dlc-123".to_string(),
+        amount_btc: 1,
+        interest_rate: 5.0,
+        maturity_date: 1234567890,
+        sovereign_alignment: true,
+    };
+
+    let usi = verifier.map_dlc_bond_to_usi(&bond);
+    assert_eq!(usi.source, conxian_core::SettlementSource::DlcBond);
+    assert_eq!(usi.transaction_id, "dlc-123");
+    assert_eq!(usi.amount_minor, 100_000_000);
+}
+
+#[tokio::test]
+async fn test_musig2_aggregation_in_compliance() {
+    use conxian_core::musig2::MuSig2Orchestrator;
+    let verifier = ZkcVerifier::new();
+    let pubkeys = vec!["pk1-12345678".to_string(), "pk2-87654321".to_string()];
+
+    let agg_key = verifier.aggregate_pubkeys(&pubkeys).unwrap();
+    assert_eq!(agg_key.participant_pubkeys.len(), 2);
+
+    let message_hash = [0u8; 32];
+    let partial_sigs = vec![
+        conxian_core::musig2::MuSig2PartialSignature {
+            participant_pubkey: "pk1-12345678".to_string(),
+            partial_signature: "sig1".to_string(),
+            nonce: "nonce1".to_string(),
+        },
+        conxian_core::musig2::MuSig2PartialSignature {
+            participant_pubkey: "pk2-87654321".to_string(),
+            partial_signature: "sig2".to_string(),
+            nonce: "nonce2".to_string(),
+        },
+    ];
+
+    let final_sig = verifier
+        .aggregate_signatures(&agg_key, &partial_sigs, &message_hash)
+        .unwrap();
+    assert!(final_sig.starts_with("final-sig-"));
+}

@@ -669,6 +669,29 @@ pub async fn resolve_identity_v1(
     State(state): State<AppState>,
     Json(payload): Json<conxian_core::IdentityResolutionRequest>,
 ) -> Result<Json<conxian_core::IdentityResolutionResponse>, (StatusCode, Json<Value>)> {
+    // Enforce BIP-322 verification if signature is provided
+    if let Some(ref sig) = payload.signature {
+        let verifier: &dyn conxian_core::Bip322Verifier = state.compliance.as_ref();
+        let message = format!("Conxian Identity Verification: {}", payload.identifier);
+
+        // Verify that the signature is valid for the provided identifier (assuming it's a Bitcoin address)
+        // If the identifier is a name (e.g. .eth), verification would happen after resolution.
+        if payload.identifier.starts_with("bc1")
+            || payload.identifier.starts_with("1")
+            || payload.identifier.starts_with("3")
+        {
+            match verifier.verify_message(&payload.identifier, &message, sig) {
+                Ok(true) => info!("BIP-322 verification successful for {}", payload.identifier),
+                _ => {
+                    return Err((
+                        StatusCode::UNAUTHORIZED,
+                        Json(json!({ "error": "Invalid BIP-322 signature for provided address" })),
+                    ))
+                }
+            }
+        }
+    }
+
     match state.identity.resolve_identity(&payload).await {
         Ok(res) => Ok(Json(res)),
         Err(e) => Err((

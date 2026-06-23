@@ -66,3 +66,9 @@ This document outlines the discrepancies identified during the Systemic Alignmen
 - **Engine Recovery**: Fixed critical Rust compilation error in `internal/engine` caused by missing `minreq` features. Re-enabled JSON serialization for Stacks RPC.
 - **Maturity Audit**: Completed a full component maturity audit. Identified BIP-322 and MuSig2 as the next high-priority protocol additions.
 - **Verification Integrity**: Confirmed UCV-1 implementation is stable and fully integrated across 100% of Tier 1 chain adapters.
+
+### 2026-06-24 Protocol Expansion & API Integration
+- **BIP-322 API Integration**: Integrated message verification into `resolve_identity_v1` API handler to enforce proof-of-possession.
+- **DLC Primitives**: Implemented DLC bond primitives and USI mapping logic in `conxian-core` and `ZkcVerifier`.
+- **MuSig2 Aggregation**: Successfully implemented MuSig2 (BIP-327) key and signature aggregation primitives in the compliance layer.
+- **State Hardening**: Expanded `SettlementSource` to support DLC-backed Bitcoin bonds.
