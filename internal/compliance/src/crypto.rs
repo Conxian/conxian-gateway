@@ -8,7 +8,7 @@ impl ArkPrf {
     pub fn derive_vutxo(seed: &[u8], index: u32) -> ConxianResult<[u8; 32]> {
         let mut hasher = Blake2s256::new();
         hasher.update(seed);
-        hasher.update(&index.to_le_bytes());
+        hasher.update(index.to_le_bytes());
         let result = hasher.finalize();
         let mut output = [0u8; 32];
         output.copy_from_slice(&result);
