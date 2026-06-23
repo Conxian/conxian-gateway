@@ -1,10 +1,12 @@
 #[cfg(all(feature = "mock-integrations", not(any(debug_assertions, test))))]
 compile_error!("feature mock-integrations must not be enabled in release builds");
 
+pub mod crypto;
 pub mod identity;
 pub mod verifier;
 pub mod zkc;
 
+pub use crypto::ArkPrf;
 pub use identity::IdentityManager;
 pub use verifier::{CoreVerifier, UniversalVerifier};
 pub use zkc::ZkcVerifier;

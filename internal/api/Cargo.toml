@@ -7,6 +7,7 @@ edition.workspace = true
 mock-integrations = []
 
 [dependencies]
+urlencoding = "2.1.3"
 compliance = { path = "../compliance" }
 engine = { path = "../engine" }
 conxian-core.workspace = true
