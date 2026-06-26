@@ -15,3 +15,13 @@
 ## 4. Documentation Alignment
 - `README.md` aligned with mandatory Purpose, Status, and Audience sections.
 - `AGENTS.md` consolidated to root directory for unified agent guidance.
+
+## 5. Fail-Closed Admin Hardening (CON-1279)
+- Secured all `/admin/v1` routes with `auth_middleware` to ensure authenticated decision making.
+- Hardened `sentinel_API_TOKEN` rejection in the authentication layer to prevent misconfiguration leaks.
+- Replaced misleading "partial" BitVM attestation status with an explicit `action_required` error in `handlers.rs`, enforcing context-aware verification.
+
+## 6. UCV-1 and Multi-Chain Alignment (CON-810 / CON-789)
+- Updated `packages/schemas` and `internal/api` to support dynamic trust-tier metadata in chain discovery.
+- Aligned Liquid and Rootstock adapters with the Pilot Lane (Tier 2) research patterns, including Elements-based UTXO and Powpeg anchor verification.
+- Documented Phase 7 Sovereign Labor and Sharding Verification (SSV-1) for future BitVM2-backed labor proofs.
