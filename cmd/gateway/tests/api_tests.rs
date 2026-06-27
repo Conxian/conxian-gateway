@@ -1177,5 +1177,8 @@ async fn test_verify_attestation_bitvm_rejection() {
     let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
     assert_eq!(body["status"], "action_required");
     assert_eq!(body["error"], "action_required");
-    assert!(body["message"].as_str().unwrap().contains("JobCard context"));
+    assert!(body["message"]
+        .as_str()
+        .unwrap()
+        .contains("JobCard context"));
 }
