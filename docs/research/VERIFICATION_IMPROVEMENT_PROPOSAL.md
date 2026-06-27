@@ -31,3 +31,7 @@ Implement a `UniversalVerifier` service that utilizes the `ChainAdapter` trait t
 - **Partner Lane Expansion**: Fully integrated Babylon and BitVM adapters into the `UniversalVerifier` pipeline.
 - **Verification Logic**: Implemented rehearsal-mode verification for Babylon finality gadget proofs and BitVM2 optimistic state-root proofs.
 - **Integration Tests**: Added automated API integration tests covering heterogeneous proof verification for Babylon and BitVM chains.
+
+### 2026-06-26 Full Protocol Alignment
+- **MuSig2 & DLC**: Integrated BIP-327 and Discreet Log Contract primitives into the universal verification surface.
+- **Adaptive Proofs**: Prepared the `UniversalVerifier` to consume BitVM3 recursive proofs and BitVMX adaptive computation proofs.

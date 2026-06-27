@@ -1,22 +1,26 @@
-use conxian_core::{ConxianResult, SharedState};
+use crate::stacks::alex::AlexClient;
+use conxian_core::{AlexSwapRequest, ConxianResult, SharedState};
+use std::sync::Arc;
 use tokio::time::{sleep, Duration};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 pub struct TreasuryMonitor {
     state: SharedState,
     interval_secs: u64,
+    alex: Arc<dyn AlexClient>,
 }
 
 impl TreasuryMonitor {
-    pub fn new(state: SharedState, interval_secs: u64) -> Self {
+    pub fn new(state: SharedState, interval_secs: u64, alex: Arc<dyn AlexClient>) -> Self {
         Self {
             state,
             interval_secs,
+            alex,
         }
     }
 
     pub async fn run(&self) -> ConxianResult<()> {
-        info!("Starting Treasury Monitor with Structured Finance & TAM-Capture...");
+        info!("Starting Treasury Monitor with ALEX-driven Sovereign Yield Index (SYI)...");
 
         loop {
             if let Err(e) = self.update_balances().await {
@@ -27,7 +31,31 @@ impl TreasuryMonitor {
         }
     }
 
-    async fn update_balances(&self) -> ConxianResult<()> {
+    pub async fn update_balances(&self) -> ConxianResult<()> {
+        // Fetch real-time market data from ALEX to anchor SYI
+        let quote_req = AlexSwapRequest {
+            token_x: "sBTC".to_string(),
+            token_y: "STX".to_string(),
+            factor: 100_000_000,
+            amount: 100_000_000, // 1 sBTC
+            min_dy: None,
+        };
+
+        let market_yield_proxy = match self.alex.get_swap_quote(quote_req).await {
+            Ok(quote) => {
+                info!("ALEX Market Quote (1 sBTC -> STX): {}", quote);
+                // Use quote volatility or depth as a proxy for opportunity cost in SYI
+                (quote as f64 / 1_000_000.0).min(1.0)
+            }
+            Err(e) => {
+                warn!(
+                    "Failed to fetch ALEX quote for SYI: {}, falling back to simulation",
+                    e
+                );
+                0.5 // Fallback proxy
+            }
+        };
+
         let mut s = self.state.write().unwrap();
 
         // Initial setup for institutional balances
@@ -42,9 +70,10 @@ impl TreasuryMonitor {
         if s.metrics.sbtc_liquidity == 0.0 {
             s.metrics.sbtc_liquidity = 5_000_000.0; // Starting at $5M SAM
         }
-        if s.metrics.syi_index == 0.0 {
-            s.metrics.syi_index = 0.0525; // 5.25% Initial SYI
-        }
+
+        // SYI calculation: Anchored in ALEX market depth + Sovereign multiplier
+        let sovereignty_multiplier = 1.2; // Reward for non-custodial paths
+        s.metrics.syi_index = (0.04 + (market_yield_proxy * 0.05)) * sovereignty_multiplier;
 
         // Simulate growth towards TAM ($10B+)
         let growth_factor = if s.metrics.sbtc_liquidity > 1_000_000_000.0 {
@@ -54,13 +83,8 @@ impl TreasuryMonitor {
         };
         s.metrics.sbtc_liquidity += s.metrics.sbtc_liquidity * growth_factor;
 
-        // SYI oscillates based on sovereign alignment and liquidity depth
-        s.metrics.syi_index =
-            (0.05 + (s.metrics.sbtc_liquidity / 10_000_000_000.0) * 0.02).min(0.12);
-
         // CON-452: Structured Finance Yield Distribution
-        // Senior tranches get priority on base yield; Junior tranches capture excess/risk yield.
-        let base_yield_stx = 1250.0;
+        let base_yield_stx = 1250.0 * (1.0 + market_yield_proxy);
         let senior_share = 0.6; // 60% fixed to senior
         let junior_share = 0.4; // 40% to junior
 
@@ -73,7 +97,7 @@ impl TreasuryMonitor {
         s.metrics.treasury_balance_stx += base_yield_stx - tax_stx;
         s.metrics.last_treasury_update = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .expect("system clock moved backwards")
             .as_secs();
 
         info!(
@@ -85,5 +109,27 @@ impl TreasuryMonitor {
         );
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::stacks::alex::SimulatedAlexClient;
+    use conxian_core::GatewayState;
+    use std::sync::RwLock;
+
+    #[tokio::test]
+    async fn test_treasury_monitor_syi_calculation() {
+        let state: SharedState = Arc::new(RwLock::new(GatewayState::new()));
+        let alex = Arc::new(SimulatedAlexClient);
+        let monitor = TreasuryMonitor::new(state.clone(), 1, alex);
+
+        monitor.update_balances().await.unwrap();
+
+        let s = state.read().unwrap();
+        assert!(s.metrics.syi_index > 0.0);
+        assert!(s.metrics.treasury_balance_stx > 1000000.0);
+        assert_eq!(s.metrics.treasury_balance_btc, 1050000000);
     }
 }
