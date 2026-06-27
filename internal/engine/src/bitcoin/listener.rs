@@ -60,7 +60,7 @@ impl<R: BitcoinRpc> BitcoinListener<R> {
                                     "New Bitcoin block processed: height={}, hash={}, network={:?}",
                                     block.height, block.hash, self.network
                                 );
-                                let mut state = self.state.write().unwrap();
+                                let mut state = self.state.write().expect("lock poisoned");
                                 state.bitcoin.height = block.height;
                                 state.bitcoin.last_updated = block.timestamp;
                                 state.bitcoin.last_sync_time = now;
@@ -86,7 +86,7 @@ impl<R: BitcoinRpc> BitcoinListener<R> {
                 } else if current_height == self.last_height {
                     match self.rpc.get_block_info(current_height).await {
                         Ok(block) => {
-                            let mut state = self.state.write().unwrap();
+                            let mut state = self.state.write().expect("lock poisoned");
                             if state.bitcoin.best_block_hash != block.hash {
                                 info!(
                                     "Bitcoin tip change detected at height {}: {} -> {}",
@@ -118,14 +118,14 @@ impl<R: BitcoinRpc> BitcoinListener<R> {
                         }
                     }
                 } else {
-                    let mut state = self.state.write().unwrap();
+                    let mut state = self.state.write().expect("lock poisoned");
                     state.bitcoin.last_sync_time = now;
                 }
                 Ok(())
             }
             Err(e) => {
                 error!("Failed to get Bitcoin block count: {}", e);
-                let mut state = self.state.write().unwrap();
+                let mut state = self.state.write().expect("lock poisoned");
                 state.bitcoin.status = format!("error: {}", e);
                 Err(e)
             }
@@ -195,7 +195,7 @@ mod tests {
         listener.sync_once().await.unwrap();
 
         {
-            let s = state.read().unwrap();
+            let s = state.read().expect("lock poisoned");
             assert_eq!(s.bitcoin.height, 100);
             assert_eq!(s.bitcoin.status, "synced");
             assert_eq!(s.bitcoin.network, "mainnet");
@@ -208,7 +208,7 @@ mod tests {
         listener.sync_once().await.unwrap();
 
         {
-            let s = state.read().unwrap();
+            let s = state.read().expect("lock poisoned");
             assert_eq!(s.bitcoin.height, 101);
             assert_eq!(s.bitcoin.best_block_hash, "hash-101");
         }

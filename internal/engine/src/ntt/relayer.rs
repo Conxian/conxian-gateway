@@ -34,7 +34,7 @@ impl NttRelayer {
 
     async fn process_ntt_events(&self) -> ConxianResult<()> {
         let height = {
-            let s = self.state.read().unwrap();
+            let s = self.state.read().expect("lock poisoned");
             s.stacks.height
         };
 
@@ -154,7 +154,7 @@ mod tests {
         let relayer = NttRelayer::new(state.clone(), 1);
         relayer.submit_vaa(10).await.unwrap();
 
-        let s = state.read().unwrap();
+        let s = state.read().expect("lock poisoned");
         assert_eq!(s.metrics.trust_policy_allow, 0);
         assert_eq!(s.metrics.trust_policy_block, 1);
 
@@ -171,7 +171,7 @@ mod tests {
         let relayer = NttRelayer::new(state.clone(), 1);
         relayer.submit_vaa(10).await.unwrap();
 
-        let s = state.read().unwrap();
+        let s = state.read().expect("lock poisoned");
         assert_eq!(s.metrics.trust_policy_allow, 1);
         assert_eq!(s.metrics.trust_policy_block, 0);
 

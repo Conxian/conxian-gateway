@@ -41,7 +41,7 @@ impl<R: StacksRpc> StacksListener<R> {
                 if info.height > self.last_height || self.last_height == 0 {
                     info!("New Stacks block processed: height={}, network={}, epoch={}, burn_height={}", info.height, info.network, info.epoch, info.burn_block_height);
 
-                    let mut state = self.state.write().unwrap();
+                    let mut state = self.state.write().expect("lock poisoned");
                     state.stacks.height = info.height;
                     state.stacks.status = "synced".to_string();
                     state.stacks.last_updated = now;
@@ -59,13 +59,13 @@ impl<R: StacksRpc> StacksListener<R> {
 
                     self.last_height = info.height;
                 } else {
-                    let mut state = self.state.write().unwrap();
+                    let mut state = self.state.write().expect("lock poisoned");
                     state.stacks.last_sync_time = now;
                 }
                 Ok(())
             }
             Err(e) => {
-                let mut state = self.state.write().unwrap();
+                let mut state = self.state.write().expect("lock poisoned");
                 state.stacks.status = format!("error: {}", e);
                 Err(e)
             }
@@ -146,7 +146,7 @@ mod tests {
         listener.sync_once().await.unwrap();
 
         {
-            let s = state.read().unwrap();
+            let s = state.read().expect("lock poisoned");
             assert_eq!(s.stacks.height, 555);
             assert_eq!(s.stacks.status, "synced");
             assert_eq!(s.stacks.mode.as_deref(), Some("nakamoto"));
@@ -159,7 +159,7 @@ mod tests {
         listener.sync_once().await.unwrap();
 
         {
-            let s = state.read().unwrap();
+            let s = state.read().expect("lock poisoned");
             assert_eq!(s.stacks.height, 556);
             assert_eq!(s.stacks.burn_block_height, Some(55)); // Simulated int div
         }
