@@ -42,7 +42,7 @@ fn amount_sbtc_to_satoshis(amount_sbtc: f64) -> Result<u64, &'static str> {
 }
 
 pub async fn get_health(State(state): State<AppState>) -> Json<Value> {
-    let s = state.shared.read().unwrap();
+    let s = state.shared.read().expect("lock poisoned");
     let bitcoin_status = if s.bitcoin.last_sync_time > 0 {
         "synced"
     } else {
@@ -83,12 +83,12 @@ pub async fn get_health(State(state): State<AppState>) -> Json<Value> {
 }
 
 pub async fn get_state(State(state): State<AppState>) -> Json<conxian_core::GatewayState> {
-    let s = state.shared.read().unwrap();
+    let s = state.shared.read().expect("lock poisoned");
     Json(s.clone())
 }
 
 pub async fn get_metrics(State(state): State<AppState>) -> Json<Value> {
-    let s = state.shared.read().unwrap();
+    let s = state.shared.read().expect("lock poisoned");
     Json(json!({
         "health_requests": s.metrics.health_requests,
         "state_requests": s.metrics.state_requests,
@@ -518,7 +518,7 @@ pub async fn toggle_bounty_payouts(
         Json(json!({ "error": "enabled boolean is required" })),
     ))?;
 
-    let mut s = state.shared.write().unwrap();
+    let mut s = state.shared.write().expect("lock poisoned");
     s.metrics.bounty_payouts_enabled = enabled;
 
     info!(enabled = %enabled, "Bounty payouts toggled");
@@ -641,10 +641,14 @@ pub async fn verify_attestation(
             .compliance
             .verify_settlement_trigger_attestation(&payload, &p.receipt_hash),
         AttestationRequest::BitVm(_b) => {
-            return Ok(Json(json!({
-                "status": "partial",
-                "message": "BitVM attestation requires JobCard context; use /api/v1/settle for full verification"
-            })));
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "status": "action_required",
+                    "error": "action_required",
+                    "message": "BitVM attestation requires JobCard context; use /api/v1/settle for full verification"
+                })),
+            ));
         }
         _ => {
             return Err((
@@ -702,7 +706,7 @@ pub async fn resolve_identity_v1(
 }
 
 pub async fn get_handoff_status(State(state): State<AppState>) -> Json<Value> {
-    let s = state.shared.read().unwrap();
+    let s = state.shared.read().expect("lock poisoned");
     Json(json!({
         "current_state": s.handoff_state,
         "bootstrap_wallet": s.wallets.bootstrap,
@@ -716,7 +720,7 @@ pub async fn update_handoff_state(
     State(state): State<AppState>,
     Json(new_state): Json<conxian_core::HandoffState>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    let mut s = state.shared.write().unwrap();
+    let mut s = state.shared.write().expect("lock poisoned");
     let old_state = s.handoff_state;
     s.handoff_state = new_state;
 
@@ -809,7 +813,7 @@ fn build_settlement_proposal(
             )
         })?;
 
-    let s = state.shared.read().unwrap();
+    let s = state.shared.read().expect("lock poisoned");
     let current_burn_height = s.stacks.burn_block_height.unwrap_or(0);
 
     SettlementProposal::new(
@@ -857,7 +861,7 @@ fn enforce_ingress_trust_policy(
 
     let decision = evaluate_trust_metadata_json(Some(metadata_json), now);
 
-    let mut s = state.shared.write().unwrap();
+    let mut s = state.shared.write().expect("lock poisoned");
     match decision {
         TrustPolicyDecision::Allow => {
             s.metrics.trust_policy_allow += 1;

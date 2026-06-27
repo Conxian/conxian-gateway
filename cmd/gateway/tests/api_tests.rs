@@ -1147,3 +1147,38 @@ async fn test_musig2_aggregation_in_compliance() {
         .unwrap();
     assert!(final_sig.starts_with("final-sig-"));
 }
+
+#[tokio::test]
+async fn test_verify_attestation_bitvm_rejection() {
+    let state = Arc::new(std::sync::RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let payload = json!({
+        "type": "BitVm",
+        "data": {"prover_id": "p1", "commitment_hash": "c1", "state_root": "r1", "proof_hash": "", "witness_hash": ""}
+    });
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/verify")
+                .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("Content-Type", "application/json")
+                .header("x-402-payment", "proof-test")
+                .body(Body::from(serde_json::to_string(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(body["status"], "action_required");
+    assert_eq!(body["error"], "action_required");
+    assert!(body["message"]
+        .as_str()
+        .unwrap()
+        .contains("JobCard context"));
+}

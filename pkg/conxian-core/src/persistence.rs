@@ -137,7 +137,7 @@ impl crate::OfflineQueue for EncryptedOfflineQueue {
         let timestamp = i64::try_from(receipt.timestamp)
             .map_err(|_| ConxianError::Io("Timestamp overflow".to_string()))?;
 
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().expect("lock poisoned");
         conn.execute(
             "INSERT INTO offline_receipts (id, encrypted_payload, nonce, status, timestamp) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![receipt.receipt_id, encrypted, nonce.to_vec(), status, timestamp],
@@ -147,7 +147,7 @@ impl crate::OfflineQueue for EncryptedOfflineQueue {
     }
 
     fn dequeue_pending(&self) -> ConxianResult<Vec<crate::OfflineReceipt>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().expect("lock poisoned");
         let mut stmt = conn
             .prepare("SELECT encrypted_payload, nonce FROM offline_receipts WHERE UPPER(status) = 'PENDING' OR UPPER(status) = 'GOSSIPED'")
             .map_err(|e| ConxianError::Io(format!("Prepare failed: {}", e)))?;
@@ -172,7 +172,7 @@ impl crate::OfflineQueue for EncryptedOfflineQueue {
     }
 
     fn mark_broadcasted(&self, receipt_id: &str) -> ConxianResult<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().expect("lock poisoned");
         conn.execute(
             "UPDATE offline_receipts SET status = 'BROADCASTED' WHERE id = ?1",
             params![receipt_id],
@@ -208,7 +208,7 @@ impl crate::OfflineQueue for EncryptedOfflineQueue {
         let expires_at_i64 = i64::try_from(expires_at)
             .map_err(|_| ConxianError::Persistence("Expiry timestamp overflow".to_string()))?;
 
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().expect("lock poisoned");
 
         conn.execute(
             "DELETE FROM webhook_replay_keys WHERE expires_at <= ?1",

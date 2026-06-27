@@ -263,12 +263,12 @@ mod tests {
 
     impl Persistence for SimulatedPersistence {
         fn save(&self, state: &PersistentState) -> ConxianResult<()> {
-            *self.state.lock().unwrap() = state.clone();
+            *self.state.lock().expect("lock poisoned") = state.clone();
             Ok(())
         }
 
         fn load(&self) -> ConxianResult<PersistentState> {
-            Ok(self.state.lock().unwrap().clone())
+            Ok(self.state.lock().expect("lock poisoned").clone())
         }
     }
 
