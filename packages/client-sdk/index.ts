@@ -6,7 +6,9 @@
 import {
     ChainAdapterInfo,
     PreparedTransaction,
-    StateProofVerificationResponse
+    StateProofVerificationResponse,
+    DlcBond,
+    MuSig2AggregatedKey
 } from "@conxian/schemas";
 
 export const GATEWAY_API_VERSION = "v1";
@@ -61,6 +63,26 @@ export class ConxianClient {
         return this.request<StateProofVerificationResponse>(`/chains/${chain}/verify`, {
             method: "POST",
             body: JSON.stringify(proofMetadata),
+        });
+    }
+
+    /**
+     * CON-1269: DLC Bond creation (Sovereign Finance).
+     */
+    async createDlcBond(bond: DlcBond): Promise<{ bond_id: string }> {
+        return this.request<{ bond_id: string }>("/dlc/bond", {
+            method: "POST",
+            body: JSON.stringify(bond),
+        });
+    }
+
+    /**
+     * CON-1270: MuSig2 Key Aggregation.
+     */
+    async aggregateMuSig2Keys(pubkeys: string[]): Promise<MuSig2AggregatedKey> {
+        return this.request<MuSig2AggregatedKey>("/musig2/aggregate-keys", {
+            method: "POST",
+            body: JSON.stringify({ pubkeys }),
         });
     }
 

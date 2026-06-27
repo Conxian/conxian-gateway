@@ -82,6 +82,52 @@ impl NwcConnection {
             }
         }))
     }
+
+    pub fn construct_make_invoice_request(
+        &self,
+        amount_msat: u64,
+        description: Option<String>,
+        expiry: Option<u64>,
+    ) -> ConxianResult<serde_json::Value> {
+        info!(
+            "Constructing NWC make_invoice request for {} msat",
+            amount_msat
+        );
+
+        Ok(serde_json::json!({
+            "method": "make_invoice",
+            "params": {
+                "amount": amount_msat,
+                "description": description,
+                "expiry": expiry
+            }
+        }))
+    }
+
+    pub fn construct_lookup_invoice_request(
+        &self,
+        payment_hash: Option<String>,
+        invoice: Option<String>,
+    ) -> ConxianResult<serde_json::Value> {
+        info!("Constructing NWC lookup_invoice request");
+
+        Ok(serde_json::json!({
+            "method": "lookup_invoice",
+            "params": {
+                "payment_hash": payment_hash,
+                "invoice": invoice
+            }
+        }))
+    }
+
+    pub fn construct_get_balance_request(&self) -> ConxianResult<serde_json::Value> {
+        info!("Constructing NWC get_balance request");
+
+        Ok(serde_json::json!({
+            "method": "get_balance",
+            "params": {}
+        }))
+    }
 }
 
 #[cfg(test)]
@@ -95,5 +141,34 @@ mod tests {
         assert_eq!(conn.pubkey, "addr123");
         assert_eq!(conn.relay, "wss://relay.com");
         assert_eq!(conn.secret, "sec123");
+    }
+
+    #[test]
+    fn test_construct_nwc_requests() {
+        let conn = NwcConnection {
+            pubkey: "pk".into(),
+            relay: "relay".into(),
+            secret: "sec".into(),
+            lud16: None,
+        };
+
+        let pay = conn.construct_payment_request("inv123").unwrap();
+        assert_eq!(pay["method"], "pay_invoice");
+        assert_eq!(pay["params"]["invoice"], "inv123");
+
+        let make = conn
+            .construct_make_invoice_request(1000, Some("test".into()), None)
+            .unwrap();
+        assert_eq!(make["method"], "make_invoice");
+        assert_eq!(make["params"]["amount"], 1000);
+
+        let lookup = conn
+            .construct_lookup_invoice_request(Some("hash".into()), None)
+            .unwrap();
+        assert_eq!(lookup["method"], "lookup_invoice");
+        assert_eq!(lookup["params"]["payment_hash"], "hash");
+
+        let balance = conn.construct_get_balance_request().unwrap();
+        assert_eq!(balance["method"], "get_balance");
     }
 }

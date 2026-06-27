@@ -98,8 +98,14 @@ async fn main() -> anyhow::Result<()> {
         config.stacks_sync_interval,
     );
 
+    // ALEX Client Initialization
+    let alex_client: Arc<dyn AlexClient> = Arc::new(AlexRpcClient::new(
+        Box::new(stx_rpc.clone()),
+        &config.alex_api_url,
+    ));
+
     // Initialize Treasury monitor
-    let treasury_monitor = TreasuryMonitor::new(state.clone(), 60);
+    let treasury_monitor = TreasuryMonitor::new(state.clone(), 60, alex_client.clone());
 
     // Initialize NTT Relayer
     let ntt_relayer = NttRelayer::new(state.clone(), 30);
@@ -124,12 +130,6 @@ async fn main() -> anyhow::Result<()> {
     // Inject StacksRpc into IdentityManager for BNS resolution
     let identity_manager = Arc::new(IdentityManager::with_stacks_rpc(Box::new(stx_rpc.clone())));
     let zkc_verifier = Arc::new(ZkcVerifier::new());
-
-    // ALEX Client Initialization
-    let alex_client: Arc<dyn AlexClient> = Arc::new(AlexRpcClient::new(
-        Box::new(stx_rpc.clone()),
-        &config.alex_api_url,
-    ));
 
     // Parse offline queue secret into 32-byte key
     let mut offline_key = [0u8; 32];

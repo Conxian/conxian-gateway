@@ -75,6 +75,7 @@ export interface StateProofVerificationResponse {
  */
 export interface ChainAdapterInfo {
     supported_chains: string[];
+    trust_tiers?: Record<string, number>;
 }
 
 /**
@@ -85,4 +86,28 @@ export interface PreparedTransaction {
     unsigned_tx: string;
     fee_estimate: string;
     metadata?: any;
+}
+
+/**
+ * CON-1270: MuSig2 (BIP-327) primitives.
+ */
+export interface MuSig2AggregatedKey {
+    aggregated_pubkey: string;
+    participant_pubkeys: string[];
+}
+
+export interface MuSig2PartialSignature {
+    participant_id: number;
+    signature: string;
+}
+
+/**
+ * CON-1269: DLC (Discreet Log Contracts) primitives.
+ */
+export interface DlcBond {
+    bond_id: string;
+    amount_btc: number;
+    interest_rate: number;
+    maturity_date: number;
+    sovereign_alignment: boolean;
 }
