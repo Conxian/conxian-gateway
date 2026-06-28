@@ -7,7 +7,7 @@ use bitcoin::{
 };
 use conxian_core::{
     Attestation, AttestationRequest, ConxianError, ConxianJobCard, ConxianResult, IndustrialIntent,
-    NormalizedSettlement, OfflineReceipt, OfflineReceiptStatus, SettlementEnvelope,
+    NormalizedSettlement, OfflineReceipt, OfflineReceiptStatus, SanctionsRisk, SettlementEnvelope,
     SettlementFinality, SettlementIdentifiers, SettlementSource, SettlementStatus,
     SETTLEMENT_ENVELOPE_VERSION_CURRENT,
 };
@@ -15,7 +15,7 @@ use secp256k1::{schnorr, Message, PublicKey, Secp256k1, XOnlyPublicKey};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tracing::info;
+use tracing::{info, warn};
 
 pub const ATTESTATION_SIGNING_DOMAIN: &[u8] = b"conxian-attestation-v1";
 pub const TEE_DEVICE_ID_PREFIX: &str = "conxius-tee-";
@@ -295,6 +295,113 @@ impl ZkcVerifier {
                 identifiers,
             },
         })
+    }
+
+    pub fn normalize_cips_ingress(
+        &self,
+        payload: &Value,
+        raw_payload_hash: String,
+    ) -> ConxianResult<SettlementEnvelope> {
+        info!("Normalizing CIPS (ISO 20022 CIPS variant) ingress for institutional ledger...");
+        let txid = payload["cips_msg_id"]
+            .as_str()
+            .unwrap_or("unknown")
+            .to_string();
+        let amount = payload["amount"].as_u64().unwrap_or(0);
+        let sender = payload["sender"].as_str().unwrap_or("unknown").to_string();
+        let receiver = payload["receiver"]
+            .as_str()
+            .unwrap_or("CIPS_RECEIVER")
+            .to_string();
+        let currency = payload["currency"].as_str().unwrap_or("CNY").to_string();
+
+        let identifiers = SettlementIdentifiers {
+            message_id: Some(txid.clone()),
+            transaction_reference: payload["cips_tx_ref"].as_str().map(|s| s.to_string()),
+            settlement_reference: Some(txid.clone()),
+            end_to_end_id: payload["end_to_end_id"].as_str().map(|s| s.to_string()),
+            settlement_amount: amount.to_string(),
+            settlement_currency: currency.clone(),
+            settlement_date: chrono::Utc::now().format("%Y-%m-%d").to_string(),
+        };
+
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock moved backwards")
+            .as_secs();
+
+        let source = SettlementSource::Cips;
+        let risk = source.sanctions_risk();
+        if source.requires_sanctions_screening() {
+            warn!(
+                "CIPS settlement requires sanctions screening (risk={:?}, txid={})",
+                risk, txid
+            );
+        }
+        info!(
+            "CIPS settlement normalized: {} {} {} (risk={:?})",
+            amount, currency, txid, risk
+        );
+
+        Ok(SettlementEnvelope {
+            version: SETTLEMENT_ENVELOPE_VERSION_CURRENT.to_string(),
+            payload: NormalizedSettlement {
+                transaction_id: txid,
+                amount_minor: amount,
+                amount_scale: 0,
+                currency,
+                sender,
+                receiver,
+                source,
+                raw_payload_hash,
+                industrial_intent: IndustrialIntent::default(),
+                timestamp,
+                status: SettlementStatus::Ingested,
+                finality: SettlementFinality::Unknown,
+                rail: None,
+                settled_at: None,
+                identifiers,
+            },
+        })
+    }
+
+    /// Screen a settlement envelope for sanctions risk.
+    /// Returns Ok(()) if the settlement passes screening, or an error if blocked.
+    pub fn screen_sanctions(&self, envelope: &SettlementEnvelope) -> ConxianResult<()> {
+        let source = envelope.payload.source;
+        let risk = source.sanctions_risk();
+
+        match risk {
+            SanctionsRisk::Critical => {
+                warn!(
+                    "BLOCKED: Critical sanctions risk settlement from {} rail (txid={})",
+                    source.as_rail_name(),
+                    envelope.payload.transaction_id
+                );
+                Err(ConxianError::Compliance(format!(
+                    "Settlement blocked: {} rail is under active sanctions (risk: Critical)",
+                    source.as_rail_name()
+                )))
+            }
+            SanctionsRisk::High => {
+                warn!(
+                    "ELEVATED: High sanctions risk settlement from {} rail (txid={})",
+                    source.as_rail_name(),
+                    envelope.payload.transaction_id
+                );
+                // High risk is logged but not blocked — operator discretion
+                Ok(())
+            }
+            SanctionsRisk::Medium => {
+                info!(
+                    "Sanctions screening: {} rail at Medium risk (txid={})",
+                    source.as_rail_name(),
+                    envelope.payload.transaction_id
+                );
+                Ok(())
+            }
+            SanctionsRisk::Low => Ok(()),
+        }
     }
 
     pub fn normalize_erp_ingress(
