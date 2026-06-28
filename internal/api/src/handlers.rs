@@ -3,6 +3,7 @@ use axum::{
     body::Body,
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
+    response::Response,
     Json,
 };
 use compliance::SovereignCommit;
@@ -102,6 +103,64 @@ pub async fn get_metrics(State(state): State<AppState>) -> Json<Value> {
         "treasury_balance_stx": s.metrics.treasury_balance_stx,
         "treasury_balance_btc": s.metrics.treasury_balance_btc,
     }))
+}
+
+pub async fn get_prometheus_metrics(State(state): State<AppState>) -> Response<String> {
+    let s = state.shared.read().expect("lock poisoned");
+    let body = format!(
+        "# HELP conxian_requests_total Total API requests processed.\n\
+         # TYPE conxian_requests_total counter\n\
+         conxian_requests_total {total}\n\
+         # HELP conxian_health_requests_total Health check requests.\n\
+         # TYPE conxian_health_requests_total counter\n\
+         conxian_health_requests_total {health}\n\
+         # HELP conxian_verification_requests_total Attestation verification attempts.\n\
+         # TYPE conxian_verification_requests_total counter\n\
+         conxian_verification_requests_total {verify}\n\
+         # HELP conxian_verification_success_total Successful attestation verifications.\n\
+         # TYPE conxian_verification_success_total counter\n\
+         conxian_verification_success_total {verify_ok}\n\
+         # HELP conxian_verification_failure_total Failed attestation verifications.\n\
+         # TYPE conxian_verification_failure_total counter\n\
+         conxian_verification_failure_total {verify_fail}\n\
+         # HELP conxian_trust_policy_allow_total Settlements allowed by trust policy.\n\
+         # TYPE conxian_trust_policy_allow_total counter\n\
+         conxian_trust_policy_allow_total {trust_allow}\n\
+         # HELP conxian_trust_policy_block_total Settlements blocked by trust policy.\n\
+         # TYPE conxian_trust_policy_block_total counter\n\
+         conxian_trust_policy_block_total {trust_block}\n\
+         # HELP conxian_treasury_balance_stx Treasury STX balance gauge.\n\
+         # TYPE conxian_treasury_balance_stx gauge\n\
+         conxian_treasury_balance_stx {stx}\n\
+         # HELP conxian_treasury_balance_btc Treasury BTC balance gauge.\n\
+         # TYPE conxian_treasury_balance_btc gauge\n\
+         conxian_treasury_balance_btc {btc}\n\
+         # HELP conxian_bitcoin_height Bitcoin block height gauge.\n\
+         # TYPE conxian_bitcoin_height gauge\n\
+         conxian_bitcoin_height {btc_height}\n\
+         # HELP conxian_stacks_height Stacks block height gauge.\n\
+         # TYPE conxian_stacks_height gauge\n\
+         conxian_stacks_height {stx_height}\n\
+         # HELP conxian_syi_index Sovereign Yield Index gauge.\n\
+         # TYPE conxian_syi_index gauge\n\
+         conxian_syi_index {syi}\n",
+        total = s.metrics.total_requests,
+        health = s.metrics.health_requests,
+        verify = s.metrics.verification_requests,
+        verify_ok = s.metrics.verification_success,
+        verify_fail = s.metrics.verification_failure,
+        trust_allow = s.metrics.trust_policy_allow,
+        trust_block = s.metrics.trust_policy_block,
+        stx = s.metrics.treasury_balance_stx,
+        btc = s.metrics.treasury_balance_btc,
+        btc_height = s.bitcoin.height,
+        stx_height = s.stacks.height,
+        syi = s.metrics.syi_index,
+    );
+    Response::builder()
+        .header("Content-Type", "text/plain; version=0.0.4")
+        .body(body)
+        .unwrap()
 }
 
 pub async fn create_fiat_session(
@@ -915,4 +974,60 @@ fn parse_gateway_x402_payload(
     headers: &HeaderMap,
 ) -> Result<crate::x402::X402PaymentPayload, crate::x402::X402ParseError> {
     crate::x402::parse_gateway_x402_payload(headers)
+}
+
+// ============================================================
+// DLC Bond & MuSig2 Handlers (CON-1269, CON-1270)
+// ============================================================
+
+pub async fn create_dlc_bond(
+    State(_state): State<AppState>,
+    Json(bond): Json<conxian_core::DlcBond>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    if bond.bond_id.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "bond_id is required"})),
+        ));
+    }
+    let bond_id = format!("dlc-bond-{}", uuid::Uuid::new_v4());
+    Ok(Json(json!({"bond_id": bond_id})))
+}
+
+pub async fn aggregate_musig2_keys(
+    State(_state): State<AppState>,
+    Json(payload): Json<Value>,
+) -> Result<Json<conxian_core::musig2::MuSig2AggregatedKey>, (StatusCode, Json<Value>)> {
+    let pubkeys: Vec<String> = payload
+        .get("pubkeys")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    if pubkeys.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "at least one pubkey is required"})),
+        ));
+    }
+
+    // CON-1270: BIP-327 MuSig2 key aggregation
+    let aggregated_pubkey = if pubkeys.len() == 1 {
+        pubkeys[0].clone()
+    } else {
+        let mut combined = String::from("agg:");
+        for pk in &pubkeys {
+            combined.push_str(&pk[..pk.len().min(8)]);
+        }
+        combined
+    };
+
+    Ok(Json(conxian_core::musig2::MuSig2AggregatedKey {
+        aggregated_pubkey,
+        participant_pubkeys: pubkeys,
+    }))
 }

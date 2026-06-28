@@ -1182,3 +1182,295 @@ async fn test_verify_attestation_bitvm_rejection() {
         .unwrap()
         .contains("JobCard context"));
 }
+
+// ============================================================
+// G-24: Fiat Webhook HMAC Verification Tests
+// ============================================================
+
+#[tokio::test]
+async fn test_fiat_webhook_rejects_invalid_hmac_signature() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let payload = json!({
+        "provider": "investec",
+        "status": "completed",
+        "tx_id": "tx-invalid-sig"
+    });
+
+    let raw_payload = serde_json::to_string(&payload).unwrap();
+    // Use wrong secret to create invalid HMAC
+    let wrong_secret = b"wrong-secret-key-for-testing";
+    let mut mac = HmacSha256::new_from_slice(wrong_secret).unwrap();
+    mac.update(raw_payload.as_bytes());
+    let signature = hex::encode(mac.finalize().into_bytes());
+
+    let webhook_payload = json!({
+        "provider": "investec",
+        "event_type": "ORDER_CREATED",
+        "reference_id": "ref-bad-sig",
+        "amount": 100.0,
+        "status": "SUCCESS",
+        "signature": signature,
+        "raw_payload": raw_payload
+    });
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/fiat/webhook")
+                .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("x-402-payment", "proof-test")
+                .header("Content-Type", "application/json")
+                .body(Body::from(serde_json::to_string(&webhook_payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(body["error"], "invalid_signature");
+}
+
+#[tokio::test]
+async fn test_fiat_webhook_rejects_missing_signature() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let payload = json!({
+        "provider": "ramp",
+        "status": "completed",
+        "tx_id": "tx-no-sig"
+    });
+
+    let raw_payload = serde_json::to_string(&payload).unwrap();
+    let webhook_payload = json!({
+        "provider": "ramp",
+        "event_type": "ORDER_CREATED",
+        "reference_id": "ref-no-sig",
+        "amount": 50.0,
+        "status": "SUCCESS",
+        "signature": "",
+        "raw_payload": raw_payload
+    });
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/fiat/webhook")
+                .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("x-402-payment", "proof-test")
+                .header("Content-Type", "application/json")
+                .body(Body::from(serde_json::to_string(&webhook_payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn test_fiat_webhook_rejects_tampered_payload() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    // Sign a legitimate payload
+    let original_payload = json!({
+        "provider": "ramp",
+        "status": "completed",
+        "tx_id": "tx-original"
+    });
+    let raw_original = serde_json::to_string(&original_payload).unwrap();
+    let mut mac = HmacSha256::new_from_slice(TEST_FIAT_SECRET.as_bytes()).unwrap();
+    mac.update(raw_original.as_bytes());
+    let signature = hex::encode(mac.finalize().into_bytes());
+
+    // Tamper: send a different raw_payload but keep the original signature
+    let tampered_payload = json!({
+        "provider": "ramp",
+        "status": "completed",
+        "tx_id": "tx-tampered"
+    });
+    let raw_tampered = serde_json::to_string(&tampered_payload).unwrap();
+
+    let webhook_payload = json!({
+        "provider": "ramp",
+        "event_type": "ORDER_CREATED",
+        "reference_id": "ref-tampered",
+        "amount": 100.0,
+        "status": "SUCCESS",
+        "signature": signature,
+        "raw_payload": raw_tampered
+    });
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/fiat/webhook")
+                .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("x-402-payment", "proof-test")
+                .header("Content-Type", "application/json")
+                .body(Body::from(serde_json::to_string(&webhook_payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    // Should reject because signature doesn't match the tampered payload
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+// ============================================================
+// G-25: DLC Bond Creation Test
+// ============================================================
+
+#[tokio::test]
+async fn test_create_dlc_bond() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let bond_payload = json!({
+        "bond_id": "dlc-test-001",
+        "amount_btc": 500000,
+        "interest_rate": 0.05,
+        "maturity_date": 1750000000u64,
+        "sovereign_alignment": true
+    });
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/dlc/bond")
+                .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("x-402-payment", "proof-test")
+                .header("Content-Type", "application/json")
+                .body(Body::from(serde_json::to_string(&bond_payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert!(body["bond_id"].as_str().is_some());
+}
+
+#[tokio::test]
+async fn test_create_dlc_bond_rejects_missing_bond_id() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let bond_payload = json!({
+        "bond_id": "",
+        "amount_btc": 500000,
+        "interest_rate": 0.05,
+        "maturity_date": 1750000000u64,
+        "sovereign_alignment": true
+    });
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/dlc/bond")
+                .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("x-402-payment", "proof-test")
+                .header("Content-Type", "application/json")
+                .body(Body::from(serde_json::to_string(&bond_payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+// ============================================================
+// G-26: MuSig2 Key Aggregation Test
+// ============================================================
+
+#[tokio::test]
+async fn test_musig2_aggregate_keys() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let pubkeys = json!({
+        "pubkeys": [
+            "02aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899",
+            "03aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899"
+        ]
+    });
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/musig2/aggregate-keys")
+                .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("x-402-payment", "proof-test")
+                .header("Content-Type", "application/json")
+                .body(Body::from(serde_json::to_string(&pubkeys).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert!(body["aggregated_pubkey"].as_str().is_some());
+}
+
+// ============================================================
+// G-18: Prometheus Metrics Endpoint Test
+// ============================================================
+
+#[tokio::test]
+async fn test_prometheus_metrics_endpoint() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    // Pre-seed some metrics to verify they appear
+    {
+        let mut s = state.write().unwrap();
+        s.metrics.total_requests = 42;
+        s.metrics.health_requests = 10;
+        s.metrics.verification_success = 5;
+        s.metrics.treasury_balance_btc = 1_050_000_000;
+        s.bitcoin.height = 850_000;
+        s.stacks.height = 175_000;
+    }
+    let app = setup_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/metrics")
+                .method("GET")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body = String::from_utf8(body_bytes.to_vec()).unwrap();
+
+    // Verify Prometheus text format
+    assert!(body.contains("# HELP conxian_requests_total"));
+    assert!(body.contains("# TYPE conxian_requests_total counter"));
+    assert!(body.contains("conxian_requests_total 42"));
+    assert!(body.contains("conxian_health_requests_total 10"));
+    assert!(body.contains("conxian_verification_success_total 5"));
+    assert!(body.contains("conxian_treasury_balance_btc 1050000000"));
+    assert!(body.contains("conxian_bitcoin_height 850000"));
+    assert!(body.contains("conxian_stacks_height 175000"));
+    assert!(body.contains("conxian_syi_index"));
+}
