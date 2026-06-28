@@ -9,6 +9,7 @@ members = [
 ]
 
 [workspace.package]
+rust-version = "1.85"
 version = "0.1.4"
 edition = "2021"
 authors = ["Conxian Gateway Contributors"]
