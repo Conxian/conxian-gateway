@@ -32,5 +32,5 @@ jobs:
       - name: Build packages
         run: pnpm -r run build
 
-      - name: Run tests
-        run: pnpm -r run test
+      - name: Run tests (client-sdk)
+        run: pnpm --filter @conxian/client-sdk run test

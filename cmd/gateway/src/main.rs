@@ -17,11 +17,29 @@ use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
 use tokio::signal;
 use tracing::{error, info};
+use tracing_subscriber::EnvFilter;
+
+fn init_tracing() {
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+
+    let format = std::env::var("RUST_LOG_FORMAT").unwrap_or_else(|_| "text".into());
+
+    if format == "json" {
+        tracing_subscriber::fmt()
+            .with_env_filter(env_filter)
+            .json()
+            .with_target(true)
+            .with_current_span(false)
+            .init();
+    } else {
+        tracing_subscriber::fmt().with_env_filter(env_filter).init();
+    }
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Initialize tracing
-    tracing_subscriber::fmt::init();
+    // Initialize tracing with optional JSON format
+    init_tracing();
 
     info!("Starting Conxian Gateway...");
 

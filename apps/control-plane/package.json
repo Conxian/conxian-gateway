@@ -4,7 +4,7 @@
   "private": true,
   "description": "Conxian BOS Control-Plane Application",
   "scripts": {
-    "test": "echo No tests in control-plane",
+    "test": "playwright test",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",

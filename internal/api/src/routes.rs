@@ -66,6 +66,11 @@ pub fn configure_routes(state: AppState, api_token: String) -> Router {
         .route("/chains/{chain}/height", get(handlers::get_chain_height))
         .route("/chains/{chain}/prepare", post(handlers::prepare_chain_tx))
         .route("/chains/{chain}/verify", post(handlers::verify_state_proof))
+        .route("/dlc/bond", post(handlers::create_dlc_bond))
+        .route(
+            "/musig2/aggregate-keys",
+            post(handlers::aggregate_musig2_keys),
+        )
         .layer(middleware::from_fn_with_state(state.clone(), x402_filter))
         .layer(middleware::from_fn(move |req, next| {
             auth_middleware(req, next, token_for_auth.clone())
@@ -78,7 +83,9 @@ pub fn configure_routes(state: AppState, api_token: String) -> Router {
             state.clone(),
             latency_tracker,
         ))
+        .route("/metrics", get(handlers::get_prometheus_metrics))
         .nest("/api/v1", public_routes.merge(private_routes))
         .nest("/admin/v1", admin_routes)
+        .with_state(state.clone())
         .layer(DefaultBodyLimit::max(10 * 1024 * 1024)) // 10MB global body limit
 }

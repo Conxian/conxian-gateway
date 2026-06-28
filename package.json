@@ -4,7 +4,7 @@
     "vitest": "^4.1.9"
   },
   "scripts": {
-    "test": "vitest run",
+    "test": "pnpm -r run test",
     "build": "pnpm -r run build"
   }
 }
