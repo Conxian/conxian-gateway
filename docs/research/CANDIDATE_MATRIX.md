@@ -36,5 +36,25 @@ This matrix tracks the maturity of core components and identifies the best candi
 - **Readiness**: Medium. Requires NIP-47 transport logic.
 - **Impact**: Enables non-custodial authorization of Lightning payments.
 
-## 3. Recommended Initiation
-Initiate **Candidate A (World ID)** immediately to close the identity gap, followed by **Candidate B (Blake2s)** to align with Ark specifications.
+## 2. Best Candidates for Implementation (Continued)
+
+### Candidate D: BRICS Sanctions-Risk Tagging (Score: 8.2)
+- **Urgency**: Critical (G-B4, Priority 16). Compliance must distinguish SWIFT-linked from CIPS-direct settlement flows.
+- **Readiness**: High. `SettlementSource` enum already exists. Adding `SanctionsRisk` classification is type-system work.
+- **Impact**: Enables regulatory compliance across G7 and BRICS jurisdictions. Unblocks multi-rail deployment.
+
+### Candidate E: CIPS Message Normalization (Score: 7.2)
+- **Urgency**: High (G-B1, Priority 12). CIPS processes $24.47T/year. Current BRICS normalization only handles mBridge.
+- **Readiness**: Medium. Requires CIPS-specific ISO 20022 extensions research.
+- **Impact**: First-mover advantage for CIPS-direct settlement in Bitcoin-native infrastructure.
+
+### Candidate F: Multi-Currency FX Tracking (Score: 6.8)
+- **Urgency**: Medium-High (G-B2, Priority 8). TreasuryMonitor currently tracks sBTC/BTC only.
+- **Readiness**: Medium. ALEX oracle feeds for BRICS FX pairs need research.
+- **Impact**: Positions Gateway as multi-currency settlement hub for BRICS corridors (RMB, RUB, INR, AED).
+
+## 3. Recommended Initiation (Updated 2026-06-28)
+Initiate **Candidate D (BRICS Sanctions-Risk Tagging)** immediately — it's the highest-priority gap (P=16) and is a type-system change with low effort. Follow with **Candidate A (World ID)** to close identity gap, then **Candidate E (CIPS Normalization)** to capture the $24.47T CIPS settlement market. **Candidate B (Blake2s)** aligns with Ark specifications and should follow.
+
+### BRICS Research Basis
+Full financial systems analysis in `docs/research/BRICS_FINANCIAL_SYSTEMS_RESEARCH.md`. The global financial system is bifurcating: Western SWIFT/ISO 20022 (~45% GDP) vs BRICS CIPS/mBridge/SPFS (~40% GDP). The Gateway's dual-stack architecture must support both.

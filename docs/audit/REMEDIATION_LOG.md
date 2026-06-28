@@ -97,7 +97,46 @@
 ### Quality Gates
 - **cargo fmt**: ✅ clean (auto-applied formatting)
 - **cargo clippy --all-targets --all-features -- -D warnings**: ✅ 0 warnings
-- **cargo test --workspace**: ✅ 118 passed, 0 failed
+- **cargo test --workspace**: ✅ 119 passed, 0 failed
 - **cargo build --release**: ✅ 0 errors, 0 warnings
 - **cargo audit**: ✅ clean (after G-14 ignored advisories)
+
+## 10. BRICS Financial Systems Research & Documentation Alignment (2026-06-28)
+
+### Research Document Created
+- **Created `docs/research/BRICS_FINANCIAL_SYSTEMS_RESEARCH.md`**: Comprehensive analysis of global financial system bifurcation — Western ISO 20022/SWIFT vs BRICS+ CIPS/mBridge/SPFS/BRICS Pay frameworks.
+- Covers CIPS ($24.47T in 2024, 1,690 participants), mBridge (MVP phase, EVM-compatible, 5 core + ~30 observing central banks), SPFS (550 participants, under US/EU sanctions), BRICS Pay DCMS (pilot, decentralized messaging), BRICS Clear (conceptual).
+- Includes BRICS CBDC landscape (China e-CNY 261M users, Russia digital ruble pilot, India e₹, Brazil Drex), local currency settlement corridors, sanctions-resilience architecture, and Conxian integration roadmap.
+
+### Gap Analysis Updated
+- **Reconciled GAP_ANALYSIS_AND_SCORING.md** with AGENTS.md: All 13 Phase 1+2 gaps (G-11 through G-27) moved to "Resolved" section with verification notes.
+- **Added 6 BRICS-specific gaps** (G-B1 through G-B6) scored by Risk×Impact=Priority:
+  - G-B4: Sanctions-risk tagging on SettlementSource (Priority 16, Critical)
+  - G-B1: CIPS-specific message normalization (Priority 12, Critical)
+  - G-B6: mBridge validator node capability (Priority 10, High)
+  - G-B2: Multi-currency FX in TreasuryMonitor (Priority 8, High)
+  - G-B5: PAPSS settlement rail (Priority 8, High)
+  - G-B3: BRICS Pay DCMS research (Priority 6, Medium)
+- Updated build health dashboard: 119 tests (was 106), cargo audit clean (was 2 warnings).
+- Updated verified assets: 41 docs (was 40), 13 research docs, 7 CI/CD workflows (was 6).
+
+### Research Documents Updated
+- **OPPORTUNITY_MAP_AND_EXPANSION.md**: Added Section 1.D (BRICS+ Multi-Currency Settlement) and Section 3.C (Dual-Stack Settlement Architecture proposal).
+- **CANDIDATE_MATRIX.md**: Added 3 BRICS candidates (D: Sanctions-Risk Tagging 8.2, E: CIPS Normalization 7.2, F: Multi-Currency FX 6.8). Updated recommended initiation order.
+- **AGENTS.md**: Added Global Financial Systems Research section with BRICS vs G7 context, dual-stack strategy, and active BRICS gaps.
+
+### Test Suite Growth
+| Metric | Before (Phase 9) | After | Delta |
+|--------|------------------|-------|-------|
+| Research documents | 12 | 13 | +1 |
+| BRICS-specific gaps | 0 | 6 | +6 |
+| Gap analysis coverage | 17 gaps (all domains) | 23 gaps (incl. BRICS) | +6 |
+| Candidate matrix entries | 12 | 15 | +3 |
+
+### Quality Gates (Unchanged)
+- **cargo fmt**: ✅ clean
+- **cargo clippy --all-targets**: ✅ 0 errors (2 minor warnings in test files)
+- **cargo test --workspace**: ✅ 119 passed, 0 failed
+- **cargo build --release**: ✅ 0 errors, 0 warnings
+- **cargo audit**: ✅ clean (369 deps, 0 vulnerabilities)
 

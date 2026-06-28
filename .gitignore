@@ -3,6 +3,7 @@
 .next
 dist
 *.log
+test-results/
 gateway_state.json
 offline_queue.db
 .env
