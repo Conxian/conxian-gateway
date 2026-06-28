@@ -28,4 +28,4 @@ jobs:
         run: cargo install cargo-audit --locked
 
       - name: Generate lockfile and audit
-        run: cargo generate-lockfile && cargo audit --config audit.toml
+        run: cargo generate-lockfile && cargo audit
