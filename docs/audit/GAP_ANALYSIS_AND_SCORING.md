@@ -11,13 +11,13 @@ This document tracks identified gaps across the Conxian Gateway portfolio, score
 
 | ID | Gap Description | Domain | Risk | Impact | Effort | Priority Score | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **G-01** | Missing CI Validation Scripts (CON-1322) | Security | 4 | 5 | 3 | **12** | In Progress |
+| **G-01** | Missing CI Validation Scripts (CON-1322) | Security | 4 | 5 | 3 | **12** | Done |
 | **G-02** | Production Lightning Backend Skeleton | Technical | 2 | 5 | 5 | **10** | Backlog |
 | **G-03** | Missing Flagship Technical Whitepaper | Legal/Public | 1 | 5 | 4 | **9** | Backlog |
 | **G-04** | Missing Developer Quickstart & Guide | Legal/Public | 1 | 5 | 2 | **6** | Backlog |
 | **G-05** | No automated release/tagging workflow | Process | 3 | 5 | 3 | **11** | In Progress |
-| **G-06** | Dependency Review fail-on-error disabled | Security | 5 | 3 | 1 | **15** | In Progress |
-| **G-07** | Actions/Checkout version drift | Hygiene | 1 | 1 | 1 | **2** | In Progress |
+| **G-06** | Dependency Review fail-on-error disabled | Security | 5 | 3 | 1 | **15** | Verified |
+| **G-07** | Actions/Checkout version drift | Hygiene | 1 | 1 | 1 | **2** | Done |
 | **G-08** | Tier 2 Adapters (Liquid/Babylon) Shadow-Mode | Technical | 2 | 4 | 4 | **8** | Active |
 | **G-09** | BitVM3 / Recursive Proof Research | Research | 1 | 5 | 5 | **5** | Research |
 | **G-10** | Missing `docs/governance/CHANGELOG.md` | Hygiene | 1 | 2 | 1 | **4** | Missing |
