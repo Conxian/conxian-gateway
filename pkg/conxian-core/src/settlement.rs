@@ -12,13 +12,38 @@ pub const INSTITUTIONAL_ZAR_THRESHOLD_MAJOR: u64 = 100_000_000;
 /// Current settlement envelope protocol version.
 pub const SETTLEMENT_ENVELOPE_VERSION_CURRENT: &str = SETTLEMENT_ENVELOPE_VERSION_V2_LITERAL;
 
+/// Sanctions-risk classification for settlement sources.
+/// Used by the ZKC verifier for jurisdictional screening and compliance reporting.
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum SanctionsRisk {
+    /// No sanctions exposure — standard G7 rails (ISO 20022 via SWIFT/CHIPS)
+    Low,
+    /// Moderate exposure — CBDC bridges, regional payment systems
+    Medium,
+    /// Elevated exposure — alternative rails in sanctioned jurisdictions
+    High,
+    /// Critical exposure — sanctions-evasion specific infrastructure
+    Critical,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum SettlementSource {
     Iso20022Pacs008,
     Iso20022Pacs009,
+    /// CIPS (Cross-Border Interbank Payment System) — China-led,
+    /// $24.47T in 2024, 1,690 participants. Uses ISO 20022 with CIPS extensions.
+    Cips,
     Papss,
     Brics,
+    /// BRICS Pay DCMS — decentralized cross-border messaging (pilot phase)
+    BricsPayDcms,
+    /// SPFS (System for Transfer of Financial Messages) — Russia's SWIFT alternative,
+    /// 550 participants, under active US/EU sanctions.
+    Spfs,
+    /// mBridge — multi-CBDC bridge, EVM-compatible, 5 core + ~30 observing central banks
+    MBridge,
     Erp,
     DlcBond,
 }
@@ -27,11 +52,45 @@ impl SettlementSource {
     pub fn as_rail_name(&self) -> &'static str {
         match self {
             Self::Iso20022Pacs008 | Self::Iso20022Pacs009 => "ISO20022",
+            Self::Cips => "CIPS",
             Self::Papss => "PAPSS",
             Self::Brics => "BRICS",
+            Self::BricsPayDcms => "BRICS_PAY_DCMS",
+            Self::Spfs => "SPFS",
+            Self::MBridge => "MBRIDGE",
             Self::Erp => "ERP",
             Self::DlcBond => "DLC_BOND",
         }
+    }
+
+    /// Returns the sanctions-risk classification for this settlement source.
+    /// Used by the ZKC verifier for compliance screening and audit logging.
+    pub fn sanctions_risk(&self) -> SanctionsRisk {
+        match self {
+            // G7-aligned rails — standard compliance profile
+            Self::Iso20022Pacs008 | Self::Iso20022Pacs009 | Self::Erp => SanctionsRisk::Low,
+            // Regional payment systems — moderate exposure
+            Self::Papss | Self::Cips => SanctionsRisk::Medium,
+            // CBDC bridge — post-BIS exit, being repositioned as BRICS Bridge
+            Self::MBridge => SanctionsRisk::Medium,
+            // Generic BRICS rail — mixed risk depending on corridor
+            Self::Brics => SanctionsRisk::Medium,
+            // Decentralized messaging — still in pilot, not yet sanctions-targeted
+            Self::BricsPayDcms => SanctionsRisk::High,
+            // Sanctions-evasion infrastructure — under active US/EU sanctions
+            Self::Spfs => SanctionsRisk::Critical,
+            // Bitcoin-native — sanctions-resistant by design (non-custodial)
+            Self::DlcBond => SanctionsRisk::Low,
+        }
+    }
+
+    /// Returns true if this settlement source requires elevated compliance
+    /// screening due to sanctions exposure.
+    pub fn requires_sanctions_screening(&self) -> bool {
+        matches!(
+            self.sanctions_risk(),
+            SanctionsRisk::High | SanctionsRisk::Critical
+        )
     }
 }
 

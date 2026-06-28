@@ -45,9 +45,11 @@ pub fn configure_routes(state: AppState, api_token: String) -> Router {
         .route("/iso20022/pacs009", post(handlers::ingress_iso20022))
         .route("/settlement/papss", post(handlers::ingress_papss))
         .route("/settlement/brics", post(handlers::ingress_brics))
+        .route("/settlement/cips", post(handlers::ingress_cips))
         .route("/ingress/iso20022", post(handlers::ingress_iso20022))
         .route("/ingress/papss", post(handlers::ingress_papss))
         .route("/ingress/brics", post(handlers::ingress_brics))
+        .route("/ingress/cips", post(handlers::ingress_cips))
         .route(
             "/settlements/external",
             get(handlers::get_external_settlements),

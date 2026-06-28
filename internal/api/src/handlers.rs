@@ -506,6 +506,67 @@ pub async fn ingress_brics(
     }
 }
 
+pub async fn ingress_cips(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    body: Body,
+) -> Result<Json<SettlementProposal>, (StatusCode, Json<Value>)> {
+    enforce_ingress_trust_policy(&state, &headers)?;
+
+    let raw_payload = body
+        .collect()
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": format!("Body collection failed: {}", e) })),
+            )
+        })?
+        .to_bytes();
+
+    let raw_payload_hash = sha256_hex(&raw_payload);
+    let tee_attestation = verify_tee_settlement_attestation(&state, &headers, &raw_payload_hash)?;
+    let industrial_intent = extract_industrial_intent(&headers);
+
+    let json_payload: Value = serde_json::from_slice(&raw_payload).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": format!("Invalid JSON: {}", e) })),
+        )
+    })?;
+
+    match state
+        .compliance
+        .normalize_cips_ingress(&json_payload, raw_payload_hash.clone())
+    {
+        Ok(mut envelope) => {
+            if let Some(intent) = industrial_intent {
+                envelope.payload.industrial_intent = intent;
+            }
+            // Sanctions screening for CIPS (Medium risk — logged, not blocked)
+            if let Err(e) = state.compliance.screen_sanctions(&envelope) {
+                return Err((
+                    StatusCode::FORBIDDEN,
+                    Json(json!({ "error": e.to_string() })),
+                ));
+            }
+            let proposal =
+                build_settlement_proposal(&state, envelope, tee_attestation, &raw_payload_hash)?;
+            info!(
+                "Successfully ingested CIPS settlement: {}",
+                proposal.envelope.payload.transaction_id
+            );
+            record_settlement(&state, &proposal).await;
+            let _ = state.compliance.commit_settlement(&proposal.envelope);
+            Ok(Json(proposal))
+        }
+        Err(e) => Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
+        )),
+    }
+}
+
 pub async fn get_external_settlements(
     State(state): State<AppState>,
 ) -> Json<Vec<SettlementProposal>> {
