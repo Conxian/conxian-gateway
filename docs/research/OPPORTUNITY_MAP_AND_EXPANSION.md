@@ -1,6 +1,6 @@
 # Opportunity Mapping & Research Expansion (2026-06-28)
 
-This document expands on existing research and maps emerging opportunities for the Conxian Gateway stack.
+This document expands on existing research and maps emerging opportunities for the Conxian Gateway stack. **Updated with BRICS+ financial systems research and multi-currency settlement opportunities.**
 
 ## 1. Emerging Protocol Opportunities
 
@@ -26,12 +26,25 @@ This document expands on existing research and maps emerging opportunities for t
     - Research mapping of `TreasuryMonitor` events to `camt.053` (Bank-to-Customer Statement) messages.
     - Propose an "Institutional Reconciliation" endpoint that outputs audit-ready XML for ERP ingestion.
 
+### D. BRICS+ Multi-Currency Settlement (New — 2026-06-28)
+- **Status**: Research → Active Development
+- **Opportunity**: The global financial system is bifurcating. BRICS+ represents ~40% of global GDP with alternative payment rails (CIPS, mBridge, SPFS, BRICS Pay) that bypass Western SWIFT/CHIPS infrastructure.
+- **Expansion** (see `docs/research/BRICS_FINANCIAL_SYSTEMS_RESEARCH.md` for full analysis):
+    - **G-B1**: CIPS-direct message normalization — CIPS processes $24.47T/year across 1,690 institutions. The Gateway must handle CIPS-specific ISO 20022 message variants.
+    - **G-B2**: Multi-currency FX tracking — Extend `TreasuryMonitor` to track RMB, RUB, INR, AED rates across BRICS settlement corridors.
+    - **G-B3**: BRICS Pay DCMS connector — Monitor the decentralized messaging system pilot from Saint Petersburg State University.
+    - **G-B4**: Sanctions-risk tagging — Critical for compliance. Each `SettlementSource` variant needs a `SanctionsRisk` classification.
+    - **G-B5**: PAPSS settlement rail — Pan-African Payment and Settlement System integration for African Union member states.
+    - **G-B6**: mBridge validator node — EVM-compatible CBDC bridge; post-BIS exit, being repositioned as "BRICS Bridge."
+- **Market Impact**: ~20% of global commodity trade has already shifted from USD to RMB/AED/INR corridors. The Gateway's dual-stack architecture (ISO 20022 + BRICS protocols) positions it for both G7-compliant and sanctions-resilient deployments.
+
 ## 2. Missing Canonical Artifacts
 
 ### A. Flagship Technical Whitepaper (CON-1300)
 - **Requirement**: A single, versioned technical reference consolidating doctrine, architecture, and trust boundaries.
 - **Target State**: 15-20 page PDF/Markdown document.
 - **Key Section**: "The Progressive Sovereignty Model" – explicitly defining how the system transitions from trusted anchors to trustless proofs.
+- **BRICS Context**: Whitepaper should include a dedicated section on multi-currency settlement architecture and sanctions-resilience by design.
 
 ### B. Developer Quickstart & Architecture Guide (CON-1301)
 - **Requirement**: A "shortest path to value" for external builders.
@@ -48,3 +61,8 @@ This document expands on existing research and maps emerging opportunities for t
 ### B. Event-Bus Durability
 - **Current State**: In-memory Tokio channels.
 - **Proposal**: Back the event bus with a persistent log (e.g., SQLite or Redis Streams) to ensure zero-loss delivery during Gateway restarts.
+
+### C. Dual-Stack Settlement Architecture (New — 2026-06-28)
+- **Current State**: `SettlementSource` supports ISO 20022 (pacs.008/pacs.009), BRICS (generic), PAPSS (generic), and ERP (OData). All BRICS traffic goes through `normalize_brics_ingress()` with no distinction between CIPS, mBridge, or SPFS.
+- **Proposal**: Split `SettlementSource::Brics` into specific variants: `Cips`, `MBridge`, `Spfs`, `BricsPay`. Each gets its own message normalization path and sanctions-risk classification.
+- **Effort**: Medium (3-5 days engineering). Primarily type-system changes + normalization logic.

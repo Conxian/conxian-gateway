@@ -67,15 +67,27 @@ Before submitting changes, you MUST:
 - 🟢 G-8: control-plane SSO (NextAuth)
 
 ### Test Suite (2026-06-28)
-- **118 Rust tests** (106 + 12 new): 0 failures
-- **8 test files**: api_tests, nwc_tests, offline_pos_tests, reorg_simulation_tests, identity_tests, lightning.rs, additional_lightning_tests, fiat.rs
-- **1 Python script**: verify_gateway.py
+- **119 Rust tests**: 0 failures
+- **8 test files**: api_tests (37), nwc_tests (5), offline_pos_tests (1), reorg_simulation_tests (1), identity_tests (16), + inline tests across crates
+- **1 Python script**: verify_gateway.py (7 checks)
+- **Node.js**: client-sdk (1 test pass), control-plane (1 smoke test — Playwright browser needed in CI)
 
 ## Research Context (2026-06-28)
+
+### Blockchain & Protocol Research
 - **BitVM3**: Published design (bitvm.org/bitvm3.pdf). Garbled circuits + BitHash. >1,000× smaller disputes vs BitVM2. Monitor chainwayxyz/bitvm-zk-verifier for beta.
 - **RGB Protocol**: v0.12 (RGB-I.0) production release. rgb-core v0.12.0 on crates.io. Tether announced USDT on RGB.
 - **Nostr Wallet Connect (NIP-47)**: Draft but widely implemented. nostr-sdk v0.25.0 has nip47 feature. Conxian has NwcConnection skeleton ready.
 - **Groth16 Recursion**: Experimental on Bitcoin. MNT-curve demo on BSV. Not mainnet-ready. Monitor Citrea/Clementine progress.
 
+### Global Financial Systems Research (BRICS+ vs G7)
+Full analysis: `docs/research/BRICS_FINANCIAL_SYSTEMS_RESEARCH.md`
+
+- **Western Bloc** (~45% GDP): SWIFT/CHIPS, ISO 20022, USD/EUR dominance. USD FX reserves slipped from ~70% to ~58%.
+- **BRICS+ Bloc** (~40% GDP): CIPS ($24.47T in 2024, 1,690 participants), mBridge (MVP phase, EVM-compatible CBDC bridge), SPFS (550 participants, under sanctions), BRICS Pay DCMS (pilot, decentralized messaging).
+- **Co-dependence reality**: >80% of CIPS transactions still use SWIFT transport. RMB is ~3% of global payments. Complete decoupling is unlikely short-term.
+- **Conxian strategy**: Dual-stack architecture — ISO 20022 for G7 corridors AND BRICS-specific protocols (CIPS, mBridge, SPFS) for alternative rails. Sanctions-resilience by design.
+- **Active BRICS gaps**: G-B1 (CIPS normalization), G-B2 (multi-currency FX), G-B3 (BRICS Pay research), G-B4 (sanctions-risk tagging, Priority 16), G-B5 (PAPSS), G-B6 (mBridge validator).
+
 ## Ethical Alignment
-The Conxian Protocol is built to empower individuals and institutions within the Stacks/Bitcoin ecosystem. Avoid any "dark patterns" or custodial shortcuts.
+The Conxian Protocol is built to empower individuals and institutions within the Stacks/Bitcoin ecosystem. The dual-stack settlement architecture supports financial sovereignty across both Western and BRICS-aligned jurisdictions. Avoid any "dark patterns" or custodial shortcuts.
