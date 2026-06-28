@@ -8,15 +8,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Implemented 7 missing Python validation scripts in `scripts/` to close CI coverage gaps (CON-1322).
-- Created `docs/audit/GAP_ANALYSIS_AND_SCORING.md` for prioritized risk management.
-- Added `docs/research/OPPORTUNITY_MAP_AND_EXPANSION.md` covering BitVM3 and local-first verification.
-
-### Changed
-- Standardized `actions/checkout` version to `v4.2.2` (pinned by SHA) across all local workflows (CON-1324).
-- Initialized `docs/governance/CHANGELOG.md` as a canonical release history record.
-
-### Added
 - Implemented **Babylon** and **BitVM2** state-proof verification logic in the multi-chain adapter layer.
 - Added comprehensive integration tests for Babylon and BitVM verification endpoints.
 - Created `docs/audit/REMEDIATION_LOG.md` tracking repository hardening efforts.

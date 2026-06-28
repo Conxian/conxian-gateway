@@ -25,3 +25,10 @@
 - Updated `packages/schemas` and `internal/api` to support dynamic trust-tier metadata in chain discovery.
 - Aligned Liquid and Rootstock adapters with the Pilot Lane (Tier 2) research patterns, including Elements-based UTXO and Powpeg anchor verification.
 - Documented Phase 7 Sovereign Labor and Sharding Verification (SSV-1) for future BitVM2-backed labor proofs.
+
+## 7. Unified CI Validation and Standardization (2026-06-28)
+- Implemented 7 missing Python validation scripts in `scripts/` to close coverage gaps in the unified CI workflow (CON-1322).
+- Standardized `actions/checkout` version to `v4.2.2` (pinned by SHA) across all local workflows to ensure consistent checkout behavior (CON-1324).
+- Created `docs/audit/GAP_ANALYSIS_AND_SCORING.md` to track and prioritize future hardening work.
+- Expanded research in `docs/research/OPPORTUNITY_MAP_AND_EXPANSION.md` covering BitVM3 and local-first verification.
+- Initialized `docs/governance/CHANGELOG.md` as a canonical record for release history.

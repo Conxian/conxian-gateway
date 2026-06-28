@@ -1,0 +1,8 @@
+[database]
+# URL of the advisory database
+url = "https://github.com/RustSec/advisory-db.git"
+
+[advisories]
+# Ignore the tracing-subscriber vulnerability (RUSTSEC-2025-0055)
+# because it's a deep dependency of risc0/ark-relations.
+ignore = ["RUSTSEC-2025-0055"]
