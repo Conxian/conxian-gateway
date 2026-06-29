@@ -38,23 +38,23 @@ This matrix tracks the maturity of core components and identifies the best candi
 
 ## 2. Best Candidates for Implementation (Continued)
 
-### Candidate D: BRICS Sanctions-Risk Tagging (Score: 8.2)
+### Candidate D: BRICS Sanctions-Risk Tagging (Implemented Phase 3)
 - **Urgency**: Critical (G-B4, Priority 16). Compliance must distinguish SWIFT-linked from CIPS-direct settlement flows.
 - **Readiness**: High. `SettlementSource` enum already exists. Adding `SanctionsRisk` classification is type-system work.
 - **Impact**: Enables regulatory compliance across G7 and BRICS jurisdictions. Unblocks multi-rail deployment.
 
-### Candidate E: CIPS Message Normalization (Score: 7.2)
+### Candidate E: CIPS Message Normalization (Implemented Phase 3)
 - **Urgency**: High (G-B1, Priority 12). CIPS processes $24.47T/year. Current BRICS normalization only handles mBridge.
 - **Readiness**: Medium. Requires CIPS-specific ISO 20022 extensions research.
 - **Impact**: First-mover advantage for CIPS-direct settlement in Bitcoin-native infrastructure.
 
-### Candidate F: Multi-Currency FX Tracking (Score: 6.8)
+### Candidate F: Multi-Currency FX Tracking (Implemented Phase 3)
 - **Urgency**: Medium-High (G-B2, Priority 8). TreasuryMonitor currently tracks sBTC/BTC only.
 - **Readiness**: Medium. ALEX oracle feeds for BRICS FX pairs need research.
 - **Impact**: Positions Gateway as multi-currency settlement hub for BRICS corridors (RMB, RUB, INR, AED).
 
-## 3. Recommended Initiation (Updated 2026-06-28)
-Initiate **Candidate D (BRICS Sanctions-Risk Tagging)** immediately — it's the highest-priority gap (P=16) and is a type-system change with low effort. Follow with **Candidate A (World ID)** to close identity gap, then **Candidate E (CIPS Normalization)** to capture the $24.47T CIPS settlement market. **Candidate B (Blake2s)** aligns with Ark specifications and should follow.
+## 3. Recommended Initiation (Updated 2026-06-29)
+Initiate **Candidate D (BRICS Sanctions-Risk Tagging)** was completed in Phase 3 — it's the highest-priority gap (P=16) and is a type-system change with low effort. Follow with **Candidate A (World ID)** to close identity gap, then **Candidate E (CIPS Normalization)** to capture the $24.47T CIPS settlement market. **Candidate B (Blake2s)** aligns with Ark specifications and should follow.
 
 ### BRICS Research Basis
 Full financial systems analysis in `docs/research/BRICS_FINANCIAL_SYSTEMS_RESEARCH.md`. The global financial system is bifurcating: Western SWIFT/ISO 20022 (~45% GDP) vs BRICS CIPS/mBridge/SPFS (~40% GDP). The Gateway's dual-stack architecture must support both.

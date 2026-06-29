@@ -55,6 +55,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4.6.1
         with:
-          name: lightning-coverage-summary
+          name: lightning-coverage-reports
           path: target/lightning-coverage
           if-no-files-found: warn

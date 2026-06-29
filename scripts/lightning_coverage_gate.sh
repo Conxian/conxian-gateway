@@ -14,6 +14,8 @@ fi
 
 cargo llvm-cov clean --workspace
 cargo llvm-cov --workspace --all-features --json --output-path "$JSON_REPORT"
+cargo llvm-cov --workspace --all-features --lcov --output-path "$OUTPUT_DIR/lcov.info"
+cargo llvm-cov --workspace --all-features --html --output-dir "$OUTPUT_DIR/html"
 
 python3 scripts/lightning_coverage_report.py \
   --input "$JSON_REPORT" \

@@ -143,7 +143,19 @@ pub async fn get_prometheus_metrics(State(state): State<AppState>) -> Response<S
          conxian_stacks_height {stx_height}\n\
          # HELP conxian_syi_index Sovereign Yield Index gauge.\n\
          # TYPE conxian_syi_index gauge\n\
-         conxian_syi_index {syi}\n",
+         conxian_syi_index {syi}\n\
+         # HELP conxian_fx_rmb_usd RMB/USD exchange rate gauge.\n\
+         # TYPE conxian_fx_rmb_usd gauge\n\
+         conxian_fx_rmb_usd {rmb}\n\
+         # HELP conxian_fx_rub_usd RUB/USD exchange rate gauge.\n\
+         # TYPE conxian_fx_rub_usd gauge\n\
+         conxian_fx_rub_usd {rub}\n\
+         # HELP conxian_fx_inr_usd INR/USD exchange rate gauge.\n\
+         # TYPE conxian_fx_inr_usd gauge\n\
+         conxian_fx_inr_usd {inr}\n\
+         # HELP conxian_fx_aed_usd AED/USD exchange rate gauge.\n\
+         # TYPE conxian_fx_aed_usd gauge\n\
+         conxian_fx_aed_usd {aed}\n",
         total = s.metrics.total_requests,
         health = s.metrics.health_requests,
         verify = s.metrics.verification_requests,
@@ -156,6 +168,10 @@ pub async fn get_prometheus_metrics(State(state): State<AppState>) -> Response<S
         btc_height = s.bitcoin.height,
         stx_height = s.stacks.height,
         syi = s.metrics.syi_index,
+        rmb = s.metrics.fx_rmb_usd,
+        rub = s.metrics.fx_rub_usd,
+        inr = s.metrics.fx_inr_usd,
+        aed = s.metrics.fx_aed_usd,
     );
     Response::builder()
         .header("Content-Type", "text/plain; version=0.0.4")
@@ -381,6 +397,12 @@ pub async fn ingress_iso20022(
             if let Some(intent) = industrial_intent {
                 envelope.payload.industrial_intent = intent;
             }
+            if let Err(e) = state.compliance.screen_sanctions(&envelope) {
+                return Err((
+                    StatusCode::FORBIDDEN,
+                    Json(json!({ "error": e.to_string() })),
+                ));
+            }
             let proposal =
                 build_settlement_proposal(&state, envelope, tee_attestation, &raw_payload_hash)?;
             info!(
@@ -434,6 +456,12 @@ pub async fn ingress_papss(
         Ok(mut envelope) => {
             if let Some(intent) = industrial_intent {
                 envelope.payload.industrial_intent = intent;
+            }
+            if let Err(e) = state.compliance.screen_sanctions(&envelope) {
+                return Err((
+                    StatusCode::FORBIDDEN,
+                    Json(json!({ "error": e.to_string() })),
+                ));
             }
             let proposal =
                 build_settlement_proposal(&state, envelope, tee_attestation, &raw_payload_hash)?;
@@ -489,6 +517,12 @@ pub async fn ingress_brics(
             if let Some(intent) = industrial_intent {
                 envelope.payload.industrial_intent = intent;
             }
+            if let Err(e) = state.compliance.screen_sanctions(&envelope) {
+                return Err((
+                    StatusCode::FORBIDDEN,
+                    Json(json!({ "error": e.to_string() })),
+                ));
+            }
             let proposal =
                 build_settlement_proposal(&state, envelope, tee_attestation, &raw_payload_hash)?;
             info!(
@@ -543,7 +577,6 @@ pub async fn ingress_cips(
             if let Some(intent) = industrial_intent {
                 envelope.payload.industrial_intent = intent;
             }
-            // Sanctions screening for CIPS (Medium risk — logged, not blocked)
             if let Err(e) = state.compliance.screen_sanctions(&envelope) {
                 return Err((
                     StatusCode::FORBIDDEN,
@@ -1091,4 +1124,116 @@ pub async fn aggregate_musig2_keys(
         aggregated_pubkey,
         participant_pubkeys: pubkeys,
     }))
+}
+
+pub async fn ingress_spfs(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    body: Body,
+) -> Result<Json<SettlementProposal>, (StatusCode, Json<Value>)> {
+    enforce_ingress_trust_policy(&state, &headers)?;
+
+    let raw_payload = body
+        .collect()
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": format!("Body collection failed: {}", e) })),
+            )
+        })?
+        .to_bytes();
+
+    let raw_payload_hash = sha256_hex(&raw_payload);
+    let tee_attestation = verify_tee_settlement_attestation(&state, &headers, &raw_payload_hash)?;
+    let industrial_intent = extract_industrial_intent(&headers);
+
+    let json_payload: Value = serde_json::from_slice(&raw_payload).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": format!("Invalid JSON: {}", e) })),
+        )
+    })?;
+
+    match state
+        .compliance
+        .normalize_spfs_ingress(&json_payload, raw_payload_hash.clone())
+    {
+        Ok(mut envelope) => {
+            if let Some(intent) = industrial_intent {
+                envelope.payload.industrial_intent = intent;
+            }
+            if let Err(e) = state.compliance.screen_sanctions(&envelope) {
+                return Err((
+                    StatusCode::FORBIDDEN,
+                    Json(json!({ "error": e.to_string() })),
+                ));
+            }
+            let proposal =
+                build_settlement_proposal(&state, envelope, tee_attestation, &raw_payload_hash)?;
+            record_settlement(&state, &proposal).await;
+            let _ = state.compliance.commit_settlement(&proposal.envelope);
+            Ok(Json(proposal))
+        }
+        Err(e) => Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
+        )),
+    }
+}
+
+pub async fn ingress_mbridge(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    body: Body,
+) -> Result<Json<SettlementProposal>, (StatusCode, Json<Value>)> {
+    enforce_ingress_trust_policy(&state, &headers)?;
+
+    let raw_payload = body
+        .collect()
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": format!("Body collection failed: {}", e) })),
+            )
+        })?
+        .to_bytes();
+
+    let raw_payload_hash = sha256_hex(&raw_payload);
+    let tee_attestation = verify_tee_settlement_attestation(&state, &headers, &raw_payload_hash)?;
+    let industrial_intent = extract_industrial_intent(&headers);
+
+    let json_payload: Value = serde_json::from_slice(&raw_payload).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": format!("Invalid JSON: {}", e) })),
+        )
+    })?;
+
+    match state
+        .compliance
+        .normalize_mbridge_ingress(&json_payload, raw_payload_hash.clone())
+    {
+        Ok(mut envelope) => {
+            if let Some(intent) = industrial_intent {
+                envelope.payload.industrial_intent = intent;
+            }
+            if let Err(e) = state.compliance.screen_sanctions(&envelope) {
+                return Err((
+                    StatusCode::FORBIDDEN,
+                    Json(json!({ "error": e.to_string() })),
+                ));
+            }
+            let proposal =
+                build_settlement_proposal(&state, envelope, tee_attestation, &raw_payload_hash)?;
+            record_settlement(&state, &proposal).await;
+            let _ = state.compliance.commit_settlement(&proposal.envelope);
+            Ok(Json(proposal))
+        }
+        Err(e) => Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
+        )),
+    }
 }

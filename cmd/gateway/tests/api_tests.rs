@@ -19,7 +19,7 @@ use conxian_core::{
 use hmac::KeyInit;
 use hmac::{Hmac, Mac};
 use http_body_util::BodyExt;
-use secp256k1::{Message, Secp256k1, SecretKey};
+use secp256k1::{Message, PublicKey, Secp256k1, SecretKey};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::{
@@ -76,7 +76,6 @@ fn setup_app_with_lightning(state: SharedState, lightning: Arc<LightningAdapter>
         "bitvm".to_string(),
         Arc::new(engine::BitVmAdapter::new("simulated".to_string())),
     );
-
     let verifier = Arc::new(UniversalVerifier::new(
         compliance.clone() as Arc<dyn CoreVerifier>,
         multi_chain.clone(),
@@ -1473,4 +1472,223 @@ async fn test_prometheus_metrics_endpoint() {
     assert!(body.contains("conxian_bitcoin_height 850000"));
     assert!(body.contains("conxian_stacks_height 175000"));
     assert!(body.contains("conxian_syi_index"));
+}
+
+// ============================================================
+// G-B2: Multi-currency FX Metrics Test
+// ============================================================
+
+#[tokio::test]
+async fn test_prometheus_metrics_includes_fx_rates() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    {
+        let mut s = state.write().unwrap();
+        s.metrics.fx_rmb_usd = 0.14;
+        s.metrics.fx_rub_usd = 0.011;
+        s.metrics.fx_inr_usd = 0.012;
+        s.metrics.fx_aed_usd = 0.272;
+    }
+    let app = setup_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/metrics")
+                .method("GET")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body = String::from_utf8(body_bytes.to_vec()).unwrap();
+
+    assert!(body.contains("conxian_fx_rmb_usd 0.14"));
+    assert!(body.contains("conxian_fx_rub_usd 0.011"));
+    assert!(body.contains("conxian_fx_inr_usd 0.012"));
+    assert!(body.contains("conxian_fx_aed_usd 0.272"));
+}
+
+// ============================================================
+// G-B5: PAPSS Ingress Test
+// ============================================================
+
+#[tokio::test]
+async fn test_ingress_papss_success() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let papss_payload = json!({
+        "PAPSS_MsgId": "PAPSS-AFRICA-001",
+        "PAPSS_Amount": 250000,
+        "PAPSS_Sender": "NGBK001",
+        "PAPSS_Receiver": "GHBK002",
+        "PAPSS_Currency": "NGN",
+        "PAPSS_TxRef": "REF-PAPSS-001"
+    });
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    let trust_metadata = json!({
+        "system": "IBC",
+        "trust_tier": "T1",
+        "policy": {
+            "policy_id": "CON-791",
+            "policy_version": "2026-06-01",
+            "allowed_systems": []
+        },
+        "evidence": {
+            "source": "unit-test"
+        },
+        "freshness": {
+            "observed_at_epoch_secs": now,
+            "max_age_secs": 3600
+        }
+    });
+
+    let payload_bytes = serde_json::to_vec(&papss_payload).unwrap();
+    let payload_hash = sha256_hex(&payload_bytes);
+    let device_id = format!("{}_{}", TEE_DEVICE_ID_PREFIX, "papss-device");
+
+    let secp = Secp256k1::new();
+    let secret_key = SecretKey::from_slice(&[0xef; 32]).unwrap();
+    let public_key = PublicKey::from_secret_key(&secp, &secret_key);
+
+    let mut hasher = Sha256::new();
+    hasher.update(ATTESTATION_SIGNING_DOMAIN);
+    hasher.update(payload_hash.as_bytes());
+    hasher.update(device_id.as_bytes());
+    let msg = Message::from_digest(hasher.finalize().into());
+    let sig = secp.sign_ecdsa(&msg, &secret_key);
+
+    let attestation_request = conxian_core::AttestationRequest::Ecdsa(conxian_core::Attestation {
+        device_id,
+        signature: hex::encode(sig.serialize_compact()),
+        payload: payload_hash.clone(),
+        public_key: hex::encode(public_key.serialize()),
+    });
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/settlement/papss")
+                .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("x-402-payment", "proof-test")
+                .header(
+                    "x-conxian-attestation",
+                    serde_json::to_string(&attestation_request).unwrap(),
+                )
+                .header(
+                    "x-conxian-trust-metadata",
+                    serde_json::to_string(&trust_metadata).unwrap(),
+                )
+                .header("Content-Type", "application/json")
+                .body(Body::from(payload_bytes))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(
+        body["envelope"]["payload"]["transaction_id"],
+        "PAPSS-AFRICA-001"
+    );
+    assert_eq!(body["envelope"]["payload"]["source"], "PAPSS");
+}
+
+// ============================================================
+// G-B4: Sanctions Blocking Test (SPFS)
+// ============================================================
+
+#[tokio::test]
+async fn test_ingress_spfs_blocked_by_sanctions() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let spfs_payload = json!({
+        "spfs_msg_id": "SPFS-BLOCK-001",
+        "amount": 1000000,
+        "currency": "RUB"
+    });
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    let trust_metadata = json!({
+        "system": "IBC",
+        "trust_tier": "T1",
+        "policy": {
+            "policy_id": "CON-791",
+            "policy_version": "2026-06-01",
+            "allowed_systems": []
+        },
+        "evidence": {
+            "source": "unit-test"
+        },
+        "freshness": {
+            "observed_at_epoch_secs": now,
+            "max_age_secs": 3600
+        }
+    });
+
+    let payload_bytes = serde_json::to_vec(&spfs_payload).unwrap();
+    let payload_hash = sha256_hex(&payload_bytes);
+    let device_id = format!("{}_{}", TEE_DEVICE_ID_PREFIX, "spfs-device");
+
+    let secp = Secp256k1::new();
+    let secret_key = SecretKey::from_slice(&[0xaa; 32]).unwrap();
+    let public_key = PublicKey::from_secret_key(&secp, &secret_key);
+
+    let mut hasher = Sha256::new();
+    hasher.update(ATTESTATION_SIGNING_DOMAIN);
+    hasher.update(payload_hash.as_bytes());
+    hasher.update(device_id.as_bytes());
+    let msg = Message::from_digest(hasher.finalize().into());
+    let sig = secp.sign_ecdsa(&msg, &secret_key);
+
+    let attestation_request = conxian_core::AttestationRequest::Ecdsa(conxian_core::Attestation {
+        device_id,
+        signature: hex::encode(sig.serialize_compact()),
+        payload: payload_hash.clone(),
+        public_key: hex::encode(public_key.serialize()),
+    });
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/settlement/spfs")
+                .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("x-402-payment", "proof-test")
+                .header(
+                    "x-conxian-attestation",
+                    serde_json::to_string(&attestation_request).unwrap(),
+                )
+                .header(
+                    "x-conxian-trust-metadata",
+                    serde_json::to_string(&trust_metadata).unwrap(),
+                )
+                .header("Content-Type", "application/json")
+                .body(Body::from(payload_bytes))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    // Should be FORBIDDEN due to Critical sanctions risk
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert!(body["error"].as_str().unwrap().contains("Critical"));
 }

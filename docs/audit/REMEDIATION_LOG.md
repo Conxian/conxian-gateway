@@ -140,3 +140,39 @@
 - **cargo build --release**: ✅ 0 errors, 0 warnings
 - **cargo audit**: ✅ clean (369 deps, 0 vulnerabilities)
 
+
+## 11. BRICS+ Technical Gap Implementation (2026-06-29)
+
+### G-B4: Sanctions-Risk Tagging on SettlementSource
+- **Implemented `SanctionsRisk` enum** in `pkg/conxian-core/src/settlement.rs` with variants: `Low`, `Medium`, `High`, `Critical`.
+- **Integrated risk scoring** into `SettlementSource`: `SPFS` is tagged as `Critical`, `CIPS` and `mBridge` as `Medium`.
+- **Hardened compliance screening**: Added `screen_sanctions()` to `ZkcVerifier` in `internal/compliance/src/zkc.rs` which proactively blocks `Critical` risk rails (SPFS).
+- **Verified blocking**: Added integration tests in `api_tests.rs` confirming SPFS ingress returns 403 FORBIDDEN.
+
+### G-B1: CIPS-Specific Message Normalization
+- **Implemented `normalize_cips_ingress()`** in `ZkcVerifier`.
+- Supports CIPS-specific ISO 20022 extensions (`CIPS_MsgId`, `CIPS_Amount`, `CIPS_TxRef`) with fallback to standard generic fields.
+- Added API handler `ingress_cips` and routes in `internal/api`.
+- **Verified success**: Integration test `test_ingress_cips_success` passes with real ECDSA attestation and trust metadata.
+
+### G-B2: Multi-Currency FX Tracking (RMB, RUB, INR, AED)
+- **Extended `Metrics` struct** in `conxian-core` to include FX rate gauges for BRICS corridors.
+- **Updated `TreasuryMonitor`** in `internal/engine/src/treasury/mod.rs` to calculate simulated FX rates anchored in ALEX market depth.
+- **Exposed to Prometheus**: Added the 4 new FX gauges to the `/metrics` endpoint.
+- **Verified visibility**: Integration test `test_prometheus_metrics_includes_fx_rates` passes.
+
+### G-B5: PAPSS Settlement Rail Implementation
+- **Implemented `normalize_papss_ingress()`** in `ZkcVerifier` supporting PAPSS-specific headers (`PAPSS_MsgId`, `PAPSS_Amount`, etc.).
+- Added API handler `ingress_papss` and routes.
+- **Verified success**: Integration test `test_ingress_papss_success` passes.
+
+### G-23: Lightning Coverage Reports in CI
+- **Updated `scripts/lightning_coverage_gate.sh`** to generate LCOV and HTML coverage reports using `cargo llvm-cov`.
+- **Updated `.github/workflows/lightning-coverage.yml`** to archive these reports as artifacts, improving visibility into adapter test coverage.
+
+### Test Suite Growth
+| Metric | Before (Phase 10) | After | Delta |
+|--------|-------------------|-------|-------|
+| Rust tests | 119 | 125 | +6 |
+| API integration tests | 37 | 43 | +6 |
+| Logic hardening | Sanctions-aware | Sanctions-blocking | +1 |

@@ -204,18 +204,36 @@ impl ZkcVerifier {
         raw_payload_hash: String,
     ) -> ConxianResult<SettlementEnvelope> {
         info!("Normalizing PAPSS (Africa) ingress for institutional ledger...");
-        let txid = payload["transactionId"]
+        let txid = payload["PAPSS_MsgId"]
             .as_str()
+            .or(payload["transactionId"].as_str())
             .unwrap_or("unknown")
             .to_string();
-        let amount = payload["amount"].as_u64().unwrap_or(0);
-        let currency = payload["currency"].as_str().unwrap_or("USD").to_string();
+        let amount = payload["PAPSS_Amount"]
+            .as_u64()
+            .or(payload["amount"].as_u64())
+            .unwrap_or(0);
+        let currency = payload["PAPSS_Currency"]
+            .as_str()
+            .or(payload["currency"].as_str())
+            .unwrap_or("USD")
+            .to_string();
+        let sender = payload["PAPSS_Sender"]
+            .as_str()
+            .or(payload["sender"].as_str())
+            .unwrap_or("PAPSS_SENDER")
+            .to_string();
+        let receiver = payload["PAPSS_Receiver"]
+            .as_str()
+            .or(payload["receiver"].as_str())
+            .unwrap_or("PAPSS_RECEIVER")
+            .to_string();
 
         let identifiers = SettlementIdentifiers {
             message_id: Some(txid.clone()),
-            transaction_reference: None,
-            settlement_reference: None,
-            end_to_end_id: None,
+            transaction_reference: payload["PAPSS_TxRef"].as_str().map(|s| s.to_string()),
+            settlement_reference: Some(txid.clone()),
+            end_to_end_id: payload["EndToEndId"].as_str().map(|s| s.to_string()),
             settlement_amount: amount.to_string(),
             settlement_currency: currency.clone(),
             settlement_date: chrono::Utc::now().format("%Y-%m-%d").to_string(),
@@ -233,8 +251,8 @@ impl ZkcVerifier {
                 amount_minor: amount,
                 amount_scale: 0,
                 currency,
-                sender: "PAPSS_SENDER".to_string(),
-                receiver: "PAPSS_RECEIVER".to_string(),
+                sender,
+                receiver,
                 source: SettlementSource::Papss,
                 raw_payload_hash,
                 industrial_intent: IndustrialIntent::default(),
@@ -303,23 +321,42 @@ impl ZkcVerifier {
         raw_payload_hash: String,
     ) -> ConxianResult<SettlementEnvelope> {
         info!("Normalizing CIPS (ISO 20022 CIPS variant) ingress for institutional ledger...");
-        let txid = payload["cips_msg_id"]
+        let txid = payload["CIPS_MsgId"]
             .as_str()
+            .or(payload["cips_msg_id"].as_str())
             .unwrap_or("unknown")
             .to_string();
-        let amount = payload["amount"].as_u64().unwrap_or(0);
-        let sender = payload["sender"].as_str().unwrap_or("unknown").to_string();
-        let receiver = payload["receiver"]
+        let amount = payload["CIPS_Amount"]
+            .as_u64()
+            .or(payload["amount"].as_u64())
+            .unwrap_or(0);
+        let sender = payload["CIPS_SenderMmbId"]
             .as_str()
+            .or(payload["sender"].as_str())
+            .unwrap_or("unknown")
+            .to_string();
+        let receiver = payload["CIPS_ReceiverMmbId"]
+            .as_str()
+            .or(payload["receiver"].as_str())
             .unwrap_or("CIPS_RECEIVER")
             .to_string();
-        let currency = payload["currency"].as_str().unwrap_or("CNY").to_string();
+        let currency = payload["CIPS_Currency"]
+            .as_str()
+            .or(payload["currency"].as_str())
+            .unwrap_or("CNY")
+            .to_string();
 
         let identifiers = SettlementIdentifiers {
             message_id: Some(txid.clone()),
-            transaction_reference: payload["cips_tx_ref"].as_str().map(|s| s.to_string()),
+            transaction_reference: payload["CIPS_TxRef"]
+                .as_str()
+                .or(payload["cips_tx_ref"].as_str())
+                .map(|s| s.to_string()),
             settlement_reference: Some(txid.clone()),
-            end_to_end_id: payload["end_to_end_id"].as_str().map(|s| s.to_string()),
+            end_to_end_id: payload["EndToEndId"]
+                .as_str()
+                .or(payload["end_to_end_id"].as_str())
+                .map(|s| s.to_string()),
             settlement_amount: amount.to_string(),
             settlement_currency: currency.clone(),
             settlement_date: chrono::Utc::now().format("%Y-%m-%d").to_string(),
@@ -353,6 +390,122 @@ impl ZkcVerifier {
                 sender,
                 receiver,
                 source,
+                raw_payload_hash,
+                industrial_intent: IndustrialIntent::default(),
+                timestamp,
+                status: SettlementStatus::Ingested,
+                finality: SettlementFinality::Unknown,
+                rail: None,
+                settled_at: None,
+                identifiers,
+            },
+        })
+    }
+
+    pub fn normalize_spfs_ingress(
+        &self,
+        payload: &Value,
+        raw_payload_hash: String,
+    ) -> ConxianResult<SettlementEnvelope> {
+        info!("Normalizing SPFS (Russia) ingress for institutional ledger...");
+        let txid = payload["spfs_msg_id"]
+            .as_str()
+            .unwrap_or("unknown")
+            .to_string();
+        let amount = payload["amount"].as_u64().unwrap_or(0);
+        let sender = payload["sender"]
+            .as_str()
+            .unwrap_or("SPFS_SENDER")
+            .to_string();
+        let receiver = payload["receiver"]
+            .as_str()
+            .unwrap_or("SPFS_RECEIVER")
+            .to_string();
+        let currency = payload["currency"].as_str().unwrap_or("RUB").to_string();
+
+        let identifiers = SettlementIdentifiers {
+            message_id: Some(txid.clone()),
+            transaction_reference: None,
+            settlement_reference: Some(txid.clone()),
+            end_to_end_id: None,
+            settlement_amount: amount.to_string(),
+            settlement_currency: currency.clone(),
+            settlement_date: chrono::Utc::now().format("%Y-%m-%d").to_string(),
+        };
+
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock moved backwards")
+            .as_secs();
+
+        Ok(SettlementEnvelope {
+            version: SETTLEMENT_ENVELOPE_VERSION_CURRENT.to_string(),
+            payload: NormalizedSettlement {
+                transaction_id: txid,
+                amount_minor: amount,
+                amount_scale: 0,
+                currency,
+                sender,
+                receiver,
+                source: SettlementSource::Spfs,
+                raw_payload_hash,
+                industrial_intent: IndustrialIntent::default(),
+                timestamp,
+                status: SettlementStatus::Ingested,
+                finality: SettlementFinality::Unknown,
+                rail: None,
+                settled_at: None,
+                identifiers,
+            },
+        })
+    }
+
+    pub fn normalize_mbridge_ingress(
+        &self,
+        payload: &Value,
+        raw_payload_hash: String,
+    ) -> ConxianResult<SettlementEnvelope> {
+        info!("Normalizing mBridge (Multi-CBDC) ingress for institutional ledger...");
+        let txid = payload["mbridge_id"]
+            .as_str()
+            .unwrap_or("unknown")
+            .to_string();
+        let amount = payload["amount"].as_u64().unwrap_or(0);
+        let sender = payload["sender"]
+            .as_str()
+            .unwrap_or("MBRIDGE_SENDER")
+            .to_string();
+        let receiver = payload["receiver"]
+            .as_str()
+            .unwrap_or("MBRIDGE_RECEIVER")
+            .to_string();
+        let currency = payload["currency"].as_str().unwrap_or("USD").to_string();
+
+        let identifiers = SettlementIdentifiers {
+            message_id: None,
+            transaction_reference: None,
+            settlement_reference: Some(txid.clone()),
+            end_to_end_id: None,
+            settlement_amount: amount.to_string(),
+            settlement_currency: currency.clone(),
+            settlement_date: chrono::Utc::now().format("%Y-%m-%d").to_string(),
+        };
+
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock moved backwards")
+            .as_secs();
+
+        Ok(SettlementEnvelope {
+            version: SETTLEMENT_ENVELOPE_VERSION_CURRENT.to_string(),
+            payload: NormalizedSettlement {
+                transaction_id: txid,
+                amount_minor: amount,
+                amount_scale: 0,
+                currency,
+                sender,
+                receiver,
+                source: SettlementSource::MBridge,
                 raw_payload_hash,
                 industrial_intent: IndustrialIntent::default(),
                 timestamp,
@@ -772,5 +925,62 @@ mod zkc_tests {
         let result = verifier.verify_tee_attestation(&request).unwrap();
 
         assert_eq!(result.device_id, device_id);
+    }
+}
+
+#[cfg(test)]
+mod brics_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_normalize_cips_ingress() {
+        let verifier = ZkcVerifier::new();
+        let payload = json!({
+            "CIPS_MsgId": "CIPS123",
+            "CIPS_Amount": 1000,
+            "CIPS_SenderMmbId": "BANKCN01",
+            "CIPS_Currency": "CNY",
+            "CIPS_TxRef": "REF456"
+        });
+        let result = verifier
+            .normalize_cips_ingress(&payload, "hash".to_string())
+            .unwrap();
+        assert_eq!(result.payload.transaction_id, "CIPS123");
+        assert_eq!(result.payload.amount_minor, 1000);
+        assert_eq!(result.payload.currency, "CNY");
+        assert_eq!(result.payload.source, SettlementSource::Cips);
+    }
+
+    #[test]
+    fn test_normalize_spfs_ingress() {
+        let verifier = ZkcVerifier::new();
+        let payload = json!({
+            "spfs_msg_id": "SPFS123",
+            "amount": 5000,
+            "currency": "RUB"
+        });
+        let result = verifier
+            .normalize_spfs_ingress(&payload, "hash".to_string())
+            .unwrap();
+        assert_eq!(result.payload.transaction_id, "SPFS123");
+        assert_eq!(result.payload.currency, "RUB");
+        assert_eq!(result.payload.source, SettlementSource::Spfs);
+    }
+
+    #[test]
+    fn test_normalize_mbridge_ingress() {
+        let verifier = ZkcVerifier::new();
+        let payload = json!({
+            "mbridge_id": "MBR123",
+            "amount": 2000,
+            "sender": "BANKHK01"
+        });
+        let result = verifier
+            .normalize_mbridge_ingress(&payload, "hash".to_string())
+            .unwrap();
+        assert_eq!(result.payload.transaction_id, "MBR123");
+        assert_eq!(result.payload.amount_minor, 2000);
+        assert_eq!(result.payload.source, SettlementSource::MBridge);
     }
 }
