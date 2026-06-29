@@ -98,6 +98,11 @@ pub struct Metrics {
     /// Industry Enhancement: TAM Capture Metrics
     pub sbtc_liquidity: f64,
     pub syi_index: f64,
+    /// G-B2: Multi-currency FX rates (relative to USD)
+    pub fx_rmb_usd: f64,
+    pub fx_rub_usd: f64,
+    pub fx_inr_usd: f64,
+    pub fx_aed_usd: f64,
     /// CON-230: Bounty Payout Activation
     pub bounty_payouts_enabled: bool,
 }

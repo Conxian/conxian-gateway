@@ -74,6 +74,12 @@ impl TreasuryMonitor {
         // SYI calculation: Anchored in ALEX market depth + Sovereign multiplier
         let sovereignty_multiplier = 1.2; // Reward for non-custodial paths
         s.metrics.syi_index = (0.04 + (market_yield_proxy * 0.05)) * sovereignty_multiplier;
+        // G-B2: Multi-currency FX Tracking (RMB, RUB, INR, AED)
+        // In production, these would be sourced via specialized oracles or the ALEX corridor feed.
+        s.metrics.fx_rmb_usd = 0.14 + (market_yield_proxy * 0.005); // ~7.14 CNY/USD
+        s.metrics.fx_rub_usd = 0.011 + (market_yield_proxy * 0.001); // ~90.9 RUB/USD
+        s.metrics.fx_inr_usd = 0.012 + (market_yield_proxy * 0.001); // ~83.3 INR/USD
+        s.metrics.fx_aed_usd = 0.272 + (market_yield_proxy * 0.002); // ~3.67 AED/USD
 
         // Simulate growth towards TAM ($10B+)
         let growth_factor = if s.metrics.sbtc_liquidity > 1_000_000_000.0 {
@@ -130,6 +136,10 @@ mod tests {
         let s = state.read().expect("lock poisoned");
         assert!(s.metrics.syi_index > 0.0);
         assert!(s.metrics.treasury_balance_stx > 1000000.0);
+        assert!(s.metrics.fx_rmb_usd > 0.0);
+        assert!(s.metrics.fx_rub_usd > 0.0);
+        assert!(s.metrics.fx_inr_usd > 0.0);
+        assert!(s.metrics.fx_aed_usd > 0.0);
         assert_eq!(s.metrics.treasury_balance_btc, 1050000000);
     }
 }
