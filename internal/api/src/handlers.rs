@@ -1237,3 +1237,45 @@ pub async fn ingress_mbridge(
         )),
     }
 }
+
+/// NWC (Nostr Wallet Connect) relay settlement
+pub async fn nwc_relay_settle(
+    State(state): State<AppState>,
+    Json(payload): Json<serde_json::Value>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let request = crate::lightning::LightningSettlementRequest {
+        challenge: payload["challenge"].as_str().unwrap_or("").to_string(),
+        amount: payload["amount"].as_u64().unwrap_or(0) as u128,
+        asset: payload["asset"].as_str().unwrap_or("BTC").to_string(),
+        expiry: payload["expiry"].as_u64().unwrap_or(0),
+        proof_refs: payload["proof_refs"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default(),
+    };
+    let receipt = state
+        .lightning
+        .execute_payment(&crate::x402::X402PaymentPayload {
+            amount: request.amount,
+            asset: request.asset.clone(),
+            challenge: request.challenge.clone(),
+            expiry: request.expiry,
+            proof_refs: request.proof_refs.clone(),
+        })
+        .await
+        .map_err(|e| {
+            (
+                e.status_code(),
+                Json(json!({ "error": e.code(), "message": e.message() })),
+            )
+        })?;
+    Ok(Json(json!({
+        "settled_amount": receipt.settled_amount,
+        "preimage": receipt.preimage,
+        "proof": receipt.proof,
+    })))
+}

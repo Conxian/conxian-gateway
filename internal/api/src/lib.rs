@@ -10,6 +10,7 @@ pub mod lightning;
 pub mod middleware;
 pub mod nostr;
 pub mod routes;
+pub mod world_id;
 pub mod x402;
 
 pub use routes::configure_routes;

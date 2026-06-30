@@ -1,5 +1,6 @@
 use crate::auth::auth_middleware;
 use crate::middleware::latency_tracker;
+use crate::world_id;
 use crate::AppState;
 use crate::{admin, handlers, x402::x402_filter};
 use axum::{
@@ -77,6 +78,9 @@ pub fn configure_routes(state: AppState, api_token: String) -> Router {
             "/musig2/aggregate-keys",
             post(handlers::aggregate_musig2_keys),
         )
+        .route("/verify/worldcoin", post(world_id::verify_world_id))
+        .route("/nwc/relay", post(handlers::nwc_relay_settle));
+    let private_routes = private_routes
         .layer(middleware::from_fn_with_state(state.clone(), x402_filter))
         .layer(middleware::from_fn(move |req, next| {
             auth_middleware(req, next, token_for_auth.clone())
