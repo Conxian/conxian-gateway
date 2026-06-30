@@ -2,6 +2,24 @@
 
 You are working on the **Conxian Gateway**, an institutional-grade Rust middleware designed for high-performance Bitcoin/Stacks state logic and enterprise compliance.
 
+## Current State (2026-06-28)
+- **PR #210** (`feat/implement-all-recommendations`): All 8 remaining protocol integrations
+- **PR #209**: Merged — BRICS G-B1/G-B4 + SPFS/mBridge ingress handlers
+- **Issues resolved** (#208, #196): Hygiene + GitHub OAuth (merged in #209)
+- **Remaining**: 0 of 14 original issues — all implemented
+
+### Protocol Implementations (PR #210)
+| Issue | Protocol | Crate | File |
+|---|---|---|---|
+| #191 | NWC NIP-47 | nwc 0.44.0, nostr-sdk 0.44.1 | `internal/api/src/nwc_backend.rs` |
+| #194 | Rootstock JSON-RPC | reqwest 0.12 | `internal/engine/src/ntt/rootstock_adapter.rs` |
+| #195 | RISC Zero STF | risc0-zkvm 3.0.5 | `internal/engine/src/bitcoin/risc0_verifier.rs` |
+| #198 | NWC relay | — | `internal/api/src/handlers.rs` |
+| #200 | ISO 20022 camt | cam0814 1.0.10 | `internal/api/src/camt.rs` |
+| #201 | World ID | reqwest 0.12 | `internal/api/src/world_id.rs` |
+| #189 | RGB | rgb-lib 0.3.0-beta.6 | `internal/engine/src/bitcoin/rgb_adapter.rs` |
+| #188 | DLC Oracle | ddk 1.1.2 | `internal/engine/src/bitcoin/dlc_oracle.rs` |
+
 ## Core Philosophy
 - **Sovereignty**: All code must prioritize non-custodial logic and user sovereignty.
 - **Institutional Grade**: Maintain SLA-grade interfaces, high-performance async Rust, and robust error handling.

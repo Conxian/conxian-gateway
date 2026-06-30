@@ -3,6 +3,7 @@ use conxian_core::{ContractState, ConxianResult, RgbAdapter, RolloutMode};
 use serde_json::{json, Value};
 use tracing::{error, info, warn};
 
+/// RGB Protocol adapter with optional rgb-lib v0.3.0-beta.6 integration
 pub struct NodeRgbAdapter {
     pub mode: RolloutMode,
     pub node_url: String,
