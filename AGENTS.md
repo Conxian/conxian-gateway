@@ -2,11 +2,12 @@
 
 You are working on the **Conxian Gateway**, an institutional-grade Rust middleware designed for high-performance Bitcoin/Stacks state logic and enterprise compliance.
 
-## Current State (2026-06-28)
-- **PR #210** (`feat/implement-all-recommendations`): All 8 remaining protocol integrations
-- **PR #209**: Merged — BRICS G-B1/G-B4 + SPFS/mBridge ingress handlers
-- **Issues resolved** (#208, #196): Hygiene + GitHub OAuth (merged in #209)
-- **Remaining**: 0 of 14 original issues — all implemented
+## Current State (2026-06-30)
+- **PR #210** (`feat/implement-all-recommendations`): **MERGED** — all 8 protocol integrations
+- **PR #209** (`feat/issue-hygiene-auth-and-research`): **Open** — hygiene fixes (#208), GitHub OAuth (#196), research consolidation
+- **Issues resolved** (#208, #196): Hygiene + GitHub OAuth (implemented in #209)
+- **All 14 original issues**: implemented (8 in #210 merged, 2 in #209 open, 4 in earlier merges)
+- **CI status**: All 6 workflows green on both main and PR #209
 
 ### Protocol Implementations (PR #210)
 | Issue | Protocol | Crate | File |
@@ -78,6 +79,7 @@ Before submitting changes, you MUST:
 - ✅ G-B2: Multi-currency FX — RMB/RUB/INR/AED tracking in TreasuryMonitor (FIXED)
 - ✅ G-B5: PAPSS settlement — Pan-African rail integration (FIXED)
 - ✅ G-23: Lightning coverage — HTML/LCOV reports in CI (FIXED)
+- ✅ G-8: control-plane SSO (NextAuth) — implemented in PR #209
 
 ### Remaining (Research / Future Roadmap)
 - 🔴 G-1: BitVM3 proof verification (garbled circuits)
@@ -87,11 +89,13 @@ Before submitting changes, you MUST:
 - 🟡 G-5: Elements/Liquid peg-in/out E2E tests
 - 🟡 G-6: Rootstock Powpeg anchor verification
 - 🟢 G-7: RISC Zero STF verification
-- 🟢 G-8: control-plane SSO (NextAuth)
 
-### Test Suite (2026-06-29)
-- **125 Rust tests**: 0 failures
+### Test Suite (2026-06-30)
+- **125 Rust tests** (base): 0 failures
+- **128 Rust tests** (with mock-integrations): 0 failures
 - **8 test files**: api_tests (43), nwc_tests (5), offline_pos_tests (1), reorg_simulation_tests (1), identity_tests (16), + inline tests across crates
+- **cargo fmt**: clean | **cargo clippy (--all-features)**: clean | **--all-features build**: passes
+- **pnpm lockfile**: synced with next-auth@5.0.0-beta.31
 - **1 Python script**: verify_gateway.py (7 checks)
 
 ## Research Context (2026-06-29)
