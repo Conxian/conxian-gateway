@@ -9,3 +9,6 @@ offline_queue.db
 .env
 .env.local
 .env.*.local
+
+# Generated Vitest cache
+**/.vite/

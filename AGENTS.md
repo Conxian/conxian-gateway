@@ -2,11 +2,12 @@
 
 You are working on the **Conxian Gateway**, an institutional-grade Rust middleware designed for high-performance Bitcoin/Stacks state logic and enterprise compliance.
 
-## Current State (2026-06-28)
-- **PR #210** (`feat/implement-all-recommendations`): All 8 remaining protocol integrations
-- **PR #209**: Merged — BRICS G-B1/G-B4 + SPFS/mBridge ingress handlers
-- **Issues resolved** (#208, #196): Hygiene + GitHub OAuth (merged in #209)
-- **Remaining**: 0 of 14 original issues — all implemented
+## Current State (2026-06-30)
+- **PR #210** (`feat/implement-all-recommendations`): **MERGED** — all 8 protocol integrations
+- **PR #209** (`feat/issue-hygiene-auth-and-research`): **Open** — hygiene fixes (#208), GitHub OAuth (#196), research consolidation
+- **Issues resolved** (#208, #196): Hygiene + GitHub OAuth (implemented in #209)
+- **All 14 original issues**: implemented (8 in #210 merged, 2 in #209 open, 4 in earlier merges)
+- **CI status**: All 6 workflows green on both main and PR #209
 
 ### Protocol Implementations (PR #210)
 | Issue | Protocol | Crate | File |
@@ -78,6 +79,7 @@ Before submitting changes, you MUST:
 - ✅ G-B2: Multi-currency FX — RMB/RUB/INR/AED tracking in TreasuryMonitor (FIXED)
 - ✅ G-B5: PAPSS settlement — Pan-African rail integration (FIXED)
 - ✅ G-23: Lightning coverage — HTML/LCOV reports in CI (FIXED)
+- ✅ G-8: control-plane SSO (NextAuth) — implemented in PR #209
 
 ### Remaining (Research / Future Roadmap)
 - 🔴 G-1: BitVM3 proof verification (garbled circuits)
@@ -87,21 +89,30 @@ Before submitting changes, you MUST:
 - 🟡 G-5: Elements/Liquid peg-in/out E2E tests
 - 🟡 G-6: Rootstock Powpeg anchor verification
 - 🟢 G-7: RISC Zero STF verification
-- 🟢 G-8: control-plane SSO (NextAuth)
 
-### Test Suite (2026-06-29)
-- **125 Rust tests**: 0 failures
+### Test Suite (2026-06-30)
+- **125 Rust tests** (base): 0 failures
+- **128 Rust tests** (with mock-integrations): 0 failures
 - **8 test files**: api_tests (43), nwc_tests (5), offline_pos_tests (1), reorg_simulation_tests (1), identity_tests (16), + inline tests across crates
+- **cargo fmt**: clean | **cargo clippy (--all-features)**: clean | **--all-features build**: passes
+- **pnpm lockfile**: synced with next-auth@5.0.0-beta.31
 - **1 Python script**: verify_gateway.py (7 checks)
-- **Node.js**: client-sdk (1 test pass), control-plane (1 smoke test — Playwright browser needed in CI)
 
 ## Research Context (2026-06-29)
 
-### Blockchain & Protocol Research
-- **BitVM3**: Published design (bitvm.org/bitvm3.pdf). Garbled circuits + BitHash. >1,000× smaller disputes vs BitVM2. Monitor chainwayxyz/bitvm-zk-verifier for beta.
-- **RGB Protocol**: v0.12 (RGB-I.0) production release. rgb-core v0.12.0 on crates.io. Tether announced USDT on RGB.
-- **Nostr Wallet Connect (NIP-47)**: Draft but widely implemented. nostr-sdk v0.25.0 has nip47 feature. Conxian has NwcConnection skeleton ready.
-- **Groth16 Recursion**: Experimental on Bitcoin. MNT-curve demo on BSV. Not mainnet-ready. Monitor Citrea/Clementine progress.
+### Blockchain & Protocol Research (Deep-dive 2026-06-28)
+- **BitVM3**: Research paper only (eprint 2026/933). No code, no SDK. Production today = BitVM2+Groth16 (Clementine/Citrea mainnet Jan 2026).
+- **RGB Protocol**: Two incompatible forks. v0.12 (LNP-BP, Dr. Orlovsky) STALLED 12 months. v0.11.1 (rgb-protocol org, rgb-lib 0.3.0-beta.6) ACTIVE — Tether USD₮ launched here.
+- **Nostr Wallet Connect (NIP-47)**: nwc 0.44.0, nostr-sdk 0.44.1. Stable, 156K downloads. Quickest integration win.
+- **Groth16/Citrea**: Clementine v0.6.4, audited, mainnet since Jan 2026. risc0-zkvm 3.0.5 + risc0-groth16 3.0.4 + ark-groth16 0.5.0. First ZK rollup on Bitcoin.
+- **RISC Zero**: v2.0.0 YANKED — use v3.0.5 stable. Boundless Market 2.0.1 for decentralized proving.
+- **LDK Node**: v0.7.0 production. 151K downloads. BOLT12 offers, LSPS1/2/5 LSP, async payments (experimental). Replaces SimulatedLightningBackend.
+- **DLC Dev Kit (DDK)**: v1.1.2 (Jun 29, 2026). Nostr transport (NIP-44), Kormir oracle. High complexity (6-10 wks).
+- **World ID**: REST API v4. Millions verified. world-id-primitives 0.12.0. Trivial server-side integration (1-2 wks).
+- **Babylon**: Mainnet live, bbn-1. Rust crates stale 12mo (babylon-proto 0.14.0). gRPC/REST approach (2-4 wks).
+- **ISO 20022 camt.053/054**: open-payments-iso20022-camt 1.0.10 (vendor from crates.io, GitHub repo deleted).
+- **Rootstock**: RSKj Vetiver 9.0.3 (Java). JSON-RPC bridge queries (1-2 wks). No Rust SDK needed.
+- **Liquid**: elements 0.26.2 (Jun 2026, 410K downloads). Active. Adapter has real RPC — needs E2E tests.
 
 ### Global Financial Systems Research (BRICS+ vs G7)
 Full analysis: `docs/research/BRICS_FINANCIAL_SYSTEMS_RESEARCH.md`
