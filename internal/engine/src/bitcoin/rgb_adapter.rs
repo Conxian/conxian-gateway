@@ -1,38 +1,17 @@
 use async_trait::async_trait;
 use conxian_core::{ContractState, ConxianResult, RgbAdapter, RolloutMode};
 use serde_json::{json, Value};
-use std::path::PathBuf;
 use tracing::{error, info, warn};
 
-/// RGB Protocol adapter using rgb-lib v0.3.0-beta.6 (rgb-protocol org fork)
+/// RGB Protocol adapter with optional rgb-lib v0.3.0-beta.6 integration
 pub struct NodeRgbAdapter {
     pub mode: RolloutMode,
     pub node_url: String,
-    pub data_dir: PathBuf,
 }
 
 impl NodeRgbAdapter {
     pub fn new(mode: RolloutMode, node_url: String) -> Self {
-        Self {
-            mode,
-            node_url,
-            data_dir: PathBuf::from(".rgb"),
-        }
-    }
-
-    pub fn with_data_dir(mut self, dir: PathBuf) -> Self {
-        self.data_dir = dir;
-        self
-    }
-
-    /// Verify an RGB state transition using rgb-lib (bulletproofs validation)
-    fn verify_with_rgb_lib(contract_id: &str, _consignment: &[u8]) -> ConxianResult<bool> {
-        let _ = contract_id;
-        // rgb_lib 0.3.0-beta.6 integration path:
-        // let wallet = rgb_lib::Wallet::new(&self.data_dir)?;
-        // wallet.validate_consignment(consignment)?;
-        info!(contract_id = %contract_id, "RGB bulletproofs verification via rgb-lib");
-        Ok(true)
+        Self { mode, node_url }
     }
 
     async fn fetch_from_node(&self, path: &str) -> ConxianResult<Option<Value>> {

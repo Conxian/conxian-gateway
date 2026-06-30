@@ -25,7 +25,6 @@ impl NwcConnection {
         }
         uri
     }
-}
 
     pub fn parse_uri(uri: &str) -> ConxianResult<Self> {
         info!("Parsing NWC connection URI: {}", uri);

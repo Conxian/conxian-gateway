@@ -4,12 +4,14 @@ compile_error!("feature `mock-integrations` must not be enabled in release build
 pub mod a2p;
 pub mod admin;
 pub mod auth;
+#[cfg(feature = "iso20022")]
 pub mod camt;
 pub mod fiat;
 pub mod handlers;
 pub mod lightning;
 pub mod middleware;
 pub mod nostr;
+#[cfg(feature = "nwc-integration")]
 pub mod nwc_backend;
 pub mod routes;
 pub mod world_id;
