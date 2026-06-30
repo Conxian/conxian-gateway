@@ -1,9 +1,7 @@
 use crate::auth::auth_middleware;
 use crate::middleware::latency_tracker;
-use crate::AppState;
-#[cfg(feature = "iso20022")]
-use crate::camt;
 use crate::world_id;
+use crate::AppState;
 use crate::{admin, handlers, x402::x402_filter};
 use axum::{
     extract::DefaultBodyLimit,
@@ -31,7 +29,7 @@ pub fn configure_routes(state: AppState, api_token: String) -> Router {
         )
         .with_state(state.clone());
 
-    let mut private_routes = Router::new()
+    let private_routes = Router::new()
         .route("/metrics", get(handlers::get_metrics))
         .route("/state", get(handlers::get_state))
         .route("/verify", post(handlers::verify_attestation))
@@ -82,12 +80,6 @@ pub fn configure_routes(state: AppState, api_token: String) -> Router {
         )
         .route("/verify/worldcoin", post(world_id::verify_world_id))
         .route("/nwc/relay", post(handlers::nwc_relay_settle));
-    #[cfg(feature = "iso20022")]
-    {
-        private_routes = private_routes
-            .route("/treasury/camt053", post(camt::generate_camt053))
-            .route("/treasury/camt054", post(camt::generate_camt054));
-    }
     let private_routes = private_routes
         .layer(middleware::from_fn_with_state(state.clone(), x402_filter))
         .layer(middleware::from_fn(move |req, next| {

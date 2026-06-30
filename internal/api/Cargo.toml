@@ -5,8 +5,6 @@ edition.workspace = true
 
 [features]
 mock-integrations = []
-nwc-integration = ["dep:nwc", "dep:nostr-sdk"]
-iso20022 = ["dep:cam0814"]
 
 [dependencies]
 urlencoding = "2.1.3"
@@ -31,7 +29,4 @@ base64 = "0.22.1"
 http-body-util = "0.1.3"
 rand = { version = "0.10" }
 minreq = { version = "3.0.0", features = ["https"] }
-nwc = { version = "0.44.0", optional = true }
-nostr-sdk = { version = "0.44.1", features = ["nip47"], optional = true }
 reqwest = { version = "0.12", features = ["json"] }
-cam0814 = { package = "open-payments-iso20022-camt", version = "1.0.10", optional = true }

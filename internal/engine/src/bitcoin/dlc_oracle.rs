@@ -1,3 +1,4 @@
+#![rustfmt::skip]
 use async_trait::async_trait;
 use conxian_core::ConxianResult;
 use serde::{Deserialize, Serialize};

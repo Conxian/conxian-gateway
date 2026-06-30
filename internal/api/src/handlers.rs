@@ -1250,7 +1250,11 @@ pub async fn nwc_relay_settle(
         expiry: payload["expiry"].as_u64().unwrap_or(0),
         proof_refs: payload["proof_refs"]
             .as_array()
-            .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
             .unwrap_or_default(),
     };
     let receipt = state
@@ -1263,10 +1267,12 @@ pub async fn nwc_relay_settle(
             proof_refs: request.proof_refs.clone(),
         })
         .await
-        .map_err(|e| (
-            e.status_code(),
-            Json(json!({ "error": e.code(), "message": e.message() })),
-        ))?;
+        .map_err(|e| {
+            (
+                e.status_code(),
+                Json(json!({ "error": e.code(), "message": e.message() })),
+            )
+        })?;
     Ok(Json(json!({
         "settled_amount": receipt.settled_amount,
         "preimage": receipt.preimage,

@@ -1,4 +1,7 @@
-use crate::lightning::{LightningBackend, LightningBackendError, LightningSettlementRequest, LightningSettlementResponse};
+use crate::lightning::{
+    LightningBackend, LightningBackendError, LightningSettlementRequest,
+    LightningSettlementResponse,
+};
 use crate::nostr::NwcConnection;
 use async_trait::async_trait;
 use nwc::prelude::*;
@@ -17,10 +20,16 @@ impl NwcLightningBackend {
             .parse()
             .map_err(|e| NwcInitError::UriParse(e.to_string()))?;
         let nwc_client = NWC::new(uri);
-        let balance = nwc_client.get_balance().await.map_err(|e| NwcInitError::Connection(e.to_string()))?;
+        let balance = nwc_client
+            .get_balance()
+            .await
+            .map_err(|e| NwcInitError::Connection(e.to_string()))?;
         info!(msats = balance.balance, "NWC backend initialized");
 
-        Ok(Self { connection, timeout: Duration::from_secs(30) })
+        Ok(Self {
+            connection,
+            timeout: Duration::from_secs(30),
+        })
     }
 
     pub fn with_timeout(mut self, timeout: Duration) -> Self {

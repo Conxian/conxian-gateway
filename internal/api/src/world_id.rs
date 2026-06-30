@@ -31,13 +31,9 @@ pub async fn verify_world_id(
     Json(payload): Json<WorldIdVerifyRequest>,
 ) -> Result<Json<WorldIdVerifyResponse>, (StatusCode, String)> {
     let client = reqwest::Client::new();
-    let app_id = std::env::var("WORLD_ID_APP_ID")
-        .unwrap_or_else(|_| "app_staging_".to_string());
+    let app_id = std::env::var("WORLD_ID_APP_ID").unwrap_or_else(|_| "app_staging_".to_string());
 
-    let verify_url = format!(
-        "https://developer.world.org/api/v4/verify/{}",
-        app_id
-    );
+    let verify_url = format!("https://developer.world.org/api/v4/verify/{}", app_id);
 
     let response = client
         .post(&verify_url)
@@ -53,16 +49,19 @@ pub async fn verify_world_id(
         .await
         .map_err(|e| {
             warn!(error = %e, "World ID API unreachable");
-            (StatusCode::SERVICE_UNAVAILABLE, format!("World ID API error: {e}"))
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                format!("World ID API error: {e}"),
+            )
         })?;
 
     let status = response.status();
-    let body: serde_json::Value = response
-        .json()
-        .await
-        .map_err(|e| {
-            (StatusCode::BAD_GATEWAY, format!("World ID parse error: {e}"))
-        })?;
+    let body: serde_json::Value = response.json().await.map_err(|e| {
+        (
+            StatusCode::BAD_GATEWAY,
+            format!("World ID parse error: {e}"),
+        )
+    })?;
 
     if status.is_success() {
         info!(
@@ -87,7 +86,10 @@ pub async fn verify_world_id(
             error = %detail,
             "World ID verification failed"
         );
-        Err((StatusCode::BAD_REQUEST, format!("Verification failed: {detail}")))
+        Err((
+            StatusCode::BAD_REQUEST,
+            format!("Verification failed: {detail}"),
+        ))
     }
 }
 

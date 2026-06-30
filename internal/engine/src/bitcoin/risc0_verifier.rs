@@ -1,3 +1,4 @@
+#![rustfmt::skip]
 use conxian_core::ConxianResult;
 use serde_json::Value;
 use tracing::{debug, info};

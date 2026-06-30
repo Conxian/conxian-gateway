@@ -3,9 +3,6 @@ name = "engine"
 version.workspace = true
 edition.workspace = true
 
-[features]
-default = []
-
 [dependencies]
 conxian-core.workspace = true
 bitcoin.workspace = true

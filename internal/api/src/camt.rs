@@ -77,6 +77,7 @@ pub async fn generate_camt054(
     }))
 }
 
+#[rustfmt::skip]
 fn build_camt053_xml(message_id: &str, payload: &Camt053Request) -> Result<String, (StatusCode, String)> {
     use std::fmt::Write;
     let mut xml = String::new();
@@ -100,6 +101,7 @@ fn build_camt053_xml(message_id: &str, payload: &Camt053Request) -> Result<Strin
     Ok(xml)
 }
 
+#[rustfmt::skip]
 fn build_camt054_xml(message_id: &str, payload: &Camt054Request) -> Result<String, (StatusCode, String)> {
     use std::fmt::Write;
     let mut xml = String::new();
