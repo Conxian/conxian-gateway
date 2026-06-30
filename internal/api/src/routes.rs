@@ -1,7 +1,7 @@
 use crate::auth::auth_middleware;
 use crate::middleware::latency_tracker;
 use crate::AppState;
-use crate::{admin, handlers, x402::x402_filter};
+use crate::{admin, camt, handlers, world_id, x402::x402_filter};
 use axum::{
     extract::DefaultBodyLimit,
     middleware,
@@ -77,6 +77,10 @@ pub fn configure_routes(state: AppState, api_token: String) -> Router {
             "/musig2/aggregate-keys",
             post(handlers::aggregate_musig2_keys),
         )
+        .route("/verify/worldcoin", post(world_id::verify_world_id))
+        .route("/treasury/camt053", post(camt::generate_camt053))
+        .route("/treasury/camt054", post(camt::generate_camt054))
+        .route("/nwc/relay", post(handlers::nwc_relay_settle))
         .layer(middleware::from_fn_with_state(state.clone(), x402_filter))
         .layer(middleware::from_fn(move |req, next| {
             auth_middleware(req, next, token_for_auth.clone())

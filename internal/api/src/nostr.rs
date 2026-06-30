@@ -12,6 +12,21 @@ pub struct NwcConnection {
 }
 
 impl NwcConnection {
+    /// Reconstruct the nostr+walletconnect:// URI from connection details
+    pub fn to_uri_string(&self) -> String {
+        let mut uri = format!(
+            "nostr+walletconnect://{}?relay={}&secret={}",
+            self.pubkey,
+            urlencoding::encode(&self.relay),
+            self.secret
+        );
+        if let Some(ref lud16) = self.lud16 {
+            uri.push_str(&format!("&lud16={}", urlencoding::encode(lud16)));
+        }
+        uri
+    }
+}
+
     pub fn parse_uri(uri: &str) -> ConxianResult<Self> {
         info!("Parsing NWC connection URI: {}", uri);
 

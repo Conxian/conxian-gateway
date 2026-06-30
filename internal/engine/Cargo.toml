@@ -14,3 +14,7 @@ async-trait.workspace = true
 minreq = { version = "3.0.0", features = ["https", "json-using-serde"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+reqwest = { version = "0.12", features = ["json"] }
+risc0-zkvm = "3.0.5"
+rgb-lib = "0.3.0-beta.6"
+ddk = "1.1.2"
