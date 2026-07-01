@@ -32,5 +32,8 @@ jobs:
       - name: Build packages
         run: pnpm -r run build
 
-      - name: Run tests (client-sdk)
-        run: pnpm --filter @conxian/client-sdk run test
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps
+
+      - name: Run tests
+        run: pnpm test
