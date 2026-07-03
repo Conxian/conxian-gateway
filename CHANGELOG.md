@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Standardized `actions/checkout` version to `v4.2.2` (pinned by SHA) across all local workflows (CON-1324).
 - Initialized `docs/governance/CHANGELOG.md` as a canonical release history record.
+- **Hardened CI/CD Pipelines**: Integrated mandatory `contamination_guard` in Rust CI and expanded Node.js CI to include Playwright browser installation and full workspace testing.
 
 ### Added
 - Implemented **Babylon** and **BitVM2** state-proof verification logic in the multi-chain adapter layer.
