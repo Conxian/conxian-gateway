@@ -6,7 +6,7 @@ You are working on the **Conxian Gateway**, an institutional-grade Rust middlewa
 - **Status Audit**: Holistic review of Nexus/Gateway alignment complete (CON-1353).
 - **Protocol Drift**: Resolved — Fedimint, Citrea, and Strata adapters implemented and in production paths.
 - **RGB G-1385 (Phase 1)**: StashResolver delivered (commit `124d17e`) with `rgb-std` v0.12.0-rc.3 + `bp-esplora` v0.12.0-rc.3 behind `rgb-native` feature. Phase 2 (ContractVerify, consignment) blocked on rgb-std ecosystem stabilization.
-- **PR #233**: Tech debt reduction approved, flaky persistence test fixed, awaiting CI green on `con-1389` branch.
+- **PR #233**: Tech debt reduction rebased onto main (resolved 7 conflicts from G-1385 rgb-stash merge). MERGEABLE, awaiting CI green on `con-1389` branch. RGB stash resolver retained (not dead code anymore).
 - **Hardening Stubs**: CON-1276 requirements (Redis auth, token expiry) exist as code comments but are not yet implemented.
 - **UCV-1**: Fully implemented and unifying Babylon, BitVM2, Liquid, Rootstock, and RGB.
 - **CI status**: All 6 workflows green on main.
