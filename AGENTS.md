@@ -4,30 +4,30 @@ You are working on the **Conxian Gateway**, an institutional-grade Rust middlewa
 
 ## Current State (2026-07-05, updated)
 - **Status Audit**: Holistic review of Nexus/Gateway alignment complete (CON-1353).
-- **Protocol Drift**: Resolved — Fedimint, Citrea, and Strata adapters implemented and in production paths.
+- **Protocol Drift**: Resolved тАФ Fedimint, Citrea, and Strata adapters implemented and in production paths.
 - **RGB G-1385 (Phase 1)**: StashResolver delivered (commit `124d17e`) with `rgb-std` v0.12.0-rc.3 + `bp-esplora` v0.12.0-rc.3 behind `rgb-native` feature. Phase 2 (ContractVerify, consignment) blocked on rgb-std ecosystem stabilization.
 - **PR #233 (G-1389)**: Tech debt reduction merged (`5e6613e`). Includes Fedimint/Citrea/Strata adapters, Redis coordination module, auth middleware timing stubs, reqwest 0.13 upgrade, dead_code cleanup. Citrea adapter moved from `bitcoin/` to `ntt/`.
 - **PR #228 (G-1385)**: RGB stash resolver merged (`124d17e`), retained through rebase.
-- **Hardening Stubs**: CON-1276 requirements (Redis auth, token expiry) exist as code comments but are not yet implemented. Redis dep + coordination module now present (from #233).
+- **Hardening Stubs**: ✅ CON-1276 (Redis AUTH + token expiry) now fully implemented (commit `2ef6df1`). Adds `REDIS_USERNAME`/`REDIS_PASSWORD`/`TOKEN_TTL_SECONDS` env vars, explicit AUTH+PING at Redis init, uptime-based token expiry in auth middleware.
 - **UCV-1**: Fully implemented and unifying Babylon, BitVM2, Liquid, Rootstock, and RGB.
 - **CI status**: All workflows green on main. `cargo-audit.yml` augmented with `.cargo/audit.toml` ignore list for transitive `rustls-webpki` CVEs.
 
 ### Protocol Implementations (2026-07-05)
 | Protocol | Status | File |
 |---|---|---|
-| NWC NIP-47 | ✅ Integrated | `internal/api/src/nwc_backend.rs` |
-| Rootstock | ✅ Integrated | `internal/engine/src/ntt/rootstock_adapter.rs` |
-| Babylon | ✅ Integrated | `internal/engine/src/bitcoin/babylon_adapter.rs` |
-| BitVM2 | ✅ Integrated | `internal/engine/src/bitcoin/bitvm_adapter.rs` |
-| RGB | ✅ v0.12 + Stash (P1) | `internal/engine/src/bitcoin/rgb_adapter.rs` + `rgb_native.rs` + `rgb_stash.rs` |
-| Liquid | ✅ Integrated | `internal/engine/src/bitcoin/liquid_adapter.rs` |
-| Citrea | ✅ Integrated | `internal/engine/src/ntt/citrea_adapter.rs` |
-| RISC Zero | 🟡 Unwired | `internal/engine/src/bitcoin/risc0_verifier.rs` |
-| Fedimint | ✅ Integrated | `internal/engine/src/bitcoin/fedimint_adapter.rs` |
-| Strata | ✅ Testnet | `internal/engine/src/bitcoin/strata_adapter.rs` |
-| BitVMX GC | 🟡 Pending 2026 | N/A |
-| BRICS Pay | 🟡 Research only | N/A |
-| mBridge | 🟡 Research only | N/A |
+| NWC NIP-47 | тЬЕ Integrated | `internal/api/src/nwc_backend.rs` |
+| Rootstock | тЬЕ Integrated | `internal/engine/src/ntt/rootstock_adapter.rs` |
+| Babylon | тЬЕ Integrated | `internal/engine/src/bitcoin/babylon_adapter.rs` |
+| BitVM2 | тЬЕ Integrated | `internal/engine/src/bitcoin/bitvm_adapter.rs` |
+| RGB | тЬЕ v0.12 + Stash (P1) | `internal/engine/src/bitcoin/rgb_adapter.rs` + `rgb_native.rs` + `rgb_stash.rs` |
+| Liquid | тЬЕ Integrated | `internal/engine/src/bitcoin/liquid_adapter.rs` |
+| Citrea | тЬЕ Integrated | `internal/engine/src/ntt/citrea_adapter.rs` |
+| RISC Zero | ЁЯЯб Unwired | `internal/engine/src/bitcoin/risc0_verifier.rs` |
+| Fedimint | тЬЕ Integrated | `internal/engine/src/bitcoin/fedimint_adapter.rs` |
+| Strata | тЬЕ Testnet | `internal/engine/src/bitcoin/strata_adapter.rs` |
+| BitVMX GC | ЁЯЯб Pending 2026 | N/A |
+| BRICS Pay | ЁЯЯб Research only | N/A |
+| mBridge | ЁЯЯб Research only | N/A |
 
 ## Core Philosophy
 - **Sovereignty**: All code must prioritize non-custodial logic and user sovereignty.
@@ -60,20 +60,20 @@ Before submitting changes, you MUST:
 
 ## CI/CD Pipelines
 - **rust-ci.yml**: Format, clippy, test (incl. mock-integrations), release build.
-- **lightning-coverage.yml**: Lightning scoped coverage gate (≥90%).
+- **lightning-coverage.yml**: Lightning scoped coverage gate (тЙе90%).
 - **cargo-audit.yml**: Weekly dependency audit.
 - **secret-scan.yml**: Gitleaks secret scanning.
 - **node-ci.yml**: TypeScript build + vitest (client-sdk only).
 - **release.yml**: Tag-triggered GitHub Release.
 
 ## Known Gaps (2026-07-05 Update)
-- ✅ #228: RGB stash resolver (G-1385 P1) — merged `124d17e`
-- ✅ #233 (G-1389): Tech debt reduction — merged `5e6613e`
-- 🟡 #189: BitVMX GC adapter — pending 2026 garbled circuits release
-- 🟡 #231: BRICS Pay research — DCMS settlement rail classification
-- 🟡 #232: mBridge research — BIS multi-CBDC DLT assessment
-- 🟡 G-1276: Enforce authenticated Redis and token expiry — **NEXT priority**
-- 🟡 G-1380: Add SBOM and Provenance to release workflow
+- [x] #228: RGB stash resolver (G-1385 P1) — merged `124d17e`
+- [x] #233 (G-1389): Tech debt reduction — merged `5e6613e`
+- [x] G-1276: Redis AUTH + token expiry — merged `2ef6df1`
+- [ ] #189: BitVMX GC adapter — pending 2026 garbled circuits release
+- [ ] #231: BRICS Pay research — DCMS settlement rail classification
+- [ ] #232: mBridge research — BIS multi-CBDC DLT assessment
+- [ ] G-1380: Add SBOM and Provenance to release workflow — **NEXT priority**
 
 Protocol drift resolved — 10 of 10 identified protocols now have adapters.
 All pending gaps have corresponding GitHub issues for autonomous pickup.
