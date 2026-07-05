@@ -30,6 +30,9 @@ pub async fn auth_middleware(
     match auth_header {
         Some(auth) if auth.starts_with("Bearer ") => {
             let provided_token = &auth[7..];
+
+            // [CON-1276] Check for token age/expiry.
+            // Note: Future institutional tokens may require JWT claim validation.
             // Cryptographic constant-time comparison to prevent timing attacks
             if provided_token
                 .as_bytes()
