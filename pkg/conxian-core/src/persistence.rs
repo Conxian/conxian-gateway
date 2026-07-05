@@ -212,7 +212,7 @@ impl crate::OfflineQueue for EncryptedOfflineQueue {
         let conn = self.conn.lock().expect("lock poisoned");
 
         conn.execute(
-            "DELETE FROM webhook_replay_keys WHERE expires_at <= ?1",
+            "DELETE FROM webhook_replay_keys WHERE expires_at < ?1",
             params![now_i64],
         )
         .map_err(|e| ConxianError::Persistence(format!("Replay cleanup failed: {}", e)))?;
@@ -224,7 +224,7 @@ impl crate::OfflineQueue for EncryptedOfflineQueue {
                  ON CONFLICT(replay_key) DO UPDATE SET
                     expires_at = excluded.expires_at,
                     created_at = excluded.created_at
-                 WHERE webhook_replay_keys.expires_at <= excluded.created_at",
+                 WHERE webhook_replay_keys.expires_at < excluded.created_at",
                 params![replay_key, expires_at_i64, now_i64],
             )
             .map_err(|e| ConxianError::Persistence(format!("Replay claim failed: {}", e)))?;
