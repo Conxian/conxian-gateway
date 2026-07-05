@@ -1,4 +1,5 @@
-use crate::stacks::StacksRpc;
+use crate::coordination::RedisCoordinator;
+use crate::stacks::rpc::StacksRpc;
 use conxian_core::{ConxianResult, Persistence, SharedState};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -9,6 +10,7 @@ pub struct StacksListener<R: StacksRpc> {
     rpc: R,
     state: SharedState,
     persistence: Arc<dyn Persistence>,
+    coordinator: Option<Arc<RedisCoordinator>>,
     last_height: u64,
     sync_interval: u64,
 }
@@ -18,6 +20,7 @@ impl<R: StacksRpc> StacksListener<R> {
         rpc: R,
         state: SharedState,
         persistence: Arc<dyn Persistence>,
+        coordinator: Option<Arc<RedisCoordinator>>,
         sync_interval: u64,
     ) -> Self {
         let last_height = persistence.load().map(|s| s.stacks_height).unwrap_or(0);
@@ -25,6 +28,7 @@ impl<R: StacksRpc> StacksListener<R> {
             rpc,
             state,
             persistence,
+            coordinator,
             last_height,
             sync_interval,
         }
@@ -41,20 +45,32 @@ impl<R: StacksRpc> StacksListener<R> {
                 if info.height > self.last_height || self.last_height == 0 {
                     info!("New Stacks block processed: height={}, network={}, epoch={}, burn_height={}", info.height, info.network, info.epoch, info.burn_block_height);
 
-                    let mut state = self.state.write().expect("lock poisoned");
-                    state.stacks.height = info.height;
-                    state.stacks.status = "synced".to_string();
-                    state.stacks.last_updated = now;
-                    state.stacks.last_sync_time = now;
-                    state.stacks.network = info.network;
-                    state.stacks.mode = Some("nakamoto".to_string());
-                    state.stacks.epoch = Some(info.epoch);
-                    state.stacks.burn_block_height = Some(info.burn_block_height);
+                    // Publish to Redis for cross-gateway coordination
+                    if let Some(ref coord) = self.coordinator {
+                        let _ = coord
+                            .publish_state_root("stacks", &info.height.to_string())
+                            .await;
+                    }
+
+                    {
+                        let mut state = self.state.write().expect("lock poisoned");
+                        state.stacks.height = info.height;
+                        state.stacks.status = "synced".to_string();
+                        state.stacks.last_updated = now;
+                        state.stacks.last_sync_time = now;
+                        state.stacks.network = info.network;
+                        state.stacks.mode = Some("nakamoto".to_string());
+                        state.stacks.epoch = Some(info.epoch);
+                        state.stacks.burn_block_height = Some(info.burn_block_height);
+                    }
 
                     // Save persistence
                     let mut p_state = self.persistence.load().unwrap_or_default();
-                    p_state.bitcoin_height = state.bitcoin.height;
-                    p_state.stacks_height = info.height;
+                    {
+                        let state = self.state.read().expect("lock poisoned");
+                        p_state.bitcoin_height = state.bitcoin.height;
+                        p_state.stacks_height = info.height;
+                    }
                     let _ = self.persistence.save(&p_state);
 
                     self.last_height = info.height;
@@ -141,7 +157,7 @@ mod tests {
         let state = Arc::new(RwLock::new(GatewayState::default()));
         let rpc = SimulatedStacksRpc { height: 555 };
         let persistence = Arc::new(SimulatedPersistence);
-        let mut listener = StacksListener::new(rpc, state.clone(), persistence, 30);
+        let mut listener = StacksListener::new(rpc, state.clone(), persistence, None, 30);
 
         listener.sync_once().await.unwrap();
 

@@ -112,6 +112,7 @@ fn setup_app_with_lightning(state: SharedState, lightning: Arc<LightningAdapter>
     });
 
     let app_state = AppState {
+        coordinator: None,
         shared: state,
         fiat,
         a2p,

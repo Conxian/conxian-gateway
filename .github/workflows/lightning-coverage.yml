@@ -37,10 +37,10 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Run clippy
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings -A deprecated
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
       - name: Enforce Lightning scoped coverage gate
-        run: ./scripts/lightning_coverage_gate.sh 90 || echo 'Coverage below threshold (non-blocking)'
+        run: ./scripts/lightning_coverage_gate.sh 90
 
       - name: Publish Lightning coverage summary
         if: always()

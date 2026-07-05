@@ -1,4 +1,5 @@
 use crate::bitcoin::BitcoinRpc;
+use crate::coordination::RedisCoordinator;
 use conxian_core::{ConxianResult, Persistence, SharedState};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -9,6 +10,7 @@ pub struct BitcoinListener<R: BitcoinRpc> {
     rpc: R,
     state: SharedState,
     persistence: Arc<dyn Persistence>,
+    coordinator: Option<Arc<RedisCoordinator>>,
     last_height: u64,
     network: Option<String>,
     sync_interval: u64,
@@ -19,6 +21,7 @@ impl<R: BitcoinRpc> BitcoinListener<R> {
         rpc: R,
         state: SharedState,
         persistence: Arc<dyn Persistence>,
+        coordinator: Option<Arc<RedisCoordinator>>,
         sync_interval: u64,
     ) -> Self {
         let last_height = persistence.load().map(|s| s.bitcoin_height).unwrap_or(0);
@@ -26,6 +29,7 @@ impl<R: BitcoinRpc> BitcoinListener<R> {
             rpc,
             state,
             persistence,
+            coordinator,
             last_height,
             network: None,
             sync_interval,
@@ -60,20 +64,31 @@ impl<R: BitcoinRpc> BitcoinListener<R> {
                                     "New Bitcoin block processed: height={}, hash={}, network={:?}",
                                     block.height, block.hash, self.network
                                 );
-                                let mut state = self.state.write().expect("lock poisoned");
-                                state.bitcoin.height = block.height;
-                                state.bitcoin.last_updated = block.timestamp;
-                                state.bitcoin.last_sync_time = now;
-                                state.bitcoin.status = "synced".to_string();
-                                state.bitcoin.best_block_hash = block.hash.clone();
-                                if let Some(ref n) = self.network {
-                                    state.bitcoin.network = n.clone();
+
+                                // Publish to Redis for cross-gateway coordination
+                                if let Some(ref coord) = self.coordinator {
+                                    let _ = coord.publish_state_root("bitcoin", &block.hash).await;
+                                }
+
+                                {
+                                    let mut state = self.state.write().expect("lock poisoned");
+                                    state.bitcoin.height = block.height;
+                                    state.bitcoin.last_updated = block.timestamp;
+                                    state.bitcoin.last_sync_time = now;
+                                    state.bitcoin.status = "synced".to_string();
+                                    state.bitcoin.best_block_hash = block.hash.clone();
+                                    if let Some(ref n) = self.network {
+                                        state.bitcoin.network = n.clone();
+                                    }
                                 }
 
                                 // Save persistence
                                 let mut p_state = self.persistence.load().unwrap_or_default();
-                                p_state.bitcoin_height = block.height;
-                                p_state.stacks_height = state.stacks.height;
+                                {
+                                    let state = self.state.read().expect("lock poisoned");
+                                    p_state.bitcoin_height = block.height;
+                                    p_state.stacks_height = state.stacks.height;
+                                }
                                 let _ = self.persistence.save(&p_state);
                             }
                             Err(e) => {
@@ -86,26 +101,46 @@ impl<R: BitcoinRpc> BitcoinListener<R> {
                 } else if current_height == self.last_height {
                     match self.rpc.get_block_info(current_height).await {
                         Ok(block) => {
-                            let mut state = self.state.write().expect("lock poisoned");
-                            if state.bitcoin.best_block_hash != block.hash {
+                            let (changed, best_hash) = {
+                                let state = self.state.read().expect("lock poisoned");
+                                (
+                                    state.bitcoin.best_block_hash != block.hash,
+                                    state.bitcoin.best_block_hash.clone(),
+                                )
+                            };
+
+                            if changed {
                                 info!(
                                     "Bitcoin tip change detected at height {}: {} -> {}",
-                                    block.height, state.bitcoin.best_block_hash, block.hash
+                                    block.height, best_hash, block.hash
                                 );
-                                state.bitcoin.height = block.height;
-                                state.bitcoin.last_updated = block.timestamp;
-                                state.bitcoin.last_sync_time = now;
-                                state.bitcoin.status = "synced".to_string();
-                                state.bitcoin.best_block_hash = block.hash;
-                                if let Some(ref n) = self.network {
-                                    state.bitcoin.network = n.clone();
+
+                                // Publish to Redis for cross-gateway coordination
+                                if let Some(ref coord) = self.coordinator {
+                                    let _ = coord.publish_state_root("bitcoin", &block.hash).await;
+                                }
+
+                                {
+                                    let mut state = self.state.write().expect("lock poisoned");
+                                    state.bitcoin.height = block.height;
+                                    state.bitcoin.last_updated = block.timestamp;
+                                    state.bitcoin.last_sync_time = now;
+                                    state.bitcoin.status = "synced".to_string();
+                                    state.bitcoin.best_block_hash = block.hash;
+                                    if let Some(ref n) = self.network {
+                                        state.bitcoin.network = n.clone();
+                                    }
                                 }
 
                                 let mut p_state = self.persistence.load().unwrap_or_default();
-                                p_state.bitcoin_height = state.bitcoin.height;
-                                p_state.stacks_height = state.stacks.height;
+                                {
+                                    let state = self.state.read().expect("lock poisoned");
+                                    p_state.bitcoin_height = state.bitcoin.height;
+                                    p_state.stacks_height = state.stacks.height;
+                                }
                                 let _ = self.persistence.save(&p_state);
                             } else {
+                                let mut state = self.state.write().expect("lock poisoned");
                                 state.bitcoin.last_sync_time = now;
                             }
                         }
@@ -190,7 +225,7 @@ mod tests {
         let state = Arc::new(RwLock::new(GatewayState::default()));
         let rpc = SimulatedBitcoinRpc { height: 100 };
         let persistence = Arc::new(SimulatedPersistence);
-        let mut listener = BitcoinListener::new(rpc, state.clone(), persistence, 10);
+        let mut listener = BitcoinListener::new(rpc, state.clone(), persistence, None, 10);
 
         listener.sync_once().await.unwrap();
 

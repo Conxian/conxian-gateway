@@ -92,7 +92,8 @@ async fn bitcoin_listener_reorg_simulation_updates_tip_hash_at_same_height() {
     let rpc = ReorgSimulationRpc::new(700_000, "000000000000000000-tip-a", 1_710_000_001);
     let persistence = Arc::new(InMemoryPersistence::new());
 
-    let mut listener = BitcoinListener::new(rpc.clone(), state.clone(), persistence.clone(), 30);
+    let mut listener =
+        BitcoinListener::new(rpc.clone(), state.clone(), persistence.clone(), None, 30);
     listener.sync_once().await.unwrap();
 
     {

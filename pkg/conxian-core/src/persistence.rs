@@ -107,10 +107,10 @@ impl EncryptedOfflineQueue {
             .as_nanos();
         let now_bytes = now.to_le_bytes();
         nonce_bytes.copy_from_slice(&now_bytes[..12]);
-        let nonce = Nonce::from(nonce_bytes);
+        let nonce = Nonce::from_slice(&nonce_bytes);
 
         let ciphertext = cipher
-            .encrypt(&nonce, data)
+            .encrypt(nonce, data)
             .map_err(|e| ConxianError::Security(format!("Encryption failed: {}", e)))?;
 
         Ok((ciphertext, nonce_bytes))
@@ -119,11 +119,10 @@ impl EncryptedOfflineQueue {
     fn decrypt(&self, ciphertext: &[u8], nonce_bytes: &[u8]) -> ConxianResult<Vec<u8>> {
         let cipher = Aes256Gcm::new_from_slice(&self.encryption_key)
             .map_err(|e| ConxianError::Security(format!("Cipher init failed: {}", e)))?;
-        let nonce = Nonce::try_from(nonce_bytes)
-            .map_err(|_| ConxianError::Security("Invalid nonce length".to_string()))?;
+        let nonce = Nonce::from_slice(nonce_bytes);
 
         cipher
-            .decrypt(&nonce, ciphertext)
+            .decrypt(nonce, ciphertext)
             .map_err(|e| ConxianError::Security(format!("Decryption failed: {}", e)))
     }
 }

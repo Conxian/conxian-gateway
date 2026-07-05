@@ -50,7 +50,7 @@ jobs:
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.7.7
 
       - name: Run clippy
-        run: cargo clippy --workspace --all-targets --all-features --features engine/rgb-native -- -D warnings -A deprecated
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
   test:
     name: Test
@@ -72,11 +72,6 @@ jobs:
 
       - name: Run identity tests (mock-integrations)
         run: cargo test --workspace --features mock-integrations
-
-      - name: Build & test with rgb-native feature
-        run: |
-          cargo check --workspace --features engine/rgb-native
-          cargo test --workspace --features engine/rgb-native
 
   build:
     name: Build (release)

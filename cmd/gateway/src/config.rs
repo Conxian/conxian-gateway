@@ -1,4 +1,4 @@
-use std::env;
+use std::{env, panic};
 
 const FIAT_WEBHOOK_SECRET_SENTINEL: &str = "sentinel_FIAT_WEBHOOK_SECRET";
 const SETTLEMENT_INGRESS_SECRET_SENTINEL: &str = "sentinel_SETTLEMENT_INGRESS_SECRET";
@@ -12,10 +12,9 @@ const BANXA_API_KEY_SENTINEL: &str = "sentinel_BANXA_API_KEY";
 const BANXA_SECRET_SENTINEL: &str = "sentinel_BANXA_SECRET";
 const INFOBIP_API_KEY_SENTINEL: &str = "sentinel_INFOBIP_API_KEY";
 const HMAC_SECRET_SENTINEL: &str = "sentinel_HMAC_SECRET";
-const ORACLE_PUBKEY_SENTINEL: &str = "sentinel_ORACLE_PUBKEY";
 const OFFLINE_QUEUE_SECRET_SENTINEL: &str = "sentinel_OFFLINE_QUEUE_SECRET";
+const REDIS_URL_SENTINEL: &str = "sentinel_REDIS_URL";
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Network {
     Mainnet,
@@ -48,7 +47,7 @@ impl Network {
     }
 }
 
-#[allow(dead_code)]
+#[derive(Debug, Clone)]
 pub struct Config {
     pub bitcoin_rpc_url: String,
     pub bitcoin_rpc_user: String,
@@ -75,17 +74,14 @@ pub struct Config {
     pub hmac_secret: String,
     pub fiat_webhook_secret: String,
     pub settlement_ingress_secret: String,
-    pub alex_api_url: String,
-    pub oracle_pubkey: String,
     pub offline_queue_secret: String,
     pub rgb_mode: conxian_core::RolloutMode,
     pub rgb_node_url: String,
     pub network: Network,
+    pub alex_api_url: String,
     pub liquid_rpc_url: String,
     pub rootstock_rpc_url: String,
-    pub citrea_rpc_url: String,
-    pub fedimint_guardian_url: String,
-    pub strata_rpc_url: String,
+    pub redis_url: Option<String>,
 }
 
 impl Config {
@@ -118,9 +114,17 @@ impl Config {
         let banxa_secret = Self::get_mandatory_env("BANXA_SECRET", BANXA_SECRET_SENTINEL);
         let infobip_api_key = Self::get_mandatory_env("INFOBIP_API_KEY", INFOBIP_API_KEY_SENTINEL);
         let hmac_secret = Self::get_mandatory_env("HMAC_SECRET", HMAC_SECRET_SENTINEL);
-        let oracle_pubkey = Self::get_mandatory_env("ORACLE_PUBKEY", ORACLE_PUBKEY_SENTINEL);
         let offline_queue_secret =
             Self::get_mandatory_env("OFFLINE_QUEUE_SECRET", OFFLINE_QUEUE_SECRET_SENTINEL);
+        let redis_url = env::var("REDIS_URL").ok().and_then(|val| {
+            let val = val.trim().to_string();
+            if val.is_empty() || val == REDIS_URL_SENTINEL {
+                None
+            } else {
+                Some(val)
+            }
+        });
+
         let rgb_mode = match env::var("RGB_MODE")
             .unwrap_or_else(|_| "disabled".to_string())
             .to_lowercase()
@@ -135,14 +139,6 @@ impl Config {
             env::var("LIQUID_RPC_URL").unwrap_or_else(|_| "http://localhost:18843".to_string());
         let rootstock_rpc_url =
             env::var("ROOTSTOCK_RPC_URL").unwrap_or_else(|_| "http://localhost:4444".to_string());
-        let citrea_rpc_url =
-            env::var("CITREA_RPC_URL").unwrap_or_else(|_| "https://rpc.citrea.xyz".to_string());
-
-        let fedimint_guardian_url = env::var("FEDIMINT_GUARDIAN_URL")
-            .unwrap_or_else(|_| "http://localhost:18173".to_string());
-
-        let strata_rpc_url = env::var("STRATA_RPC_URL")
-            .unwrap_or_else(|_| "https://rpc.testnet.alpenlabs.io".to_string());
 
         let (btc_url, stx_url, alex_url) = match network {
             Network::Mainnet => (
@@ -217,7 +213,6 @@ impl Config {
             hmac_secret,
             fiat_webhook_secret,
             settlement_ingress_secret,
-            oracle_pubkey,
             offline_queue_secret,
             rgb_mode,
             rgb_node_url: env::var("RGB_NODE_URL")
@@ -226,9 +221,7 @@ impl Config {
             alex_api_url: env::var("ALEX_API_URL").unwrap_or(alex_url),
             liquid_rpc_url,
             rootstock_rpc_url,
-            citrea_rpc_url,
-            fedimint_guardian_url,
-            strata_rpc_url,
+            redis_url,
         }
     }
 }
@@ -272,6 +265,7 @@ mod tests {
                 "MEMPOOL_MAX_FEE_BUMP_ATTEMPTS",
                 "MEMPOOL_MAX_FEE_RATE_SAT_VB",
                 "MEMPOOL_MIN_BUMP_INCREMENT_SAT_VB",
+                "REDIS_URL",
             ];
             let vars = keys.into_iter().map(|k| (k, env::var(k).ok())).collect();
             Self { vars }
@@ -299,7 +293,6 @@ mod tests {
         env::set_var("BANXA_SECRET", "banxa-secret");
         env::set_var("INFOBIP_API_KEY", "infobip-key");
         env::set_var("HMAC_SECRET", "hmac-secret");
-        env::set_var("ORACLE_PUBKEY", "oracle-key");
         env::set_var(
             "OFFLINE_QUEUE_SECRET",
             "offline-queue-secret-that-is-at-least-32-bytes-long-for-prod",
