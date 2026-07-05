@@ -3,7 +3,16 @@ use conxian_core::{ContractState, ConxianResult, RgbAdapter, RolloutMode};
 use serde_json::{json, Value};
 use tracing::{error, info, warn};
 
-/// RGB Protocol adapter with optional rgb-lib v0.3.0-beta.6 integration
+use super::rgb_native;
+
+/// RGB Protocol adapter with optional rgb-core v0.12 native integration.
+///
+/// Three rollout modes:
+/// - Disabled: All operations return None/false
+/// - Shadow:  Tries HTTP node → falls back to simulation on failure
+/// - Active:  Tries rgb-native (if enabled) → HTTP node → simulation fallback
+///
+/// Enable native verification with: `cargo build --features rgb-native`
 pub struct NodeRgbAdapter {
     pub mode: RolloutMode,
     pub node_url: String,
@@ -85,6 +94,32 @@ impl RgbAdapter for NodeRgbAdapter {
                     self.mode, contract_id
                 );
 
+                // In Active mode, try native rgb-core lookup first
+                if matches!(self.mode, RolloutMode::Active) {
+                    match rgb_native::lookup_contract_native(contract_id) {
+                        Ok(Some(data)) => {
+                            info!("RGB native lookup succeeded for: {}", contract_id);
+                            return Ok(Some(ContractState {
+                                contract_id: contract_id.to_string(),
+                                schema_id: data["schema_id"]
+                                    .as_str()
+                                    .unwrap_or("urn:rgb:schema:fungible")
+                                    .to_string(),
+                                state_data: data,
+                            }));
+                        }
+                        Ok(None) => {
+                            info!("RGB native lookup returned None for: {}", contract_id);
+                        }
+                        Err(e) => {
+                            warn!(
+                                error = %e,
+                                "RGB native lookup unavailable, falling back to HTTP node"
+                            );
+                        }
+                    }
+                }
+
                 // Attempt real node lookup
                 let path = format!("/contract/{}", contract_id);
                 let node_result = self.fetch_from_node(&path).await;
@@ -134,6 +169,26 @@ impl RgbAdapter for NodeRgbAdapter {
                     "RGB transition verification (mode={:?}) for: {}",
                     self.mode, transition_id
                 );
+
+                // In Active mode, try native rgb-core verification first
+                if matches!(self.mode, RolloutMode::Active) {
+                    match rgb_native::verify_transition_native(transition_id) {
+                        Ok(true) => {
+                            info!("RGB native verification passed for: {}", transition_id);
+                            return Ok(true);
+                        }
+                        Ok(false) => {
+                            warn!("RGB native verification returned false for: {}", transition_id);
+                            return Ok(false);
+                        }
+                        Err(e) => {
+                            warn!(
+                                error = %e,
+                                "RGB native verification unavailable, falling back to HTTP node"
+                            );
+                        }
+                    }
+                }
 
                 let path = format!("/verify/{}", transition_id);
                 match self.fetch_from_node(&path).await {
