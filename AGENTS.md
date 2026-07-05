@@ -72,8 +72,8 @@ Before submitting changes, you MUST:
 - [x] G-1276: Redis AUTH + token expiry — merged `2ef6df1`
 - [x] G-1380: SBOM and Provenance to release workflow — merged `19181c5`
 - [ ] #189: BitVMX GC adapter — pending 2026 garbled circuits release (see research below)
-- [ ] #231: BRICS Pay — DCMS settlement rail (research-only, no adapter needed)
-- [ ] #232: mBridge — BIS multi-CBDC DLT (research-only, observation only)
+- [x] #231: BRICS Pay — DCMS settlement rail (closed — research complete, no adapter needed)
+- [x] #232: mBridge — BIS multi-CBDC DLT (closed — research complete, observation only)
 
 Protocol drift resolved — 10 of 10 identified protocols now have adapters.
 All implementation-level gaps are closed. Remaining items are research/policy only.
