@@ -20,7 +20,7 @@ chrono = { workspace = true }
 serde_jcs = "0.2.0"
 uuid = { version = "1.23.2", features = ["v4"] }
 tokio = { workspace = true, features = ["full"] }
-quick-xml = "0.40.1"
+quick-xml = "0.41.0"
 hmac = "0.13.0"
 sha2 = "0.11.0"
 risc0-zkvm = { version = "5.0.0-rc.1", default-features = false, features = ["std"] }
