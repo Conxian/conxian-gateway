@@ -9,19 +9,22 @@ You are working on the **Conxian Gateway**, an institutional-grade Rust middlewa
 - **UCV-1**: Fully implemented and unifying Babylon, BitVM2, Liquid, Rootstock, and RGB.
 - **CI status**: All 6 workflows green on main.
 
-### Protocol Implementations (Audit 2026-07-05)
+### Protocol Implementations (Update 2026-07-05)
 | Protocol | Status | File |
 |---|---|---|
 | NWC NIP-47 | ✅ Integrated | `internal/api/src/nwc_backend.rs` |
 | Rootstock | ✅ Integrated | `internal/engine/src/ntt/rootstock_adapter.rs` |
 | Babylon | ✅ Integrated | `internal/engine/src/bitcoin/babylon_adapter.rs` |
 | BitVM2 | ✅ Integrated | `internal/engine/src/bitcoin/bitvm_adapter.rs` |
-| RGB | ✅ Integrated | `internal/engine/src/bitcoin/rgb_adapter.rs` |
+| RGB | ✅ v0.12 Native | `internal/engine/src/bitcoin/rgb_adapter.rs` + `rgb_native.rs` |
 | Liquid | ✅ Integrated | `internal/engine/src/bitcoin/liquid_adapter.rs` |
+| Citrea | ✅ Integrated | `internal/engine/src/bitcoin/citrea_adapter.rs` |
 | RISC Zero | 🟡 Unwired | `internal/engine/src/bitcoin/risc0_verifier.rs` |
 | Fedimint | 🔴 MISSING | N/A |
-| Citrea | 🔴 MISSING | N/A |
 | Strata | 🔴 MISSING | N/A |
+| BitVMX GC | 🟡 Pending 2026 | N/A |
+| BRICS Pay | 🟡 Research only | N/A |
+| mBridge | 🟡 Research only | N/A |
 
 ## Core Philosophy
 - **Sovereignty**: All code must prioritize non-custodial logic and user sovereignty.
@@ -63,7 +66,8 @@ Before submitting changes, you MUST:
 ## Known Gaps (2026-07-05 Update)
 - 🔴 G-1: BitVM3 proof verification (garbled circuits) - Research only.
 - 🔴 G-16: Fedimint adapter missing implementation.
-- 🔴 G-08: Citrea and Strata adapters missing implementation.
+- 🔴 G-08: Strata adapter missing implementation (awaiting mainnet Q3 2026).
+- 🟡 G-1385: Full rgb-std stash resolver integration (rgb-native is format-validation only).
 - 🟡 G-1276: Enforce authenticated Redis and token expiry (documented stubs).
 - 🟡 G-1380: Add SBOM and Provenance to release workflow.
 - 🟡 G-1389: Reduce technical debt (dead_code suppressions).
