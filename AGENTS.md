@@ -70,13 +70,62 @@ Before submitting changes, you MUST:
 - [x] #228: RGB stash resolver (G-1385 P1) — merged `124d17e`
 - [x] #233 (G-1389): Tech debt reduction — merged `5e6613e`
 - [x] G-1276: Redis AUTH + token expiry — merged `2ef6df1`
-- [ ] #189: BitVMX GC adapter — pending 2026 garbled circuits release
-- [ ] #231: BRICS Pay research — DCMS settlement rail classification
-- [ ] #232: mBridge research — BIS multi-CBDC DLT assessment
 - [x] G-1380: SBOM and Provenance to release workflow — merged `19181c5`
+- [ ] #189: BitVMX GC adapter — pending 2026 garbled circuits release (see research below)
+- [ ] #231: BRICS Pay — DCMS settlement rail (research-only, no adapter needed)
+- [ ] #232: mBridge — BIS multi-CBDC DLT (research-only, observation only)
 
 Protocol drift resolved — 10 of 10 identified protocols now have adapters.
-All pending gaps have corresponding GitHub issues for autonomous pickup.
+All implementation-level gaps are closed. Remaining items are research/policy only.
+
+## Gap Research (2026-07-05 Refresh)
+
+### #189: BitVMX GC (Garbled Circuits)
+- **BitVMX-CPU**: Open source (Rust, MIT, FairgateLabs) — RISC-V emulation + Bitcoin script
+- **BitVMX-GC**: Targeting 2026 release, currently closed source (Liam Eagen, Feb 2026)
+- **GOATNetwork/bitvm2-gc**: Open source reference — Groth16 + DV-SNARK via GC, 10B gates
+- **BitVM3 paper** (Robin Linus, Jul 2025): Theoretical foundation
+- **Conxian posture**: Evaluate BitVMX-CPU now; monitor GOATNetwork/bitvm2-gc for POC; wait for BitVMX-GC public SDK
+- **Citrea Groth16 adapter already shipped** (#192, `8d82062`) — same recursive proof pattern expected
+
+### #231: BRICS Pay (DCMS Settlement)
+- **DCMS spec v1.0**: 20K msgs/sec, distributed consensus, open-source planned
+- **Timeline**: Pilots in Russia/India/South Africa (H1 2025), BRICS+ connectivity Q4 2026, CBDC integration Q3 2027
+- **Classification**: Messaging standard, NOT a blockchain protocol — no adapter needed
+- **Conxian posture**: Settlement rail identifier only; compliance pipeline (#203, #204) handles jurisdictional routing
+- **UNIT ecosystem**: Gold-pegged + BRICS currency basket may need asset classification
+
+### #232: mBridge (BIS Multi-CBDC DLT)
+- **Scale**: $55.49B across 4,047 transactions; 95% in e-CNY
+- **Architecture**: Permissioned DLT (HotStuff+), EVM-compatible, ISO 20022 payloads
+- **Governance**: BIS exited Oct 2024; now PBOC/HKMA/BOT/CBUAE/SAMA consortium
+- **Classification**: Permissioned-governance platform requiring central bank membership
+- **Conxian posture**: Observer/compliance pass-through only; no adapter needed
+- **Re-evaluate** if BIS/mBridge publishes public observer API
+
+## OpenHands SDK & Automation Capabilities
+
+### SDK (Python)
+- **Install**: `pip install openhands-sdk openhands-tools`
+- **Core**: `Agent`, `Conversation`, `LLM`, `Tool`, `Skill`, `Workspace`
+- **Key features**: File-based sub-agents, MCP integration, goal completion loops, agent delegation, persistence, iteration with critic, browser use, OpenTelemetry tracing
+- **Remote**: Agent server (local, Docker, API sandbox, Apptainer, Cloud workspace)
+- **GitHub integration**: PR review, TODO management, assign reviews
+
+### Automations (Cloud/CLI)
+- **Triggers**: Cron schedules or webhook events (GitHub, Linear, Slack, Stripe, custom)
+- **Presets**: Prompt preset (natural language tasks) and Plugin preset (with extensions)
+- **Custom scripts**: Deterministic Python with no LLM (for high-frequency/cost-sensitive tasks)
+- **Repository cloning**: Auto-loads AGENTS.md and `.agents/skills/` from target repos
+- **State persistence**: KV store for polling automations tracking last-processed state
+- **Webhook alternatives**: Cron polling when deployment is not publicly reachable
+
+### Automation Ideas for Conxian Gateway
+1. **Daily CI monitor**: Cron→prompt preset to check all 6 workflows and report status to Slack
+2. **Weekly dependency audit**: Cron→prompt preset to run `cargo audit` and file issues for new CVEs
+3. **PR review agent**: Event→on `pull_request.labeled` with `openhands` label → auto-review
+4. **Research issue updater**: Cron→prompt preset to refresh #189/#231/#232 research monthly
+5. **Release note generator**: Event→on `release.published` → generate changelog from git history
 
 ## Ethical Alignment
 The Conxian Protocol is built to empower individuals and institutions within the Stacks/Bitcoin ecosystem. The dual-stack settlement architecture supports financial sovereignty across both Western and BRICS-aligned jurisdictions. Avoid any "dark patterns" or custodial shortcuts.
