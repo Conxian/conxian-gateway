@@ -83,6 +83,7 @@ pub struct Config {
     pub network: Network,
     pub liquid_rpc_url: String,
     pub rootstock_rpc_url: String,
+    pub citrea_rpc_url: String,
 }
 
 impl Config {
@@ -132,6 +133,8 @@ impl Config {
             env::var("LIQUID_RPC_URL").unwrap_or_else(|_| "http://localhost:18843".to_string());
         let rootstock_rpc_url =
             env::var("ROOTSTOCK_RPC_URL").unwrap_or_else(|_| "http://localhost:4444".to_string());
+        let citrea_rpc_url = env::var("CITREA_RPC_URL")
+            .unwrap_or_else(|_| "https://rpc.citrea.xyz".to_string());
 
         let (btc_url, stx_url, alex_url) = match network {
             Network::Mainnet => (
@@ -215,6 +218,7 @@ impl Config {
             alex_api_url: env::var("ALEX_API_URL").unwrap_or(alex_url),
             liquid_rpc_url,
             rootstock_rpc_url,
+            citrea_rpc_url,
         }
     }
 }

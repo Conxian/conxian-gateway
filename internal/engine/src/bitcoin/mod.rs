@@ -15,5 +15,7 @@ pub mod babylon_adapter;
 pub use babylon_adapter::BabylonAdapter;
 pub mod bitvm_adapter;
 pub use bitvm_adapter::BitVmAdapter;
+pub mod citrea_adapter;
+pub use citrea_adapter::CitreaAdapter;
 pub mod risc0_verifier;
 pub use risc0_verifier::{Risc0Mode, Risc0StfVerifier, Risc0VerificationReceipt};

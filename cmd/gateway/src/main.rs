@@ -179,6 +179,14 @@ async fn main() -> anyhow::Result<()> {
     );
 
     multi_chain.insert(
+        "citrea".to_string(),
+        Arc::new(engine::CitreaAdapter::new(
+            config.citrea_rpc_url.clone(),
+            config.network.to_string(),
+        )),
+    );
+
+    multi_chain.insert(
         "babylon".to_string(),
         Arc::new(engine::BabylonAdapter::new(config.network.to_string())),
     );
