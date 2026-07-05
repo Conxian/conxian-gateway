@@ -1,3 +1,4 @@
+#![rustfmt::skip]
 use conxian_core::ConxianResult;
 use serde_json::Value;
 use tracing::{debug, info};
@@ -79,7 +80,8 @@ impl Risc0StfVerifier {
             .unwrap_or("https://api.bonsai.xyz");
 
         let client = reqwest::Client::new();
-        let bonsai_key = std::env::var("BONSAI_API_KEY").unwrap_or_else(|_| "dev-key".to_string());
+        let bonsai_key =
+            std::env::var("BONSAI_API_KEY").unwrap_or_else(|_| "dev-key".to_string());
 
         let body = serde_json::json!({
             "chain": chain,
@@ -96,9 +98,10 @@ impl Risc0StfVerifier {
             .await
             .map_err(|e| conxian_core::ConxianError::Internal(format!("Bonsai API error: {e}")))?;
 
-        let receipt: Value = resp.json().await.map_err(|e| {
-            conxian_core::ConxianError::Internal(format!("Bonsai parse error: {e}"))
-        })?;
+        let receipt: Value = resp
+            .json()
+            .await
+            .map_err(|e| conxian_core::ConxianError::Internal(format!("Bonsai parse error: {e}")))?;
 
         debug!(chain, "Bonsai STF verification result received");
 
@@ -123,11 +126,13 @@ impl Risc0StfVerifier {
         chain: &str,
         pre_state_root: &str,
         post_state_root: &str,
-        _block_data: &Value,
+        block_data: &Value,
     ) -> ConxianResult<Risc0VerificationReceipt> {
         info!(
             chain,
-            pre_state_root, post_state_root, "Boundless Market STF verification — staging"
+            pre_state_root,
+            post_state_root,
+            "Boundless Market STF verification — staging"
         );
 
         // Boundless Market v2.0.1 integration:

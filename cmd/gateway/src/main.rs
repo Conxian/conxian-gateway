@@ -1,16 +1,10 @@
-mod config;
-
-use api::a2p::A2pRouter;
-use api::fiat::FiatRouter;
 use api::{configure_routes, new_lightning_adapter, new_settlement_log, AppState};
-use compliance::{CoreVerifier, IdentityManager, UniversalVerifier, ZkcVerifier};
-use config::Config;
-use conxian_core::persistence::FilePersistence;
+use compliance::{CoreVerifier, IdentityManager, ZkcVerifier};
 use conxian_core::{GatewayState, Persistence, SharedState};
 use engine::{
     stacks::alex::{AlexClient, AlexRpcClient},
     BitcoinListener, BitcoinRpcClient, FeeBumpPolicyConfig, MempoolOrchestrator, NodeRgbAdapter,
-    NttRelayer, StacksListener, StacksRpcClient, TreasuryMonitor,
+    NttRelayer, RedisCoordinator, StacksListener, StacksRpcClient, TreasuryMonitor,
 };
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -18,6 +12,12 @@ use std::sync::{Arc, RwLock};
 use tokio::signal;
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
+
+mod config;
+mod persistence;
+
+use config::Config;
+use persistence::FilePersistence;
 
 fn init_tracing() {
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
@@ -62,6 +62,18 @@ async fn main() -> anyhow::Result<()> {
 
     let state: SharedState = Arc::new(RwLock::new(initial_state));
 
+    // Initialize Redis coordinator if configured
+    let coordinator = config
+        .redis_url
+        .as_ref()
+        .and_then(|url| match RedisCoordinator::new(url) {
+            Ok(c) => Some(Arc::new(c)),
+            Err(e) => {
+                error!("Failed to initialize Redis coordinator: {}", e);
+                None
+            }
+        });
+
     // Initialize Bitcoin RPC
     let btc_rpc = BitcoinRpcClient::new(
         &config.bitcoin_rpc_url,
@@ -73,6 +85,7 @@ async fn main() -> anyhow::Result<()> {
         btc_rpc,
         state.clone(),
         persistence.clone(),
+        coordinator.clone(),
         config.bitcoin_sync_interval,
     );
 
@@ -113,6 +126,7 @@ async fn main() -> anyhow::Result<()> {
         stx_rpc.clone(),
         state.clone(),
         persistence,
+        coordinator.clone(),
         config.stacks_sync_interval,
     );
 
@@ -129,7 +143,7 @@ async fn main() -> anyhow::Result<()> {
     let ntt_relayer = NttRelayer::new(state.clone(), 30);
 
     // Initialize Institutional Service Routers
-    let fiat_router = Arc::new(FiatRouter::new(
+    let fiat_router = Arc::new(api::fiat::FiatRouter::new(
         config.ramp_api_key.clone(),
         config.investec_client_id.clone(),
         config.investec_secret.clone(),
@@ -139,7 +153,7 @@ async fn main() -> anyhow::Result<()> {
         config.banxa_secret.clone(),
     ));
 
-    let a2p_router = Arc::new(A2pRouter::new(
+    let a2p_router = Arc::new(api::a2p::A2pRouter::new(
         config.infobip_api_key.clone(),
         config.infobip_base_url.clone(),
         config.hmac_secret.clone(),
@@ -179,29 +193,6 @@ async fn main() -> anyhow::Result<()> {
     );
 
     multi_chain.insert(
-        "citrea".to_string(),
-        Arc::new(engine::CitreaAdapter::new(
-            config.citrea_rpc_url.clone(),
-            config.network.to_string(),
-        )),
-    );
-
-    multi_chain.insert(
-        "fedimint".to_string(),
-        Arc::new(engine::FedimintAdapter::new(
-            config.fedimint_guardian_url.clone(),
-        )),
-    );
-
-    multi_chain.insert(
-        "strata".to_string(),
-        Arc::new(engine::StrataAdapter::new(
-            config.strata_rpc_url.clone(),
-            config.network.to_string(),
-        )),
-    );
-
-    multi_chain.insert(
         "babylon".to_string(),
         Arc::new(engine::BabylonAdapter::new(config.network.to_string())),
     );
@@ -211,7 +202,25 @@ async fn main() -> anyhow::Result<()> {
         Arc::new(engine::BitVmAdapter::new(config.network.to_string())),
     );
 
-    let verifier = Arc::new(UniversalVerifier::new(
+    multi_chain.insert(
+        "fedimint".to_string(),
+        Arc::new(engine::FedimintAdapter::new(config.network.to_string())),
+    );
+
+    multi_chain.insert(
+        "citrea".to_string(),
+        Arc::new(engine::CitreaAdapter::new(
+            "https://rpc.testnet.citrea.xyz".to_string(), // Default testnet RPC
+            config.network.to_string(),
+        )),
+    );
+
+    multi_chain.insert(
+        "strata".to_string(),
+        Arc::new(engine::StrataAdapter::new(config.network.to_string())),
+    );
+
+    let verifier = Arc::new(compliance::UniversalVerifier::new(
         zkc_verifier.clone() as Arc<dyn CoreVerifier>,
         multi_chain.clone(),
     ));
@@ -231,6 +240,7 @@ async fn main() -> anyhow::Result<()> {
         settlement_log: new_settlement_log(),
         offline_queue: api::new_offline_queue(offline_key),
         multi_chain,
+        coordinator,
     };
 
     // Create a cancellation token for graceful shutdown of listeners

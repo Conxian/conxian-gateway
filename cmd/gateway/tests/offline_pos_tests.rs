@@ -45,6 +45,7 @@ fn setup_app(
     ));
 
     let app_state = AppState {
+        coordinator: None,
         shared: state,
         fiat,
         a2p,

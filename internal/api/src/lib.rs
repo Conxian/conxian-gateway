@@ -21,6 +21,7 @@ use crate::lightning::{LightningAdapter, SimulatedLightningBackend};
 use compliance::{IdentityManager, UniversalVerifier, ZkcVerifier};
 use conxian_core::{SettlementProposal, SharedState};
 pub use engine::stacks::alex::AlexClient;
+pub use engine::RedisCoordinator;
 use std::{collections::VecDeque, sync::Arc};
 use tokio::sync::RwLock;
 
@@ -40,6 +41,7 @@ pub struct AppState {
     pub settlement_ingress_secret: String,
     pub settlement_log: Arc<RwLock<VecDeque<SettlementProposal>>>,
     pub offline_queue: Arc<dyn conxian_core::OfflineQueue>,
+    pub coordinator: Option<Arc<RedisCoordinator>>,
 }
 
 pub fn new_lightning_adapter() -> Arc<LightningAdapter> {

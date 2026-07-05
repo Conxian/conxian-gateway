@@ -15,8 +15,6 @@ pub mod babylon_adapter;
 pub use babylon_adapter::BabylonAdapter;
 pub mod bitvm_adapter;
 pub use bitvm_adapter::BitVmAdapter;
-pub mod citrea_adapter;
-pub use citrea_adapter::CitreaAdapter;
 pub mod fedimint_adapter;
 pub use fedimint_adapter::FedimintAdapter;
 pub mod strata_adapter;
