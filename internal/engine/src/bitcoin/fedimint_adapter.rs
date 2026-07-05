@@ -260,10 +260,7 @@ mod tests {
     async fn test_fedimint_fed_identity_cached() {
         let mut adapter = FedimintAdapter::new("http://localhost:18173".into());
         adapter.federation_id = Some("test-fed-001".into());
-        assert_eq!(
-            adapter.get_chain_identity().await,
-            "fedimint:test-fed-001"
-        );
+        assert_eq!(adapter.get_chain_identity().await, "fedimint:test-fed-001");
     }
 
     #[tokio::test]
@@ -279,7 +276,7 @@ mod tests {
         let adapter = FedimintAdapter::new("http://localhost:18173".into());
         let result = adapter.verify_state_proof(json!({})).await;
         // Returns false when guardian is unreachable
-        assert_eq!(result.unwrap(), false);
+        assert!(!result.unwrap());
     }
 
     #[tokio::test]

@@ -271,7 +271,7 @@ mod tests {
         let adapter = StrataAdapter::new("http://localhost:18545".into(), "testnet".into());
         let result = adapter.verify_state_proof(json!({})).await;
         // Offline returns false
-        assert_eq!(result.unwrap(), false);
+        assert!(!result.unwrap());
     }
 
     #[tokio::test]

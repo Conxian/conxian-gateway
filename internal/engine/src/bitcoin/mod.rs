@@ -22,5 +22,7 @@ pub use fedimint_adapter::FedimintAdapter;
 pub mod strata_adapter;
 pub use strata_adapter::StrataAdapter;
 pub mod rgb_native;
+pub mod rgb_stash;
+pub use rgb_stash::StashResolver;
 pub mod risc0_verifier;
 pub use risc0_verifier::{Risc0Mode, Risc0StfVerifier, Risc0VerificationReceipt};

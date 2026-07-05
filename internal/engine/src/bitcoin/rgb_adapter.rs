@@ -1,9 +1,12 @@
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use conxian_core::{ContractState, ConxianResult, RgbAdapter, RolloutMode};
 use serde_json::{json, Value};
 use tracing::{error, info, warn};
 
 use super::rgb_native;
+use super::StashResolver;
 
 /// RGB Protocol adapter with optional rgb-core v0.12 native integration.
 ///
@@ -12,15 +15,29 @@ use super::rgb_native;
 /// - Shadow:  Tries HTTP node → falls back to simulation on failure
 /// - Active:  Tries rgb-native (if enabled) → HTTP node → simulation fallback
 ///
+/// When `stash` is set, the `rgb-native` feature path uses a production
+/// StashResolver backed by rgb-std and bp-esplora for contract lookup
+/// and transition verification.
+///
 /// Enable native verification with: `cargo build --features rgb-native`
 pub struct NodeRgbAdapter {
     pub mode: RolloutMode,
     pub node_url: String,
+    pub stash: Option<Arc<StashResolver>>,
 }
 
 impl NodeRgbAdapter {
     pub fn new(mode: RolloutMode, node_url: String) -> Self {
-        Self { mode, node_url }
+        Self {
+            mode,
+            node_url,
+            stash: None,
+        }
+    }
+
+    pub fn with_stash(mut self, stash: Arc<StashResolver>) -> Self {
+        self.stash = Some(stash);
+        self
     }
 
     async fn fetch_from_node(&self, path: &str) -> ConxianResult<Option<Value>> {
@@ -96,7 +113,7 @@ impl RgbAdapter for NodeRgbAdapter {
 
                 // In Active mode, try native rgb-core lookup first
                 if matches!(self.mode, RolloutMode::Active) {
-                    match rgb_native::lookup_contract_native(contract_id) {
+                    match rgb_native::lookup_contract_native(contract_id, &self.stash) {
                         Ok(Some(data)) => {
                             info!("RGB native lookup succeeded for: {}", contract_id);
                             return Ok(Some(ContractState {
@@ -172,7 +189,7 @@ impl RgbAdapter for NodeRgbAdapter {
 
                 // In Active mode, try native rgb-core verification first
                 if matches!(self.mode, RolloutMode::Active) {
-                    match rgb_native::verify_transition_native(transition_id) {
+                    match rgb_native::verify_transition_native(transition_id, &self.stash) {
                         Ok(true) => {
                             info!("RGB native verification passed for: {}", transition_id);
                             return Ok(true);
