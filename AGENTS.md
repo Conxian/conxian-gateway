@@ -20,8 +20,8 @@ You are working on the **Conxian Gateway**, an institutional-grade Rust middlewa
 | Liquid | ✅ Integrated | `internal/engine/src/bitcoin/liquid_adapter.rs` |
 | Citrea | ✅ Integrated | `internal/engine/src/bitcoin/citrea_adapter.rs` |
 | RISC Zero | 🟡 Unwired | `internal/engine/src/bitcoin/risc0_verifier.rs` |
-| Fedimint | 🔴 MISSING | N/A |
-| Strata | 🔴 MISSING | N/A |
+| Fedimint | ✅ Integrated | `internal/engine/src/bitcoin/fedimint_adapter.rs` |
+| Strata | ✅ Testnet | `internal/engine/src/bitcoin/strata_adapter.rs` |
 | BitVMX GC | 🟡 Pending 2026 | N/A |
 | BRICS Pay | 🟡 Research only | N/A |
 | mBridge | 🟡 Research only | N/A |
@@ -64,8 +64,6 @@ Before submitting changes, you MUST:
 - **release.yml**: Tag-triggered GitHub Release.
 
 ## Known Gaps (2026-07-05 Update)
-- 🔴 #229: Fedimint adapter — `fedimint-client` crate, ChainAdapter trait
-- 🔴 #230: Strata adapter — blocked until mainnet Q3 2026
 - 🟡 #228: Full rgb-std stash resolver (rgb-native is format-validation only)
 - 🟡 #189: BitVMX GC adapter — pending 2026 garbled circuits release
 - 🟡 #231: BRICS Pay research — DCMS settlement rail classification
@@ -74,7 +72,8 @@ Before submitting changes, you MUST:
 - 🟡 G-1380: Add SBOM and Provenance to release workflow
 - 🟡 G-1389: Reduce technical debt (dead_code suppressions)
 
-All pending gaps now have corresponding GitHub issues for autonomous pickup.
+Protocol drift resolved — 9 of 9 identified protocols now have adapters.
+All pending gaps have corresponding GitHub issues for autonomous pickup.
 
 ## Ethical Alignment
 The Conxian Protocol is built to empower individuals and institutions within the Stacks/Bitcoin ecosystem. The dual-stack settlement architecture supports financial sovereignty across both Western and BRICS-aligned jurisdictions. Avoid any "dark patterns" or custodial shortcuts.
