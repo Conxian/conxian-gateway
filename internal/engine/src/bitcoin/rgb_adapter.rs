@@ -178,7 +178,10 @@ impl RgbAdapter for NodeRgbAdapter {
                             return Ok(true);
                         }
                         Ok(false) => {
-                            warn!("RGB native verification returned false for: {}", transition_id);
+                            warn!(
+                                "RGB native verification returned false for: {}",
+                                transition_id
+                            );
                             return Ok(false);
                         }
                         Err(e) => {

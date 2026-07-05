@@ -4,9 +4,9 @@
 //! using the rgb-core consensus library (v0.12, released July 2025).
 //! Activated via `cargo build --features rgb-native`.
 
-use conxian_core::ConxianResult;
 #[cfg(not(feature = "rgb-native"))]
 use conxian_core::ConxianError;
+use conxian_core::ConxianResult;
 #[cfg(feature = "rgb-native")]
 use tracing::{debug, info, warn};
 
@@ -59,7 +59,10 @@ pub fn lookup_contract_native(contract_id: &str) -> ConxianResult<Option<serde_j
     debug!(contract_id, "Looking up RGB contract via rgb-core v0.12");
 
     if !contract_id.starts_with("rgb:") {
-        warn!(contract_id, "Invalid RGB contract ID format for native lookup");
+        warn!(
+            contract_id,
+            "Invalid RGB contract ID format for native lookup"
+        );
         return Ok(None);
     }
 

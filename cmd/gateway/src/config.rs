@@ -84,6 +84,8 @@ pub struct Config {
     pub liquid_rpc_url: String,
     pub rootstock_rpc_url: String,
     pub citrea_rpc_url: String,
+    pub fedimint_guardian_url: String,
+    pub strata_rpc_url: String,
 }
 
 impl Config {
@@ -133,8 +135,14 @@ impl Config {
             env::var("LIQUID_RPC_URL").unwrap_or_else(|_| "http://localhost:18843".to_string());
         let rootstock_rpc_url =
             env::var("ROOTSTOCK_RPC_URL").unwrap_or_else(|_| "http://localhost:4444".to_string());
-        let citrea_rpc_url = env::var("CITREA_RPC_URL")
-            .unwrap_or_else(|_| "https://rpc.citrea.xyz".to_string());
+        let citrea_rpc_url =
+            env::var("CITREA_RPC_URL").unwrap_or_else(|_| "https://rpc.citrea.xyz".to_string());
+
+        let fedimint_guardian_url = env::var("FEDIMINT_GUARDIAN_URL")
+            .unwrap_or_else(|_| "http://localhost:18173".to_string());
+
+        let strata_rpc_url = env::var("STRATA_RPC_URL")
+            .unwrap_or_else(|_| "https://rpc.testnet.alpenlabs.io".to_string());
 
         let (btc_url, stx_url, alex_url) = match network {
             Network::Mainnet => (
@@ -219,6 +227,8 @@ impl Config {
             liquid_rpc_url,
             rootstock_rpc_url,
             citrea_rpc_url,
+            fedimint_guardian_url,
+            strata_rpc_url,
         }
     }
 }

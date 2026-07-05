@@ -187,6 +187,21 @@ async fn main() -> anyhow::Result<()> {
     );
 
     multi_chain.insert(
+        "fedimint".to_string(),
+        Arc::new(engine::FedimintAdapter::new(
+            config.fedimint_guardian_url.clone(),
+        )),
+    );
+
+    multi_chain.insert(
+        "strata".to_string(),
+        Arc::new(engine::StrataAdapter::new(
+            config.strata_rpc_url.clone(),
+            config.network.to_string(),
+        )),
+    );
+
+    multi_chain.insert(
         "babylon".to_string(),
         Arc::new(engine::BabylonAdapter::new(config.network.to_string())),
     );

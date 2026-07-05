@@ -111,9 +111,7 @@ impl ChainAdapter for CitreaAdapter {
             .or_else(|| proof_metadata.get("btc_tx_hash").and_then(|v| v.as_str()))
             .unwrap_or("");
 
-        let block_number = proof_metadata
-            .get("block_number")
-            .and_then(|v| v.as_u64());
+        let block_number = proof_metadata.get("block_number").and_then(|v| v.as_u64());
 
         if tx_hash.is_empty() && block_number.is_none() {
             info!("Citrea: no tx_hash or block_number in proof, accepting shadow mode");
