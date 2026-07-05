@@ -1,4 +1,3 @@
-#![rustfmt::skip]
 use conxian_core::ConxianResult;
 use serde_json::Value;
 use tracing::{debug, info};
@@ -126,7 +125,7 @@ impl Risc0StfVerifier {
         chain: &str,
         pre_state_root: &str,
         post_state_root: &str,
-        block_data: &Value,
+        _block_data: &Value,
     ) -> ConxianResult<Risc0VerificationReceipt> {
         info!(
             chain,
