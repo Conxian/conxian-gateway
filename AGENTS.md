@@ -64,13 +64,17 @@ Before submitting changes, you MUST:
 - **release.yml**: Tag-triggered GitHub Release.
 
 ## Known Gaps (2026-07-05 Update)
-- 🔴 G-1: BitVM3 proof verification (garbled circuits) - Research only.
-- 🔴 G-16: Fedimint adapter missing implementation.
-- 🔴 G-08: Strata adapter missing implementation (awaiting mainnet Q3 2026).
-- 🟡 G-1385: Full rgb-std stash resolver integration (rgb-native is format-validation only).
-- 🟡 G-1276: Enforce authenticated Redis and token expiry (documented stubs).
-- 🟡 G-1380: Add SBOM and Provenance to release workflow.
-- 🟡 G-1389: Reduce technical debt (dead_code suppressions).
+- 🔴 #229: Fedimint adapter — `fedimint-client` crate, ChainAdapter trait
+- 🔴 #230: Strata adapter — blocked until mainnet Q3 2026
+- 🟡 #228: Full rgb-std stash resolver (rgb-native is format-validation only)
+- 🟡 #189: BitVMX GC adapter — pending 2026 garbled circuits release
+- 🟡 #231: BRICS Pay research — DCMS settlement rail classification
+- 🟡 #232: mBridge research — BIS multi-CBDC DLT assessment
+- 🟡 G-1276: Enforce authenticated Redis and token expiry
+- 🟡 G-1380: Add SBOM and Provenance to release workflow
+- 🟡 G-1389: Reduce technical debt (dead_code suppressions)
+
+All pending gaps now have corresponding GitHub issues for autonomous pickup.
 
 ## Ethical Alignment
 The Conxian Protocol is built to empower individuals and institutions within the Stacks/Bitcoin ecosystem. The dual-stack settlement architecture supports financial sovereignty across both Western and BRICS-aligned jurisdictions. Avoid any "dark patterns" or custodial shortcuts.
