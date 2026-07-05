@@ -9,8 +9,14 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use std::time::Instant;
 
-pub fn configure_routes(state: AppState, api_token: String) -> Router {
+pub fn configure_routes(
+    state: AppState,
+    api_token: String,
+    server_start: Instant,
+    token_ttl_seconds: Option<u64>,
+) -> Router {
     let token_for_auth = api_token.clone();
 
     let public_routes = Router::new()
@@ -83,7 +89,13 @@ pub fn configure_routes(state: AppState, api_token: String) -> Router {
     let private_routes = private_routes
         .layer(middleware::from_fn_with_state(state.clone(), x402_filter))
         .layer(middleware::from_fn(move |req, next| {
-            auth_middleware(req, next, token_for_auth.clone())
+            auth_middleware(
+                req,
+                next,
+                token_for_auth.clone(),
+                server_start,
+                token_ttl_seconds,
+            )
         }))
         .with_state(state.clone());
 

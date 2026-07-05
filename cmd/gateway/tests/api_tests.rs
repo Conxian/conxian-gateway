@@ -128,7 +128,12 @@ fn setup_app_with_lightning(state: SharedState, lightning: Arc<LightningAdapter>
         offline_queue,
     };
 
-    configure_routes(app_state, TEST_TOKEN.to_string())
+    configure_routes(
+        app_state,
+        TEST_TOKEN.to_string(),
+        std::time::Instant::now(),
+        None,
+    )
 }
 
 fn make_attestation_header(device_id: &str, payload_hash: &str) -> String {

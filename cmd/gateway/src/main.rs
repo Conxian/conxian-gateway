@@ -9,6 +9,7 @@ use engine::{
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
+use std::time::Instant;
 use tokio::signal;
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
@@ -46,6 +47,9 @@ async fn main() -> anyhow::Result<()> {
     // Load configuration
     let config = Config::from_env();
 
+    // Capture server start time for token expiry enforcement (CON-1276)
+    let server_start = Instant::now();
+
     // Initialize persistence
     let persistence = Arc::new(FilePersistence::new("gateway_state.json"));
 
@@ -63,16 +67,19 @@ async fn main() -> anyhow::Result<()> {
     let state: SharedState = Arc::new(RwLock::new(initial_state));
 
     // Initialize Redis coordinator if configured
-    let coordinator = config
-        .redis_url
-        .as_ref()
-        .and_then(|url| match RedisCoordinator::new(url) {
+    let coordinator = config.redis_url.as_ref().and_then(|url| {
+        match RedisCoordinator::new(
+            url,
+            config.redis_username.as_deref(),
+            config.redis_password.as_deref(),
+        ) {
             Ok(c) => Some(Arc::new(c)),
             Err(e) => {
                 error!("Failed to initialize Redis coordinator: {}", e);
                 None
             }
-        });
+        }
+    });
 
     // Initialize Bitcoin RPC
     let btc_rpc = BitcoinRpcClient::new(
@@ -317,7 +324,12 @@ async fn main() -> anyhow::Result<()> {
     });
 
     // Configure and start API server
-    let app = configure_routes(app_state, config.api_token);
+    let app = configure_routes(
+        app_state,
+        config.api_token,
+        server_start,
+        config.token_ttl_seconds,
+    );
     let addr = SocketAddr::from(([0, 0, 0, 0], config.api_port));
     info!("API server listening on {}", addr);
 

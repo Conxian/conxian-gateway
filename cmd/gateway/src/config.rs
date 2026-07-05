@@ -14,6 +14,9 @@ const INFOBIP_API_KEY_SENTINEL: &str = "sentinel_INFOBIP_API_KEY";
 const HMAC_SECRET_SENTINEL: &str = "sentinel_HMAC_SECRET";
 const OFFLINE_QUEUE_SECRET_SENTINEL: &str = "sentinel_OFFLINE_QUEUE_SECRET";
 const REDIS_URL_SENTINEL: &str = "sentinel_REDIS_URL";
+const REDIS_USERNAME_SENTINEL: &str = "sentinel_REDIS_USERNAME";
+const REDIS_PASSWORD_SENTINEL: &str = "sentinel_REDIS_PASSWORD";
+const TOKEN_TTL_SENTINEL: &str = "sentinel_TOKEN_TTL";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Network {
@@ -82,6 +85,9 @@ pub struct Config {
     pub liquid_rpc_url: String,
     pub rootstock_rpc_url: String,
     pub redis_url: Option<String>,
+    pub redis_username: Option<String>,
+    pub redis_password: Option<String>,
+    pub token_ttl_seconds: Option<u64>,
 }
 
 impl Config {
@@ -122,6 +128,30 @@ impl Config {
                 None
             } else {
                 Some(val)
+            }
+        });
+        let redis_username = env::var("REDIS_USERNAME").ok().and_then(|val| {
+            let val = val.trim().to_string();
+            if val.is_empty() || val == REDIS_USERNAME_SENTINEL {
+                None
+            } else {
+                Some(val)
+            }
+        });
+        let redis_password = env::var("REDIS_PASSWORD").ok().and_then(|val| {
+            let val = val.trim().to_string();
+            if val.is_empty() || val == REDIS_PASSWORD_SENTINEL {
+                None
+            } else {
+                Some(val)
+            }
+        });
+        let token_ttl_seconds = env::var("TOKEN_TTL_SECONDS").ok().and_then(|val| {
+            let val = val.trim().to_string();
+            if val.is_empty() || val == TOKEN_TTL_SENTINEL {
+                None
+            } else {
+                val.parse().ok()
             }
         });
 
@@ -222,6 +252,9 @@ impl Config {
             liquid_rpc_url,
             rootstock_rpc_url,
             redis_url,
+            redis_username,
+            redis_password,
+            token_ttl_seconds,
         }
     }
 }
@@ -266,6 +299,9 @@ mod tests {
                 "MEMPOOL_MAX_FEE_RATE_SAT_VB",
                 "MEMPOOL_MIN_BUMP_INCREMENT_SAT_VB",
                 "REDIS_URL",
+                "REDIS_USERNAME",
+                "REDIS_PASSWORD",
+                "TOKEN_TTL_SECONDS",
             ];
             let vars = keys.into_iter().map(|k| (k, env::var(k).ok())).collect();
             Self { vars }

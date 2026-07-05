@@ -61,7 +61,12 @@ fn setup_app(
         offline_queue,
     };
 
-    configure_routes(app_state, TEST_TOKEN.to_string())
+    configure_routes(
+        app_state,
+        TEST_TOKEN.to_string(),
+        std::time::Instant::now(),
+        None,
+    )
 }
 
 #[tokio::test]
