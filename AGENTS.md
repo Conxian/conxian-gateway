@@ -64,7 +64,7 @@ Before submitting changes, you MUST:
 - **cargo-audit.yml**: Weekly dependency audit.
 - **secret-scan.yml**: Gitleaks secret scanning.
 - **node-ci.yml**: TypeScript build + vitest (client-sdk only).
-- **release.yml**: Tag-triggered GitHub Release.
+- **release.yml**: Tag-triggered GitHub Release with SBOM (CycloneDX) and SLSA L3 provenance.
 
 ## Known Gaps (2026-07-05 Update)
 - [x] #228: RGB stash resolver (G-1385 P1) — merged `124d17e`
@@ -73,7 +73,7 @@ Before submitting changes, you MUST:
 - [ ] #189: BitVMX GC adapter — pending 2026 garbled circuits release
 - [ ] #231: BRICS Pay research — DCMS settlement rail classification
 - [ ] #232: mBridge research — BIS multi-CBDC DLT assessment
-- [ ] G-1380: Add SBOM and Provenance to release workflow — **NEXT priority**
+- [x] G-1380: SBOM and Provenance to release workflow — merged `19181c5`
 
 Protocol drift resolved — 10 of 10 identified protocols now have adapters.
 All pending gaps have corresponding GitHub issues for autonomous pickup.
