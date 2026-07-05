@@ -2,21 +2,23 @@
 
 You are working on the **Conxian Gateway**, an institutional-grade Rust middleware designed for high-performance Bitcoin/Stacks state logic and enterprise compliance.
 
-## Current State (2026-07-05)
+## Current State (2026-07-05, updated)
 - **Status Audit**: Holistic review of Nexus/Gateway alignment complete (CON-1353).
-- **Protocol Drift**: Identified that **Fedimint**, **Citrea**, and **Strata** adapters are MISSING from production paths despite being marked Done in Linear.
+- **Protocol Drift**: Resolved — Fedimint, Citrea, and Strata adapters implemented and in production paths.
+- **RGB G-1385 (Phase 1)**: StashResolver delivered (commit `124d17e`) with `rgb-std` v0.12.0-rc.3 + `bp-esplora` v0.12.0-rc.3 behind `rgb-native` feature. Phase 2 (ContractVerify, consignment) blocked on rgb-std ecosystem stabilization.
+- **PR #233**: Tech debt reduction approved, flaky persistence test fixed, awaiting CI green on `con-1389` branch.
 - **Hardening Stubs**: CON-1276 requirements (Redis auth, token expiry) exist as code comments but are not yet implemented.
 - **UCV-1**: Fully implemented and unifying Babylon, BitVM2, Liquid, Rootstock, and RGB.
 - **CI status**: All 6 workflows green on main.
 
-### Protocol Implementations (Update 2026-07-05)
+### Protocol Implementations (2026-07-05)
 | Protocol | Status | File |
 |---|---|---|
 | NWC NIP-47 | ✅ Integrated | `internal/api/src/nwc_backend.rs` |
 | Rootstock | ✅ Integrated | `internal/engine/src/ntt/rootstock_adapter.rs` |
 | Babylon | ✅ Integrated | `internal/engine/src/bitcoin/babylon_adapter.rs` |
 | BitVM2 | ✅ Integrated | `internal/engine/src/bitcoin/bitvm_adapter.rs` |
-| RGB | ✅ v0.12 Native | `internal/engine/src/bitcoin/rgb_adapter.rs` + `rgb_native.rs` |
+| RGB | ✅ v0.12 + Stash (P1) | `internal/engine/src/bitcoin/rgb_adapter.rs` + `rgb_native.rs` + `rgb_stash.rs` |
 | Liquid | ✅ Integrated | `internal/engine/src/bitcoin/liquid_adapter.rs` |
 | Citrea | ✅ Integrated | `internal/engine/src/bitcoin/citrea_adapter.rs` |
 | RISC Zero | 🟡 Unwired | `internal/engine/src/bitcoin/risc0_verifier.rs` |
