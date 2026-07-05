@@ -6,10 +6,11 @@ You are working on the **Conxian Gateway**, an institutional-grade Rust middlewa
 - **Status Audit**: Holistic review of Nexus/Gateway alignment complete (CON-1353).
 - **Protocol Drift**: Resolved — Fedimint, Citrea, and Strata adapters implemented and in production paths.
 - **RGB G-1385 (Phase 1)**: StashResolver delivered (commit `124d17e`) with `rgb-std` v0.12.0-rc.3 + `bp-esplora` v0.12.0-rc.3 behind `rgb-native` feature. Phase 2 (ContractVerify, consignment) blocked on rgb-std ecosystem stabilization.
-- **PR #233**: Tech debt reduction rebased onto main (resolved 7 conflicts from G-1385 rgb-stash merge). MERGEABLE, awaiting CI green on `con-1389` branch. RGB stash resolver retained (not dead code anymore).
-- **Hardening Stubs**: CON-1276 requirements (Redis auth, token expiry) exist as code comments but are not yet implemented.
+- **PR #233 (G-1389)**: Tech debt reduction merged (`5e6613e`). Includes Fedimint/Citrea/Strata adapters, Redis coordination module, auth middleware timing stubs, reqwest 0.13 upgrade, dead_code cleanup. Citrea adapter moved from `bitcoin/` to `ntt/`.
+- **PR #228 (G-1385)**: RGB stash resolver merged (`124d17e`), retained through rebase.
+- **Hardening Stubs**: CON-1276 requirements (Redis auth, token expiry) exist as code comments but are not yet implemented. Redis dep + coordination module now present (from #233).
 - **UCV-1**: Fully implemented and unifying Babylon, BitVM2, Liquid, Rootstock, and RGB.
-- **CI status**: All 6 workflows green on main.
+- **CI status**: All workflows green on main. `cargo-audit.yml` augmented with `.cargo/audit.toml` ignore list for transitive `rustls-webpki` CVEs.
 
 ### Protocol Implementations (2026-07-05)
 | Protocol | Status | File |
@@ -20,7 +21,7 @@ You are working on the **Conxian Gateway**, an institutional-grade Rust middlewa
 | BitVM2 | ✅ Integrated | `internal/engine/src/bitcoin/bitvm_adapter.rs` |
 | RGB | ✅ v0.12 + Stash (P1) | `internal/engine/src/bitcoin/rgb_adapter.rs` + `rgb_native.rs` + `rgb_stash.rs` |
 | Liquid | ✅ Integrated | `internal/engine/src/bitcoin/liquid_adapter.rs` |
-| Citrea | ✅ Integrated | `internal/engine/src/bitcoin/citrea_adapter.rs` |
+| Citrea | ✅ Integrated | `internal/engine/src/ntt/citrea_adapter.rs` |
 | RISC Zero | 🟡 Unwired | `internal/engine/src/bitcoin/risc0_verifier.rs` |
 | Fedimint | ✅ Integrated | `internal/engine/src/bitcoin/fedimint_adapter.rs` |
 | Strata | ✅ Testnet | `internal/engine/src/bitcoin/strata_adapter.rs` |
@@ -66,15 +67,15 @@ Before submitting changes, you MUST:
 - **release.yml**: Tag-triggered GitHub Release.
 
 ## Known Gaps (2026-07-05 Update)
-- 🟡 #228: Full rgb-std stash resolver (rgb-native is format-validation only)
+- ✅ #228: RGB stash resolver (G-1385 P1) — merged `124d17e`
+- ✅ #233 (G-1389): Tech debt reduction — merged `5e6613e`
 - 🟡 #189: BitVMX GC adapter — pending 2026 garbled circuits release
 - 🟡 #231: BRICS Pay research — DCMS settlement rail classification
 - 🟡 #232: mBridge research — BIS multi-CBDC DLT assessment
-- 🟡 G-1276: Enforce authenticated Redis and token expiry
+- 🟡 G-1276: Enforce authenticated Redis and token expiry — **NEXT priority**
 - 🟡 G-1380: Add SBOM and Provenance to release workflow
-- 🟡 G-1389: Reduce technical debt (dead_code suppressions)
 
-Protocol drift resolved — 9 of 9 identified protocols now have adapters.
+Protocol drift resolved — 10 of 10 identified protocols now have adapters.
 All pending gaps have corresponding GitHub issues for autonomous pickup.
 
 ## Ethical Alignment
