@@ -176,3 +176,9 @@
 | Rust tests | 119 | 125 | +6 |
 | API integration tests | 37 | 43 | +6 |
 | Logic hardening | Sanctions-aware | Sanctions-blocking | +1 |
+
+### [CON-HARDEN-001] Admin API Authentication Hardening
+- **Date**: 2026-07-06T19:45:28Z
+- **Remediation**: Applied `auth_middleware` to all `/admin/v1` routes in `internal/api/src/routes.rs`.
+- **Risk Addressed**: Previously, admin routes were unauthenticated, allowing potential unauthorized access to release and governance controls.
+- **Verification**: Added negative test cases in `cmd/gateway/tests/api_tests.rs` to ensure `401 Unauthorized` is returned when credentials are missing.
