@@ -12,7 +12,10 @@ You are working on the **Conxian Gateway**, an institutional-grade Rust middlewa
 - **UCV-1**: Fully implemented and unifying Babylon, BitVM2, Liquid, Rootstock, and RGB.
 - **CI status**: All workflows green on main. `cargo-audit.yml` augmented with `.cargo/audit.toml` ignore list for transitive `rustls-webpki` CVEs.
 - **P3 Sprint Review (commit `07c9508`)**: All review findings resolved — G-C6 verdict logic, signature verification for all machine providers, SystemTime→now_unix, inline test backend. 29 canton_m2m_tests pass; 158 workspace tests pass.
-- **Strategic Research (2026-07-06)**: Canton Network & Machine Economy deep-dive complete. Key finding: "route without touch" — Conxian as sovereign routing layer between Canton's $6T+ institutional capital and Bitcoin's permissionless settlement. Machine Economy: $1.1B/month Lightning M2M volume, peaq 60+ DePINs, DIMO vehicle identity. See `docs/research/CANTON_NETWORK_AND_MACHINE_ECONOMY_RESEARCH.md` and `docs/research/KNOWLEDGE_MAP.md`.
+- **Strategic Research (2026-07-06)**: Canton Network + peaq deep-dive complete. Key findings:
+  - **Canton**: "route without touch" — Conxian as sovereign routing layer between Canton's $6T+ institutional capital (Goldman, BNP, Deutsche Börse) and Bitcoin's permissionless settlement. Observe-only, never run a Canton validator. G-C1: CBTC DLC verification. G-C4: Daml ACS → UCR state translation. G-C7: Canton↔BTC atomic swap engine.
+  - **peaq**: **First-mover opportunity** — no existing Bitcoin/Lightning infrastructure despite 3.35M+ machines with Bitcoin-capable addresses via OWS. Conxian as the first BTC/LN gateway for the Machine Economy. G-C2: Machine DID extension (peaqID → SovereignIdentity). G-C3: Lightning M2M settlement primitives. G-C6: Machine RWA revenue verification. peaq ecosystem: 60+ DePINs, Deutsche Telekom/Lufthansa/NTT/Continental enterprise partners, MachineX DEX $60M+ volume.
+  - **UCV-2**: Cross-ledger settlement protocol extending UCV-1 with peaq and Canton state translation. See `docs/research/CANTON_NETWORK_AND_MACHINE_ECONOMY_RESEARCH.md` and `docs/research/KNOWLEDGE_MAP.md`.
 
 ### Protocol Implementations (2026-07-05)
 | Protocol | Status | File |
@@ -30,8 +33,9 @@ You are working on the **Conxian Gateway**, an institutional-grade Rust middlewa
 | BitVMX GC | ЁЯЯб Pending 2026 | N/A |
 | BRICS Pay | ЁЯЯб Research only | N/A |
 | mBridge | ЁЯЯб Research only | N/A |
-| Canton Network | 🟡 Research (G-C7 P3) | `docs/research/CANTON_NETWORK_AND_MACHINE_ECONOMY_RESEARCH.md` |
-| Machine Economy (peaq/DIMO/DePIN) | 🟡 Research (G-C8 P3) | `docs/research/CANTON_NETWORK_AND_MACHINE_ECONOMY_RESEARCH.md` |
+| Canton Network | 🟡 Research — "route without touch" (G-C1–G-C7) | `docs/research/CANTON_NETWORK_AND_MACHINE_ECONOMY_RESEARCH.md` |
+| Machine Economy (peaq/DePIN/M2M) | 🟡 Research — BTC/LN gateway opportunity (G-C2, G-C3, G-C6) | `docs/research/CANTON_NETWORK_AND_MACHINE_ECONOMY_RESEARCH.md` |
+| UCV-2 | 🟡 Architecture — Cross-ledger settlement protocol | `docs/research/CANTON_NETWORK_AND_MACHINE_ECONOMY_RESEARCH.md` |
 
 ## Core Philosophy
 - **Sovereignty**: All code must prioritize non-custodial logic and user sovereignty.
