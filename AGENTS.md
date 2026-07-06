@@ -11,7 +11,8 @@ You are working on the **Conxian Gateway**, an institutional-grade Rust middlewa
 - **Hardening Stubs**: ✅ CON-1276 (Redis AUTH + token expiry) now fully implemented (commit `2ef6df1`).
 - **UCV-1**: Fully implemented and unifying Babylon, BitVM2, Liquid, Rootstock, and RGB.
 - **CI status**: All workflows green on main. `cargo-audit.yml` augmented with `.cargo/audit.toml` ignore list for transitive `rustls-webpki` CVEs.
-- **Strategic Research**: Canton Network & Machine Economy deep-dive complete (2026-07-06). See `docs/research/CANTON_NETWORK_AND_MACHINE_ECONOMY_RESEARCH.md`.
+- **P3 Sprint Review (commit `07c9508`)**: All review findings resolved — G-C6 verdict logic, signature verification for all machine providers, SystemTime→now_unix, inline test backend. 29 canton_m2m_tests pass; 158 workspace tests pass.
+- **Strategic Research (2026-07-06)**: Canton Network & Machine Economy deep-dive complete. Key finding: "route without touch" — Conxian as sovereign routing layer between Canton's $6T+ institutional capital and Bitcoin's permissionless settlement. Machine Economy: $1.1B/month Lightning M2M volume, peaq 60+ DePINs, DIMO vehicle identity. See `docs/research/CANTON_NETWORK_AND_MACHINE_ECONOMY_RESEARCH.md` and `docs/research/KNOWLEDGE_MAP.md`.
 
 ### Protocol Implementations (2026-07-05)
 | Protocol | Status | File |
@@ -29,8 +30,8 @@ You are working on the **Conxian Gateway**, an institutional-grade Rust middlewa
 | BitVMX GC | ЁЯЯб Pending 2026 | N/A |
 | BRICS Pay | ЁЯЯб Research only | N/A |
 | mBridge | ЁЯЯб Research only | N/A |
-| Canton Network | 🟡 Research | `docs/research/CANTON_NETWORK_AND_MACHINE_ECONOMY_RESEARCH.md` |
-| Machine Economy (peaq/DePIN) | 🟡 Research | `docs/research/CANTON_NETWORK_AND_MACHINE_ECONOMY_RESEARCH.md` |
+| Canton Network | 🟡 Research (G-C7 P3) | `docs/research/CANTON_NETWORK_AND_MACHINE_ECONOMY_RESEARCH.md` |
+| Machine Economy (peaq/DIMO/DePIN) | 🟡 Research (G-C8 P3) | `docs/research/CANTON_NETWORK_AND_MACHINE_ECONOMY_RESEARCH.md` |
 
 ## Core Philosophy
 - **Sovereignty**: All code must prioritize non-custodial logic and user sovereignty.
