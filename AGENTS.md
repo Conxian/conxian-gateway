@@ -116,25 +116,28 @@ Implementation gaps closed. New strategic research opened: Canton Network intero
 - **Conxian posture**: Observer/compliance pass-through only; no adapter needed
 - **Re-evaluate** if BIS/mBridge publishes public observer API
 
-### Canton Network (Institutional Privacy DLT — 2026-07-06)
-- **What**: Digital Asset's privacy-preserving DLT; Daml smart contracts (Haskell-derived); eUTXO model isomorphic to Bitcoin
-- **Architecture**: Participant nodes (validators) + Synchronizers (ordering/2PC); sub-transaction privacy; $6T+ tokenized RWAs
-- **CBTC**: Wrapped Bitcoin on Canton via BitSafe — FROST threshold signatures, non-custodial attestation
-- **Integrations**: Chainlink CCIP (Sep 2025), LayerZero (Mar 2026), Polyglot EVM (Feb 2025 whitepaper)
+### Canton Network (Institutional Privacy DLT — updated 2026-07-06)
+- **What**: Digital Asset's privacy-preserving DLT; Daml smart contracts; eUTXO model isomorphic to Bitcoin
+- **Architecture**: ~780 validators, ~600 nodes (Dec 2025), Canton 3.5.6 (June 2026); participant nodes + synchronizers + 2PC
+- **$344.83B** represented asset value (RWA.xyz, May 2026); DTCC, Franklin Templeton, J.P. Morgan Kinexys, HSBC Orion active
+- **CBTC**: Wrapped Bitcoin via BitSafe — FROST threshold attestation (Kiln + Figment), validator-scoped privacy
+- **LayerZero**: Live on Canton (March 2026) — connects to 165+ blockchains for institutional asset routing
+- **Zenith**: Atomic swap engine (Canton↔Ethereum), emerged March 2026, Tier-1 Super Validator
+- **Chainlink CCIP**: Data Streams integration guide published (requires Canton Party ID + DAR upload)
 - **Conxian posture**: Observe-only routing layer; never run a Canton validator; translate Daml ACS → Bitcoin UTXO state
-- **Opportunity**: Non-custodial capital routing between institutional Canton ($6T+ RWA) and sovereign Bitcoin
-- **Key constraint**: Canton is permissioned; Conxian routes without touching — verify, attest, never hold
-- **Full research**: `docs/research/CANTON_NETWORK_AND_MACHINE_ECONOMY_RESEARCH.md`
+- **Opportunity**: Non-custodial capital routing between institutional Canton and sovereign Bitcoin/DePIN
+- **Key constraint**: Canton is permissioned at application layer; Conxian routes without touching — verify, attest, never hold
+- **Full research**: `docs/research/CANTON_NETWORK_AND_MACHINE_ECONOMY_RESEARCH.md` + `docs/research/KNOWLEDGE_MAP.md`
 
-### Machine Economy (DePIN, M2M, peaq — 2026-07-06)
+### Machine Economy (DePIN, M2M, peaq — updated 2026-07-06)
 - **What**: Machines owning wallets, paying machines, earning autonomously; DePIN = token-incentivized physical infrastructure
-- **Key protocols**: peaq (60+ dApps, 500K+ machines, $180M TVL, Polkadot L1), Helium (1M+ hotspots, Solana)
+- **peaq**: 60+ DePINs across 22 industries, $180M TVL, 12K+ daily active devices; Machine RWA Framework (Registration→Issuance→Revenue→Compliance); Mastercard, Bosch, Tether QVAC integrations; x402 via thirdweb
 - **Settlement rail**: Lightning Network — $1.1B/month volume, USDT via Taproot Assets, sub-cent fees, instant finality
 - **Machine identity**: peaq DID, DIMO Vehicle ID, device pubkeys; Conxian extends existing BNS/ENS/World ID stack
 - **Conxian posture**: Non-custodial M2M settlement routing via Lightning; machine identity verification; machine RWA revenue attestation
 - **Monetization**: M2M routing fees (1-5 bps), identity attestation fees, Lightning channel liquidity leasing
 - **Key principle**: Machines hold their own keys; Conxian routes and verifies, never custodies
-- **Full research**: `docs/research/CANTON_NETWORK_AND_MACHINE_ECONOMY_RESEARCH.md`
+- **Full research**: `docs/research/CANTON_NETWORK_AND_MACHINE_ECONOMY_RESEARCH.md` + `docs/research/KNOWLEDGE_MAP.md`
 
 ## OpenHands SDK & Automation Capabilities
 
