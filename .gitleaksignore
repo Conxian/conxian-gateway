@@ -1,2 +1,0 @@
-# False positive: device_key is a field name in machine identity test fixtures
-cmd/gateway/tests/canton_m2m_tests.rs:455:generic-api-key
