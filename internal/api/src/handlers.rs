@@ -881,7 +881,9 @@ pub async fn resolve_machine_identity(
                 _ => {
                     return Err((
                         StatusCode::UNAUTHORIZED,
-                        Json(json!({ "error": "Invalid device-key signature for machine identity" })),
+                        Json(
+                            json!({ "error": "Invalid device-key signature for machine identity" }),
+                        ),
                     ))
                 }
             }
@@ -889,7 +891,9 @@ pub async fn resolve_machine_identity(
     }
 
     // Build machine identity from provider-specific resolution
-    let machine_type = payload.machine_type_hint.unwrap_or(conxian_core::MachineType::Other);
+    let machine_type = payload
+        .machine_type_hint
+        .unwrap_or(conxian_core::MachineType::Other);
     let identity = match payload.provider.as_str() {
         "peaq" => conxian_core::MachineIdentity {
             peaq_did: Some(format!("did:peaq:{}", payload.identifier)),
@@ -918,7 +922,9 @@ pub async fn resolve_machine_identity(
         _ => {
             return Err((
                 StatusCode::BAD_REQUEST,
-                Json(json!({ "error": format!("Unsupported machine identity provider: {}", payload.provider) })),
+                Json(
+                    json!({ "error": format!("Unsupported machine identity provider: {}", payload.provider) }),
+                ),
             ))
         }
     };
@@ -1370,7 +1376,7 @@ pub async fn nwc_relay_settle(
 /// Conxian verifies FROST attestations without joining the signer set or
 /// taking custody. This is "route without touching" in action.
 pub async fn verify_cbtc_attestation(
-    State(state): State<AppState>,
+    State(_state): State<AppState>,
     Json(payload): Json<conxian_core::CbtcVerificationRequest>,
 ) -> Result<Json<conxian_core::CbtcVerificationResponse>, (StatusCode, Json<Value>)> {
     let attestation = &payload.attestation;
@@ -1382,8 +1388,7 @@ pub async fn verify_cbtc_attestation(
     let mut checks: Vec<conxian_core::CbtcVerificationCheck> = Vec::new();
 
     // Check 1: Contract ID is well-formed (non-empty and plausible format)
-    let contract_ok = !attestation.contract_id.is_empty()
-        && attestation.contract_id.len() >= 16;
+    let contract_ok = !attestation.contract_id.is_empty() && attestation.contract_id.len() >= 16;
     checks.push(conxian_core::CbtcVerificationCheck {
         check: "contract_id_format".into(),
         passed: contract_ok,
@@ -1395,13 +1400,15 @@ pub async fn verify_cbtc_attestation(
     });
 
     // Check 2: Amount is non-zero and not unreasonably large
-    let amount_ok = attestation.amount_sats > 0
-        && attestation.amount_sats <= 21_000_000_0000_0000; // ≤ 21M BTC in sats
+    let amount_ok = attestation.amount_sats > 0 && attestation.amount_sats <= 2_100_000_000_000_000; // ≤ 21M BTC in sats
     checks.push(conxian_core::CbtcVerificationCheck {
         check: "amount_valid".into(),
         passed: amount_ok,
         detail: Some(if amount_ok {
-            format!("Amount {} sats is within valid range", attestation.amount_sats)
+            format!(
+                "Amount {} sats is within valid range",
+                attestation.amount_sats
+            )
         } else {
             "Amount is zero or exceeds 21M BTC supply cap".into()
         }),
@@ -1506,8 +1513,7 @@ pub async fn settle_m2m(
     Json(payload): Json<conxian_core::M2MSettlementRequest>,
 ) -> Result<Json<conxian_core::M2MSettlementResponse>, (StatusCode, Json<Value>)> {
     // Validate M2M request: both machines must have device keys
-    if payload.source_machine.device_key.is_empty()
-        || payload.target_machine.device_key.is_empty()
+    if payload.source_machine.device_key.is_empty() || payload.target_machine.device_key.is_empty()
     {
         return Err((
             StatusCode::BAD_REQUEST,
@@ -1522,24 +1528,30 @@ pub async fn settle_m2m(
             if payment_request.is_empty() {
                 return Err((
                     StatusCode::BAD_REQUEST,
-                    Json(json!({ "error": "Lightning payment_request is required for Lightning rail" })),
+                    Json(
+                        json!({ "error": "Lightning payment_request is required for Lightning rail" }),
+                    ),
                 ));
             }
 
-            let request = crate::lightning::LightningSettlementRequest {
-                challenge: payment_request.to_string(),
-                amount: payload.amount_minor,
+            let x402_payload = crate::x402::X402PaymentPayload {
+                amount: payload.amount_minor as u128,
                 asset: payload.currency.clone(),
-                expiry: Some(payload.timestamp + 3600), // 1-hour expiry
+                challenge: payment_request.to_string(),
+                expiry: payload.timestamp + 3600, // 1-hour expiry
                 proof_refs: vec![],
             };
 
-            let receipt = state.lightning.execute_payment(&request).await.map_err(|e| {
-                (
-                    e.status_code(),
-                    Json(json!({ "error": e.code(), "message": e.message() })),
-                )
-            })?;
+            let receipt = state
+                .lightning
+                .execute_payment(&x402_payload)
+                .await
+                .map_err(|e| {
+                    (
+                        e.status_code(),
+                        Json(json!({ "error": e.code(), "message": e.message() })),
+                    )
+                })?;
 
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -1550,7 +1562,7 @@ pub async fn settle_m2m(
                 settlement_id: format!("m2m-ln-{}", now),
                 status: conxian_core::SettlementStatus::Settled,
                 settlement_rail: conxian_core::M2MSettlementRail::Lightning,
-                amount_minor: receipt.settled_amount,
+                amount_minor: receipt.settled_amount as u64,
                 settlement_proof: Some(receipt.preimage),
                 settled_at: now,
             }))
@@ -1558,7 +1570,7 @@ pub async fn settle_m2m(
         conxian_core::M2MSettlementRail::Peaq
         | conxian_core::M2MSettlementRail::BitcoinOnChain
         | conxian_core::M2MSettlementRail::TaprootAssets => {
-            // These rails require future adapter integration — stub for now
+            // These rails require adapter integration (on roadmap Q4 2026)
             Err((
                 StatusCode::NOT_IMPLEMENTED,
                 Json(json!({
