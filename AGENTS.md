@@ -30,8 +30,9 @@ You are working on the **Conxian Gateway**, an institutional-grade Rust middlewa
 | BitVMX GC | ЁЯЯб Pending 2026 | N/A |
 | BRICS Pay | ЁЯЯб Research only | N/A |
 | mBridge | ЁЯЯб Research only | N/A |
-| Canton Network | 🟡 Research (G-C7 P3) | `docs/research/CANTON_NETWORK_AND_MACHINE_ECONOMY_RESEARCH.md` |
-| Machine Economy (peaq/DIMO/DePIN) | 🟡 Research (G-C8 P3) | `docs/research/CANTON_NETWORK_AND_MACHINE_ECONOMY_RESEARCH.md` |
+| Canton Network | 🟡 Research — "route without touch" (G-C7 P3) | `docs/research/CANTON_NETWORK_AND_MACHINE_ECONOMY_RESEARCH.md` |
+| Machine Economy (peaq/DIMO/DePIN) | 🟡 Research — BTC/LN gateway opportunity (G-C8 P3) | `docs/research/CANTON_NETWORK_AND_MACHINE_ECONOMY_RESEARCH.md` |
+| UCV-2 | 🟡 Architecture — Cross-ledger settlement protocol | `docs/research/CANTON_NETWORK_AND_MACHINE_ECONOMY_RESEARCH.md` |
 
 ## Core Philosophy
 - **Sovereignty**: All code must prioritize non-custodial logic and user sovereignty.

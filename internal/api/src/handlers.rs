@@ -1779,7 +1779,7 @@ pub async fn verify_machine_rwa_revenue(
             .all(|s| s.amount_minor > 0 && s.event_count > 0);
     checks.push(conxian_core::RevenueVerificationCheck {
         check: "revenue_sources_valid".into(),
-        passed: sources_ok || revenue.revenue_sources.is_empty(),
+        passed: sources_ok,
         detail: Some(format!(
             "{} revenue sources checked, all with positive amounts and events",
             revenue.revenue_sources.len()

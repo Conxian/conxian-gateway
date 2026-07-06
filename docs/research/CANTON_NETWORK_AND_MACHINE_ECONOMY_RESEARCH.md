@@ -498,8 +498,473 @@ Every opportunity must pass Conxian's sovereignty test:
 - ❌ Run a Canton validator/participant node (custodial risk)
 - ❌ Hold Canton Coin or Daml assets (breaks non-custodial principle)
 - ❌ Build a wrapped Bitcoin on Canton (CBTC already exists; verify, don't compete)
+
+---
+
+## Part 7: peaq Network Deep Dive (2026-07-06 Expansion)
+
+### 7.1 peaq Overview: The Machine Economy Blockchain
+
+**peaq** is a purpose-built blockchain for the Machine Economy — enabling robots, devices, sensors, and AI agents to operate as autonomous economic actors.
+
+| Metric | Value (2026) |
+|:---|:---|
+| **Total Transactions** | 174M+ |
+| **Machine Addresses** | 3.35M+ |
+| **Human Wallets** | 2.67M+ |
+| **Daily Machine Transactions** | 70,000–120,000 |
+| **DePIN Apps** | 60+ |
+| **Industries Reshaped** | 22 |
+| **TVL** | $180M+ |
+| **MachineX DEX Volume** | $60M+ |
+| **Consensus** | NPoS (Substrate/Polkadot SDK) |
+| **Cross-Chain** | LayerZero V2 (omnichain) |
+
+**Enterprise Partners**: Deutsche Telekom, Lufthansa, NTT, Continental, Bosch, Denso, Airbus, Mastercard, Gaia-X, Fetch.ai
+
+### 7.2 peaq Architecture: Four-Layer Stack
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      peaq NETWORK                           │
+│                                                             │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │                   peaqOS Scale                       │   │
+│  │  • Open Wallet Standard (OWS) v1.3                  │   │
+│  │  • AI Agent pairing (Scale function)                  │   │
+│  │  • Machine Markets API                                │   │
+│  │  • Payment Rails: x402, MPP, USDT, onchain-escrow   │   │
+│  └────────────────────────┬────────────────────────────┘   │
+│                           │                                │
+│  ┌────────────────────────▼────────────────────────────┐   │
+│  │                   Trust Layer                        │   │
+│  │  • Machine Trust Attestations                        │   │
+│  │  • Machine Credit Rating (MCR) — AAA to NR           │   │
+│  │  • Trust Validators (stake-based)                    │   │
+│  │  • DID Registry (W3C standard)                        │   │
+│  └────────────────────────┬────────────────────────────┘   │
+│                           │                                │
+│  ┌────────────────────────▼────────────────────────────┐   │
+│  │                  peaq Chain (EVM)                     │   │
+│  │  • Substrate/Polkadot SDK fork                       │   │
+│  │  • GRANDPA finality gadget                          │   │
+│  │  • Chain ID 3338                                     │   │
+│  │  • Solidity precompiles for DID, IdentityRegistry   │   │
+│  └─────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 7.3 peaqID: W3C Decentralized Identity for Machines
+
+```
+did:peaq:<0x-address>
+```
+
+**Registration Flow**:
+1. `registerMachine()` or `registerFor()` (proxy-managed)
+2. Identity NFT minted by `IdentityRegistry` (tokenId = machineId, soulbound)
+3. DID resolves to flat key-value attribute store on peaq DID Registry precompile
+
+**DID Attributes**: `machineId`, `nftTokenId`, `operator`, `documentation_url`, `data_api`, `data_visibility`
+
+**Ownership Proof**: EIP-191 challenge → signature → verification → pairing persisted
+
+**Cross-Chain**: DIDLite contracts on satellite chains maintain portability
+
+### 7.4 Open Wallet Standard (OWS): Multi-Chain Machine Wallets
+
+OWS derives accounts across ALL chains from a single BIP-39 mnemonic:
+
+| Chain Family | Examples |
+|:---|:---|
+| **EVM** | peaq, Ethereum, Base, Polygon, Arbitrum, Optimism |
+| **Non-EVM** | **Bitcoin**, Solana, Cosmos, Tron, TON, Sui, XRPL, Spark, Filecoin |
+
+**Key**: Machines already have Bitcoin addresses derivable from their mnemonic (`m/84'/0'/0'/0/{index}`) — but **NO existing Bitcoin/Lightning infrastructure on peaq today**.
+
+### 7.5 peaq DePIN Ecosystem: 60+ Projects
+
+**Infrastructure/DePIN (40+ projects)**: Silencio (audio data), MapMetrics (navigation), NATIX (mapping), Roam (telecom), DATS (compute/security), DeNet (storage), Chirp (IoT), Arkreen (energy), Combinder (VPP), CPIN (solar), NYX Carbon (sustainability DeFi), penomo (energy RWA), AquaSave (water), Farmsent (agriculture), dTelecom, Anyone, Aizel Network (AI), Acurast (compute), aZen (edge compute), iGam3 (AI agents), BigWater, BitDoctor, HOFA, JuiceUp, Powerpod, charge, AXI, PING, Quakecore, Reflex DAO, Menthol Protocol, Pickspot, NetSepio
+
+**Robotics/DePAI (10+)**: XMAQUINA (Robotics DAO, $35M+ treasury), Auki (robot positional awareness), Over the Reality, Alpha AI (drone surveys), Dronedash, Homebrew Robotics Club, Robostack, RiceAI, CodecFlow
+
+**AI (5+)**: 375ai (edge AI), Newcoin, Kaisar
+
+**Tokenization/RWA (3+)**: DualMint (tokenized machines, 20% avg yield), Octo Prestige
+
+**Finance**: MachineX (world's first Machine Economy DEX, $60M+ volume)
+
+### 7.6 The Critical Gap: NO BITCOIN/LIGHTNING ON peaq
+
+**Key Finding**: peaq has NO existing Bitcoin or Lightning Network infrastructure despite having:
+- 3.35M+ machines with Bitcoin-capable addresses (via OWS)
+- Growing machine revenue streams
+- Enterprise demand for payment rails
+- USDT/USDC integration via Tether WDK
+
+This is Conxian's **first-mover opportunity** — be the first Bitcoin/Lightning gateway for peaq machines.
+
+### 7.7 Proposed peaq Adapter Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Conxian Gateway                           │
+│  ┌───────────────────────────────────────────────────────┐   │
+│  │                  peaq Adapter Module                    │   │
+│  │                                                        │   │
+│  │  ┌─────────────┐  ┌──────────────┐  ┌────────────┐  │   │
+│  │  │ peaq RPC    │  │ OWS Wallet   │  │ peaqID     │  │   │
+│  │  │ Connector   │  │ Bridge       │  │ Resolver   │  │   │
+│  │  │ (Chain ID   │  │ (BIP-39 →    │  │ (W3C DID)  │  │   │
+│  │  │  3338)      │  │  BTC deriv)  │  │            │  │   │
+│  │  └──────┬──────┘  └──────┬───────┘  └─────┬────┘  │   │
+│  │         │                │                 │        │   │
+│  │  ┌──────▼────────────────▼─────────────────▼─────┐  │   │
+│  │  │          Machine Identity & Settlement          │  │   │
+│  │  │   peaqID ←→ Lightning Invoice Bridge           │  │   │
+│  │  │   PEAQ/USDT Revenue → sats → BTC savings      │  │   │
+│  │  └─────────────────────┬────────────────────────┘  │   │
+│  └────────────────────────│────────────────────────────┘   │
+│                           │                                │
+│  ┌────────────────────────▼────────────────────────────┐   │
+│  │              Bitcoin/Lightning Layer                  │   │
+│  │  • LND/CLN Node                                      │   │
+│  │  • Nostr relays (NWC/NIP-47)                        │   │
+│  │  • On-chain BTC address                              │   │
+│  └────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Development Phases**:
+| Phase | Feature | Priority |
+|:---|:---|:---|
+| **P1** | peaq RPC monitoring, OWS wallet import | First-mover |
+| **P2** | Lightning invoice generation for machines | Revenue routing |
+| **P3** | PEAQ/USDT → sats exchange integration | Liquidity |
+| **P4** | Machine RWA verification pipeline | Enterprise |
+
+### 7.8 Machine Revenue → Lightning → Bitcoin Flow
+
+```
+Machine Service Delivery (EV charging, compute, data)
+        ↓
+peaq Escrow (ERC-8004) ← LayerZero cross-chain
+        ↓
+peaq Machine Wallet (OWS) — PEAQ/USDT balance
+        ↓
+Conxian Gateway (peaq Adapter)
+        ├── DID verification (peaqID → trust score)
+        ├── Revenue attestation (machine revenue → ZKC)
+        └── Exchange to sats (DEX/CEX integration)
+                ↓
+        Lightning Network (HODL invoices, P2P routing)
+                ↓
+        Machine Bitcoin Savings / Investor Distributions
+        ├── Hodl position ( sovereign store of value)
+        ├── DCA into ETFs (institutional)
+        └── Stacks sBTC (Bitcoin L2 yield)
+```
+
+---
+
+## Part 8: State Translation Patterns & UCV-2
+
+### 8.1 State Translation Taxonomy
+
+Conxian must translate between heterogeneous ledgers. Here's the comprehensive mapping:
+
+| Ledger | State Model | Contract Primitive | Identity Model | Conxian Translation |
+|:---|:---|:---|:---|:---|
+| **Bitcoin** | UTXO | OutPoint | x-only pubkey | Anchor / root of trust |
+| **Stacks** | UTXO-like | Clarity contract | BNS name / STX address | Bitcoin-aligned L2 |
+| **Liquid** | UTXO+CTx | Confidential asset | Asset blindning key | BTC sidechain |
+| **RGB** | UTXO+seals |Contract Instance | Blinded UTXO | Bitcoin-native assets |
+| **Canton** | eUTXO | Daml Contract | W3C Party | Institutional eUTXO |
+| **peaq** | EVM Account | Solidity contract | peaqID (W3C DID) | Machine economic actor |
+| **Rootstock** | EVM Account | Solidity | ETH address | BTC peg L2 |
+| **Babylon** | BTC anchor | Checkpoint proof | BTC pubkey | BTC security |
+| **Fedimint** | e-cash note | Federated mint | Mint member set | BTC e-cash |
+| **Lightning** | HTLC state | Payment channel | Node pubkey | BTC microtx |
+| **DIMO** | Vehicle DID | Vehicle contract | VIN-based DID | Machine RWA |
+
+### 8.2 Universal Contract Reference (UCR) Pattern
+
+```
+UniversalContractRef = {
+    ledger: LedgerType,           // BTC, STX, peaq, Canton, etc.
+    contract_id: Bytes,            // Ledger-native identifier
+    state_hash: Digest,            // Merkle commitment to state
+    version: u64,                  // Monotonic version
+    metadata: {
+        owner: SovereignIdentity,  // Human/Machine/Org
+        controller: SovereignIdentity,
+        attestations: Vec<AttestationProof>,
+        jurisdiction: JurisdictionTag,
+    }
+}
+```
+
+### 8.3 Cross-Ledger Settlement Protocol (UCV-2 Concept)
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│           Cross-Ledger Settlement Protocol (UCV-2)             │
+│                                                              │
+│  Step 1: Intent Declaration                                   │
+│  ┌────────────────────────────────────────────────────────┐   │
+│  │  SettlementIntent {                                    │   │
+│  │    source: LedgerType,    // peaq, Canton, Liquid...   │   │
+│  │    target: LedgerType,    // Bitcoin, Stacks, LN...   │   │
+│  │    amount: Amount,                                     │   │
+│  │    conditions: Vec<SettlementCondition>,              │   │
+│  │    sovereign_memo: SovereignMemo,                      │   │
+│  │  }                                                    │   │
+│  └────────────────────────────────────────────────────────┘   │
+│                           ↓                                   │
+│  Step 2: State Translation                                    │
+│  ┌────────────────────────────────────────────────────────┐   │
+│  │  Conxian translates:                                   │   │
+│  │  • peaq DID → SovereignIdentity                       │   │
+│  │  • Canton Daml Contract → UCR                         │   │
+│  │  • peaq PEAQ balance → sats estimate                  │   │
+│  └────────────────────────────────────────────────────────┘   │
+│                           ↓                                   │
+│  Step 3: Verification (UCV-1)                                 │
+│  ┌────────────────────────────────────────────────────────┐   │
+│  │  UniversalVerifier {                                   │   │
+│  │    Ecdsa: Bitcoin SPV proofs                           │   │
+│  │    Schnorr: Stacks Nakamoto, BitVM2                    │   │
+│  │    Zkml: Chainproofs, Citadel                          │   │
+│  │    Cbtc: CBTC FROST attestation                       │   │
+│  │    peaq: DID + MCR verification ← NEW                 │   │
+│  │    Canton: Daml ACS translation ← NEW                 │   │
+│  │  }                                                    │   │
+│  └────────────────────────────────────────────────────────┘   │
+│                           ↓                                   │
+│  Step 4: Atomic Settlement Execution                          │
+│  ┌────────────────────────────────────────────────────────┐   │
+│  │  HTLC/PTLC: Bitcoin-anchored hash/adaptor locks        │   │
+│  │  DLC: Oracle-attested conditional settlement            │   │
+│  │  FROST: Threshold signature for multi-party             │   │
+│  │  Lightning: HTLC routing to final recipient            │   │
+│  └────────────────────────────────────────────────────────┘   │
+│                           ↓                                   │
+│  Step 5: Sovereign Memo Embedding                            │
+│  ┌────────────────────────────────────────────────────────┐   │
+│  │  OP_RETURN / Taproot annex:                           │   │
+│  │  • Source ledger + contract reference                  │   │
+│  │  • Authorization proof (signature/attestation)        │   │
+│  │  • Compliance ZKC (jurisdiction tag)                  │   │
+│  │  • Discard immediately from Gateway memory             │   │
+│  └────────────────────────────────────────────────────────┘   │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### 8.4 peaq Adapter: Detailed Design
+
+```rust
+// internal/engine/src/institutional/peaq_adapter.rs
+
+/// peaq RPC connector configuration
+pub struct PeaqConfig {
+    pub rpc_url: Url,              // https://rpc.peaq.network or self-hosted
+    pub chain_id: u64,             // 3338 for mainnet
+    pub escrow_contract: Address,   // ERC-8004 escrow contract
+    pub identity_registry: Address, // DID registry precompile
+    pub layer_zero_endpoint: Address,
+}
+
+/// peaq machine identity resolved from chain
+pub struct PeaqMachineIdentity {
+    pub did: Did,                      // did:peaq:<address>
+    pub machine_id: U256,              // On-chain machine ID
+    pub nft_token_id: U256,            // Identity NFT tokenId
+    pub operator: Option<Did>,          // Proxy operator if registered
+    pub data_api: Option<Url>,          // Machine data API endpoint
+    pub machine_credit_rating: MCR,     // AAA to NR
+    pub is_trust_activated: bool,
+}
+
+/// peaq event subscription types
+pub enum PeaqEvent {
+    /// Machine registered on peaq
+    MachineRegistered { machine_id: U256, owner: Did, timestamp: u64 },
+    /// Payment received in escrow
+    EscrowDeposited { escrow_id: U256, amount: U256, token: TokenType },
+    /// Payment released from escrow
+    EscrowReleased { escrow_id: U256, recipient: Did, amount: U256 },
+    /// Machine trust attestation updated
+    TrustUpdated { machine_id: U256, new_rating: MCR },
+}
+
+/// OWS wallet bridge: derive Bitcoin addresses from peaq mnemonic
+pub struct OwsWalletBridge {
+    mnemonic: Mnemonic,    // Never stored — passed at runtime
+    hd_path: HdPath,        // m/84'/0'/0'/0/{index} for BTC
+}
+
+impl OwsWalletBridge {
+    pub fn derive_btc_address(&self, index: u32) -> Result<BitcoinAddress> {
+        // BIP-39 → BIP-84 derivation for native SegWit BTC address
+        let private_key = self.mnemonic.derive(BIP84_PATH, index);
+        let public_key = private_key.to_x_only_public_key();
+        Ok(BitcoinAddress::p2tr(public_key, None, Network::Bitcoin))
+    }
+}
+```
+
+### 8.5 Non-Custodial Revenue Verification (peaq → Lightning)
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│         Machine Revenue → Lightning → Bitcoin Flow            │
+│                                                              │
+│  1. Machine provides service (EV charging, compute, data)     │
+│                    ↓                                         │
+│  2. Payment escrowed in peaq ERC-8004 contract               │
+│     Events: EscrowDeposited(machine_id, amount, PEAQ/USDT)   │
+│                    ↓                                         │
+│  3. Conxian peaq adapter subscribes to events                │
+│     → Verifies machine DID via peaqID resolver                │
+│     → Checks MCR credit rating                                │
+│     → Confirms service_type matches payment                   │
+│                    ↓                                         │
+│  4. Revenue attestation (ZKC pass-through)                    │
+│     → Machine revenue: <amount> <currency>                   │
+│     → Jurisdiction: <G7/BRICS/neutral>                       │
+│     → No PII persisted — ephemeral attestation               │
+│                    ↓                                         │
+│  5. Settlement execution                                      │
+│     → Route PEAQ to exchange (DEX or CEX)                   │
+│     → Convert to sats                                         │
+│     → Generate Lightning invoice (or HODL invoice)            │
+│     → Deliver to machine's BTC address (on-chain sweep)       │
+│                    ↓                                         │
+│  6. Sovereign Memo (OP_RETURN)                                │
+│     "peaq:machine:<id>|revenue:<amount>|jurisdiction:<tag>" │
+│     → Embedded in BTC transaction                             │
+│     → Discarded from Gateway memory immediately              │
+└──────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Part 9: Strategic Knowledge Graph (Updated 2026-07-06)
+
+### 9.1 Protocol Universe Map
+
+```
+                           ┌─────────────────────────────────────────────┐
+                           │           Conxian Gateway (Sovereign Router)│
+                           │                                              │
+                           │  ┌──────────┐  ┌──────────┐  ┌─────────────┐  │
+                           │  │ REST API │  │   Auth   │  │  Metrics    │  │
+                           │  │ (16 EP)  │  │ (Bearer) │  │ (Prometheus)│  │
+                           │  └────┬─────┘  └──────────┘  └─────────────┘  │
+                           │       │                                       │
+                           │  ┌────▼─────────────────────────────────┐    │
+                           │  │     UCV-2 Cross-Ledger Settlement    │    │
+                           │  │  (extends UCV-1: +peaq +Canton)     │    │
+                           │  └────┬─────────────────────────────────┘    │
+                           │       │                                       │
+                           │  ┌────▼──────────────┬───────────────────┐    │
+                           │  │    Compliance     │      Engine       │    │
+                           │  │   (ZKC Pipeline)  │   (14 Adapters)  │    │
+                           │  └──────────────────┴───────────────────┘    │
+                           └───────────────────────────────────────────────┘
+                                         │                      │
+                           ┌──────────────┴──────┐    ┌──────────┴──────────────┐
+                           │   Sanctions         │    │   Protocol Adapters     │
+                           │   Screening          │    │   ┌──────────────────┐  │
+                           │   (OFAC/EU/UN)      │    │   │  Bitcoin Core    │  │
+                           └─────────────────────┘    │   │  ├──────────────┤  │
+                                                       │   │  Lightning      │  │
+                           ┌────────────────────────┐  │   │  ├──────────────┤  │
+                           │   Sovereignty Bridge    │  │   │  Liquid        │  │
+                           │   (Stacks/RGB/BTC)     │  │   │  ├──────────────┤  │
+                           └────────────────────────┘  │   │  Stacks        │  │
+                                                       │   │  ├──────────────┤  │
+                           ┌────────────────────────┐  │   │  Rootstock     │  │
+                           │  Institutional Perimeter│  │   │  ├──────────────┤  │
+                           │  (Canton/LayerZero)    │  │   │  RGB v0.12     │  │
+                           └────────────────────────┘  │   │  ├──────────────┤  │
+                                                       │   │  Babylon       │  │
+                           ┌────────────────────────┐  │   │  ├──────────────┤  │
+                           │   Machine Economy       │  │   │  BitVM2       │  │
+                           │   (peaq/DePIN/M2M)     │  │   │  ├──────────────┤  │
+                           └────────────────────────┘  │   │  Fedimint      │  │
+                                                       │   │  ├──────────────┤  │
+                           ┌────────────────────────┐  │   │  Citrea        │  │
+                           │   BRICS+ Multi-Currency│  │   │  ├──────────────┤  │
+                           │   (CIPS/PAPSS/mBridge) │  │   │  Strata        │  │
+                           └────────────────────────┘  │   │  ├──────────────┤  │
+                                                       │   │  peaq ◄ NEW   │  │
+                                                       │   │  ├──────────────┤  │
+                                                       │   │  Canton ◄ NEW │  │
+                                                       │   │  ├──────────────┤  │
+                                                       │   │  RISC Zero ◐  │  │
+                                                       │   └──────────────────┘  │
+                                                       └────────────────────────┘
+```
+
+### 9.2 Gaps & Opportunities Matrix
+
+| Gap/Opportunity | Type | Priority | Sovereignty Fit | Technical Complexity | Action |
+|:---|:---|:---|:---|:---|:---|
+| **peaq BTC/LN Gateway** | Integration | P1 | ✅ Non-custodial routing | Medium | Build peaq adapter module |
+| **Machine DID extension** | Feature | P1 | ✅ Extend identity stack | Low | Add peaqID → SovereignIdentity |
+| **Lightning M2M primitives** | Feature | P1 | ✅ Machines hold keys | Low | SettleSource::MachineToMachine |
+| **Canton Daml state translation** | Integration | P2 | ✅ Observe-only | High | Daml ACS → UCR |
+| **CBTC DLC verification** | Feature | P1 | ✅ FROST attestation | Medium | DLC + adaptor signatures |
+| **Machine RWA revenue ZKC** | Feature | P2 | ✅ Compliance pipe | Medium | Revenue attestation |
+| **Canton↔BTC atomic swap** | Integration | P3 | ✅ Trustless | Very High | HTLC/PTLC on Bitcoin for Daml |
+| **DePIN compliance ZKC** | Feature | P3 | ✅ Jurisdictional | Medium | Machine revenue classification |
+| **Chainlink CCIP Canton** | Integration | P2 | ✅ ZKC compliance | Medium | CCIP → Gateway pipeline |
+| **UCV-2: Cross-ledger protocol** | Architecture | P2 | ✅ Universal routing | High | Extend UCV-1 → UCV-2 |
+
+### 9.3 Revenue Model: Sovereignty-Aligned Monetization
+
+| Revenue Stream | Mechanism | Custody Model | Conxian Value |
+|:---|:---|:---|:---|
+| **Basis-point routing fee** | 1-5 bps on settled volume | ✅ Never holds assets | Routing + compliance |
+| **Attestation fee** | Flat fee per proof | ✅ Stateless verification | UCV verification |
+| **Sovereign Memo stamp** | Per embedded compliance memo | ✅ One-time, ephemeral | Compliance pipe |
+| **Machine ID subscription** | Monthly for DID resolution | ✅ Identity-as-service | peaqID resolver |
+| **Lightning channel lease** | Inbound liquidity provision | ✅ Non-custodial LP | M2M payment rails |
+| **peaq→BTC conversion spread** | FX margin on PEAQ→sats | ✅ Convert & forward | Exchange integration |
+| **Verification-as-a-Service** | UCV proof verification | ✅ Compute-only | Universal verifier |
+| **Liquidity pulse subscription** | Mempool orchestration access | ✅ SaaS, no custody | Treasury monitor |
+
+---
+
+## References
+
+### Canton Network
+- Main: https://canton.network/
+- Foundation: https://canton.foundation/
+- Ecosystem: https://sync.global/canton-apps/
+- Whitepaper: https://canton.network/whitepaper
+- Wikipedia: https://en.wikipedia.org/wiki/Canton_Network
+- peaq: https://peaq.xyz/
+- peaq Docs: https://docs.peaq.xyz/
+- Purple Paper: https://www.peaq.xyz/purple-paper
+- peaq Ecosystem: https://www.peaq.xyz/learn/ecosystem
+- peaq Blog: https://www.peaq.xyz/blog
+- MachineX: https://www.machinex.xyz
+- peaq GitHub: https://github.com/peaqnetwork
+- Digital Asset: https://digitalasset.com/
+- LayerZero: https://layerzero.network/
+
+---
+
+*Research expanded: 2026-07-06 | Canton Network + Machine Economy + peaq deep-dive*
+
+### What We Explicitly Do NOT Do (peaq)
+
 - ❌ Issue machine tokens or DePIN tokens (competing with peaq/Helium ecosystem)
 - ❌ Store PII or machine telemetry (compliance pipe only)
+- ❌ Run a peaq validator or full node (custodial risk)
+- ❌ Hold peaq tokens or assets (breaks non-custodial principle)
 
 ---
 
