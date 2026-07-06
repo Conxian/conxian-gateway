@@ -26,6 +26,28 @@ This document expands on existing research and maps emerging opportunities for t
     - Research mapping of `TreasuryMonitor` events to `camt.053` (Bank-to-Customer Statement) messages.
     - Propose an "Institutional Reconciliation" endpoint that outputs audit-ready XML for ERP ingestion.
 
+### E. Canton Network Interoperability (New — 2026-07-06)
+- **Status**: Research
+- **Opportunity**: Canton Network is a privacy-enabled institutional DLT from Digital Asset powering $6T+ in tokenized RWAs across Goldman Sachs, BNP Paribas, Deutsche Börse. Its eUTXO model (Daml) is architecturally isomorphic to Bitcoin UTXO.
+- **Expansion** (see `docs/research/CANTON_NETWORK_AND_MACHINE_ECONOMY_RESEARCH.md` for full analysis):
+    - **G-C1**: CBTC non-custodial verification — DLC-based Bitcoin reserve attestation for CBTC (BitSafe wrapped Bitcoin on Canton). Verify FROST threshold attestations without joining the signer set.
+    - **G-C4**: Canton state translation adapter — Map Daml Active Contract Set → Universal Contract Reference → Bitcoin anchor. Observe-only, never run a Canton validator.
+    - **G-C5**: Chainlink CCIP Canton connector — Route CCIP messages through Conxian's compliance ZKC pipeline.
+    - **G-C7**: Canton↔Bitcoin atomic swap engine — Trustless cross-chain settlement between Daml contracts and Bitcoin UTXOs (HTLC/PTLC).
+- **Market Impact**: Canton tokenizes $6T+ in institutional assets. Conxian is the sovereign routing layer between this institutional capital and permissionless Bitcoin — "route without touching."
+- **Sovereignty Alignment**: ✅ Observe only, never custody, never run a Canton validator.
+
+### F. Machine Economy (DePIN + M2M — New — 2026-07-06)
+- **Status**: Research
+- **Opportunity**: The Machine Economy (DePIN, M2M payments) is emerging where machines own wallets, pay machines, and earn autonomously. Lightning Network has hit $1.1B/month volume with USDT via Taproot Assets — becoming the M2M settlement rail.
+- **Expansion** (see `docs/research/CANTON_NETWORK_AND_MACHINE_ECONOMY_RESEARCH.md` for full analysis):
+    - **G-C2**: Machine identity DID extension — Extend SovereignIdentity with MachineIdentity (peaq DID + device key). Leverage existing BNS/ENS/World ID stack.
+    - **G-C3**: Lightning M2M settlement primitives — Add SettlementSource::MachineToMachine variant. Integrate d402/x402 for API-level machine payments.
+    - **G-C6**: Machine RWA revenue verification — Verify machine revenue attestations (peaq, DIMO, ELOOP). Route verified revenue to token holders via Lightning.
+    - **G-C8**: DePIN compliance ZKC — Jurisdictional tax reporting for autonomous machine income.
+- **Market Impact**: peaq hosts 60+ dApps with 500K+ machines and $180M TVL. Machine identity + M2M routing is a first-mover infrastructure play.
+- **Sovereignty Alignment**: ✅ Machines hold their own keys; Conxian routes and verifies.
+
 ### D. BRICS+ Multi-Currency Settlement (New — 2026-06-29)
 - **Status**: Research → Active Development
 - **Opportunity**: The global financial system is bifurcating. BRICS+ represents ~40% of global GDP with alternative payment rails (CIPS, mBridge, SPFS, BRICS Pay) that bypass Western SWIFT/CHIPS infrastructure.

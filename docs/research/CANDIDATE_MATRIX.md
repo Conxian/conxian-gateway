@@ -53,8 +53,33 @@ This matrix tracks the maturity of core components and identifies the best candi
 - **Readiness**: Medium. ALEX oracle feeds for BRICS FX pairs need research.
 - **Impact**: Positions Gateway as multi-currency settlement hub for BRICS corridors (RMB, RUB, INR, AED).
 
-## 3. Recommended Initiation (Updated 2026-06-29)
+### Candidate G: Machine Identity DID Extension (Score: 7.8)
+- **Urgency**: High (G-C2, Q3 2026). Prerequisite for all M2M routing.
+- **Readiness**: High. Existing BNS/ENS/World ID stack provides the pattern. peaq DID + device key extension is additive.
+- **Impact**: Opens Machine Economy vertical — 500K+ machines on peaq alone.
+
+### Candidate H: Lightning M2M Settlement Primitives (Score: 7.5)
+- **Urgency**: High (G-C3, Q3 2026). LN has $1.1B/month volume and USDT support.
+- **Readiness**: High. Existing Lightning adapter in preparation phase. SettlementSource extension is type-system work.
+- **Impact**: Positions Gateway as routing layer for autonomous machine payments.
+
+### Candidate I: CBTC Non-Custodial Verification (Score: 7.0)
+- **Urgency**: High (G-C1, Q3 2026). CBTC is live on Canton today.
+- **Readiness**: Medium. DLC primitives exist; FROST attestation verification needs research.
+- **Impact**: First non-custodial Bitcoin reserve verification for Canton-wrapped BTC.
+
+### Candidate J: Canton State Translation Adapter (Score: 6.5)
+- **Urgency**: Medium (G-C4, Q4 2026).
+- **Readiness**: Medium-Low. Requires Daml ACS observation capability; Canton observer API status unknown.
+- **Impact**: Sovereign routing between $6T+ institutional Canton and Bitcoin.
+
+## 3. Recommended Initiation (Updated 2026-07-06)
 Initiate **Candidate D (BRICS Sanctions-Risk Tagging)** was completed in Phase 3 — it's the highest-priority gap (P=16) and is a type-system change with low effort. Follow with **Candidate A (World ID)** to close identity gap, then **Candidate E (CIPS Normalization)** to capture the $24.47T CIPS settlement market. **Candidate B (Blake2s)** aligns with Ark specifications and should follow.
+
+### Canton & Machine Economy Research Basis
+Full analysis in `docs/research/CANTON_NETWORK_AND_MACHINE_ECONOMY_RESEARCH.md`. Two new strategic vectors: (1) Canton Network institutional DLT with $6T+ tokenized RWAs — Conxian routes sovereign capital across the institutional boundary without touching; (2) Machine Economy with peaq (500K+ machines) + Lightning M2M settlements ($1.1B/month) — Conxian provides machine identity, routing, and compliance infrastructure.
+
+**Q3 2026 Priority Candidates**: G (Machine Identity, Score 7.8), H (M2M Lightning, Score 7.5), I (CBTC Verification, Score 7.0). These are high-readiness, high-impact, and fully aligned with Conxian's non-custodial sovereignty ethos.
 
 ### BRICS Research Basis
 Full financial systems analysis in `docs/research/BRICS_FINANCIAL_SYSTEMS_RESEARCH.md`. The global financial system is bifurcating: Western SWIFT/ISO 20022 (~45% GDP) vs BRICS CIPS/mBridge/SPFS (~40% GDP). The Gateway's dual-stack architecture must support both.

@@ -2,15 +2,16 @@
 
 You are working on the **Conxian Gateway**, an institutional-grade Rust middleware designed for high-performance Bitcoin/Stacks state logic and enterprise compliance.
 
-## Current State (2026-07-05, updated)
+## Current State (2026-07-06, updated)
 - **Status Audit**: Holistic review of Nexus/Gateway alignment complete (CON-1353).
-- **Protocol Drift**: Resolved тАФ Fedimint, Citrea, and Strata adapters implemented and in production paths.
+- **Protocol Drift**: Resolved — Fedimint, Citrea, and Strata adapters implemented and in production paths.
 - **RGB G-1385 (Phase 1)**: StashResolver delivered (commit `124d17e`) with `rgb-std` v0.12.0-rc.3 + `bp-esplora` v0.12.0-rc.3 behind `rgb-native` feature. Phase 2 (ContractVerify, consignment) blocked on rgb-std ecosystem stabilization.
 - **PR #233 (G-1389)**: Tech debt reduction merged (`5e6613e`). Includes Fedimint/Citrea/Strata adapters, Redis coordination module, auth middleware timing stubs, reqwest 0.13 upgrade, dead_code cleanup. Citrea adapter moved from `bitcoin/` to `ntt/`.
 - **PR #228 (G-1385)**: RGB stash resolver merged (`124d17e`), retained through rebase.
-- **Hardening Stubs**: ✅ CON-1276 (Redis AUTH + token expiry) now fully implemented (commit `2ef6df1`). Adds `REDIS_USERNAME`/`REDIS_PASSWORD`/`TOKEN_TTL_SECONDS` env vars, explicit AUTH+PING at Redis init, uptime-based token expiry in auth middleware.
+- **Hardening Stubs**: ✅ CON-1276 (Redis AUTH + token expiry) now fully implemented (commit `2ef6df1`).
 - **UCV-1**: Fully implemented and unifying Babylon, BitVM2, Liquid, Rootstock, and RGB.
 - **CI status**: All workflows green on main. `cargo-audit.yml` augmented with `.cargo/audit.toml` ignore list for transitive `rustls-webpki` CVEs.
+- **Strategic Research**: Canton Network & Machine Economy deep-dive complete (2026-07-06). See `docs/research/CANTON_NETWORK_AND_MACHINE_ECONOMY_RESEARCH.md`.
 
 ### Protocol Implementations (2026-07-05)
 | Protocol | Status | File |
@@ -28,6 +29,8 @@ You are working on the **Conxian Gateway**, an institutional-grade Rust middlewa
 | BitVMX GC | ЁЯЯб Pending 2026 | N/A |
 | BRICS Pay | ЁЯЯб Research only | N/A |
 | mBridge | ЁЯЯб Research only | N/A |
+| Canton Network | 🟡 Research | `docs/research/CANTON_NETWORK_AND_MACHINE_ECONOMY_RESEARCH.md` |
+| Machine Economy (peaq/DePIN) | 🟡 Research | `docs/research/CANTON_NETWORK_AND_MACHINE_ECONOMY_RESEARCH.md` |
 
 ## Core Philosophy
 - **Sovereignty**: All code must prioritize non-custodial logic and user sovereignty.
@@ -76,7 +79,17 @@ Before submitting changes, you MUST:
 - [x] #232: mBridge — BIS multi-CBDC DLT (closed — research complete, observation only)
 
 Protocol drift resolved — 10 of 10 identified protocols now have adapters.
-All implementation-level gaps are closed. Remaining items are research/policy only.
+Implementation gaps closed. New strategic research opened: Canton Network interop + Machine Economy monetization.
+
+### New Strategic Gaps (2026-07-06)
+- [ ] G-C1: CBTC non-custodial verification (DLC-based Bitcoin reserve attestation) — P1, Q3 2026
+- [ ] G-C2: Machine identity DID extension (peaq DID + device key) — P1, Q3 2026
+- [ ] G-C3: Lightning M2M settlement primitives (SettlementSource::MachineToMachine) — P1, Q3 2026
+- [ ] G-C4: Canton state translation adapter (Daml ACS → Universal Contract Reference) — P2, Q4 2026
+- [ ] G-C5: Chainlink CCIP Canton connector (CCIP messages → ZKC compliance pipe) — P2, Q4 2026
+- [ ] G-C6: Machine RWA revenue verification pipeline — P2, Q4 2026
+- [ ] G-C7: Canton↔Bitcoin atomic swap engine — P3, Q1 2027
+- [ ] G-C8: DePIN compliance ZKC — P3, Q1 2027
 
 ## Gap Research (2026-07-05 Refresh)
 
@@ -103,6 +116,26 @@ All implementation-level gaps are closed. Remaining items are research/policy on
 - **Conxian posture**: Observer/compliance pass-through only; no adapter needed
 - **Re-evaluate** if BIS/mBridge publishes public observer API
 
+### Canton Network (Institutional Privacy DLT — 2026-07-06)
+- **What**: Digital Asset's privacy-preserving DLT; Daml smart contracts (Haskell-derived); eUTXO model isomorphic to Bitcoin
+- **Architecture**: Participant nodes (validators) + Synchronizers (ordering/2PC); sub-transaction privacy; $6T+ tokenized RWAs
+- **CBTC**: Wrapped Bitcoin on Canton via BitSafe — FROST threshold signatures, non-custodial attestation
+- **Integrations**: Chainlink CCIP (Sep 2025), LayerZero (Mar 2026), Polyglot EVM (Feb 2025 whitepaper)
+- **Conxian posture**: Observe-only routing layer; never run a Canton validator; translate Daml ACS → Bitcoin UTXO state
+- **Opportunity**: Non-custodial capital routing between institutional Canton ($6T+ RWA) and sovereign Bitcoin
+- **Key constraint**: Canton is permissioned; Conxian routes without touching — verify, attest, never hold
+- **Full research**: `docs/research/CANTON_NETWORK_AND_MACHINE_ECONOMY_RESEARCH.md`
+
+### Machine Economy (DePIN, M2M, peaq — 2026-07-06)
+- **What**: Machines owning wallets, paying machines, earning autonomously; DePIN = token-incentivized physical infrastructure
+- **Key protocols**: peaq (60+ dApps, 500K+ machines, $180M TVL, Polkadot L1), Helium (1M+ hotspots, Solana)
+- **Settlement rail**: Lightning Network — $1.1B/month volume, USDT via Taproot Assets, sub-cent fees, instant finality
+- **Machine identity**: peaq DID, DIMO Vehicle ID, device pubkeys; Conxian extends existing BNS/ENS/World ID stack
+- **Conxian posture**: Non-custodial M2M settlement routing via Lightning; machine identity verification; machine RWA revenue attestation
+- **Monetization**: M2M routing fees (1-5 bps), identity attestation fees, Lightning channel liquidity leasing
+- **Key principle**: Machines hold their own keys; Conxian routes and verifies, never custodies
+- **Full research**: `docs/research/CANTON_NETWORK_AND_MACHINE_ECONOMY_RESEARCH.md`
+
 ## OpenHands SDK & Automation Capabilities
 
 ### SDK (Python)
@@ -124,8 +157,13 @@ All implementation-level gaps are closed. Remaining items are research/policy on
 1. **Daily CI monitor**: Cron→prompt preset to check all 6 workflows and report status to Slack
 2. **Weekly dependency audit**: Cron→prompt preset to run `cargo audit` and file issues for new CVEs
 3. **PR review agent**: Event→on `pull_request.labeled` with `openhands` label → auto-review
-4. **Research issue updater**: Cron→prompt preset to refresh #189/#231/#232 research monthly
+4. **Research issue updater**: Cron→prompt preset to refresh all research monthly (Canton, BitVMX, BRICS, mBridge, Machine Economy)
 5. **Release note generator**: Event→on `release.published` → generate changelog from git history
+6. **Canton ecosystem watcher**: Cron→monthly check Canton GitHub releases + CBTC attestation set changes
 
 ## Ethical Alignment
 The Conxian Protocol is built to empower individuals and institutions within the Stacks/Bitcoin ecosystem. The dual-stack settlement architecture supports financial sovereignty across both Western and BRICS-aligned jurisdictions. Avoid any "dark patterns" or custodial shortcuts.
+
+**Canton Principle**: Route without touching. Conxian serves as the sovereign membrane between institutional privacy DLTs and permissionless Bitcoin — verifying, attesting, translating — but never holding, controlling, or intermediating assets on either side.
+
+**Machine Economy Principle**: Machines are sovereign economic actors. Conxian provides the identity, routing, and compliance infrastructure for autonomous M2M value exchange without ever taking custody of machine wallets or revenue streams.
