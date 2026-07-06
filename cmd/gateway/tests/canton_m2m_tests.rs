@@ -912,7 +912,7 @@ async fn test_machine_rwa_verify_revenue_mismatch() {
 }
 
 #[tokio::test]
-async fn test_machine_rwa_verify_zero_event_count_invalidates_sources_check() {
+async fn test_machine_rwa_verify_zero_event_count_fails_sources_ok() {
     // sources_ok requires event_count > 0 AND amount_minor > 0.
     // Zero event_count makes sources_ok=false, which propagates to all_passed=false.
     let app = test_app();
