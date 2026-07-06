@@ -42,6 +42,13 @@ fn amount_sbtc_to_satoshis(amount_sbtc: f64) -> Result<u64, &'static str> {
     Ok(rounded as u64)
 }
 
+fn now_unix() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
 pub async fn get_health(State(state): State<AppState>) -> Json<Value> {
     let s = state.shared.read().expect("lock poisoned");
     let bitcoin_status = if s.bitcoin.last_sync_time > 0 {
@@ -865,27 +872,31 @@ pub async fn resolve_machine_identity(
     State(state): State<AppState>,
     Json(payload): Json<conxian_core::MachineIdentityResolutionRequest>,
 ) -> Result<Json<conxian_core::MachineIdentityResolutionResponse>, (StatusCode, Json<Value>)> {
-    // Device-key proof-of-possession: verify Schnorr signature if provided
-    if let Some(ref sig) = payload.signature {
-        if payload.provider == "device_key" {
-            let verifier: &dyn conxian_core::Bip322Verifier = state.compliance.as_ref();
-            let message = format!(
-                "Conxian Machine Identity Verification: {}",
-                payload.identifier
-            );
-            match verifier.verify_message(&payload.identifier, &message, sig) {
-                Ok(true) => info!(
-                    "Machine device-key verification successful for {}",
-                    payload.identifier
-                ),
-                _ => {
-                    return Err((
-                        StatusCode::UNAUTHORIZED,
-                        Json(
-                            json!({ "error": "Invalid device-key signature for machine identity" }),
-                        ),
-                    ))
-                }
+    // Proof-of-possession: verify Schnorr/BIP-322 signature if provided.
+    // For device_key provider, the identifier is the public key itself.
+    // For peaq/dimo providers, a separate device_key field must also be provided.
+    let device_key_for_verify = match payload.provider.as_str() {
+        "device_key" => Some(payload.identifier.as_str()),
+        "peaq" | "dimo" => payload.device_key.as_deref(),
+        _ => None,
+    };
+
+    if let (Some(ref sig), Some(key)) = (&payload.signature, device_key_for_verify) {
+        let verifier: &dyn conxian_core::Bip322Verifier = state.compliance.as_ref();
+        let message = format!(
+            "Conxian Machine Identity Verification: {}",
+            payload.identifier
+        );
+        match verifier.verify_message(key, &message, sig) {
+            Ok(true) => info!(
+                "Machine identity signature verified for {} (provider: {})",
+                payload.identifier, payload.provider
+            ),
+            _ => {
+                return Err((
+                    StatusCode::UNAUTHORIZED,
+                    Json(json!({"error": "Invalid signature for machine identity"})),
+                ))
             }
         }
     }
@@ -935,10 +946,7 @@ pub async fn resolve_machine_identity(
         provider: payload.provider,
         verified,
         metadata: Some(json!({
-            "resolved_at": std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs(),
+            "resolved_at": now_unix(),
             "protocol_version": "1.0.0",
             "sovereignty_note": "Machine holds own keys; Conxian routes and verifies"
         })),
@@ -1380,10 +1388,7 @@ pub async fn verify_cbtc_attestation(
     Json(payload): Json<conxian_core::CbtcVerificationRequest>,
 ) -> Result<Json<conxian_core::CbtcVerificationResponse>, (StatusCode, Json<Value>)> {
     let attestation = &payload.attestation;
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
+    let now = now_unix();
 
     let mut checks: Vec<conxian_core::CbtcVerificationCheck> = Vec::new();
 
@@ -1552,10 +1557,7 @@ pub async fn translate_canton_state(
         }
     }
 
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
+    let now = now_unix();
 
     let contract_ref = conxian_core::UniversalContractRef {
         ledger: "canton".into(),
@@ -1610,10 +1612,7 @@ pub async fn route_ccip_message(
     };
 
     let approved = effective_risk != conxian_core::SanctionsRisk::Critical;
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
+    let now = now_unix();
 
     Ok(Json(conxian_core::CcipRouteResponse {
         approved,
@@ -1630,6 +1629,10 @@ pub async fn route_ccip_message(
 }
 
 /// Classify the sanctions risk of a CCIP route based on source/destination chains.
+///
+/// TODO: Move chain classification lists to `conxian-core` config or environment
+/// variables (e.g. `CCIP_LOW_RISK_CHAINS`, `CCIP_HIGH_RISK_CHAINS`) so that
+/// jurisdictional routing can be updated without code changes.
 fn classify_ccip_risk(source: &str, destination: &str) -> conxian_core::SanctionsRisk {
     let high_risk_chains = ["spfs", "brics-pay-dcms"];
     let medium_risk_chains = ["cips", "papss", "mbridge"];
@@ -1679,10 +1682,7 @@ pub async fn verify_machine_rwa_revenue(
     Json(payload): Json<conxian_core::MachineRwaVerificationRequest>,
 ) -> Result<Json<conxian_core::MachineRwaVerificationResponse>, (StatusCode, Json<Value>)> {
     let revenue = &payload.revenue;
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
+    let now = now_unix();
     let mut checks: Vec<conxian_core::RevenueVerificationCheck> = Vec::new();
 
     // Check 1: Machine identity has a device key
@@ -1771,18 +1771,22 @@ pub async fn verify_machine_rwa_revenue(
         }),
     });
 
-    // Check 5: Revenue sources are plausible (non-negative event counts)
-    let sources_ok = revenue.revenue_sources.iter().all(|s| s.amount_minor > 0);
+    // Check 5: Each revenue source must have positive amount and event count
+    let sources_ok = revenue.revenue_sources.is_empty()
+        || revenue
+            .revenue_sources
+            .iter()
+            .all(|s| s.amount_minor > 0 && s.event_count > 0);
     checks.push(conxian_core::RevenueVerificationCheck {
         check: "revenue_sources_valid".into(),
         passed: sources_ok || revenue.revenue_sources.is_empty(),
         detail: Some(format!(
-            "{} revenue sources checked",
+            "{} revenue sources checked, all with positive amounts and events",
             revenue.revenue_sources.len()
         )),
     });
 
-    let all_passed = identity_ok && period_ok && sum_ok && sig_ok;
+    let all_passed = identity_ok && period_ok && sum_ok && sig_ok && sources_ok;
 
     // Calculate holder distribution recommendation: 90% to holders by default
     let holder_distribution_bps = Some(9000u16);
@@ -1833,6 +1837,24 @@ pub async fn settle_m2m(
         ));
     }
 
+    // Validate amount_scale is within reasonable bounds (0–38, covers all known tokens)
+    const MAX_DECIMALS: u32 = 38;
+    if payload.amount_scale > MAX_DECIMALS {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(
+                json!({ "error": format!("amount_scale {} exceeds maximum {}", payload.amount_scale, MAX_DECIMALS) }),
+            ),
+        ));
+    }
+    // Sanity-check: amount_minor must be positive
+    if payload.amount_minor == 0 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "amount_minor must be greater than zero" })),
+        ));
+    }
+
     // Route through the appropriate settlement rail
     match payload.settlement_rail {
         conxian_core::M2MSettlementRail::Lightning => {
@@ -1865,10 +1887,7 @@ pub async fn settle_m2m(
                     )
                 })?;
 
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs();
+            let now = now_unix();
 
             Ok(Json(conxian_core::M2MSettlementResponse {
                 settlement_id: format!("m2m-ln-{}", now),

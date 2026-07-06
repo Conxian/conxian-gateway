@@ -2,3 +2,9 @@ title = "Conxian Gateway gitleaks configuration"
 
 [extend]
 useDefault = true
+
+[allowlist]
+description = "Allow generic-api-key in test fixture files (field names like device_key)"
+paths = [
+    "cmd/gateway/tests/",
+]

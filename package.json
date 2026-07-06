@@ -3,11 +3,6 @@
     "typescript": "^6.0.3",
     "vitest": "^4.1.9"
   },
-  "pnpm": {
-    "overrides": {
-      "postcss": ">=8.5.10"
-    }
-  },
   "scripts": {
     "test": "pnpm -r run test",
     "build": "pnpm -r run build"

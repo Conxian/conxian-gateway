@@ -604,7 +604,11 @@ pub struct MachineIdentityResolutionRequest {
     /// Provider: "peaq", "dimo", "device_key"
     pub provider: String,
     /// BIP-322 or Schnorr proof-of-possession signature (optional)
+    #[serde(default)]
     pub signature: Option<String>,
+    /// Schnorr x-only public key for signature verification (required for peaq/dimo if signature is provided)
+    #[serde(default)]
+    pub device_key: Option<String>,
     /// If set, the resolution targets a specific machine identity variant
     #[serde(default)]
     pub machine_type_hint: Option<MachineType>,
