@@ -46,6 +46,41 @@ pub enum SettlementSource {
     MBridge,
     Erp,
     DlcBond,
+    /// G-C3: Machine-to-Machine settlement — autonomous value transfer between DePIN
+    /// devices, AI agents, or IoT infrastructure. Non-custodial by design.
+    MachineToMachine,
+}
+
+/// G-C3: Which settlement rail carries an M2M payment.
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum M2MSettlementRail {
+    /// Bitcoin Lightning Network — instant, sub-cent, non-custodial
+    Lightning,
+    /// peaq L1 chain — native DePIN settlement
+    Peaq,
+    /// Direct on-chain Bitcoin (for high-value machine settlements)
+    BitcoinOnChain,
+    /// Taproot Assets (USDT on Lightning)
+    TaprootAssets,
+}
+
+/// G-C3: Classification of machine-to-machine service types.
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum MachineService {
+    /// EV charging (pay-per-kWh)
+    Charging,
+    /// Sensor / telemetry data sale
+    Data,
+    /// Compute resource leasing (CPU/GPU)
+    Compute,
+    /// Storage provisioning
+    Storage,
+    /// Autonomous delivery / logistics
+    Delivery,
+    /// Machine-to-machine service not otherwise classified
+    Other,
 }
 
 impl SettlementSource {
@@ -60,6 +95,7 @@ impl SettlementSource {
             Self::MBridge => "MBRIDGE",
             Self::Erp => "ERP",
             Self::DlcBond => "DLC_BOND",
+            Self::MachineToMachine => "M2M",
         }
     }
 
@@ -81,6 +117,8 @@ impl SettlementSource {
             Self::Spfs => SanctionsRisk::Critical,
             // Bitcoin-native — sanctions-resistant by design (non-custodial)
             Self::DlcBond => SanctionsRisk::Low,
+            // M2M — machine-native, non-custodial, sanctions-neutral
+            Self::MachineToMachine => SanctionsRisk::Low,
         }
     }
 
@@ -223,6 +261,57 @@ fn institutional_threshold_minor(scale: u32) -> Option<u128> {
 pub struct SettlementEnvelope {
     pub version: String,
     pub payload: NormalizedSettlement,
+}
+
+// ── Machine-to-Machine Settlement (G-C3) ─────────────────────────────
+
+/// G-C3: M2M settlement request — an autonomous machine initiates a value transfer
+/// to another machine via the Conxian Gateway. Conxian routes; machines hold keys.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct M2MSettlementRequest {
+    /// Identity of the source machine (sender)
+    pub source_machine: crate::MachineIdentity,
+    /// Identity of the target machine (receiver)
+    pub target_machine: crate::MachineIdentity,
+    /// The service being paid for
+    pub service_type: MachineService,
+    /// Which settlement rail to use
+    pub settlement_rail: M2MSettlementRail,
+    /// Amount in smallest unit (sats for BTC/Lightning, wei-equivalent for others)
+    pub amount_minor: u64,
+    /// Decimal scale for amount (8 for BTC, 18 for peaq)
+    pub amount_scale: u32,
+    /// Currency code: "BTC", "USDT", "PEAQ", etc.
+    pub currency: String,
+    /// Lightning invoice or payment request string (when rail == Lightning)
+    #[serde(default)]
+    pub payment_request: Option<String>,
+    /// Service metadata (kWh, GB-hours, compute-seconds, etc.)
+    #[serde(default)]
+    pub service_metadata: Option<serde_json::Value>,
+    /// Unix timestamp of the settlement request
+    pub timestamp: u64,
+    /// Idempotency key to prevent duplicate M2M settlements
+    #[serde(default)]
+    pub idempotency_key: Option<String>,
+}
+
+/// G-C3: M2M settlement response returned to the initiating machine.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct M2MSettlementResponse {
+    /// Settlement identifier assigned by the Gateway
+    pub settlement_id: String,
+    /// Final status
+    pub status: SettlementStatus,
+    /// Rail used for settlement
+    pub settlement_rail: M2MSettlementRail,
+    /// Amount settled
+    pub amount_minor: u64,
+    /// Preimage (for Lightning payments) or txid
+    #[serde(default)]
+    pub settlement_proof: Option<String>,
+    /// When settlement finalized (Unix timestamp)
+    pub settled_at: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]

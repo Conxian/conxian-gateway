@@ -41,6 +41,10 @@ pub fn configure_routes(
         .route("/verify", post(handlers::verify_attestation))
         .route("/identity/exchange", post(handlers::exchange_identity))
         .route("/identity/resolve", post(handlers::resolve_identity_v1))
+        .route(
+            "/identity/resolve/machine",
+            post(handlers::resolve_machine_identity),
+        )
         .route("/fiat/session", post(handlers::create_fiat_session))
         .route("/fiat/webhook", post(handlers::verify_fiat_webhook))
         .route("/a2p/otp", post(handlers::send_otp))
@@ -79,13 +83,18 @@ pub fn configure_routes(
         .route("/chains/{chain}/height", get(handlers::get_chain_height))
         .route("/chains/{chain}/prepare", post(handlers::prepare_chain_tx))
         .route("/chains/{chain}/verify", post(handlers::verify_state_proof))
+        .route(
+            "/canton/cbtc/verify",
+            post(handlers::verify_cbtc_attestation),
+        )
         .route("/dlc/bond", post(handlers::create_dlc_bond))
         .route(
             "/musig2/aggregate-keys",
             post(handlers::aggregate_musig2_keys),
         )
         .route("/verify/worldcoin", post(world_id::verify_world_id))
-        .route("/nwc/relay", post(handlers::nwc_relay_settle));
+        .route("/nwc/relay", post(handlers::nwc_relay_settle))
+        .route("/m2m/settle", post(handlers::settle_m2m));
     let private_routes = private_routes
         .layer(middleware::from_fn_with_state(state.clone(), x402_filter))
         .layer(middleware::from_fn(move |req, next| {

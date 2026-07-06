@@ -153,6 +153,8 @@ pub enum ConxianError {
     Io(String),
     #[error("Persistence error: {0}")]
     Persistence(String),
+    #[error("Machine identity error: {0}")]
+    MachineIdentity(String),
 }
 
 /// Shared global state wrapped for thread-safe access.
@@ -209,6 +211,85 @@ pub enum AttestationRequest {
     Schnorr(SchnorrAttestation),
     Zkml(ZkmlProof),
     BitVm(BitVmAttestation),
+    Cbtc(CbtcAttestation),
+}
+
+// ── CBTC Non-Custodial Verification (G-C1) ───────────────────────────
+
+/// G-C1: CBTC (wrapped Bitcoin on Canton Network via BitSafe) attestation.
+/// Verifies that CBTC tokens on Canton are provably backed by Bitcoin reserves
+/// without joining the FROST signer set or taking custody.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CbtcAttestation {
+    /// Canton domain where CBTC contract lives
+    pub canton_domain: String,
+    /// Daml contract ID for the CBTC token
+    pub contract_id: String,
+    /// Amount of CBTC (in satoshis) claimed to be backed
+    pub amount_sats: u64,
+    /// Bitcoin UTXO(s) backing this CBTC — txid:vout format
+    pub bitcoin_utxos: Vec<String>,
+    /// FROST threshold signature attesting to Bitcoin reserve
+    #[serde(default)]
+    pub frost_attestation: Option<String>,
+    /// Block height at which the attestation was produced
+    pub attested_at_height: u64,
+    /// Signer quorum metadata (threshold, total signers)
+    #[serde(default)]
+    pub quorum: Option<CbtcQuorum>,
+}
+
+/// G-C1: FROST signer quorum metadata for CBTC attestation verification.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CbtcQuorum {
+    /// Number of signers that produced the attestation
+    pub signers_present: u16,
+    /// Total signers in the FROST set
+    pub signers_total: u16,
+    /// Aggregated public key of the FROST signer set
+    pub aggregate_key: String,
+}
+
+/// G-C1: CBTC verification request sent to the UCV-1 universal verifier.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CbtcVerificationRequest {
+    /// The CBTC attestation to verify
+    pub attestation: CbtcAttestation,
+    /// If true, also verify Bitcoin UTXO inclusion proofs (requires Bitcoin RPC)
+    #[serde(default)]
+    pub verify_utxo_proofs: bool,
+}
+
+/// G-C1: CBTC verification response from UCV-1.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CbtcVerificationResponse {
+    /// Whether the CBTC attestation passed all verification checks
+    pub verified: bool,
+    /// Contract ID that was verified
+    pub contract_id: String,
+    /// Amount verified (sats)
+    pub amount_sats: u64,
+    /// Number of UTXOs confirmed as backing
+    pub utxos_verified: u32,
+    /// Quorum ratio (signers_present / signers_total) — None if no quorum info
+    pub quorum_ratio: Option<f64>,
+    /// Verification timestamp (Unix)
+    pub verified_at: u64,
+    /// Detailed verification results per check
+    #[serde(default)]
+    pub checks: Vec<CbtcVerificationCheck>,
+}
+
+/// G-C1: Individual verification check result.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CbtcVerificationCheck {
+    /// Check name
+    pub check: String,
+    /// Whether this check passed
+    pub passed: bool,
+    /// Human-readable detail
+    #[serde(default)]
+    pub detail: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -274,6 +355,74 @@ pub struct IdentityResolutionResponse {
     pub address: String,
     pub provider: String,
     pub verified: bool,
+    pub metadata: Option<serde_json::Value>,
+}
+
+// ── Machine Identity (G-C2) ──────────────────────────────────────────
+
+/// Classification of autonomous machine types in the Machine Economy (DePIN).
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum MachineType {
+    ElectricVehicle,
+    EvCharger,
+    Drone,
+    Robot,
+    Sensor,
+    ComputeNode,
+    StorageNode,
+    Camera,
+    DeliveryVehicle,
+    EnergyMeter,
+    Other,
+}
+
+/// Sovereign machine identity for DePIN / Machine Economy participants.
+/// Machines hold their own keys; Conxian routes and verifies, never custodies.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct MachineIdentity {
+    /// peaq decentralized identifier (did:peaq:<address>)
+    pub peaq_did: Option<String>,
+    /// DIMO vehicle identity (for connected vehicles)
+    pub dimo_vehicle_id: Option<String>,
+    /// Schnorr x-only public key (Taproot-ready, BIP-340)
+    pub device_key: String,
+    /// Manufacturer or DePIN-network attestation proof
+    #[serde(default)]
+    pub attestation_proof: Option<String>,
+    /// Classification of the machine
+    pub machine_type: MachineType,
+    /// Human-readable machine label (e.g., "Tesla Model 3 — Vienna Fleet #42")
+    #[serde(default)]
+    pub label: Option<String>,
+}
+
+/// G-C2: Machine identity resolution request — extends existing CON-66 identity stack
+/// to support autonomous machine participants.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct MachineIdentityResolutionRequest {
+    /// Machine DID or device public key to resolve
+    pub identifier: String,
+    /// Provider: "peaq", "dimo", "device_key"
+    pub provider: String,
+    /// BIP-322 or Schnorr proof-of-possession signature (optional)
+    pub signature: Option<String>,
+    /// If set, the resolution targets a specific machine identity variant
+    #[serde(default)]
+    pub machine_type_hint: Option<MachineType>,
+}
+
+/// G-C2: Machine identity resolution response.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct MachineIdentityResolutionResponse {
+    /// Resolved machine identity with all known attributes
+    pub identity: MachineIdentity,
+    /// Provider that served the resolution
+    pub provider: String,
+    /// Whether the device key attestation was verified
+    pub verified: bool,
+    /// Arbitrary provider-supplied metadata
+    #[serde(default)]
     pub metadata: Option<serde_json::Value>,
 }
 

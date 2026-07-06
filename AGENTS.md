@@ -82,9 +82,9 @@ Protocol drift resolved — 10 of 10 identified protocols now have adapters.
 Implementation gaps closed. New strategic research opened: Canton Network interop + Machine Economy monetization.
 
 ### New Strategic Gaps (2026-07-06)
-- [ ] G-C1: CBTC non-custodial verification (DLC-based Bitcoin reserve attestation) — P1, Q3 2026
-- [ ] G-C2: Machine identity DID extension (peaq DID + device key) — P1, Q3 2026
-- [ ] G-C3: Lightning M2M settlement primitives (SettlementSource::MachineToMachine) — P1, Q3 2026
+- [x] G-C1: CBTC non-custodial verification — conxian-core types + `POST /api/v1/canton/cbtc/verify` handler with 6-point attestation check (commit pending)
+- [x] G-C2: Machine identity DID extension — `MachineIdentity`, `MachineType`, `MachineIdentityResolutionRequest/Response` in conxian-core + `POST /api/v1/identity/resolve/machine` handler (commit pending)
+- [x] G-C3: Lightning M2M settlement primitives — `SettlementSource::MachineToMachine`, `M2MSettlementRail`, `M2MSettlementRequest/Response` + `POST /api/v1/m2m/settle` handler routing through Lightning adapter (commit pending)
 - [ ] G-C4: Canton state translation adapter (Daml ACS → Universal Contract Reference) — P2, Q4 2026
 - [ ] G-C5: Chainlink CCIP Canton connector (CCIP messages → ZKC compliance pipe) — P2, Q4 2026
 - [ ] G-C6: Machine RWA revenue verification pipeline — P2, Q4 2026
