@@ -23,6 +23,7 @@ pub fn configure_routes(
         .route("/health", get(handlers::get_health))
         .with_state(state.clone());
 
+    let token_for_admin = api_token.clone();
     let admin_routes = Router::new()
         .route(
             "/releases/request-approval",
@@ -33,6 +34,15 @@ pub fn configure_routes(
             "/governance/decision",
             post(admin::submit_governance_decision),
         )
+        .layer(middleware::from_fn(move |req, next| {
+            auth_middleware(
+                req,
+                next,
+                token_for_admin.clone(),
+                server_start,
+                token_ttl_seconds,
+            )
+        }))
         .with_state(state.clone());
 
     let private_routes = Router::new()

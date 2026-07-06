@@ -895,6 +895,7 @@ async fn test_admin_release_approval_request() {
             Request::builder()
                 .uri("/admin/v1/releases/request-approval")
                 .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
                 .header("Content-Type", "application/json")
                 .body(Body::from(serde_json::to_string(&payload).unwrap()))
                 .unwrap(),
@@ -926,6 +927,7 @@ async fn test_admin_release_decision_submission() {
             Request::builder()
                 .uri("/admin/v1/releases/decision")
                 .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
                 .header("Content-Type", "application/json")
                 .body(Body::from(serde_json::to_string(&payload).unwrap()))
                 .unwrap(),
@@ -957,6 +959,7 @@ async fn test_admin_governance_decision_submission() {
             Request::builder()
                 .uri("/admin/v1/governance/decision")
                 .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
                 .header("Content-Type", "application/json")
                 .body(Body::from(serde_json::to_string(&payload).unwrap()))
                 .unwrap(),
@@ -1697,4 +1700,38 @@ async fn test_ingress_spfs_blocked_by_sanctions() {
     let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
     let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
     assert!(body["error"].as_str().unwrap().contains("Critical"));
+}
+
+#[tokio::test]
+async fn test_admin_routes_unauthorized_rejection() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let endpoints = vec![
+        ("/admin/v1/releases/request-approval", "POST"),
+        ("/admin/v1/releases/decision", "POST"),
+        ("/admin/v1/governance/decision", "POST"),
+    ];
+
+    for (uri, method) in endpoints {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(uri)
+                    .method(method)
+                    .header("Content-Type", "application/json")
+                    .body(Body::from("{}"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            response.status(),
+            StatusCode::UNAUTHORIZED,
+            "Endpoint {} should require authentication",
+            uri
+        );
+    }
 }
