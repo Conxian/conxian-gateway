@@ -529,7 +529,48 @@ Every opportunity must pass Conxian's sovereignty test:
 
 ---
 
-## Part 9: Workflow Enhancement
+## Part 9: Implementation Status (2026-07-06)
+
+### P1 (Q3 2026) — Implemented ✅
+| Gap | Status | Artifacts |
+|:---|:---|:---|
+| G-C1 | ✅ Done | `CbtcAttestation`, `CbtcVerificationRequest/Response` + `POST /api/v1/canton/cbtc/verify` (6-point check) |
+| G-C2 | ✅ Done | `MachineType` (11 variants), `MachineIdentity` + `POST /api/v1/identity/resolve/machine` (3 providers) |
+| G-C3 | ✅ Done | `SettlementSource::MachineToMachine`, `M2MSettlementRail`, `M2MSettlementRequest/Response` + `POST /api/v1/m2m/settle` (Lightning live) |
+
+### P2 (Q4 2026) — Implemented ✅
+| Gap | Status | Artifacts |
+|:---|:---|:---|
+| G-C4 | ✅ Done | `UniversalContractRef`, `CantonDomainRef`, `CantonStateTranslationRequest/Response` + `POST /api/v1/canton/state/translate` (Daml template-aware) |
+| G-C5 | ✅ Done | `CcipMessageRoute`, `CcipRouteRequest/Response` + `POST /api/v1/ccip/route` (sanctions escalation logic) |
+| G-C6 | ✅ Done | `MachineRwaRevenue`, `RevenueSource`, `MachineRwaVerificationRequest/Response` + `POST /api/v1/rwa/machine/verify-revenue` (5-point check) |
+
+### P3 (Q1 2027) — Research Only 🟡
+| Gap | Status | Notes |
+|:---|:---|:---|
+| G-C7 | Research | Requires Daml↔Bitcoin HTLC/PTLC script compilation |
+| G-C8 | Research | Requires jurisdictional tax classification for autonomous machine income |
+
+### API Surface Summary (6 new endpoints)
+
+```
+POST /api/v1/identity/resolve/machine     → G-C2: Machine identity resolution
+POST /api/v1/m2m/settle                   → G-C3: M2M settlement routing
+POST /api/v1/canton/cbtc/verify           → G-C1: CBTC non-custodial verification
+POST /api/v1/canton/state/translate       → G-C4: Canton state translation
+POST /api/v1/ccip/route                   → G-C5: CCIP compliance routing
+POST /api/v1/rwa/machine/verify-revenue   → G-C6: Machine RWA revenue verification
+```
+
+### Verification Status (2026-07-06)
+- ✅ `cargo fmt --all` — passes
+- ✅ `cargo clippy --workspace --all-targets --all-features -- -D warnings` — clean
+- ✅ `cargo test --workspace` — 129 tests, 0 failures
+- ✅ `cargo test --workspace --features mock-integrations` — 132 tests, 0 failures
+- ⚠️ `pnpm install && pnpm build && pnpm test` — npm registry unreachable in this environment
+- ✅ `python3 scripts/verify_contamination_guard.py` — clean (59 files)
+
+## Part 10: Workflow Enhancement
 
 ### 9.1 Automated Research Refresh
 

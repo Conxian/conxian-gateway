@@ -94,7 +94,16 @@ pub fn configure_routes(
         )
         .route("/verify/worldcoin", post(world_id::verify_world_id))
         .route("/nwc/relay", post(handlers::nwc_relay_settle))
-        .route("/m2m/settle", post(handlers::settle_m2m));
+        .route("/m2m/settle", post(handlers::settle_m2m))
+        .route(
+            "/canton/state/translate",
+            post(handlers::translate_canton_state),
+        )
+        .route("/ccip/route", post(handlers::route_ccip_message))
+        .route(
+            "/rwa/machine/verify-revenue",
+            post(handlers::verify_machine_rwa_revenue),
+        );
     let private_routes = private_routes
         .layer(middleware::from_fn_with_state(state.clone(), x402_filter))
         .layer(middleware::from_fn(move |req, next| {

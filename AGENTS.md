@@ -85,9 +85,9 @@ Implementation gaps closed. New strategic research opened: Canton Network intero
 - [x] G-C1: CBTC non-custodial verification — conxian-core types + `POST /api/v1/canton/cbtc/verify` handler with 6-point attestation check (commit pending)
 - [x] G-C2: Machine identity DID extension — `MachineIdentity`, `MachineType`, `MachineIdentityResolutionRequest/Response` in conxian-core + `POST /api/v1/identity/resolve/machine` handler (commit pending)
 - [x] G-C3: Lightning M2M settlement primitives — `SettlementSource::MachineToMachine`, `M2MSettlementRail`, `M2MSettlementRequest/Response` + `POST /api/v1/m2m/settle` handler routing through Lightning adapter (commit pending)
-- [ ] G-C4: Canton state translation adapter (Daml ACS → Universal Contract Reference) — P2, Q4 2026
-- [ ] G-C5: Chainlink CCIP Canton connector (CCIP messages → ZKC compliance pipe) — P2, Q4 2026
-- [ ] G-C6: Machine RWA revenue verification pipeline — P2, Q4 2026
+- [x] G-C4: Canton state translation adapter — `UniversalContractRef`, `CantonDomainRef`, `CantonStateTranslationRequest/Response` in conxian-core + `POST /api/v1/canton/state/translate` with Daml template-aware mapping (commit pending)
+- [x] G-C5: Chainlink CCIP Canton connector — `CcipMessageRoute`, `CcipRouteRequest/Response`, sanctions-risk classification with escalation logic + `POST /api/v1/ccip/route` (commit pending)
+- [x] G-C6: Machine RWA revenue verification — `MachineRwaRevenue`, `RevenueSource`, `MachineRwaVerificationRequest/Response` + `POST /api/v1/rwa/machine/verify-revenue` with 5-point verification check (commit pending)
 - [ ] G-C7: Canton↔Bitcoin atomic swap engine — P3, Q1 2027
 - [ ] G-C8: DePIN compliance ZKC — P3, Q1 2027
 

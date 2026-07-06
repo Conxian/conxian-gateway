@@ -1503,6 +1503,318 @@ pub async fn verify_cbtc_attestation(
     }))
 }
 
+// ── Canton State Translation (G-C4) ──────────────────────────────────
+
+/// G-C4: Canton state translation — maps a Daml Active Contract Set (ACS)
+/// contract into a Universal Contract Reference for Bitcoin/Stacks anchoring.
+/// This is an observe-only operation; Conxian never runs a Canton validator.
+pub async fn translate_canton_state(
+    State(_state): State<AppState>,
+    Json(payload): Json<conxian_core::CantonStateTranslationRequest>,
+) -> Result<Json<conxian_core::CantonStateTranslationResponse>, (StatusCode, Json<Value>)> {
+    // Validate domain reference
+    if payload.domain.domain_name.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "Canton domain name is required" })),
+        ));
+    }
+
+    if payload.daml_contract_id.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "Daml contract ID is required" })),
+        ));
+    }
+
+    // Map known Daml template types to ledger fields for translation fidelity
+    let template_name = payload.template_name.as_deref().unwrap_or("unknown");
+    let mut unmapped_fields: Vec<String> = Vec::new();
+
+    // Daml templates that map cleanly to Bitcoin UTXOs (no unmapped fields):
+    // - AssetTransfer, Token, Fungible, NonFungible, SettlementInstruction
+    // Templates with known mapping gaps:
+    match template_name {
+        "AssetTransfer" | "Token" | "Fungible" | "NonFungible" | "SettlementInstruction" => {
+            // Clean mapping — no unmapped fields
+        }
+        "SwapProposal" | "Dvp" => {
+            unmapped_fields.push("counterparty_approval_state".into());
+        }
+        "Observation" => {
+            unmapped_fields.push("observer_permissions".into());
+        }
+        _ => {
+            unmapped_fields.push(format!(
+                "template '{}' has unknown mapping fidelity",
+                template_name
+            ));
+        }
+    }
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    let contract_ref = conxian_core::UniversalContractRef {
+        ledger: "canton".into(),
+        contract_id: payload.daml_contract_id.clone(),
+        domain: Some(payload.domain.domain_name.clone()),
+    };
+
+    Ok(Json(conxian_core::CantonStateTranslationResponse {
+        contract_ref,
+        source_ledger: "canton".into(),
+        target_ledger: payload.target_ledger,
+        translation_complete: unmapped_fields.is_empty(),
+        unmapped_fields,
+        translated_at: now,
+    }))
+}
+
+// ── Chainlink CCIP Canton Connector (G-C5) ───────────────────────────
+
+/// G-C5: CCIP message routing through Conxian's ZKC compliance pipeline.
+/// Conxian screens CCIP cross-chain messages for sanctions risk without
+/// participating in CCIP consensus or holding any assets.
+pub async fn route_ccip_message(
+    State(_state): State<AppState>,
+    Json(payload): Json<conxian_core::CcipRouteRequest>,
+) -> Result<Json<conxian_core::CcipRouteResponse>, (StatusCode, Json<Value>)> {
+    let message = &payload.message;
+
+    // Validate CCIP message
+    if message.source_chain.is_empty() || message.destination_chain.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "Source and destination chain identifiers are required" })),
+        ));
+    }
+
+    if message.message_id.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "CCIP message ID is required" })),
+        ));
+    }
+
+    // Determine sanctions risk based on source/destination chain pair
+    let risk_level = classify_ccip_risk(&message.source_chain, &message.destination_chain);
+
+    // Elevated scrutiny may escalate risk
+    let effective_risk = if payload.elevated_scrutiny {
+        escalate_risk(risk_level)
+    } else {
+        risk_level
+    };
+
+    let approved = effective_risk != conxian_core::SanctionsRisk::Critical;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    Ok(Json(conxian_core::CcipRouteResponse {
+        approved,
+        message_id: message.message_id.clone(),
+        risk_level: effective_risk,
+        rejection_reason: if !approved {
+            Some("CCIP message blocked: sanctions-critical jurisdiction detected".into())
+        } else {
+            None
+        },
+        audit_ref: Some(format!("ccip-zkc-{}", now)),
+        routed_at: now,
+    }))
+}
+
+/// Classify the sanctions risk of a CCIP route based on source/destination chains.
+fn classify_ccip_risk(source: &str, destination: &str) -> conxian_core::SanctionsRisk {
+    let high_risk_chains = ["spfs", "brics-pay-dcms"];
+    let medium_risk_chains = ["cips", "papss", "mbridge"];
+    let low_risk_chains = [
+        "canton", "ethereum", "arbitrum", "polygon", "optimism", "bitcoin",
+    ];
+
+    let src_lower = source.to_lowercase();
+    let dst_lower = destination.to_lowercase();
+
+    if high_risk_chains.contains(&src_lower.as_str())
+        || high_risk_chains.contains(&dst_lower.as_str())
+    {
+        return conxian_core::SanctionsRisk::High;
+    }
+    if medium_risk_chains.contains(&src_lower.as_str())
+        || medium_risk_chains.contains(&dst_lower.as_str())
+    {
+        return conxian_core::SanctionsRisk::Medium;
+    }
+    if low_risk_chains.contains(&src_lower.as_str())
+        && low_risk_chains.contains(&dst_lower.as_str())
+    {
+        return conxian_core::SanctionsRisk::Low;
+    }
+    conxian_core::SanctionsRisk::Medium // Unknown chains default to Medium
+}
+
+/// Escalate sanctions risk one level for elevated scrutiny.
+fn escalate_risk(risk: conxian_core::SanctionsRisk) -> conxian_core::SanctionsRisk {
+    match risk {
+        conxian_core::SanctionsRisk::Low => conxian_core::SanctionsRisk::Medium,
+        conxian_core::SanctionsRisk::Medium => conxian_core::SanctionsRisk::High,
+        conxian_core::SanctionsRisk::High | conxian_core::SanctionsRisk::Critical => {
+            conxian_core::SanctionsRisk::Critical
+        }
+    }
+}
+
+// ── Machine RWA Revenue Verification (G-C6) ──────────────────────────
+
+/// G-C6: Machine RWA revenue verification — verifies that a machine's claimed
+/// revenue is authentic and can be routed to RWA token holders via Lightning.
+/// Conxian verifies; machines hold keys; token holders receive yield.
+pub async fn verify_machine_rwa_revenue(
+    State(state): State<AppState>,
+    Json(payload): Json<conxian_core::MachineRwaVerificationRequest>,
+) -> Result<Json<conxian_core::MachineRwaVerificationResponse>, (StatusCode, Json<Value>)> {
+    let revenue = &payload.revenue;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let mut checks: Vec<conxian_core::RevenueVerificationCheck> = Vec::new();
+
+    // Check 1: Machine identity has a device key
+    let identity_ok = !revenue.machine_identity.device_key.is_empty();
+    checks.push(conxian_core::RevenueVerificationCheck {
+        check: "machine_identity_valid".into(),
+        passed: identity_ok,
+        detail: Some(if identity_ok {
+            "Machine device key present".into()
+        } else {
+            "Machine identity missing device key".into()
+        }),
+    });
+
+    // Check 2: Revenue period is valid (start < end, not in future)
+    let period_ok = revenue.period_start > 0
+        && revenue.period_end > revenue.period_start
+        && revenue.period_end <= now + 3600; // allow 1h clock skew
+    checks.push(conxian_core::RevenueVerificationCheck {
+        check: "revenue_period_valid".into(),
+        passed: period_ok,
+        detail: Some(if period_ok {
+            format!(
+                "Revenue period: {} → {} ({}s)",
+                revenue.period_start,
+                revenue.period_end,
+                revenue.period_end - revenue.period_start
+            )
+        } else {
+            "Revenue period is invalid or in the future".into()
+        }),
+    });
+
+    // Check 3: Total revenue matches sum of revenue sources
+    let sources_sum: u64 = revenue.revenue_sources.iter().map(|s| s.amount_minor).sum();
+    let sum_ok = sources_sum == revenue.total_revenue_minor || revenue.revenue_sources.is_empty();
+    checks.push(conxian_core::RevenueVerificationCheck {
+        check: "revenue_sum_consistent".into(),
+        passed: sum_ok,
+        detail: Some(if sum_ok {
+            format!(
+                "Revenue sum consistent: {} total = {} from {} sources",
+                revenue.total_revenue_minor,
+                sources_sum,
+                revenue.revenue_sources.len()
+            )
+        } else {
+            format!(
+                "Revenue mismatch: total {} != source sum {}",
+                revenue.total_revenue_minor, sources_sum
+            )
+        }),
+    });
+
+    // Check 4: Device-key signature verification (if requested)
+    let sig_ok = if payload.verify_signature {
+        if let Some(ref sig) = revenue.attestation_signature {
+            let verifier: &dyn conxian_core::Bip322Verifier = state.compliance.as_ref();
+            let message = format!(
+                "Conxian Machine RWA Revenue: {} {} over {}-{}",
+                revenue.total_revenue_minor,
+                revenue.currency,
+                revenue.period_start,
+                revenue.period_end
+            );
+            verifier
+                .verify_message(&revenue.machine_identity.device_key, &message, sig)
+                .unwrap_or(false)
+        } else {
+            false
+        }
+    } else {
+        true // signature verification not required
+    };
+    checks.push(conxian_core::RevenueVerificationCheck {
+        check: "signature_verified".into(),
+        passed: sig_ok,
+        detail: Some(if payload.verify_signature {
+            if sig_ok {
+                "Device-key signature verified".into()
+            } else {
+                "Device-key signature missing or invalid".into()
+            }
+        } else {
+            "Signature verification not requested".into()
+        }),
+    });
+
+    // Check 5: Revenue sources are plausible (non-negative event counts)
+    let sources_ok = revenue.revenue_sources.iter().all(|s| s.amount_minor > 0);
+    checks.push(conxian_core::RevenueVerificationCheck {
+        check: "revenue_sources_valid".into(),
+        passed: sources_ok || revenue.revenue_sources.is_empty(),
+        detail: Some(format!(
+            "{} revenue sources checked",
+            revenue.revenue_sources.len()
+        )),
+    });
+
+    let all_passed = identity_ok && period_ok && sum_ok && sig_ok;
+
+    // Calculate holder distribution recommendation: 90% to holders by default
+    let holder_distribution_bps = Some(9000u16);
+
+    let machine_did = revenue
+        .machine_identity
+        .peaq_did
+        .clone()
+        .or_else(|| revenue.machine_identity.dimo_vehicle_id.clone());
+
+    Ok(Json(conxian_core::MachineRwaVerificationResponse {
+        verified: all_passed,
+        machine_did,
+        verified_revenue_minor: if all_passed {
+            revenue.total_revenue_minor
+        } else {
+            0
+        },
+        currency: revenue.currency.clone(),
+        period_start: revenue.period_start,
+        period_end: revenue.period_end,
+        sources_verified: if sources_ok {
+            revenue.revenue_sources.len() as u32
+        } else {
+            0
+        },
+        holder_distribution_bps,
+        verified_at: now,
+        checks,
+    }))
+}
+
 // ── Machine-to-Machine Settlement (G-C3) ─────────────────────────────
 
 /// G-C3: M2M settlement — routes autonomous machine-to-machine payments

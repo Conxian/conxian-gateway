@@ -292,6 +292,204 @@ pub struct CbtcVerificationCheck {
     pub detail: Option<String>,
 }
 
+// ── Canton State Translation (G-C4) ──────────────────────────────────
+
+/// G-C4: Universal Contract Reference — a unified identifier that can reference
+/// a contract on any supported ledger (Canton Daml, Bitcoin UTXO, Stacks Clarity).
+/// This is the core abstraction for cross-ledger state translation.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
+pub struct UniversalContractRef {
+    /// Ledger family: "canton", "bitcoin", "stacks", "liquid", "rgb"
+    pub ledger: String,
+    /// Ledger-native contract identifier (Daml ContractId, Bitcoin OutPoint, etc.)
+    pub contract_id: String,
+    /// Optional domain/subnet qualifier (Canton domain, Stacks chain tip, etc.)
+    #[serde(default)]
+    pub domain: Option<String>,
+}
+
+/// G-C4: Canton domain reference for state observation.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CantonDomainRef {
+    /// Canton domain name (e.g., "global", "canton://global")
+    pub domain_name: String,
+    /// Canton synchronizer endpoint (for observer connection)
+    #[serde(default)]
+    pub synchronizer_endpoint: Option<String>,
+    /// Whether the domain is publicly observable
+    #[serde(default)]
+    pub public_observer: bool,
+}
+
+/// G-C4: Canton state translation request — translate a Daml Active Contract
+/// into a Universal Contract Reference suitable for Bitcoin anchoring.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CantonStateTranslationRequest {
+    /// Canton domain where the contract lives
+    pub domain: CantonDomainRef,
+    /// Daml contract ID to translate
+    pub daml_contract_id: String,
+    /// Daml template name (for type-aware translation)
+    #[serde(default)]
+    pub template_name: Option<String>,
+    /// Target ledger for the translated reference
+    pub target_ledger: String,
+}
+
+/// G-C4: Canton state translation response.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CantonStateTranslationResponse {
+    /// The translated universal contract reference
+    pub contract_ref: UniversalContractRef,
+    /// Source ledger
+    pub source_ledger: String,
+    /// Target ledger
+    pub target_ledger: String,
+    /// Whether translation succeeded with full fidelity
+    pub translation_complete: bool,
+    /// Fields that could not be mapped (if any)
+    #[serde(default)]
+    pub unmapped_fields: Vec<String>,
+    /// Translation timestamp
+    pub translated_at: u64,
+}
+
+// ── Chainlink CCIP Canton Connector (G-C5) ───────────────────────────
+
+/// G-C5: Chainlink CCIP message route through Conxian's compliance ZKC pipeline.
+/// Conxian does not participate in CCIP consensus — it routes messages through
+/// sanctions screening and jurisdictional compliance.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CcipMessageRoute {
+    /// Source chain identifier (e.g., "canton", "ethereum", "arbitrum")
+    pub source_chain: String,
+    /// Destination chain identifier
+    pub destination_chain: String,
+    /// CCIP message ID for traceability
+    pub message_id: String,
+    /// Message payload (CCIP-encoded)
+    pub payload: String,
+    /// Whether this message requires sanctions screening
+    #[serde(default)]
+    pub requires_screening: bool,
+}
+
+/// G-C5: CCIP route request — submit a CCIP message for compliance routing.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CcipRouteRequest {
+    /// The CCIP message to route
+    pub message: CcipMessageRoute,
+    /// If true, apply elevated compliance scrutiny
+    #[serde(default)]
+    pub elevated_scrutiny: bool,
+}
+
+/// G-C5: CCIP route response — result of compliance routing.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CcipRouteResponse {
+    /// Whether the message passed compliance screening
+    pub approved: bool,
+    /// Message ID (echo)
+    pub message_id: String,
+    /// Sanctions risk classification applied
+    pub risk_level: SanctionsRisk,
+    /// Reason for rejection (if not approved)
+    #[serde(default)]
+    pub rejection_reason: Option<String>,
+    /// Compliance audit trail reference
+    #[serde(default)]
+    pub audit_ref: Option<String>,
+    /// Timestamp of routing decision
+    pub routed_at: u64,
+}
+
+// ── Machine RWA Revenue Verification (G-C6) ──────────────────────────
+
+/// G-C6: Machine RWA revenue attestation — a machine reports its revenue
+/// for verification by Conxian Gateway. Machines hold keys; Conxian verifies.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct MachineRwaRevenue {
+    /// Machine that generated the revenue
+    pub machine_identity: MachineIdentity,
+    /// Revenue period start (Unix timestamp)
+    pub period_start: u64,
+    /// Revenue period end (Unix timestamp)
+    pub period_end: u64,
+    /// Total revenue in smallest currency unit (sats, wei-equivalent, etc.)
+    pub total_revenue_minor: u64,
+    /// Revenue currency code
+    pub currency: String,
+    /// Revenue source breakdown
+    #[serde(default)]
+    pub revenue_sources: Vec<RevenueSource>,
+    /// Proof-of-revenue attestation (signed by machine device key)
+    #[serde(default)]
+    pub attestation_signature: Option<String>,
+}
+
+/// G-C6: Breakdown of revenue by source.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct RevenueSource {
+    /// Service type that generated this revenue
+    pub service_type: MachineService,
+    /// Revenue from this source (minor units)
+    pub amount_minor: u64,
+    /// Number of service events delivered
+    #[serde(default)]
+    pub event_count: u64,
+    /// Arbitrary metadata (kWh, GB-hours, km driven, etc.)
+    #[serde(default)]
+    pub metadata: Option<serde_json::Value>,
+}
+
+/// G-C6: Machine RWA revenue verification request.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct MachineRwaVerificationRequest {
+    /// The revenue attestation to verify
+    pub revenue: MachineRwaRevenue,
+    /// If true, require device-key signature verification
+    #[serde(default)]
+    pub verify_signature: bool,
+    /// RWA token contract to verify against (optional)
+    #[serde(default)]
+    pub rwa_token_contract: Option<String>,
+}
+
+/// G-C6: Machine RWA revenue verification response.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct MachineRwaVerificationResponse {
+    /// Whether the revenue attestation is verified
+    pub verified: bool,
+    /// Machine identity (echo)
+    pub machine_did: Option<String>,
+    /// Total verified revenue
+    pub verified_revenue_minor: u64,
+    /// Currency
+    pub currency: String,
+    /// Revenue period
+    pub period_start: u64,
+    pub period_end: u64,
+    /// Number of revenue sources verified
+    pub sources_verified: u32,
+    /// Distribution recommendation: percentage to token holders
+    #[serde(default)]
+    pub holder_distribution_bps: Option<u16>,
+    /// Verification timestamp
+    pub verified_at: u64,
+    /// Detailed verification checks
+    #[serde(default)]
+    pub checks: Vec<RevenueVerificationCheck>,
+}
+
+/// G-C6: Individual revenue verification check.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct RevenueVerificationCheck {
+    pub check: String,
+    pub passed: bool,
+    #[serde(default)]
+    pub detail: Option<String>,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct JobCardSettlementRequest {
     pub job_card: ConxianJobCard,
