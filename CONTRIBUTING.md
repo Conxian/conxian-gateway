@@ -37,9 +37,7 @@ Thank you for your interest in contributing to Conxian! We welcome contributions
 We are committed to a welcoming and inclusive community. Please be respectful and professional in all interactions.
 
 ## Mainnet Readiness & Branch Policy
-- **main**: Strictly Mainnet-only production code. No stubs, mocks, or placeholders.
-- **staged**: Mainnet production validation. All promotion to `main` must pass through `staged` with full mainnet-acceptance evidence.
-- **dev**: Testnet-only logic and non-production validation.
+For institutional safety, this repository enforces a strict branch promotion policy (`main`, `staged`, `dev`). Please refer to the **[Governance & Mainnet Readiness](README.md#governance--mainnet-readiness)** section in the README for the authoritative policy.
 
 ## Governance-Sensitive Changes
 

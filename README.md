@@ -46,11 +46,28 @@ pnpm install
 pnpm build
 ```
 
-## Policies
-- [LICENSE](LICENSE)
-- [SECURITY.md](SECURITY.md)
-- [CONTRIBUTING.md](CONTRIBUTING.md)
-- [RELEASE.md](RELEASE.md)
+## Governance & Mainnet Readiness
+
+The Conxian Gateway enforces a strict branch promotion policy to ensure institutional-grade stability and mainnet safety.
+
+- **`main`**: Strictly **Mainnet-only** production code. No stubs, simulations, or placeholders. All code in this branch is audited for production execution.
+- **`staged`**: Mainnet production validation. All promotion to `main` must pass through `staged` with full mainnet-acceptance evidence.
+- **`dev`**: Integration branch for new features and testnet-only logic. This branch may contain functional simulations for non-production validation.
+
+For a detailed map of repository readiness, refer to [docs/READINESS_GATES.md](docs/READINESS_GATES.md).
+
+## Policy Registry
+
+As an institutional middleware provider, we maintain a comprehensive set of governance and security policies:
+
+- **[LICENSE](LICENSE)**: MIT License.
+- **[SECURITY.md](SECURITY.md)**: Vulnerability reporting and incident handling procedures.
+- **[CONTRIBUTING.md](CONTRIBUTING.md)**: Technical standards and submission process.
+- **[RELEASE.md](RELEASE.md)**: Release runbook and control sign-off checklist.
+- **[SUPPORT.md](SUPPORT.md)**: Support channels and governance routing.
+- **[PRIVACY.md](PRIVACY.md)**: Data handling and PII pass-through policy.
+- **[TERMS.md](TERMS.md)**: Usage terms for the Conxian Gateway.
+- **[CHANGELOG.md](CHANGELOG.md)**: Canonical release history.
 
 ## Contact
 - Support: [support@conxian-labs.com](mailto:support@conxian-labs.com)

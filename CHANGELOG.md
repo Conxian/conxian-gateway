@@ -11,13 +11,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Implemented 7 missing Python validation scripts in `scripts/` to close CI coverage gaps (CON-1322).
 - Created `docs/audit/GAP_ANALYSIS_AND_SCORING.md` for prioritized risk management.
 - Added `docs/research/OPPORTUNITY_MAP_AND_EXPANSION.md` covering BitVM3 and local-first verification.
-
-### Changed
-- Standardized `actions/checkout` version to `v4.2.2` (pinned by SHA) across all local workflows (CON-1324).
-- Initialized `docs/governance/CHANGELOG.md` as a canonical release history record.
-- **Hardened CI/CD Pipelines**: Integrated mandatory `contamination_guard` in Rust CI and expanded Node.js CI to include Playwright browser installation and full workspace testing.
-
-### Added
 - Implemented **Babylon** and **BitVM2** state-proof verification logic in the multi-chain adapter layer.
 - Added comprehensive integration tests for Babylon and BitVM verification endpoints.
 - Created `docs/audit/REMEDIATION_LOG.md` tracking repository hardening efforts.
@@ -28,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `docs/research/UNIVERSAL_CHAIN_RESEARCH.md` covering multi-chain adapter patterns and event bus delivery logic.
 
 ### Changed
+- Standardized `actions/checkout` version to `v4.2.2` (pinned by SHA) across all local workflows (CON-1324).
+- Centralized `CHANGELOG.md` as a canonical release history record in the repository root.
+- **Hardened CI/CD Pipelines**: Integrated mandatory `contamination_guard` in Rust CI and expanded Node.js CI to include Playwright browser installation and full workspace testing.
 - **Hardened GitHub Workflows**: Pinned all third-party actions to immutable SHAs to prevent supply-chain attacks.
 - **Repository Hygiene**: Updated `.gitignore` to strictly exclude local persistence artifacts (`gateway_state.json`, `offline_queue.db`).
 - **Standardized CI/CD**: Aligned dependencies and action versions across all workflows for consistent execution.
