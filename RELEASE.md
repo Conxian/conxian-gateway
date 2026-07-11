@@ -9,9 +9,11 @@ This document outlines the release process for the Conxian Gateway, ensuring ali
 
 ## 2. Release Branches & Promotion
 
-- **main**: Strictly Mainnet-only production code. No stubs, mocks, or placeholders.
-- **staged**: Mainnet production validation. All promotion to `main` must pass through `staged` with full mainnet-acceptance evidence.
-- **dev**: Development, testnet-only logic, and non-production validation.
+Release promotion follows the authoritative **[Governance & Mainnet Readiness](README.md#governance--mainnet-readiness)** policy.
+
+- **`main`**: Target for production releases.
+- **`staged`**: Mandatory validation path for all production code.
+- **`dev`**: Integration and testnet validation.
 
 ## 3. Pre-Release Checklist
 
