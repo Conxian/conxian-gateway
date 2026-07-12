@@ -22,7 +22,7 @@ blake2 = "0.10.6"
 minreq = { version = "3.0.0", features = ["https"] }
 # Pin below 0.40.1 because that resolves libsqlite3-sys 0.38.1, whose build.rs uses unstable cfg_select on stable toolchains.
 rusqlite = { version = "=0.40.1", features = ["bundled"] }
-aes-gcm = "0.10.3"
+aes-gcm = "0.11.0"
 # Bitcoin & Stacks
 bitcoin = { version = "0.32.100", features = ["std", "serde", "rand", "secp-recovery"] }
 secp256k1 = { version = "0.29.1", features = ["global-context", "recovery", "rand"] }
@@ -43,7 +43,7 @@ tower = { version = "0.5.2", features = ["util"] }
 tower-http = { version = "0.7.0", features = ["cors", "trace"] }
 axum-test = "21.0.0"
 hyper = { version = "1.10.1", features = ["full"] }
-redis = { version = "0.29.1", features = ["tokio-rustls-comp", "json"] }
+redis = { version = "1.3.0", features = ["tokio-rustls-comp", "json"] }
 
 # Utilities & Error Handling
 anyhow = { version = "1.0.98" }
