@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use conxian_core::{
     BlockInfo, ConxianError, ConxianResult, GatewayState, Persistence, PersistentState, SharedState,
 };
-use engine::{BitcoinListener, BitcoinRpc};
+use conxian_engine::{BitcoinListener, BitcoinRpc};
 use std::sync::{Arc, Mutex, RwLock};
 
 #[derive(Clone)]

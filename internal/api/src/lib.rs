@@ -18,10 +18,10 @@ pub use routes::configure_routes;
 use crate::a2p::A2pRouter;
 use crate::fiat::FiatRouter;
 use crate::lightning::{LightningAdapter, SimulatedLightningBackend};
-use compliance::{IdentityManager, UniversalVerifier, ZkcVerifier};
+use conxian_compliance::{IdentityManager, UniversalVerifier, ZkcVerifier};
 use conxian_core::{SettlementProposal, SharedState};
-pub use engine::stacks::alex::AlexClient;
-pub use engine::RedisCoordinator;
+pub use conxian_engine::stacks::alex::AlexClient;
+pub use conxian_engine::RedisCoordinator;
 use std::{collections::VecDeque, sync::Arc};
 use tokio::sync::RwLock;
 

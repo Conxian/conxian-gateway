@@ -1,7 +1,7 @@
-use api::{configure_routes, new_lightning_adapter, new_settlement_log, AppState};
-use compliance::{CoreVerifier, IdentityManager, ZkcVerifier};
+use conxian_api::{configure_routes, new_lightning_adapter, new_settlement_log, AppState};
+use conxian_compliance::{CoreVerifier, IdentityManager, ZkcVerifier};
 use conxian_core::{GatewayState, Persistence, SharedState};
-use engine::{
+use conxian_engine::{
     stacks::alex::{AlexClient, AlexRpcClient},
     BitcoinListener, BitcoinRpcClient, FeeBumpPolicyConfig, MempoolOrchestrator, NodeRgbAdapter,
     NttRelayer, RedisCoordinator, StacksListener, StacksRpcClient, TreasuryMonitor,
@@ -150,7 +150,7 @@ async fn main() -> anyhow::Result<()> {
     let ntt_relayer = NttRelayer::new(state.clone(), 30);
 
     // Initialize Institutional Service Routers
-    let fiat_router = Arc::new(api::fiat::FiatRouter::new(
+    let fiat_router = Arc::new(conxian_api::fiat::FiatRouter::new(
         config.ramp_api_key.clone(),
         config.investec_client_id.clone(),
         config.investec_secret.clone(),
@@ -160,7 +160,7 @@ async fn main() -> anyhow::Result<()> {
         config.banxa_secret.clone(),
     ));
 
-    let a2p_router = Arc::new(api::a2p::A2pRouter::new(
+    let a2p_router = Arc::new(conxian_api::a2p::A2pRouter::new(
         config.infobip_api_key.clone(),
         config.infobip_base_url.clone(),
         config.hmac_secret.clone(),
@@ -185,7 +185,7 @@ async fn main() -> anyhow::Result<()> {
         BitcoinRpcClient::new(&config.liquid_rpc_url, "", "").expect("Failed to init Liquid RPC");
     multi_chain.insert(
         "liquid".to_string(),
-        Arc::new(engine::LiquidAdapter::new(
+        Arc::new(conxian_engine::LiquidAdapter::new(
             Arc::new(liquid_rpc),
             config.network.to_string(),
         )),
@@ -193,7 +193,7 @@ async fn main() -> anyhow::Result<()> {
 
     multi_chain.insert(
         "rootstock".to_string(),
-        Arc::new(engine::RootstockAdapter::new(
+        Arc::new(conxian_engine::RootstockAdapter::new(
             config.rootstock_rpc_url.clone(),
             config.network.to_string(),
         )),
@@ -201,22 +201,22 @@ async fn main() -> anyhow::Result<()> {
 
     multi_chain.insert(
         "babylon".to_string(),
-        Arc::new(engine::BabylonAdapter::new(config.network.to_string())),
+        Arc::new(conxian_engine::BabylonAdapter::new(config.network.to_string())),
     );
 
     multi_chain.insert(
         "bitvm".to_string(),
-        Arc::new(engine::BitVmAdapter::new(config.network.to_string())),
+        Arc::new(conxian_engine::BitVmAdapter::new(config.network.to_string())),
     );
 
     multi_chain.insert(
         "fedimint".to_string(),
-        Arc::new(engine::FedimintAdapter::new(config.network.to_string())),
+        Arc::new(conxian_engine::FedimintAdapter::new(config.network.to_string())),
     );
 
     multi_chain.insert(
         "citrea".to_string(),
-        Arc::new(engine::CitreaAdapter::new(
+        Arc::new(conxian_engine::CitreaAdapter::new(
             "https://rpc.testnet.citrea.xyz".to_string(), // Default testnet RPC
             config.network.to_string(),
         )),
@@ -224,10 +224,10 @@ async fn main() -> anyhow::Result<()> {
 
     multi_chain.insert(
         "strata".to_string(),
-        Arc::new(engine::StrataAdapter::new(config.network.to_string())),
+        Arc::new(conxian_engine::StrataAdapter::new(config.network.to_string())),
     );
 
-    let verifier = Arc::new(compliance::UniversalVerifier::new(
+    let verifier = Arc::new(conxian_compliance::UniversalVerifier::new(
         zkc_verifier.clone() as Arc<dyn CoreVerifier>,
         multi_chain.clone(),
     ));
@@ -245,7 +245,7 @@ async fn main() -> anyhow::Result<()> {
         fiat_webhook_secret: config.fiat_webhook_secret.clone(),
         settlement_ingress_secret: config.settlement_ingress_secret.clone(),
         settlement_log: new_settlement_log(),
-        offline_queue: api::new_offline_queue(offline_key),
+        offline_queue: conxian_api::new_offline_queue(offline_key),
         multi_chain,
         coordinator,
     };

@@ -12,10 +12,10 @@ name = "gateway"
 path = "src/main.rs"
 
 [dependencies]
-engine.workspace = true
-api.workspace = true
-compliance.workspace = true
-conxian-core.workspace = true
+conxian_engine.workspace = true
+conxian_api.workspace = true
+conxian_compliance.workspace = true
+conxian_core.workspace = true
 tokio.workspace = true
 axum.workspace = true
 anyhow.workspace = true

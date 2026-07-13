@@ -1,12 +1,12 @@
-use api::a2p::A2pRouter;
-use api::fiat::FiatRouter;
-use api::{configure_routes, new_lightning_adapter, new_settlement_log, AppState};
+use conxian_api::a2p::A2pRouter;
+use conxian_api::fiat::FiatRouter;
+use conxian_api::{configure_routes, new_lightning_adapter, new_settlement_log, AppState};
 use axum::http::StatusCode;
 use axum_test::TestServer;
-use compliance::zkc::{ATTESTATION_SIGNING_DOMAIN, TEE_DEVICE_ID_PREFIX};
-use compliance::{CoreVerifier, IdentityManager, UniversalVerifier, ZkcVerifier};
+use conxian_compliance::zkc::{ATTESTATION_SIGNING_DOMAIN, TEE_DEVICE_ID_PREFIX};
+use conxian_compliance::{CoreVerifier, IdentityManager, UniversalVerifier, ZkcVerifier};
 use conxian_core::{GatewayState, SharedState};
-use engine::stacks::alex::SimulatedAlexClient;
+use conxian_engine::stacks::alex::SimulatedAlexClient;
 use secp256k1::{Message, PublicKey, Secp256k1, SecretKey};
 use serde_json::json;
 use sha2::{Digest, Sha256};

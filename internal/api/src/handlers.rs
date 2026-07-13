@@ -6,7 +6,7 @@ use axum::{
     response::Response,
     Json,
 };
-use compliance::SovereignCommit;
+use conxian_compliance::SovereignCommit;
 use conxian_core::{
     evaluate_trust_metadata_json, AttestationRequest, ConxianError, JobCardSettlementRequest,
     SettlementEnvelope, SettlementProposal, TrustPolicyDecision,

@@ -55,7 +55,7 @@ tracing = { version = "0.1.41" }
 tracing-subscriber = { version = "0.3.20", features = ["env-filter", "json"] }
 
 # Internal crates
-engine = { path = "internal/engine" }
-api = { path = "internal/api" }
-compliance = { path = "internal/compliance" }
-conxian-core = { path = "pkg/conxian-core" }
+conxian_engine = { path = "internal/engine" }
+conxian_api = { path = "internal/api" }
+conxian_compliance = { path = "internal/compliance" }
+conxian_core = { path = "pkg/conxian-core" }

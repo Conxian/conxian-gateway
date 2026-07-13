@@ -1,5 +1,5 @@
 #[cfg(feature = "mock-integrations")]
-use compliance::IdentityManager;
+use conxian_compliance::IdentityManager;
 #[cfg(feature = "mock-integrations")]
 use conxian_core::IdentityResolutionRequest;
 

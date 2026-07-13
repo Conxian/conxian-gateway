@@ -7,7 +7,7 @@
 // 2. NWC relay errors (unavailable, rejected, partial failure)
 // 3. Adapter-level error wrapping
 
-use api::lightning::{
+use conxian_api::lightning::{
     LightningAdapter, LightningAdapterError, LightningBackend, LightningBackendError,
     LightningSettlementRequest, LightningSettlementResponse,
 };
@@ -48,7 +48,7 @@ async fn test_nwc_spontaneous_payment_success() {
     let mock = Arc::new(MockNwcRelay::new());
     let adapter = LightningAdapter::new(mock.clone()).with_clock(|| 1000);
 
-    let payload = api::x402::X402PaymentPayload {
+    let payload = conxian_api::x402::X402PaymentPayload {
         amount: 50_000,
         asset: "BTC".to_string(),
         challenge: "nwc-challenge-001".to_string(),
@@ -97,7 +97,7 @@ async fn test_nwc_relay_unavailable() {
         .with_clock(|| 1000)
         .with_retry_policy(0, Duration::from_millis(10));
 
-    let payload = api::x402::X402PaymentPayload {
+    let payload = conxian_api::x402::X402PaymentPayload {
         amount: 10_000,
         asset: "BTC".to_string(),
         challenge: "nwc-challenge-002".to_string(),
@@ -118,7 +118,7 @@ async fn test_nwc_relay_rejected() {
     });
     let adapter = LightningAdapter::new(backend).with_clock(|| 1000);
 
-    let payload = api::x402::X402PaymentPayload {
+    let payload = conxian_api::x402::X402PaymentPayload {
         amount: 10_000,
         asset: "BTC".to_string(),
         challenge: "nwc-challenge-003".to_string(),
@@ -140,7 +140,7 @@ async fn test_nwc_relay_partial_failure() {
     });
     let adapter = LightningAdapter::new(backend).with_clock(|| 1000);
 
-    let payload = api::x402::X402PaymentPayload {
+    let payload = conxian_api::x402::X402PaymentPayload {
         amount: 25_000,
         asset: "sBTC".to_string(),
         challenge: "nwc-challenge-004".to_string(),
@@ -189,7 +189,7 @@ async fn test_nwc_retryable_error() {
         .with_clock(|| 1000)
         .with_retry_policy(2, Duration::from_millis(10));
 
-    let payload = api::x402::X402PaymentPayload {
+    let payload = conxian_api::x402::X402PaymentPayload {
         amount: 30_000,
         asset: "BTC".to_string(),
         challenge: "nwc-challenge-retry".to_string(),

@@ -1,13 +1,15 @@
 [package]
-name = "compliance"
+name = "conxian_compliance"
 version.workspace = true
 edition.workspace = true
+description = "Conxian Gateway Compliance - ZK and attestation verification for institutional compliance"
+license = "MIT"
 
 [features]
 mock-integrations = []
 
 [dependencies]
-conxian-core.workspace = true
+conxian_core = { path = "../../pkg/conxian-core" }
 serde.workspace = true
 serde_json = { workspace = true }
 anyhow.workspace = true

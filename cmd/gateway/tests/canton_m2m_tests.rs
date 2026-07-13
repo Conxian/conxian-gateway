@@ -6,14 +6,14 @@
 //! Test strategy: real handler logic with simulated/mocked backends (Lightning,
 //! compliance verifier). No live network calls.
 
-use api::lightning::{
+use conxian_api::lightning::{
     LightningAdapter, LightningBackend, LightningBackendError, LightningSettlementRequest,
     LightningSettlementResponse,
 };
-use api::{configure_routes, AppState};
+use conxian_api::{configure_routes, AppState};
 use async_trait::async_trait;
 use axum::{body::Body, http::Request};
-use compliance::ZkcVerifier;
+use conxian_compliance::ZkcVerifier;
 use http_body_util::BodyExt;
 use serde_json::json;
 use std::{
@@ -118,7 +118,7 @@ fn ok_response() -> SimulatedOutcome {
 fn make_test_state(lightning: Arc<LightningAdapter>) -> AppState {
     let state: conxian_core::SharedState =
         Arc::new(RwLock::new(conxian_core::GatewayState::default()));
-    let fiat = Arc::new(api::fiat::FiatRouter::new(
+    let fiat = Arc::new(conxian_api::fiat::FiatRouter::new(
         "ramp-key".to_string(),
         "investec-id".to_string(),
         "investec-secret".to_string(),
@@ -127,14 +127,14 @@ fn make_test_state(lightning: Arc<LightningAdapter>) -> AppState {
         "banxa-key".to_string(),
         "banxa-secret".to_string(),
     ));
-    let a2p = Arc::new(api::a2p::A2pRouter::new(
+    let a2p = Arc::new(conxian_api::a2p::A2pRouter::new(
         "sentinel_infobip".to_string(),
         "test-infobip".to_string(),
         "test-hmac".to_string(),
     ));
-    let identity = Arc::new(compliance::IdentityManager::new());
+    let identity = Arc::new(conxian_compliance::IdentityManager::new());
     let compliance = Arc::new(ZkcVerifier::new());
-    let alex = Arc::new(engine::stacks::alex::SimulatedAlexClient);
+    let alex = Arc::new(conxian_engine::stacks::alex::SimulatedAlexClient);
     let multi_chain = std::collections::HashMap::new();
     let offline_queue = Arc::new(SimulatedOfflineQueue {
         replay_claims: Mutex::new(HashSet::new()),
@@ -146,8 +146,8 @@ fn make_test_state(lightning: Arc<LightningAdapter>) -> AppState {
         a2p,
         identity,
         compliance: compliance.clone(),
-        verifier: Arc::new(compliance::UniversalVerifier::new(
-            compliance as Arc<dyn compliance::CoreVerifier>,
+        verifier: Arc::new(conxian_compliance::UniversalVerifier::new(
+            compliance as Arc<dyn conxian_compliance::CoreVerifier>,
             multi_chain.clone(),
         )),
         alex,
@@ -155,7 +155,7 @@ fn make_test_state(lightning: Arc<LightningAdapter>) -> AppState {
         lightning,
         fiat_webhook_secret: "fake".to_string(),
         settlement_ingress_secret: "simulated".to_string(),
-        settlement_log: api::new_settlement_log(),
+        settlement_log: conxian_api::new_settlement_log(),
         offline_queue,
     }
 }

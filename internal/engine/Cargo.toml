@@ -1,11 +1,13 @@
 [package]
-name = "engine"
+name = "conxian_engine"
 version.workspace = true
 edition.workspace = true
+description = "Conxian Gateway Engine - Core business logic for Bitcoin/Stacks gateway operations"
+license = "MIT"
 
 [dependencies]
 redis.workspace = true
-conxian-core.workspace = true
+conxian_core = { path = "../../pkg/conxian-core" }
 bitcoin.workspace = true
 bitcoincore-rpc.workspace = true
 tokio.workspace = true

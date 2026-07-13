@@ -1,17 +1,17 @@
-use api::a2p::A2pRouter;
-use api::fiat::FiatRouter;
-use api::lightning::{
+use conxian_api::a2p::A2pRouter;
+use conxian_api::fiat::FiatRouter;
+use conxian_api::lightning::{
     LightningAdapter, LightningBackend, LightningBackendError, LightningSettlementRequest,
     LightningSettlementResponse,
 };
-use api::{configure_routes, new_lightning_adapter, new_settlement_log, AppState};
+use conxian_api::{configure_routes, new_lightning_adapter, new_settlement_log, AppState};
 use async_trait::async_trait;
 use axum::{
     body::Body,
     http::{Request, StatusCode},
 };
-use compliance::zkc::{ATTESTATION_SIGNING_DOMAIN, TEE_DEVICE_ID_PREFIX};
-use compliance::{CoreVerifier, IdentityManager, UniversalVerifier, ZkcVerifier};
+use conxian_compliance::zkc::{ATTESTATION_SIGNING_DOMAIN, TEE_DEVICE_ID_PREFIX};
+use conxian_compliance::{CoreVerifier, IdentityManager, UniversalVerifier, ZkcVerifier};
 use conxian_core::{
     Attestation, AttestationRequest, BitVmAttestation, ConxianJobCard, GatewayState,
     JobCardSettlementRequest, SharedState, WorkIntent,
@@ -58,23 +58,23 @@ fn setup_app_with_lightning(state: SharedState, lightning: Arc<LightningAdapter>
     ));
     let identity = Arc::new(IdentityManager::new());
     let compliance = Arc::new(ZkcVerifier::new());
-    let alex = Arc::new(engine::stacks::alex::SimulatedAlexClient);
+    let alex = Arc::new(conxian_engine::stacks::alex::SimulatedAlexClient);
     let mut multi_chain: std::collections::HashMap<String, Arc<dyn conxian_core::ChainAdapter>> =
         std::collections::HashMap::new();
     multi_chain.insert(
         "liquid".to_string(),
-        Arc::new(engine::LiquidAdapter::new(
-            Arc::new(engine::BitcoinRpcClient::new("http://localhost:18843", "", "").unwrap()),
+        Arc::new(conxian_engine::LiquidAdapter::new(
+            Arc::new(conxian_engine::BitcoinRpcClient::new("http://localhost:18843", "", "").unwrap()),
             "simulated".to_string(),
         )),
     );
     multi_chain.insert(
         "babylon".to_string(),
-        Arc::new(engine::BabylonAdapter::new("simulated".to_string())),
+        Arc::new(conxian_engine::BabylonAdapter::new("simulated".to_string())),
     );
     multi_chain.insert(
         "bitvm".to_string(),
-        Arc::new(engine::BitVmAdapter::new("simulated".to_string())),
+        Arc::new(conxian_engine::BitVmAdapter::new("simulated".to_string())),
     );
     let verifier = Arc::new(UniversalVerifier::new(
         compliance.clone() as Arc<dyn CoreVerifier>,

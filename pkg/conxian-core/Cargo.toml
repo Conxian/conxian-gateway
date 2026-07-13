@@ -1,7 +1,9 @@
 [package]
-name = "conxian-core"
+name = "conxian_core"
 version.workspace = true
 edition.workspace = true
+description = "Conxian Gateway Core Library - Institutional-grade Bitcoin/Stacks Gateway core types and utilities"
+license = "MIT"
 
 [dependencies]
 serde.workspace = true

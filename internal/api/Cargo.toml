@@ -1,16 +1,18 @@
 [package]
-name = "api"
+name = "conxian_api"
 version.workspace = true
 edition.workspace = true
+description = "Conxian Gateway API - HTTP API layer for institutional Bitcoin/Stacks gateway"
+license = "MIT"
 
 [features]
 mock-integrations = []
 
 [dependencies]
 urlencoding = "2.1.3"
-compliance = { path = "../compliance" }
-engine = { path = "../engine" }
-conxian-core.workspace = true
+conxian_compliance = { path = "../compliance" }
+conxian_engine = { path = "../engine" }
+conxian_core = { path = "../../pkg/conxian-core" }
 axum.workspace = true
 tower.workspace = true
 tower-http.workspace = true
