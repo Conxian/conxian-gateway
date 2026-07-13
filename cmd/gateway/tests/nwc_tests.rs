@@ -7,11 +7,11 @@
 // 2. NWC relay errors (unavailable, rejected, partial failure)
 // 3. Adapter-level error wrapping
 
+use async_trait::async_trait;
 use conxian_api::lightning::{
     LightningAdapter, LightningAdapterError, LightningBackend, LightningBackendError,
     LightningSettlementRequest, LightningSettlementResponse,
 };
-use async_trait::async_trait;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
