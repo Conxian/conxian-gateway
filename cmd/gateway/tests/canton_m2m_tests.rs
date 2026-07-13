@@ -6,13 +6,13 @@
 //! Test strategy: real handler logic with simulated/mocked backends (Lightning,
 //! compliance verifier). No live network calls.
 
+use async_trait::async_trait;
+use axum::{body::Body, http::Request};
 use conxian_api::lightning::{
     LightningAdapter, LightningBackend, LightningBackendError, LightningSettlementRequest,
     LightningSettlementResponse,
 };
 use conxian_api::{configure_routes, AppState};
-use async_trait::async_trait;
-use axum::{body::Body, http::Request};
 use conxian_compliance::ZkcVerifier;
 use http_body_util::BodyExt;
 use serde_json::json;

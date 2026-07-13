@@ -201,17 +201,23 @@ async fn main() -> anyhow::Result<()> {
 
     multi_chain.insert(
         "babylon".to_string(),
-        Arc::new(conxian_engine::BabylonAdapter::new(config.network.to_string())),
+        Arc::new(conxian_engine::BabylonAdapter::new(
+            config.network.to_string(),
+        )),
     );
 
     multi_chain.insert(
         "bitvm".to_string(),
-        Arc::new(conxian_engine::BitVmAdapter::new(config.network.to_string())),
+        Arc::new(conxian_engine::BitVmAdapter::new(
+            config.network.to_string(),
+        )),
     );
 
     multi_chain.insert(
         "fedimint".to_string(),
-        Arc::new(conxian_engine::FedimintAdapter::new(config.network.to_string())),
+        Arc::new(conxian_engine::FedimintAdapter::new(
+            config.network.to_string(),
+        )),
     );
 
     multi_chain.insert(
@@ -224,7 +230,9 @@ async fn main() -> anyhow::Result<()> {
 
     multi_chain.insert(
         "strata".to_string(),
-        Arc::new(conxian_engine::StrataAdapter::new(config.network.to_string())),
+        Arc::new(conxian_engine::StrataAdapter::new(
+            config.network.to_string(),
+        )),
     );
 
     let verifier = Arc::new(conxian_compliance::UniversalVerifier::new(

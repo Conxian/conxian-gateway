@@ -1,3 +1,8 @@
+use async_trait::async_trait;
+use axum::{
+    body::Body,
+    http::{Request, StatusCode},
+};
 use conxian_api::a2p::A2pRouter;
 use conxian_api::fiat::FiatRouter;
 use conxian_api::lightning::{
@@ -5,11 +10,6 @@ use conxian_api::lightning::{
     LightningSettlementResponse,
 };
 use conxian_api::{configure_routes, new_lightning_adapter, new_settlement_log, AppState};
-use async_trait::async_trait;
-use axum::{
-    body::Body,
-    http::{Request, StatusCode},
-};
 use conxian_compliance::zkc::{ATTESTATION_SIGNING_DOMAIN, TEE_DEVICE_ID_PREFIX};
 use conxian_compliance::{CoreVerifier, IdentityManager, UniversalVerifier, ZkcVerifier};
 use conxian_core::{
@@ -64,7 +64,9 @@ fn setup_app_with_lightning(state: SharedState, lightning: Arc<LightningAdapter>
     multi_chain.insert(
         "liquid".to_string(),
         Arc::new(conxian_engine::LiquidAdapter::new(
-            Arc::new(conxian_engine::BitcoinRpcClient::new("http://localhost:18843", "", "").unwrap()),
+            Arc::new(
+                conxian_engine::BitcoinRpcClient::new("http://localhost:18843", "", "").unwrap(),
+            ),
             "simulated".to_string(),
         )),
     );
