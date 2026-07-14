@@ -1,7 +1,7 @@
 # Cross-Repository Status Dashboard
 
 **Last Updated:** 2026-07-14  
-**Sprint:** W28 (2026-07-07 to 2026-07-18)  
+**Sprint:** W28 → W29 Transition (2026-07-14)  
 **Maintained By:** Agent sessions
 
 ---
@@ -10,16 +10,16 @@
 
 | Repository | Layer | Production Path | Current Version | Last Session |
 |------------|-------|-----------------|-----------------|--------------|
-| conxian-gateway | L1 | main (mainnet) | 0.1.4 | 2026-07-14 |
-| conxian-nexus | L1 | main (mainnet) | - | - |
-| conxius-wallet | L2 | main (prod) | - | - |
-| Conxian_UI | L2 | main (prod) | - | - |
-| conxian-labs-site | L2 | main (public) | - | - |
-| lib-conxian-core | L3 | main (shared) | - | - |
-| lib-conclave-sdk | L3 | main (public) | - | - |
-| conxius-platform | L3 | main (internal) | - | - |
-| stacksorbit | L3 | main (internal) | - | - |
-| conxian-business | L4 | main (strategic) | - | - |
+| conxian-gateway | L1 | main (mainnet) | 0.1.4 | 2026-07-14 ✅ |
+| conxian-nexus | L1 | main (mainnet) | - | ⏳ Not reviewed |
+| conxius-wallet | L2 | main (prod) | - | ⏳ Not reviewed |
+| Conxian_UI | L2 | main (prod) | - | ⏳ Not reviewed |
+| conxian-labs-site | L2 | main (public) | - | ⏳ Not reviewed |
+| lib-conxian-core | L3 | main (shared) | - | ⏳ Not reviewed |
+| lib-conclave-sdk | L3 | main (public) | - | ⏳ Not reviewed |
+| conxius-platform | L3 | main (internal) | - | ⏳ Not reviewed |
+| stacksorbit | L3 | main (internal) | - | ⏳ Not reviewed |
+| conxian-business | L4 | main (strategic) | - | ⏳ Not reviewed |
 
 ---
 
@@ -40,21 +40,30 @@ lib-conclave-sdk  ←  shares types with SDK
 
 ---
 
-## Current Sprint Focus (W28)
+## W28 Sprint Summary
 
-### conxian-gateway
-**Priority Issues:**
-- #236: TypeScript SDK npm publish (P0)
-- #220: DLC CET construction (P1)
-- #219: Groth16 verifier boundary (P1)
-- #216: Babylon BTC header-chain (P1)
+### conxian-gateway (W28 Complete ✅)
 
-**Blockers:**
-- #219: Requires ark_groth16 dependency evaluation
-- #220: Requires dlc-manager crate evaluation
+**Completed:**
+- ✅ Session Continuity Protocol implemented (PR #243)
+- ✅ Full gap analysis of 11 open issues
+- ✅ Gap analysis posted to all GitHub issues
+- ✅ AGENTS.md updated with verification checklist
+- ✅ Sprint Session Protocol documented
+- ✅ W29 Planning created (PR #244)
 
-### conxian-nexus
-*(To be updated when repo is accessed)*
+---
+
+## W29 Sprint Planning (2026-07-21 to 2026-08-01)
+
+### 🚨 ALL P0 ITEMS APPROVED FOR IMPLEMENTATION
+
+| # | Issue | Priority | Action |
+|---|-------|----------|--------|
+| 1 | #236 SDK | P0 | Fix version drift + README claim |
+| 2 | #220 DLC CET | P0 | Add dlc-manager, implement CET |
+| 3 | #219 Groth16 | P0 | Define verifier boundary |
+| 4 | #216 Babylon | P0 | Implement BTC header SPV |
 
 ---
 
@@ -62,8 +71,8 @@ lib-conclave-sdk  ←  shares types with SDK
 
 | Date | Repository | Session Summary |
 |------|------------|-----------------|
-| 2026-07-14 | conxian-gateway | Full gap analysis of 11 open issues. Created `docs/GAP_ANALYSIS_2026-07-14.md`. Posted gap analysis to all 11 GitHub issues. Updated AGENTS.md with Session Continuity Protocol. |
-| - | - | - |
+| 2026-07-14 | conxian-gateway | W28 sprint close. Gap analysis of 11 issues. Session Continuity Protocol implemented. W29 planning with P0 approvals. PR #244 created. |
+| 2026-07-14 | conxian-gateway | Initial gap analysis. AGENTS.md updated. 11 GitHub issues commented. |
 
 ---
 
@@ -74,24 +83,26 @@ Before starting work on any repo, verify:
 - [ ] `docs/SESSION_SUMMARY_*.md` exists
 - [ ] `docs/GAP_ANALYSIS_*.md` is current
 - [ ] All previous session artifacts present
+- [ ] PRs from previous session are merged
 
 ---
 
-## Notes for Next Session
+## Notes for Next Session (W29)
 
 ### conxian-gateway Next Steps
-1. Fix SDK version drift (#236) — `package.json: 0.1.0` → `0.1.4`
-2. Fix SDK README claim (#236) — Remove "Production Ready"
-3. Add dlc-manager dependency (#220)
-4. Define Groth16 verifier boundary (#219)
-5. Implement Babylon BTC header-chain (#216)
+1. ✅ PR #244 should be merged (W29 Planning)
+2. Start #236 SDK Fix (version drift + README)
+3. Start #220 DLC CET Construction
+4. Start #219 Groth16 Verifier Boundary
+5. Start #216 Babylon BTC Header-Chain
 
 ### Cross-Repo Actions Needed
-- [ ] Create SPRINT_REVIEW for W27 (if not done)
-- [ ] Verify conxian-nexus session state
+- [ ] Review conxian-nexus repository
+- [ ] Review conxius-wallet repository  
 - [ ] Update lib-conxian-core if types changed
+- [ ] Apply Session Continuity Protocol to other repos
 
 ---
 
-*This file is auto-maintained by agent sessions.
-Do not manually edit — let sessions update this file.*
+*This file is auto-maintained by agent sessions.*
+*Last Major Update: 2026-07-14 (W28 Sprint Close)*
