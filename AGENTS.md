@@ -2,14 +2,62 @@
 
 You are working on the **Conxian Gateway**, an institutional-grade Rust middleware designed for high-performance Bitcoin/Stacks state logic and enterprise compliance.
 
-## Current State (2026-07-06, updated)
+---
+
+## 🚨 CRITICAL: Session Continuity Protocol
+
+**This is a production-grade repository. Every session MUST verify previous work before proceeding.**
+
+### Session Start Checklist
+Before beginning any work, you MUST:
+
+1. **Pull latest code**: `git pull origin main`
+2. **Check session artifacts**: Look for `docs/SESSION_SUMMARY_*.md` files from previous sessions
+3. **Verify prior deliverables**: If previous session created files or posted comments, verify they exist and are correct
+4. **Check open issues**: Review any issues that were being worked on in the previous session
+5. **Read gap analysis**: Check `docs/GAP_ANALYSIS_*.md` for alignment status
+6. **Review sprint status**: Check `docs/SPRINT_REVIEW_*.md` and `docs/CROSS_REPO_STATUS.md`
+
+### Verification Commands
+```bash
+# Pull and verify state
+git pull origin main
+git log --oneline -5  # Check recent commits
+ls -la docs/*.md       # Check for session summaries
+
+# Run verification suite
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --workspace
+python3 scripts/verify_contamination_guard.py
+```
+
+### Sprint & Org-Wide Protocol
+For complete organizational protocol, see:
+- `docs/SPRINT_SESSION_PROTOCOL.md` — Org-wide sprint & session standards
+- `docs/CROSS_REPO_STATUS.md` — Live dashboard of all Conxian-Labs repos
+- `docs/SPRINT_REVIEW_*.md` — Sprint boundary documentation
+
+### If Previous Session Work is Missing or Broken
+- **STOP** and report what was expected vs. what exists
+- Do NOT continue with new work until verification is complete
+- Document the gap in a new `docs/SESSION_SUMMARY_*.md`
+
+---
+
+## Current State (2026-07-14, updated)
 - **Status Audit**: Holistic review of Nexus/Gateway alignment complete (CON-1353).
 - **Protocol Drift**: Resolved — Fedimint, Citrea, and Strata adapters implemented and in production paths.
 - **RGB G-1385 (Phase 1)**: StashResolver delivered (commit `124d17e`) with `rgb-std` v0.12.0-rc.3 + `bp-esplora` v0.12.0-rc.3 behind `rgb-native` feature. Phase 2 (ContractVerify, consignment) blocked on rgb-std ecosystem stabilization.
 - **PR #233 (G-1389)**: Tech debt reduction merged (`5e6613e`). Includes Fedimint/Citrea/Strata adapters, Redis coordination module, auth middleware timing stubs, reqwest 0.13 upgrade, dead_code cleanup. Citrea adapter moved from `bitcoin/` to `ntt/`.
-- **PR #228 (G-1385)**: RGB stash resolver merged (`124d17e`), retained through rebase.
-- **Hardening Stubs**: ✅ CON-1276 (Redis AUTH + token expiry) now fully implemented (commit `2ef6df1`).
-- **UCV-1**: Fully implemented and unifying Babylon, BitVM2, Liquid, Rootstock, and RGB.
+- **Gap Analysis (2026-07-14)**: Full review of 11 open issues vs. codebase complete. Report at `docs/GAP_ANALYSIS_2026-07-14.md`. Key findings:
+  - ⚠️ #236 SDK: Version drift (SDK 0.1.0 vs workspace 0.1.4), README claims "Production Ready" (overstated)
+  - ⚠️ #220 DLC: Oracle abstraction done, CET construction missing (no dlc-manager dep)
+  - ❌ #219 Groth16: Verifier boundary NOT defined anywhere in codebase
+  - ❌ #216 Babylon: BTC header-chain returns `0`, no SPV implementation
+- **Sprint Protocol (2026-07-14)**: Session Continuity Protocol implemented. All agent sessions now verify prior work before proceeding. See:
+  - `docs/SPRINT_SESSION_PROTOCOL.md` — Org-wide standards
+  - `docs/CROSS_REPO_STATUS.md` — Live cross-repo dashboard
+  - `docs/SPRINT_REVIEW_2026-W28.md` — Sprint W28 documentation
 - **CI status**: All workflows green on main. `cargo-audit.yml` augmented with `.cargo/audit.toml` ignore list for transitive `rustls-webpki` CVEs.
 - **P3 Sprint Review (commit `07c9508`)**: All review findings resolved — G-C6 verdict logic, signature verification for all machine providers, SystemTime→now_unix, inline test backend. 29 canton_m2m_tests pass; 158 workspace tests pass.
 - **Strategic Research (2026-07-06)**: Canton Network & Machine Economy deep-dive complete. Key finding: "route without touch" — Conxian as sovereign routing layer between Canton's $6T+ institutional capital and Bitcoin's permissionless settlement. Machine Economy: $1.1B/month Lightning M2M volume, peaq 60+ DePINs, DIMO vehicle identity. See `docs/research/CANTON_NETWORK_AND_MACHINE_ECONOMY_RESEARCH.md` and `docs/research/KNOWLEDGE_MAP.md`.
@@ -71,17 +119,27 @@ Before submitting changes, you MUST:
 - **node-ci.yml**: TypeScript build + vitest (client-sdk only).
 - **release.yml**: Tag-triggered GitHub Release with SBOM (CycloneDX) and SLSA L3 provenance.
 
-## Known Gaps (2026-07-05 Update)
+## Known Gaps (2026-07-14 Update)
 - [x] #228: RGB stash resolver (G-1385 P1) — merged `124d17e`
 - [x] #233 (G-1389): Tech debt reduction — merged `5e6613e`
 - [x] G-1276: Redis AUTH + token expiry — merged `2ef6df1`
 - [x] G-1380: SBOM and Provenance to release workflow — merged `19181c5`
+- [ ] #236: SDK version drift + README overclaim — see `docs/GAP_ANALYSIS_2026-07-14.md`
+- [ ] #220: DLC CET construction — dlc-manager dependency missing
+- [ ] #219: Groth16 verifier boundary — NOT defined in codebase
+- [ ] #216: Babylon BTC header-chain SPV — returns 0, needs implementation
 - [ ] #189: BitVMX GC adapter — pending 2026 garbled circuits release (see research below)
 - [x] #231: BRICS Pay — DCMS settlement rail (closed — research complete, no adapter needed)
 - [x] #232: mBridge — BIS multi-CBDC DLT (closed — research complete, observation only)
 
-Protocol drift resolved — 10 of 10 identified protocols now have adapters.
-Implementation gaps closed. New strategic research opened: Canton Network interop + Machine Economy monetization.
+Full gap analysis: `docs/GAP_ANALYSIS_2026-07-14.md`
+
+### Critical P0 Actions
+1. **Fix SDK version** — `packages/client-sdk/package.json`: `0.1.0` → `0.1.4`
+2. **Fix SDK README** — Remove "Production Ready" claim → "Developer Preview"
+3. **Add DLC CET** — Add `dlc-manager` dependency for #220
+4. **Define Groth16 boundary** — Create internal verifier trait for #219
+5. **Implement Babylon SPV** — BTC header-chain for #216
 
 ### New Strategic Gaps (2026-07-06)
 - [x] G-C1: CBTC non-custodial verification — conxian-core types + `POST /api/v1/canton/cbtc/verify` handler with 6-point attestation check (commit pending)
