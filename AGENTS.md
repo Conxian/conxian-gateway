@@ -134,12 +134,14 @@ Before submitting changes, you MUST:
 
 Full gap analysis: `docs/GAP_ANALYSIS_2026-07-14.md`
 
-### Critical P0 Actions
+### Critical P0 Actions (W29 — ALL APPROVED)
 1. **Fix SDK version** — `packages/client-sdk/package.json`: `0.1.0` → `0.1.4`
 2. **Fix SDK README** — Remove "Production Ready" claim → "Developer Preview"
 3. **Add DLC CET** — Add `dlc-manager` dependency for #220
 4. **Define Groth16 boundary** — Create internal verifier trait for #219
 5. **Implement Babylon SPV** — BTC header-chain for #216
+
+**Status:** All P0 items APPROVED for W29 implementation (2026-07-14)
 
 ### New Strategic Gaps (2026-07-06)
 - [x] G-C1: CBTC non-custodial verification — conxian-core types + `POST /api/v1/canton/cbtc/verify` handler with 6-point attestation check (commit pending)
