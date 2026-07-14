@@ -107,10 +107,11 @@ impl EncryptedOfflineQueue {
             .as_nanos();
         let now_bytes = now.to_le_bytes();
         nonce_bytes.copy_from_slice(&now_bytes[..12]);
-        let nonce = Nonce::from_slice(&nonce_bytes);
+        let nonce = Nonce::try_from(&nonce_bytes[..])
+            .map_err(|e| ConxianError::Security(format!("Invalid nonce length: {}", e)))?;
 
         let ciphertext = cipher
-            .encrypt(nonce, data)
+            .encrypt(&nonce, data)
             .map_err(|e| ConxianError::Security(format!("Encryption failed: {}", e)))?;
 
         Ok((ciphertext, nonce_bytes))
@@ -119,10 +120,11 @@ impl EncryptedOfflineQueue {
     fn decrypt(&self, ciphertext: &[u8], nonce_bytes: &[u8]) -> ConxianResult<Vec<u8>> {
         let cipher = Aes256Gcm::new_from_slice(&self.encryption_key)
             .map_err(|e| ConxianError::Security(format!("Cipher init failed: {}", e)))?;
-        let nonce = Nonce::from_slice(nonce_bytes);
+        let nonce = Nonce::try_from(nonce_bytes)
+            .map_err(|e| ConxianError::Security(format!("Invalid nonce length: {}", e)))?;
 
         cipher
-            .decrypt(nonce, ciphertext)
+            .decrypt(&nonce, ciphertext)
             .map_err(|e| ConxianError::Security(format!("Decryption failed: {}", e)))
     }
 }
@@ -269,5 +271,18 @@ mod tests {
         assert!(queue.claim_replay_key("ramp:sig2:hash", 60).unwrap());
 
         let _ = std::fs::remove_file(db_path);
+    }
+
+    #[test]
+    fn decrypt_rejects_invalid_nonce_length_as_security_error() {
+        let queue = EncryptedOfflineQueue::new(":memory:", [5u8; 32]).unwrap();
+
+        let error = queue.decrypt(b"ciphertext", &[0u8; 11]).unwrap_err();
+
+        assert!(matches!(
+            error,
+            crate::ConxianError::Security(message)
+                if message.starts_with("Invalid nonce length:")
+        ));
     }
 }
