@@ -2,9 +2,9 @@
 
 ## Sprint Goals
 
-- [ ] Complete gap analysis of all open issues
-- [ ] Align documentation with current codebase state
-- [ ] Implement Session Continuity Protocol for production hygiene
+- [x] Complete gap analysis of all open issues ✅
+- [x] Align documentation with current codebase state ✅
+- [x] Implement Session Continuity Protocol for production hygiene ✅
 
 ---
 
@@ -12,22 +12,26 @@
 
 | Issue | Description | Verification |
 |-------|-------------|--------------|
+| PR #243 | Session Continuity Protocol implemented | ✅ Merged 2026-07-14 |
+| PR #242 | Rust dependencies bumped | ✅ Merged 2026-07-14 |
+| PR #239 | NPM dependencies bumped | ✅ Merged 2026-07-13 |
+| PR #238 | Repository Governance hardened | ✅ Merged 2026-07-11 |
 | N/A | Full gap analysis of 11 open issues | ✅ docs/GAP_ANALYSIS_2026-07-14.md created |
 | N/A | Gap analysis posted to all GitHub issues | ✅ 11 issues updated with comments |
-| N/A | Session Continuity Protocol added | ✅ AGENTS.md updated with verification checklist |
+| N/A | Session Continuity Protocol added | ✅ AGENTS.md updated |
 | N/A | Sprint Session Protocol documented | ✅ docs/SPRINT_SESSION_PROTOCOL.md created |
 | N/A | Cross-repo status dashboard created | ✅ docs/CROSS_REPO_STATUS.md created |
 
 ---
 
-## In Progress
+## In Progress (Carried to W29)
 
 | Issue | Description | Status | Next Action |
 |-------|-------------|--------|-------------|
-| #236 | TypeScript SDK npm publish | Partial | Fix version drift (0.1.0 → 0.1.4), fix README claim |
-| #220 | DLC CET construction | Partial | Add dlc-manager dependency |
-| #219 | Groth16 verifier boundary | Not Started | Define internal trait |
-| #216 | Babylon BTC header-chain | Not Started | Implement SPV verification |
+| #236 | TypeScript SDK npm publish | ⚠️ Partial | Fix version drift (0.1.0 → 0.1.4), fix README claim |
+| #220 | DLC CET construction | ⚠️ Partial | Add dlc-manager dependency |
+| #219 | Groth16 verifier boundary | ❌ Not Started | Define internal trait |
+| #216 | Babylon BTC header-chain | ❌ Not Started | Implement SPV verification |
 
 ---
 
@@ -59,27 +63,38 @@
 
 ---
 
-## P0 Actions for Next Sprint (W29)
+## W29 Planning (2026-07-21 to 2026-08-01)
 
-1. **#236 SDK Fix**
-   - [ ] Update `packages/client-sdk/package.json` version to `0.1.4`
-   - [ ] Update `packages/client-sdk/README.md` — remove "Production Ready"
-   - [ ] Verify all endpoints documented correctly
+### 🚨 ALL P0 ITEMS APPROVED FOR IMPLEMENTATION
 
-2. **#220 DLC CET**
-   - [ ] Evaluate `dlc-manager` crate compatibility
-   - [ ] Add dependency to `internal/engine/Cargo.toml`
-   - [ ] Implement CET construction path
+**Approved 2026-07-14:** All P0 items below are approved for full implementation.
 
-3. **#219 Groth16**
-   - [ ] Define `Groth16Verifier` trait in `internal/engine/src/`
-   - [ ] Add test fixtures
-   - [ ] Document interface expectations
+---
 
-4. **#216 Babylon**
-   - [ ] Implement BTC header-chain query in `babylon_adapter.rs`
-   - [ ] Add SPV verification
-   - [ ] Add merkle proof validation
+### P0 Actions for W29 (APPROVED)
+
+#### 1. #236 SDK Fix (P0 — Critical)
+- [ ] Update `packages/client-sdk/package.json` version to `0.1.4`
+- [ ] Update `packages/client-sdk/README.md` — remove "Production Ready" → "Developer Preview"
+- [ ] Add stability markers to package.json
+- [ ] Verify all endpoints documented correctly
+
+#### 2. #220 DLC CET Construction (P0 — High Priority)
+- [ ] Evaluate `dlc-manager` crate compatibility
+- [ ] Add dependency to `internal/engine/Cargo.toml`
+- [ ] Implement CET construction path replacing mock bond-ID generation
+- [ ] Add oracle fixture-based testing
+
+#### 3. #219 Groth16 Verifier Boundary (P0 — High Priority)
+- [ ] Define `Groth16Verifier` trait in `internal/engine/src/`
+- [ ] Add test fixtures validating witness/public-input contract
+- [ ] Document how BitVM adapters plug into verifier surface
+
+#### 4. #216 Babylon BTC Header-Chain (P0 — High Priority)
+- [ ] Implement BTC header-chain query in `babylon_adapter.rs`
+- [ ] Add SPV verification
+- [ ] Add merkle proof validation
+- [ ] Prepare foundation for EOTS integration
 
 ---
 
