@@ -224,11 +224,9 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "threshold")]
     fn test_threshold_oracle_coordinator_requires_valid_threshold() {
         let oracle = DlcOracleClient::new("http://localhost:8080".into(), "pk1".into());
-        assert!(std::panic::catch_unwind(|| {
-            ThresholdOracleCoordinator::new(vec![oracle], 0);
-        })
-        .is_err());
+        ThresholdOracleCoordinator::new(vec![oracle], 0);
     }
 }

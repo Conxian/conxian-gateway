@@ -22,7 +22,7 @@ rgb-core = { version = "0.12", optional = true, features = ["bitcoin", "serde"] 
 rgb-std = { version = "0.12.0-rc.3", optional = true }
 bp-esplora = { version = "0.12.0-rc.3", optional = true, default-features = false, features = ["blocking-https-rustls"] }
 dlc-manager = { version = "0.8", optional = true }
-bn = { version = "0.1", optional = true }
+bn = { version = "0.4", optional = true }
 
 [features]
 rgb-native = ["rgb-core", "rgb-std", "bp-esplora"]
