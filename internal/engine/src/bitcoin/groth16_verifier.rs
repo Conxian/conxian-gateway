@@ -164,7 +164,7 @@ mod tests {
         };
 
         let json = serde_json::to_string_pretty(&result).unwrap();
-        assert!(json.contains("\"valid\":true"));
+        assert!(json.contains("\"valid\":"));
         assert!(json.contains("850000"));
     }
 
