@@ -5,13 +5,13 @@
 
 #![cfg(feature = "dlc")]
 
+use bitcoin::OutPoint;
 use dlc_manager::contract::{
     Contract, ContractDescriptor, ContractInput, ContractOutcomeValue, OfferParams,
 };
 use dlc_manager::error::Error as DlcError;
 use dlc_manager::payout_curve::PayoutFunction;
 use dlc_manager::OracleInfo;
-use bitcoin::OutPoint;
 use serde::{Deserialize, Serialize};
 
 /// CET construction request
@@ -101,7 +101,7 @@ mod tests {
                 outcomes: Default::default(),
             },
         };
-        
+
         let serialized = serde_json::to_string(&request).unwrap();
         assert!(serialized.contains("BitVectorV1") || serialized.contains("TwoOfTwo"));
     }

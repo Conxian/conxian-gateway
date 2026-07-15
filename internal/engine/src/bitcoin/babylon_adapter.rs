@@ -34,7 +34,11 @@ impl BabylonAdapter {
         match &self.btc_rpc {
             Some(rpc) => {
                 let height = rpc.get_block_count().await?;
-                info!(chain = "babylon", btc_height = height, "BTC header-chain height");
+                info!(
+                    chain = "babylon",
+                    btc_height = height,
+                    "BTC header-chain height"
+                );
                 Ok(height)
             }
             None => {
@@ -55,7 +59,11 @@ impl BabylonAdapter {
     }
 
     /// Verify BTC header-chain continuity (SPV-style check)
-    pub async fn verify_header_chain(&self, from_height: u64, to_height: u64) -> ConxianResult<bool> {
+    pub async fn verify_header_chain(
+        &self,
+        from_height: u64,
+        to_height: u64,
+    ) -> ConxianResult<bool> {
         if from_height >= to_height {
             return Err(conxian_core::ConxianError::Internal(
                 "Invalid height range for header chain verification".to_string(),
@@ -95,12 +103,10 @@ impl ChainAdapter for BabylonAdapter {
 
     async fn verify_state_proof(&self, proof_metadata: Value) -> ConxianResult<bool> {
         info!(chain = "babylon", "Verifying Babylon finality proof");
-        
+
         // If BTC RPC is configured, perform SPV header verification
         if let Some(rpc) = &self.btc_rpc {
-            let proof_height = proof_metadata["btc_height"]
-                .as_u64()
-                .unwrap_or(0);
+            let proof_height = proof_metadata["btc_height"].as_u64().unwrap_or(0);
             let current_height = rpc.get_block_count().await?;
 
             // Verify proof height is recent (within 6 blocks for SPV safety)
@@ -135,4 +141,3 @@ mod tests {
         assert_eq!(height, 0);
     }
 }
-
