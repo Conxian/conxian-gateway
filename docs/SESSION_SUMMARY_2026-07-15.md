@@ -11,19 +11,29 @@
 - **Release hygiene**: Verified
 - **Knowledge retention**: 15 research docs + 4 audit docs verified
 
-### 2. ✅ Knowledge Base & Issues Reviewed
+### 2. ✅ W29 P0 Implementation — ALL COMPLETE
+Committed to `main` (commit `453a15a`):
+
+| Issue | Change | Status |
+|-------|--------|--------|
+| #236 SDK | package.json: 0.1.0→0.1.4, README: "Developer Preview" | ✅ |
+| #220 DLC CET | Added dlc-manager v0.6, dlc_cet.rs module | ✅ |
+| #219 Groth16 | Added groth16_verifier.rs with Groth16Verifier trait | ✅ |
+| #216 Babylon | BTC header-chain SPV in babylon_adapter.rs | ✅ |
+
+### 3. ✅ Knowledge Base & Issues Reviewed
 - **37 GitHub issues** reviewed (all open issues)
 - **No security advisories** in repository
 - **P0 issues identified**: #236, #220, #219, #216
 - All session continuity artifacts verified present
 
-### 3. ✅ Rust Toolchain Installed & Verified
+### 4. ✅ Rust Toolchain Installed & Verified
 - Installed Rust 1.96.0 (matching rust-toolchain.toml)
 - All dependencies updated and workspace compiles clean
 
-### 4. ✅ W29 Sprint Started
+### 5. ✅ W29 Sprint Started & P0 Delivered
 - PR #244 confirmed merged
-- All P0 items approved for implementation
+- All P0 items **approved, implemented, and committed**
 - Ready to begin W29 work on P0 issues
 
 ---
@@ -64,33 +74,26 @@ d6d7ede (HEAD -> main, origin/main, origin/HEAD) ci: update Node.js from 20 to 2
 
 ---
 
-## W29 P0 Implementation Order (Ready to Start)
+## W29 P0 Implementation Order (COMPLETED ✅)
 
-1. **#236 SDK Fix** (Quick wins)
-   - `packages/client-sdk/package.json`: `0.1.0` → `0.1.4`
-   - `packages/client-sdk/README.md`: Remove "Production Ready" → "Developer Preview"
+All 4 P0 items implemented and committed:
 
-2. **#220 DLC CET Construction** (Requires research)
-   - Evaluate `dlc-manager` crate
-   - Add to `internal/engine/Cargo.toml`
-
-3. **#219 Groth16 Verifier** (Design work)
-   - Define `Groth16Verifier` trait
-   - Add test fixtures
-
-4. **#216 Babylon BTC Header** (Implementation)
-   - Implement header-chain query
-   - Add SPV verification
+1. ✅ **#236 SDK Fix** — package.json: 0.1.0→0.1.4, README: Developer Preview
+2. ✅ **#220 DLC CET Construction** — dlc-manager v0.6, dlc_cet.rs module
+3. ✅ **#219 Groth16 Verifier** — groth16_verifier.rs with Groth16Verifier trait
+4. ✅ **#216 Babylon BTC Header** — BTC header-chain SPV implemented
 
 ---
 
 ## Next Session Checklist
 
-Before starting W29 P0 implementation:
-- [ ] Pull latest from main
-- [ ] Verify `docs/SESSION_SUMMARY_2026-07-15.md` exists
-- [ ] Start with #236 SDK Fix (quickest win)
-- [ ] Review PR #241 (v0.1.4 release tag)
+Before continuing work:
+- [x] Pull latest from main ✅ (commit `453a15a`)
+- [x] Verify `docs/SESSION_SUMMARY_2026-07-15.md` exists ✅
+- [x] Implement W29 P0 items ✅ (all 4 complete)
+- [ ] Push to origin/main
+- [ ] Create PR for W29 P0 items (or push directly per repo rules)
+- [ ] Update GitHub issues with completed status
 
 ---
 
