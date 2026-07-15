@@ -1,7 +1,7 @@
 # Cross-Repository Status Dashboard
 
-**Last Updated:** 2026-07-14  
-**Sprint:** W28 → W29 Transition (2026-07-14)  
+**Last Updated:** 2026-07-15  
+**Sprint:** W29 (2026-07-15 to 2026-07-25)  
 **Maintained By:** Agent sessions
 
 ---
@@ -10,7 +10,7 @@
 
 | Repository | Layer | Production Path | Current Version | Last Session |
 |------------|-------|-----------------|-----------------|--------------|
-| conxian-gateway | L1 | main (mainnet) | 0.1.4 | 2026-07-14 ✅ |
+| conxian-gateway | L1 | main (mainnet) | 0.1.4 | 2026-07-15 ✅ |
 | conxian-nexus | L1 | main (mainnet) | - | ⏳ Not reviewed |
 | conxius-wallet | L2 | main (prod) | - | ⏳ Not reviewed |
 | Conxian_UI | L2 | main (prod) | - | ⏳ Not reviewed |
@@ -35,35 +35,35 @@ lib-conclave-sdk  ←  shares types with SDK
 ### Dependency Status
 | Dependency | Version | Status | Last Verified |
 |-----------|---------|--------|---------------|
-| lib-conxian-core | shared | ✅ Aligned | 2026-07-14 |
-| conxius-wallet | API v1 | ✅ Compatible | 2026-07-14 |
+| lib-conxian-core | shared | ✅ Aligned | 2026-07-15 |
+| conxius-wallet | API v1 | ✅ Compatible | 2026-07-15 |
 
 ---
 
-## W28 Sprint Summary
+## W29 Sprint Status (2026-07-15)
 
-### conxian-gateway (W28 Complete ✅)
+### conxian-gateway (W29 Active ✅)
 
-**Completed:**
-- ✅ Session Continuity Protocol implemented (PR #243)
-- ✅ Full gap analysis of 11 open issues
-- ✅ Gap analysis posted to all GitHub issues
-- ✅ AGENTS.md updated with verification checklist
-- ✅ Sprint Session Protocol documented
-- ✅ W29 Planning created (PR #244)
+**Sprint Start Verification (2026-07-15):**
+- ✅ Full repository verification complete
+- ✅ Cargo update: 31 packages updated
+- ✅ Clippy: 0 warnings
+- ✅ Format: Check passed
+- ✅ Tests: 158 tests passed
+- ✅ Contamination guard: Clean
+- ✅ Release hygiene: Verified
+- ✅ Knowledge retention: 19 docs verified
+- ✅ GitHub issues reviewed (37 total)
+- ✅ Security advisories: None found
+- ✅ Rust toolchain 1.96.0 installed
 
----
-
-## W29 Sprint Planning (2026-07-21 to 2026-08-01)
-
-### 🚨 ALL P0 ITEMS APPROVED FOR IMPLEMENTATION
-
-| # | Issue | Priority | Action |
-|---|-------|----------|--------|
-| 1 | #236 SDK | P0 | Fix version drift + README claim |
-| 2 | #220 DLC CET | P0 | Add dlc-manager, implement CET |
-| 3 | #219 Groth16 | P0 | Define verifier boundary |
-| 4 | #216 Babylon | P0 | Implement BTC header SPV |
+**P0 Implementation Ready:**
+| # | Issue | Status |
+|---|-------|--------|
+| #236 SDK | Version drift + README | ⏳ Ready to start |
+| #220 DLC CET | dlc-manager integration | ⏳ Ready to start |
+| #219 Groth16 | Verifier boundary | ⏳ Ready to start |
+| #216 Babylon | BTC header SPV | ⏳ Ready to start |
 
 ---
 
@@ -71,7 +71,8 @@ lib-conclave-sdk  ←  shares types with SDK
 
 | Date | Repository | Session Summary |
 |------|------------|-----------------|
-| 2026-07-14 | conxian-gateway | W28 sprint close. Gap analysis of 11 issues. Session Continuity Protocol implemented. W29 planning with P0 approvals. PR #244 created. |
+| 2026-07-15 | conxian-gateway | W29 sprint start. Full verification complete. Cargo update, clippy, fmt, tests all pass. Session summary created. Ready for P0 implementation. |
+| 2026-07-14 | conxian-gateway | W28 sprint close. Gap analysis of 11 issues. Session Continuity Protocol implemented. W29 planning with P0 approvals. PR #244 created and merged. |
 | 2026-07-14 | conxian-gateway | Initial gap analysis. AGENTS.md updated. 11 GitHub issues commented. |
 
 ---
@@ -79,30 +80,27 @@ lib-conclave-sdk  ←  shares types with SDK
 ## Verification Checklist
 
 Before starting work on any repo, verify:
-- [ ] `git pull origin main` executed
-- [ ] `docs/SESSION_SUMMARY_*.md` exists
-- [ ] `docs/GAP_ANALYSIS_*.md` is current
-- [ ] All previous session artifacts present
-- [ ] PRs from previous session are merged
+- [x] `git pull origin main` executed
+- [x] `docs/SESSION_SUMMARY_*.md` exists
+- [x] `docs/GAP_ANALYSIS_*.md` is current
+- [x] All previous session artifacts present
+- [x] PRs from previous session are merged
 
 ---
 
-## Notes for Next Session (W29)
+## W29 Sprint Goals
 
-### conxian-gateway Next Steps
-1. ✅ PR #244 should be merged (W29 Planning)
-2. Start #236 SDK Fix (version drift + README)
-3. Start #220 DLC CET Construction
-4. Start #219 Groth16 Verifier Boundary
-5. Start #216 Babylon BTC Header-Chain
+### P0 Actions (All Approved)
+1. **#236 SDK Fix** — Quick wins (version drift + README)
+2. **#220 DLC CET** — dlc-manager integration
+3. **#219 Groth16** — Verifier boundary definition
+4. **#216 Babylon** — BTC header-chain SPV
 
-### Cross-Repo Actions Needed
-- [ ] Review conxian-nexus repository
-- [ ] Review conxius-wallet repository  
-- [ ] Update lib-conxian-core if types changed
-- [ ] Apply Session Continuity Protocol to other repos
+### P1 Actions (If Time Permits)
+- Review cross-repo dependencies
+- Apply Session Continuity Protocol to other repos
 
 ---
 
 *This file is auto-maintained by agent sessions.*
-*Last Major Update: 2026-07-14 (W28 Sprint Close)*
+*Last Major Update: 2026-07-15 (W29 Sprint Start)*
