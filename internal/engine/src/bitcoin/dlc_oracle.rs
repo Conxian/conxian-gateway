@@ -42,9 +42,10 @@ impl DlcOracleClient {
     /// Fetch all active event announcements from the oracle
     pub async fn list_announcements(&self) -> ConxianResult<Vec<OracleAnnouncement>> {
         let url = format!("{}/v1/announcements", self.oracle_url);
-        let resp = self.client.get(&url).send().await.map_err(|e| {
-            conxian_core::ConxianError::Internal(format!("Oracle HTTP error: {e}"))
-        })?;
+        let resp =
+            self.client.get(&url).send().await.map_err(|e| {
+                conxian_core::ConxianError::Internal(format!("Oracle HTTP error: {e}"))
+            })?;
 
         let announcements: Vec<OracleAnnouncement> = resp.json().await.map_err(|e| {
             conxian_core::ConxianError::Internal(format!("Oracle parse error: {e}"))
@@ -57,9 +58,10 @@ impl DlcOracleClient {
     /// Get attestation for a specific event
     pub async fn get_attestation(&self, event_id: &str) -> ConxianResult<OracleAttestation> {
         let url = format!("{}/v1/attestation/{}", self.oracle_url, event_id);
-        let resp = self.client.get(&url).send().await.map_err(|e| {
-            conxian_core::ConxianError::Internal(format!("Oracle HTTP error: {e}"))
-        })?;
+        let resp =
+            self.client.get(&url).send().await.map_err(|e| {
+                conxian_core::ConxianError::Internal(format!("Oracle HTTP error: {e}"))
+            })?;
 
         if resp.status().is_client_error() {
             return Err(conxian_core::ConxianError::Internal(format!(
