@@ -6,20 +6,34 @@
 
 ---
 
-## Repository Inventory
+## Repository Inventory (Canonical — from PORTFOLIO_MAP.md)
 
-| Repository | Layer | Production Path | Current Version | Last Session |
-|------------|-------|-----------------|-----------------|--------------|
-| conxian-gateway | L1 | main (mainnet) | 0.1.4 | 2026-07-15 ✅ |
-| conxian-nexus | L1 | main (mainnet) | - | ⏳ Not reviewed |
-| conxius-wallet | L2 | main (prod) | - | ⏳ Not reviewed |
-| Conxian_UI | L2 | main (prod) | - | ⏳ Not reviewed |
-| conxian-labs-site | L2 | main (public) | - | ⏳ Not reviewed |
-| lib-conxian-core | L3 | main (shared) | - | ⏳ Not reviewed |
-| lib-conclave-sdk | L3 | main (public) | - | ⏳ Not reviewed |
-| conxius-platform | L3 | main (internal) | - | ⏳ Not reviewed |
-| stacksorbit | L3 | main (internal) | - | ⏳ Not reviewed |
-| conxian-business | L4 | main (strategic) | - | ⏳ Not reviewed |
+### Layer 1: Decentralization-Critical
+| Repository | Production Path | Last Session | W29 Status |
+|------------|-----------------|--------------|------------|
+| **conxian-nexus** | main (Mainnet) | ⏳ Not reviewed | - |
+| **conxian-gateway** | main (Mainnet) | 2026-07-15 ✅ | ✅ P0 Complete |
+
+### Layer 2: User & Application Surface
+| Repository | Production Path | Last Session | W29 Status |
+|------------|-----------------|--------------|------------|
+| **conxius-wallet** | main (Production) | ⏳ Not reviewed | - |
+| **Conxian_UI** | main (Production) | ⏳ Not reviewed | - |
+| **conxian-labs-site** | main (Public) | ⏳ Not reviewed | - |
+
+### Layer 3: Shared Runtime & Developer Infrastructure
+| Repository | Production Path | Last Session | W29 Status |
+|------------|-----------------|--------------|------------|
+| **lib-conxian-core** | main (Shared) | ⏳ Not reviewed | - |
+| **lib-conclave-sdk** | main (Public) | ⏳ Not reviewed | - |
+| **conxius-platform** | main (Internal) | ⏳ Not reviewed | - |
+| **stacksorbit** | main (Internal) | ⏳ Not reviewed | - |
+
+### Layer 4: Governance & Operating System
+| Repository | Production Path | Last Session | W29 Status |
+|------------|-----------------|--------------|------------|
+| **conxian-business** | main (Strategic) | ⏳ Not reviewed | - |
+| **.github** | main (Governance) | ⏳ Not reviewed | - |
 
 ---
 
@@ -27,9 +41,9 @@
 
 ### conxian-gateway Dependencies
 ```
-lib-conxian-core  ←  required
-conxius-wallet    →  depends on gateway API
-lib-conclave-sdk  ←  shares types with SDK
+lib-conxian-core  ←  required (L3 foundation)
+conxius-wallet    →  depends on gateway API (L2)
+lib-conclave-sdk  ←  shares types with SDK (L3)
 ```
 
 ### Dependency Status
@@ -42,7 +56,7 @@ lib-conclave-sdk  ←  shares types with SDK
 
 ## W29 Sprint Status (2026-07-15)
 
-### conxian-gateway (W29 Active ✅)
+### conxian-gateway (W29 Complete ✅)
 
 **Sprint Start Verification (2026-07-15):**
 - ✅ Full repository verification complete
@@ -55,15 +69,18 @@ lib-conclave-sdk  ←  shares types with SDK
 - ✅ Knowledge retention: 19 docs verified
 - ✅ GitHub issues reviewed (37 total)
 - ✅ Security advisories: None found
-- ✅ Rust toolchain 1.96.0 installed
 
-**P0 Implementation Ready:**
+**P0 Implementation Complete (2026-07-15):**
 | # | Issue | Status |
 |---|-------|--------|
-| #236 SDK | Version drift + README | ⏳ Ready to start |
-| #220 DLC CET | dlc-manager integration | ⏳ Ready to start |
-| #219 Groth16 | Verifier boundary | ⏳ Ready to start |
-| #216 Babylon | BTC header SPV | ⏳ Ready to start |
+| #236 SDK | Version drift + README | ✅ Fixed (0.1.4, Developer Preview) |
+| #220 DLC CET | dlc-manager integration | ✅ Implemented (dlc_cet.rs) |
+| #219 Groth16 | Verifier boundary | ✅ Defined (groth16_verifier.rs) |
+| #216 Babylon | BTC header SPV | ✅ Implemented (babylon_adapter.rs) |
+
+**Commits:**
+- `453a15a` feat: implement W29 P0 items
+- `cc10886` docs: update session summary
 
 ---
 
@@ -71,8 +88,9 @@ lib-conclave-sdk  ←  shares types with SDK
 
 | Date | Repository | Session Summary |
 |------|------------|-----------------|
-| 2026-07-15 | conxian-gateway | W29 sprint start. Full verification complete. Cargo update, clippy, fmt, tests all pass. Session summary created. Ready for P0 implementation. |
-| 2026-07-14 | conxian-gateway | W28 sprint close. Gap analysis of 11 issues. Session Continuity Protocol implemented. W29 planning with P0 approvals. PR #244 created and merged. |
+| 2026-07-15 | conxian-gateway | W29 P0 all complete. SDK fix, DLC CET, Groth16, Babylon SPV. Commits pushed to main. |
+| 2026-07-15 | conxian-gateway | W29 sprint start. Full verification complete. |
+| 2026-07-14 | conxian-gateway | W28 sprint close. Gap analysis of 11 issues. Session Continuity Protocol implemented. |
 | 2026-07-14 | conxian-gateway | Initial gap analysis. AGENTS.md updated. 11 GitHub issues commented. |
 
 ---
@@ -88,19 +106,19 @@ Before starting work on any repo, verify:
 
 ---
 
-## W29 Sprint Goals
+## W29 Remaining Goals
 
-### P0 Actions (All Approved)
-1. **#236 SDK Fix** — Quick wins (version drift + README)
-2. **#220 DLC CET** — dlc-manager integration
-3. **#219 Groth16** — Verifier boundary definition
-4. **#216 Babylon** — BTC header-chain SPV
-
-### P1 Actions (If Time Permits)
-- Review cross-repo dependencies
+### Cross-Repo Actions (Pending)
+- Review conxian-nexus (L1)
 - Apply Session Continuity Protocol to other repos
+- Verify lib-conxian-core alignment
+
+### P1-P3 Issues (Future Sprints)
+- #222 CI/CD coverage threshold
+- #218/#193 Liquid harness
+- #189 BitVM3 research monitoring
 
 ---
 
 *This file is auto-maintained by agent sessions.*
-*Last Major Update: 2026-07-15 (W29 Sprint Start)*
+*Last Major Update: 2026-07-15 (W29 P0 Complete)*
