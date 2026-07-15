@@ -44,10 +44,7 @@ impl DlcBondManager {
     }
 
     /// Construct and track a new CET contract
-    pub fn create_cet(
-        &self,
-        request: CetRequest,
-    ) -> Result<CetResponse, DlcError> {
+    pub fn create_cet(&self, request: CetRequest) -> Result<CetResponse, DlcError> {
         let contract = self.manager.create_contract(
             &request.offer_params,
             &request.contract_descriptor,

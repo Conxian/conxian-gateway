@@ -4,7 +4,7 @@
 //! used by BitVM and related ZK-based Bitcoin protocols.
 //!
 //! # Overview
-//! Groth16 is a zk-SNARK construction (Groth, 2016) used in BitVM2, 
+//! Groth16 is a zk-SNARK construction (Groth, 2016) used in BitVM2,
 //! GOAT-Network, and other Bitcoin L2 scaling solutions. This module
 //! provides a typed boundary between Conxian adapters and verification backends.
 //!
@@ -71,8 +71,14 @@ pub enum VerificationError {
     InvalidProof(String),
     InvalidPublicInputs(String),
     VerificationKeyNotFound(VerificationKeyId),
-    ProofExpired { current_height: u32, proof_max_height: u32 },
-    CircuitMismatch { expected: String, found: String },
+    ProofExpired {
+        current_height: u32,
+        proof_max_height: u32,
+    },
+    CircuitMismatch {
+        expected: String,
+        found: String,
+    },
 }
 
 /// Core Groth16 verification trait
@@ -134,7 +140,7 @@ impl Groth16Verifier for MockGroth16Verifier {
 pub trait BitVmGroth16Adapter {
     /// Convert BitVM proof format to normalized Groth16Proof
     fn from_bitvm_proof(bitvm_proof_bytes: &[u8]) -> Result<Groth16Proof, VerificationError>;
-    
+
     /// Extract public inputs from BitVM execution transcript
     fn extract_public_inputs(transcript: &[u8]) -> Result<PublicInput, VerificationError>;
 }
@@ -156,7 +162,7 @@ mod tests {
             transcript: [1u8; 32],
             verified_at_height: 850000,
         };
-        
+
         let json = serde_json::to_string_pretty(&result).unwrap();
         assert!(json.contains("\"valid\":true"));
         assert!(json.contains("850000"));
@@ -166,9 +172,18 @@ mod tests {
     fn test_mock_verifier_accepts_any_proof() {
         let verifier = MockGroth16Verifier;
         let proof = Groth16Proof {
-            a: ProofPoint { x: [0u8; 32], y: [1u8; 32] },
-            b: ProofPoint { x: [2u8; 32], y: [3u8; 32] },
-            c: ProofPoint { x: [4u8; 32], y: [5u8; 32] },
+            a: ProofPoint {
+                x: [0u8; 32],
+                y: [1u8; 32],
+            },
+            b: ProofPoint {
+                x: [2u8; 32],
+                y: [3u8; 32],
+            },
+            c: ProofPoint {
+                x: [4u8; 32],
+                y: [5u8; 32],
+            },
         };
         let inputs = PublicInput {
             values: vec![],
@@ -176,7 +191,7 @@ mod tests {
             block_height: 850000,
         };
         let vk_id = VerificationKeyId([0u8; 32]);
-        
+
         let rt = tokio::runtime::Runtime::new().unwrap();
         let result = rt.block_on(verifier.verify(&proof, &inputs, &vk_id));
         assert!(result.is_ok());
