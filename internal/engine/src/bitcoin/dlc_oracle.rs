@@ -1,9 +1,8 @@
 use async_trait::async_trait;
 use conxian_core::ConxianResult;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::collections::HashMap;
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
 /// DLC Oracle adapter using DDK v1.1.2 (successor to rust-dlc)
 pub struct DlcOracleClient {
