@@ -125,7 +125,9 @@ impl ThresholdOracleCoordinator {
     }
 
     /// Fetch announcements from all oracles and deduplicate by event_id
-    pub async fn collect_announcements(&self) -> ConxianResult<HashMap<String, Vec<OracleAnnouncement>>> {
+    pub async fn collect_announcements(
+        &self,
+    ) -> ConxianResult<HashMap<String, Vec<OracleAnnouncement>>> {
         let mut events: HashMap<String, Vec<OracleAnnouncement>> = HashMap::new();
         for oracle in &self.oracles {
             match oracle.list_announcements().await {
@@ -139,15 +141,15 @@ impl ThresholdOracleCoordinator {
                 }
             }
         }
-        info!(event_count = events.len(), "Multi-oracle announcements collected");
+        info!(
+            event_count = events.len(),
+            "Multi-oracle announcements collected"
+        );
         Ok(events)
     }
 
     /// Check if threshold attestations agree on a specific outcome
-    pub async fn check_threshold_outcome(
-        &self,
-        event_id: &str,
-    ) -> ConxianResult<Option<String>> {
+    pub async fn check_threshold_outcome(&self, event_id: &str) -> ConxianResult<Option<String>> {
         let mut outcome_votes: HashMap<String, usize> = HashMap::new();
 
         for oracle in &self.oracles {
