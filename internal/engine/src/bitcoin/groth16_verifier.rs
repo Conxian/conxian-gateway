@@ -24,8 +24,8 @@ pub struct VerificationKeyId(pub [u8; 32]);
 /// Public input for Groth16 proofs (normalized format)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PublicInput {
-    /// Circuit-specific public values
-    pub values: Vec<bn::Fr>,
+    /// Circuit-specific public values (serialized field elements)
+    pub values: Vec<Vec<u8>>,
     /// Merkle root of public parameters (if applicable)
     pub merkle_root: Option<[u8; 32]>,
     /// Bitcoin block height at verification time
