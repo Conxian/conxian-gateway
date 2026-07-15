@@ -25,10 +25,12 @@ pub use rgb_stash::StashResolver;
 pub mod risc0_verifier;
 pub use risc0_verifier::{Risc0Mode, Risc0StfVerifier, Risc0VerificationReceipt};
 pub mod dlc_oracle;
-pub use dlc_oracle::{DlcOracleClient, ThresholdOracleCoordinator, OracleAnnouncement, OracleAttestation};
+pub use dlc_oracle::{
+    DlcOracleClient, OracleAnnouncement, OracleAttestation, ThresholdOracleCoordinator,
+};
 
 pub mod groth16_verifier;
 pub use groth16_verifier::{
-    Groth16Verifier, Groth16Proof, PublicInput, VerificationResult, VerificationError,
-    VerificationKeyId, MockGroth16Verifier, BitVmGroth16Adapter,
+    BitVmGroth16Adapter, Groth16Proof, Groth16Verifier, MockGroth16Verifier, PublicInput,
+    VerificationError, VerificationKeyId, VerificationResult,
 };

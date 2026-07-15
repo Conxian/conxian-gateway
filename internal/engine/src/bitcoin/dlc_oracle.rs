@@ -153,7 +153,9 @@ impl ThresholdOracleCoordinator {
         for oracle in &self.oracles {
             match oracle.get_attestation(event_id).await {
                 Ok(attestation) => {
-                    *outcome_votes.entry(attestation.outcome.clone()).or_default() += 1;
+                    *outcome_votes
+                        .entry(attestation.outcome.clone())
+                        .or_default() += 1;
                 }
                 Err(_) => continue,
             }
