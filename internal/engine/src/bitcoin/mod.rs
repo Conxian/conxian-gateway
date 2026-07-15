@@ -24,3 +24,18 @@ pub mod rgb_stash;
 pub use rgb_stash::StashResolver;
 pub mod risc0_verifier;
 pub use risc0_verifier::{Risc0Mode, Risc0StfVerifier, Risc0VerificationReceipt};
+pub mod dlc_oracle;
+pub use dlc_oracle::{DlcOracleClient, ThresholdOracleCoordinator, OracleAnnouncement, OracleAttestation};
+
+#[cfg(feature = "dlc")]
+pub mod dlc_cet;
+#[cfg(feature = "dlc")]
+pub use dlc_cet::{DlcBondManager, CetRequest, CetResponse};
+
+#[cfg(feature = "groth16")]
+pub mod groth16_verifier;
+#[cfg(feature = "groth16")]
+pub use groth16_verifier::{
+    Groth16Verifier, Groth16Proof, PublicInput, VerificationResult, VerificationError,
+    VerificationKeyId, MockGroth16Verifier, BitVmGroth16Adapter,
+};

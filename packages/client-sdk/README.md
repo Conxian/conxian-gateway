@@ -6,7 +6,7 @@ Institutional-grade TypeScript helpers for bridging Bitcoin and Stacks state log
 Provides a standardized interface for external applications and internal services to interact with the Conxian Gateway. It abstracts the complexity of heterogeneous proof verification and multi-chain state lookups.
 
 ## Status
-**Production Ready (v0.1.0).** Supports UCV-1 (Universal Chain Verification) and prepared transaction payloads for Tier 1 chain families.
+**Developer Preview (v0.1.4).** Supports UCV-1 (Universal Chain Verification) and prepared transaction payloads for Tier 1 chain families.
 
 ## Audience
 - **Developers**: Integrating Conxian services into wallets or dapps.
