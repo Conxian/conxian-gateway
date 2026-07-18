@@ -5,7 +5,19 @@ import subprocess
 def main():
     print("Checking for prohibited tracked artifacts...")
     # Check for common build artifacts that should not be tracked
-    prohibited = ["target/", "node_modules/", ".next/", "*.bak", "*.tmp"]
+    prohibited = [
+        "target/",
+        "node_modules/",
+        ".next/",
+        "__pycache__/",
+        "*.pyc",
+        "*.pyo",
+        "*.pyd",
+        ".pytest_cache/",
+        "playwright-report/",
+        "*.bak",
+        "*.tmp"
+    ]
 
     found = False
     for pattern in prohibited:

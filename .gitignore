@@ -15,3 +15,15 @@ offline_queue.db
 # Workspace node_modules
 apps/*/node_modules/
 packages/*/node_modules/
+
+# Python compilation artifacts & cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Playwright reports
+playwright-report/
