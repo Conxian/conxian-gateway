@@ -182,3 +182,12 @@
 - **Remediation**: Applied `auth_middleware` to all `/admin/v1` routes in `internal/api/src/routes.rs`.
 - **Risk Addressed**: Previously, admin routes were unauthenticated, allowing potential unauthorized access to release and governance controls.
 - **Verification**: Added negative test cases in `cmd/gateway/tests/api_tests.rs` to ensure `401 Unauthorized` is returned when credentials are missing.
+
+## 12. Tracked Generated Artifact Cleanup & Gitignore Hardening (2026-07-17)
+
+### Tracked Python Cache Remediation
+- **Remediation**: Untracked compiled Python file (`scripts/__pycache__/lightning_coverage_report.cpython-312.pyc`) from Git history/tracking.
+- **Risk Addressed**: Committing compiled bytecode (`.pyc`) or caching artifacts into the Git repository violates repository hygiene, causes unnecessary merge conflicts, and pollutes git index with generated execution runtime artifacts.
+- **Harden `.gitignore`**: Added standard Python compiled/cache ignore patterns (`__pycache__/`, `*.pyc`, `*.pyo`, `*.pyd`, `.pytest_cache/`, `.coverage`, `htmlcov/`) and Playwright's `playwright-report/` to ensure these are never accidentally staged or committed in the future.
+- **Harden Continuous Verification**: Updated `scripts/verify_tracked_artifacts.py` to explicitly check and fail if any of these Python cache/compiled artifacts are found to be tracked in Git, ensuring automated CI hygiene gating.
+- **Verification**: Confirmed `python3 scripts/verify_tracked_artifacts.py` and `git status` both pass cleanly.
