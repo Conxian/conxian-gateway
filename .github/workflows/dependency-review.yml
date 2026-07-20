@@ -10,4 +10,4 @@ permissions:
 
 jobs:
   dependency-review:
-    uses: Conxian/.github/.github/workflows/dependency-review.yml@948debe7fbd25adc337260d5de1c85c9e85bb7de # main
+    uses: Conxian/.github/.github/workflows/dependency-review.yml@a566654e1d90db073a5b040efa49914b29d3cc82 # main

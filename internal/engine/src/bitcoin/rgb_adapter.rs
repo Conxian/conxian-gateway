@@ -1,37 +1,140 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use conxian_core::{ContractState, ConxianResult, RgbAdapter, RolloutMode};
+use conxian_core::{ContractState, ConxianError, ConxianResult, RgbAdapter, RolloutMode};
+use serde::Deserialize;
 use serde_json::{json, Value};
-use tracing::{error, info, warn};
 
 use super::rgb_native;
 use super::StashResolver;
 
+/// Injectable RGB node client used to keep adapter tests deterministic.
+#[async_trait]
+pub trait RgbNodeClient: Send + Sync {
+    async fn fetch(&self, path: &str) -> ConxianResult<Option<Value>>;
+}
+
+struct HttpRgbNodeClient {
+    base_url: String,
+}
+
+impl HttpRgbNodeClient {
+    fn new(base_url: String) -> Self {
+        Self { base_url }
+    }
+}
+
+#[async_trait]
+impl RgbNodeClient for HttpRgbNodeClient {
+    async fn fetch(&self, path: &str) -> ConxianResult<Option<Value>> {
+        let url = format!("{}{}", self.base_url, path);
+        tokio::task::spawn_blocking(move || {
+            let response = minreq::get(&url)
+                .with_timeout(2)
+                .send()
+                .map_err(|_| ConxianError::Rgb("RGB node request failed".to_string()))?;
+
+            match response.status_code {
+                200 => {
+                    let body = response.as_str().map_err(|_| {
+                        ConxianError::Rgb("RGB node returned invalid text".to_string())
+                    })?;
+                    serde_json::from_str(body).map(Some).map_err(|_| {
+                        ConxianError::Rgb("RGB node returned invalid JSON".to_string())
+                    })
+                }
+                404 => Ok(None),
+                _ => Err(ConxianError::Rgb(
+                    "RGB node returned an unexpected status".to_string(),
+                )),
+            }
+        })
+        .await
+        .map_err(|_| ConxianError::Rgb("RGB node worker failed".to_string()))?
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct ContractLookupResponse {
+    contract_id: String,
+    schema_id: String,
+    state: Value,
+}
+
+#[derive(Debug, Deserialize)]
+struct VerifyResponse {
+    valid: bool,
+    #[serde(default)]
+    contract_id: Option<String>,
+    #[serde(default)]
+    transition_id: Option<String>,
+}
+
+fn parse_contract_lookup_response(
+    data: Value,
+    expected_contract_id: &str,
+) -> ConxianResult<ContractState> {
+    let response: ContractLookupResponse = serde_json::from_value(data)
+        .map_err(|_| ConxianError::Rgb("RGB node returned malformed contract state".to_string()))?;
+    let response_contract_id = rgb_native::normalize_contract_id(&response.contract_id)?;
+    if response_contract_id != expected_contract_id {
+        return Err(ConxianError::Rgb(
+            "RGB node returned a mismatched contract ID".to_string(),
+        ));
+    }
+    if response.schema_id.trim().is_empty() || !response.state.is_object() {
+        return Err(ConxianError::Rgb(
+            "RGB node returned an invalid contract state shape".to_string(),
+        ));
+    }
+
+    Ok(ContractState {
+        contract_id: expected_contract_id.to_string(),
+        schema_id: response.schema_id,
+        state_data: response.state,
+    })
+}
+
+fn parse_verify_response(data: Value, expected_id: &str) -> ConxianResult<bool> {
+    let response: VerifyResponse = serde_json::from_value(data).map_err(|_| {
+        ConxianError::Rgb("RGB node returned malformed verification response".to_string())
+    })?;
+
+    for response_id in [response.contract_id, response.transition_id]
+        .into_iter()
+        .flatten()
+    {
+        if rgb_native::normalize_contract_id(&response_id)? != expected_id {
+            return Err(ConxianError::Rgb(
+                "RGB node returned a mismatched verification ID".to_string(),
+            ));
+        }
+    }
+
+    Ok(response.valid)
+}
+
 /// RGB Protocol adapter with optional rgb-core v0.12 native integration.
 ///
-/// Three rollout modes:
-/// - Disabled: All operations return None/false
-/// - Shadow:  Tries HTTP node → falls back to simulation on failure
-/// - Active:  Tries rgb-native (if enabled) → HTTP node → simulation fallback
-///
-/// When `stash` is set, the `rgb-native` feature path uses a production
-/// StashResolver backed by rgb-std and bp-esplora for contract lookup
-/// and transition verification.
-///
-/// Enable native verification with: `cargo build --features rgb-native`
+/// - Disabled: no RGB work is performed.
+/// - Shadow: node/native failures may use an explicitly simulated response.
+/// - Active: native and HTTP failures are returned; unknown contracts do not
+///   become simulated successes.
 pub struct NodeRgbAdapter {
     pub mode: RolloutMode,
     pub node_url: String,
     pub stash: Option<Arc<StashResolver>>,
+    node_client: Arc<dyn RgbNodeClient>,
 }
 
 impl NodeRgbAdapter {
     pub fn new(mode: RolloutMode, node_url: String) -> Self {
+        let node_client = Arc::new(HttpRgbNodeClient::new(node_url.clone()));
         Self {
             mode,
             node_url,
             stash: None,
+            node_client,
         }
     }
 
@@ -40,47 +143,19 @@ impl NodeRgbAdapter {
         self
     }
 
+    pub fn with_node_client(mut self, node_client: Arc<dyn RgbNodeClient>) -> Self {
+        self.node_client = node_client;
+        self
+    }
+
     async fn fetch_from_node(&self, path: &str) -> ConxianResult<Option<Value>> {
-        let url = format!("{}{}", self.node_url, path);
-
-        tokio::task::spawn_blocking(move || {
-            let res = minreq::get(&url).with_timeout(2).send();
-
-            match res {
-                Ok(res) if res.status_code == 200 => {
-                    let body = res
-                        .as_str()
-                        .map_err(|e| conxian_core::ConxianError::Bitcoin(e.to_string()))?;
-                    let val: Value = serde_json::from_str(body)
-                        .map_err(|e| conxian_core::ConxianError::Bitcoin(e.to_string()))?;
-                    Ok(Some(val))
-                }
-                Ok(res) if res.status_code == 404 => Ok(None),
-                Ok(res) => {
-                    warn!(
-                        status = res.status_code,
-                        "RGB node returned unexpected status"
-                    );
-                    Err(conxian_core::ConxianError::Bitcoin(format!(
-                        "RGB node error: status {}",
-                        res.status_code
-                    )))
-                }
-                Err(e) => {
-                    warn!(error = %e, "Failed to connect to RGB node");
-                    Err(conxian_core::ConxianError::Bitcoin(format!(
-                        "RGB node connection failed: {}",
-                        e
-                    )))
-                }
-            }
-        })
-        .await
-        .map_err(|e| conxian_core::ConxianError::Internal(e.to_string()))?
+        self.node_client.fetch(path).await
     }
 
     fn get_simulated_state(&self, contract_id: &str) -> Option<ContractState> {
-        if contract_id.starts_with("rgb:") {
+        // Simulation is intentionally limited to the canonical HRI. It is not
+        // a consensus parser and is never used by Active mode.
+        if contract_id.starts_with("contract:") && contract_id.len() > "contract:".len() {
             Some(ContractState {
                 contract_id: contract_id.to_string(),
                 schema_id: "urn:rgb:schema:fungible".to_string(),
@@ -101,78 +176,45 @@ impl NodeRgbAdapter {
 impl RgbAdapter for NodeRgbAdapter {
     async fn lookup_contract(&self, contract_id: &str) -> ConxianResult<Option<ContractState>> {
         match self.mode {
-            RolloutMode::Disabled => {
-                warn!("RGB lookup attempted while adapter is Disabled");
-                Ok(None)
-            }
+            RolloutMode::Disabled => Ok(None),
             RolloutMode::Shadow | RolloutMode::Active => {
-                info!(
-                    "RGB lookup (mode={:?}) for contract: {}",
-                    self.mode, contract_id
-                );
-
-                // In Active mode, try native rgb-core lookup first
+                let canonical_id = rgb_native::normalize_contract_id(contract_id)?;
                 if matches!(self.mode, RolloutMode::Active) {
-                    match rgb_native::lookup_contract_native(contract_id, &self.stash) {
-                        Ok(Some(data)) => {
-                            info!("RGB native lookup succeeded for: {}", contract_id);
-                            return Ok(Some(ContractState {
-                                contract_id: contract_id.to_string(),
-                                schema_id: data["schema_id"]
-                                    .as_str()
-                                    .unwrap_or("urn:rgb:schema:fungible")
-                                    .to_string(),
-                                state_data: data,
-                            }));
-                        }
-                        Ok(None) => {
-                            info!("RGB native lookup returned None for: {}", contract_id);
-                        }
-                        Err(e) => {
-                            warn!(
-                                error = %e,
-                                "RGB native lookup unavailable, falling back to HTTP node"
-                            );
-                        }
+                    if let Ok(Some(data)) =
+                        rgb_native::lookup_contract_native(&canonical_id, &self.stash)
+                    {
+                        return Ok(Some(ContractState {
+                            contract_id: canonical_id.clone(),
+                            schema_id: data["schema_id"]
+                                .as_str()
+                                .unwrap_or("urn:rgb:schema:fungible")
+                                .to_string(),
+                            state_data: data,
+                        }));
                     }
                 }
 
-                // Attempt real node lookup
-                let path = format!("/contract/{}", contract_id);
-                let node_result = self.fetch_from_node(&path).await;
-
-                match node_result {
-                    Ok(Some(data)) => {
-                        let state = ContractState {
-                            contract_id: contract_id.to_string(),
-                            schema_id: data["schema_id"].as_str().unwrap_or("unknown").to_string(),
-                            state_data: data["state"].clone(),
-                        };
-                        Ok(Some(state))
-                    }
-                    Ok(None) => {
-                        // Fallback to simulation if node returns 404
-                        if let Some(state) = self.get_simulated_state(contract_id) {
-                            if matches!(self.mode, RolloutMode::Shadow) {
-                                info!("Shadow mode: node returned 404, using simulated state");
-                            }
-                            Ok(Some(state))
-                        } else {
-                            Ok(None)
+                match self
+                    .fetch_from_node(&format!("/contract/{canonical_id}"))
+                    .await
+                {
+                    Ok(Some(data)) => match parse_contract_lookup_response(data, &canonical_id) {
+                        Ok(state) => Ok(Some(state)),
+                        Err(error) if matches!(self.mode, RolloutMode::Shadow) => {
+                            let _ = error;
+                            Ok(self.get_simulated_state(&canonical_id))
                         }
+                        Err(error) => Err(error),
+                    },
+                    Ok(None) if matches!(self.mode, RolloutMode::Shadow) => {
+                        Ok(self.get_simulated_state(&canonical_id))
                     }
-                    Err(e) => {
-                        // In shadow mode, we fallback to simulation even on connection error
-                        if matches!(self.mode, RolloutMode::Shadow) {
-                            error!(
-                                error = %e,
-                                "RGB node lookup failed in shadow mode; falling back to simulation"
-                            );
-                            Ok(self.get_simulated_state(contract_id))
-                        } else {
-                            Err(e)
-                        }
+                    Ok(None) => Ok(None),
+                    Err(error) if matches!(self.mode, RolloutMode::Shadow) => {
+                        let _ = error;
+                        Ok(self.get_simulated_state(&canonical_id))
                     }
+                    Err(error) => Err(error),
                 }
             }
         }
@@ -182,46 +224,36 @@ impl RgbAdapter for NodeRgbAdapter {
         match self.mode {
             RolloutMode::Disabled => Ok(false),
             RolloutMode::Shadow | RolloutMode::Active => {
-                info!(
-                    "RGB transition verification (mode={:?}) for: {}",
-                    self.mode, transition_id
-                );
-
-                // In Active mode, try native rgb-core verification first
+                let canonical_id = rgb_native::normalize_contract_id(transition_id)?;
                 if matches!(self.mode, RolloutMode::Active) {
-                    match rgb_native::verify_transition_native(transition_id, &self.stash) {
-                        Ok(true) => {
-                            info!("RGB native verification passed for: {}", transition_id);
-                            return Ok(true);
-                        }
-                        Ok(false) => {
-                            warn!(
-                                "RGB native verification returned false for: {}",
-                                transition_id
-                            );
-                            return Ok(false);
-                        }
-                        Err(e) => {
-                            warn!(
-                                error = %e,
-                                "RGB native verification unavailable, falling back to HTTP node"
-                            );
-                        }
+                    match rgb_native::verify_transition_native(&canonical_id, &self.stash) {
+                        Ok(true) => return Ok(true),
+                        Ok(false) => return Ok(false),
+                        Err(_) => {}
                     }
                 }
 
-                let path = format!("/verify/{}", transition_id);
-                match self.fetch_from_node(&path).await {
-                    Ok(Some(data)) => Ok(data["valid"].as_bool().unwrap_or(false)),
-                    Ok(None) => Ok(true), // Simulation fallback
-                    Err(e) => {
-                        if matches!(self.mode, RolloutMode::Shadow) {
-                            error!(error = %e, "RGB verification failed in shadow mode");
-                            Ok(true)
-                        } else {
-                            Err(e)
+                match self
+                    .fetch_from_node(&format!("/verify/{canonical_id}"))
+                    .await
+                {
+                    Ok(Some(data)) => match parse_verify_response(data, &canonical_id) {
+                        Ok(valid) => Ok(valid),
+                        Err(error) if matches!(self.mode, RolloutMode::Shadow) => {
+                            let _ = error;
+                            Ok(self.get_simulated_state(&canonical_id).is_some())
                         }
+                        Err(error) => Err(error),
+                    },
+                    Ok(None) if matches!(self.mode, RolloutMode::Shadow) => {
+                        Ok(self.get_simulated_state(&canonical_id).is_some())
                     }
+                    Ok(None) => Ok(false),
+                    Err(error) if matches!(self.mode, RolloutMode::Shadow) => {
+                        let _ = error;
+                        Ok(self.get_simulated_state(&canonical_id).is_some())
+                    }
+                    Err(error) => Err(error),
                 }
             }
         }
@@ -231,17 +263,199 @@ impl RgbAdapter for NodeRgbAdapter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    const VALID_ID: &str = "contract:n4bQgYhM-fWWaL_q-gxVrQFa-O~TxsrC-4Is0V1s-FbDwCgg";
+    const MNEMONIC_ID: &str =
+        "contract:n4bQgYhM-fWWaL_q-gxVrQFa-O~TxsrC-4Is0V1s-FbDwCgg#fractal-fashion-capsule";
+    const OTHER_ID: &str = "contract:AAAAAAAA-AAAAAAA-AAAAAAA-AAAAAAA-AAAAAAA-AAAAAAA";
+
+    struct TestNodeClient {
+        response: Result<Option<Value>, &'static str>,
+        paths: Option<Arc<Mutex<Vec<String>>>>,
+    }
+
+    #[async_trait]
+    impl RgbNodeClient for TestNodeClient {
+        async fn fetch(&self, path: &str) -> ConxianResult<Option<Value>> {
+            if let Some(paths) = &self.paths {
+                paths.lock().expect("test path lock").push(path.to_string());
+            }
+            self.response
+                .clone()
+                .map_err(|message| ConxianError::Rgb(message.to_string()))
+        }
+    }
+
+    fn adapter(mode: RolloutMode, response: Result<Option<Value>, &'static str>) -> NodeRgbAdapter {
+        NodeRgbAdapter::new(mode, "http://127.0.0.1:1".to_string()).with_node_client(Arc::new(
+            TestNodeClient {
+                response,
+                paths: None,
+            },
+        ))
+    }
+
+    fn adapter_with_paths(
+        mode: RolloutMode,
+        response: Result<Option<Value>, &'static str>,
+    ) -> (NodeRgbAdapter, Arc<Mutex<Vec<String>>>) {
+        let paths = Arc::new(Mutex::new(Vec::new()));
+        let adapter = NodeRgbAdapter::new(mode, "http://127.0.0.1:1".to_string()).with_node_client(
+            Arc::new(TestNodeClient {
+                response,
+                paths: Some(paths.clone()),
+            }),
+        );
+        (adapter, paths)
+    }
+
+    fn valid_lookup_response(contract_id: &str) -> Value {
+        json!({
+            "contract_id": contract_id,
+            "schema_id": "urn:rgb:schema:fungible",
+            "state": {
+                "ticker": "CONX",
+                "supply": 1_000_000,
+                "precision": 8
+            }
+        })
+    }
 
     #[tokio::test]
-    async fn test_rgb_lookup_shadow_mode_simulation_fallback() {
-        let adapter = NodeRgbAdapter::new(RolloutMode::Shadow, "http://localhost:8080".to_string());
-        // This will attempt a fetch and likely fail (or return 404 if no node), triggering fallback
-        let result = adapter.lookup_contract("rgb:test").await.unwrap();
-        assert!(result.is_some());
-        let state = result.unwrap();
-        assert_eq!(
-            state.state_data.get("ticker").and_then(|t| t.as_str()),
-            Some("CONX")
+    async fn shadow_lookup_uses_simulation_only_after_node_failure() {
+        let adapter = adapter(RolloutMode::Shadow, Err("offline"));
+        let result = adapter.lookup_contract(VALID_ID).await.unwrap();
+        assert_eq!(result.unwrap().state_data["simulated"], true);
+    }
+
+    #[tokio::test]
+    async fn active_lookup_returns_node_failure_instead_of_simulation() {
+        let adapter = adapter(RolloutMode::Active, Err("offline"));
+        assert!(adapter.lookup_contract(VALID_ID).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn active_lookup_rejects_empty_legacy_and_mutated_contracts_before_http() {
+        let adapter = adapter(
+            RolloutMode::Active,
+            Ok(Some(valid_lookup_response(VALID_ID))),
         );
+        for contract_id in [
+            "",
+            "rgb:n4bQgYhM-fWWaL_q-gxVrQFa-O~TxsrC-4Is0V1s-FbDwCgg",
+            "contract:",
+            "contract:n4bQgYhM-fWWaL_q-gxVrQFa-O~TxsrC-4Is0V1s-FbDwCg!",
+        ] {
+            let result = adapter.lookup_contract(contract_id).await;
+            assert!(
+                matches!(result, Err(ConxianError::Rgb(_))),
+                "{contract_id:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn active_lookup_rejects_malformed_http_success() {
+        let adapter = adapter(RolloutMode::Active, Ok(Some(json!({}))));
+        assert!(matches!(
+            adapter.lookup_contract(VALID_ID).await,
+            Err(ConxianError::Rgb(message)) if message.contains("malformed")
+        ));
+    }
+
+    #[tokio::test]
+    async fn shadow_lookup_simulates_after_malformed_http_success() {
+        let adapter = adapter(RolloutMode::Shadow, Ok(Some(json!({}))));
+        let result = adapter.lookup_contract(VALID_ID).await.unwrap().unwrap();
+        assert_eq!(result.contract_id, VALID_ID);
+        assert_eq!(result.state_data["simulated"], true);
+    }
+
+    #[tokio::test]
+    async fn active_lookup_rejects_mismatched_http_contract_id() {
+        let adapter = adapter(
+            RolloutMode::Active,
+            Ok(Some(valid_lookup_response(OTHER_ID))),
+        );
+        assert!(matches!(
+            adapter.lookup_contract(VALID_ID).await,
+            Err(ConxianError::Rgb(message)) if message.contains("mismatched contract ID")
+        ));
+    }
+
+    #[tokio::test]
+    async fn active_lookup_uses_canonical_id_for_http_and_returned_state() {
+        let (adapter, paths) = adapter_with_paths(
+            RolloutMode::Active,
+            Ok(Some(valid_lookup_response(MNEMONIC_ID))),
+        );
+        let result = adapter.lookup_contract(MNEMONIC_ID).await.unwrap().unwrap();
+        assert_eq!(result.contract_id, VALID_ID);
+        assert_eq!(result.schema_id, "urn:rgb:schema:fungible");
+        assert_eq!(result.state_data["ticker"], "CONX");
+        assert_eq!(
+            paths.lock().expect("test path lock").as_slice(),
+            [format!("/contract/{VALID_ID}")]
+        );
+    }
+
+    #[tokio::test]
+    async fn active_verify_fails_closed_for_unknown_contract() {
+        let adapter = adapter(RolloutMode::Active, Ok(None));
+        assert!(!adapter.verify_transition(VALID_ID).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn shadow_verify_may_fallback_when_node_is_unknown() {
+        let adapter = adapter(RolloutMode::Shadow, Ok(None));
+        assert!(adapter.verify_transition(VALID_ID).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn active_verify_rejects_malformed_http_success() {
+        let adapter = adapter(RolloutMode::Active, Ok(Some(json!({}))));
+        assert!(matches!(
+            adapter.verify_transition(VALID_ID).await,
+            Err(ConxianError::Rgb(message)) if message.contains("malformed verification")
+        ));
+    }
+
+    #[tokio::test]
+    async fn shadow_verify_simulates_after_malformed_http_success() {
+        let adapter = adapter(RolloutMode::Shadow, Ok(Some(json!({}))));
+        assert!(adapter.verify_transition(VALID_ID).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn active_verify_rejects_mismatched_response_id() {
+        let adapter = adapter(
+            RolloutMode::Active,
+            Ok(Some(json!({"valid": true, "contract_id": OTHER_ID}))),
+        );
+        assert!(matches!(
+            adapter.verify_transition(VALID_ID).await,
+            Err(ConxianError::Rgb(message)) if message.contains("mismatched verification ID")
+        ));
+    }
+
+    #[tokio::test]
+    async fn active_verify_uses_canonical_id_for_http() {
+        let (adapter, paths) = adapter_with_paths(
+            RolloutMode::Active,
+            Ok(Some(json!({"valid": true, "contract_id": MNEMONIC_ID}))),
+        );
+        assert!(adapter.verify_transition(MNEMONIC_ID).await.unwrap());
+        assert_eq!(
+            paths.lock().expect("test path lock").as_slice(),
+            [format!("/verify/{VALID_ID}")]
+        );
+    }
+
+    #[tokio::test]
+    async fn disabled_mode_is_a_noop() {
+        let adapter = adapter(RolloutMode::Disabled, Err("must not be called"));
+        assert!(adapter.lookup_contract(VALID_ID).await.unwrap().is_none());
+        assert!(!adapter.verify_transition(VALID_ID).await.unwrap());
     }
 }
