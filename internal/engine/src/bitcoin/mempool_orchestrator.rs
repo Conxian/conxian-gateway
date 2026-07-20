@@ -14,6 +14,9 @@ pub struct MempoolOrchestrator<R: BitcoinRpc> {
     persistence: Arc<dyn Persistence>,
     poll_interval_secs: u64,
     policy_config: FeeBumpPolicyConfig,
+    // Kept as runtime wiring for future RGB-aware policy decisions. A Bitcoin
+    // txid is not an RGB contract ID, so this orchestrator intentionally does
+    // not synthesize `rgb:`/`contract:` identifiers for lookups.
     rgb_adapter: Option<Arc<dyn conxian_core::RgbAdapter>>,
 }
 
@@ -36,8 +39,9 @@ impl<R: BitcoinRpc> MempoolOrchestrator<R> {
 
     pub async fn run(&self) -> anyhow::Result<()> {
         info!(
-            "Starting mempool orchestrator with poll interval {}s",
-            self.poll_interval_secs
+            poll_interval_secs = self.poll_interval_secs,
+            rgb_adapter_configured = self.rgb_adapter.is_some(),
+            "Starting mempool orchestrator"
         );
 
         loop {
@@ -75,10 +79,8 @@ impl<R: BitcoinRpc> MempoolOrchestrator<R> {
 
         tx.last_evaluated_at = Some(now);
 
-        // CON-768: Shadow-mode RGB contract lookup
-        if let Some(ref rgb) = self.rgb_adapter {
-            let _ = rgb.lookup_contract(&format!("rgb:{}", tx.txid)).await;
-        }
+        // RGB lookups require a real `contract:` ID from RGB state. The
+        // tracked Bitcoin transaction has no such source, so skip the lookup.
 
         let candidate = FeeBumpCandidate {
             txid: tx.txid.clone(),
@@ -339,7 +341,7 @@ mod tests {
     async fn orchestrator_rbf_success_path() {
         let rgb_adapter = Arc::new(NodeRgbAdapter::new(
             RolloutMode::Shadow,
-            "http://localhost:8080".to_string(),
+            "https://example.invalid".to_string(),
         ));
         let persistence = Arc::new(SimulatedPersistence::new(PersistentState {
             bitcoin_height: 0,
@@ -372,7 +374,7 @@ mod tests {
     async fn orchestrator_cpfp_fallback_when_rbf_unavailable() {
         let rgb_adapter = Arc::new(NodeRgbAdapter::new(
             RolloutMode::Shadow,
-            "http://localhost:8080".to_string(),
+            "https://example.invalid".to_string(),
         ));
         let persistence = Arc::new(SimulatedPersistence::new(PersistentState {
             bitcoin_height: 0,
@@ -405,7 +407,7 @@ mod tests {
     async fn orchestrator_guardrail_rejection_path() {
         let rgb_adapter = Arc::new(NodeRgbAdapter::new(
             RolloutMode::Shadow,
-            "http://localhost:8080".to_string(),
+            "https://example.invalid".to_string(),
         ));
         let mut tx = tracked_tx();
         tx.bump_attempts = 3;
