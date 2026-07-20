@@ -68,7 +68,7 @@ resolve_artifact_parent() {
     resolved_path="$(realpath -m -- "$absolute_path")" || \
         fail "could not resolve LIQUID_E2E_ARTIFACT_DIR: ${configured_path}"
 
-    [[ "$resolved_path" != "/" && "$resolved_path" != "$HOME" && \
+    [[ "$resolved_path" != "/" && "$resolved_path" != "${HOME:-}" && \
         "$resolved_path" != "$REPO_ROOT" && "$resolved_path" != "$TARGET_ROOT" ]] || \
         fail "LIQUID_E2E_ARTIFACT_DIR must be a subdirectory inside repo target/: ${configured_path}"
     case "$resolved_path" in
@@ -361,7 +361,7 @@ readonly BTC_GENESIS="$(btc getblockhash 0)"
 # Elements' claimpegin path requires the live policy depth plus two parent
 # blocks in this daemon version. Keep the previously verified 102-confirmation
 # target while deriving the actual claim-readiness floor from the node.
-readonly CLAIM_MIN_PARENT_CONFIRMATIONS=$((PEGIN_CONFIRMATION_DEPTH + 2))
+readonly CLAIM_MIN_PARENT_CONFIRMATIONS=$((LIQUID_PEGIN_CONFIRMATION_DEPTH + 2))
 readonly TARGET_PARENT_CONFIRMATIONS=$((
     REQUIRED_PARENT_CONFIRMATIONS > CLAIM_MIN_PARENT_CONFIRMATIONS
         ? REQUIRED_PARENT_CONFIRMATIONS

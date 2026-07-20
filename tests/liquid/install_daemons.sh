@@ -150,6 +150,7 @@ need_command() {
 need_command curl
 need_command sha256sum
 need_command tar
+need_command cmp
 
 mkdir -p -- "$CACHE_DIR"
 require_owned_directory_or_parent "$CACHE_DIR" "daemon cache directory"
