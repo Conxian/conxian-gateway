@@ -66,10 +66,10 @@
 |:---|:---|:---|:---|
 | **Bitcoin L1** | `internal/engine/src/bitcoin/` | ✅ Live | Block listener, UTXO tracking, reorg detection |
 | **Lightning** | `internal/api/src/lightning.rs` | ✅ Live | x402 payment execution, replay guard, retry |
-| **Liquid** | `internal/engine/src/bitcoin/liquid_adapter.rs` | ✅ Live | Confidential assets, federated peg tracking |
+| **Liquid** | `internal/engine/src/bitcoin/liquid_adapter.rs` | 🟡 Harnessed / fail-closed proof boundary | Elements peg-in/peg-out harness; production state-proof backend unwired |
 | **RGB v0.12** | `internal/engine/src/bitcoin/rgb_adapter.rs` + `rgb_native.rs` + `rgb_stash.rs` | ✅ Live | StashResolver (P1), ContractVerify pending (P2), consignment pending |
-| **BitVM2** | `internal/engine/src/bitcoin/bitvm_adapter.rs` | ✅ Live | Verification bridges, Groth16 proof verification |
-| **Babylon** | `internal/engine/src/bitcoin/babylon_adapter.rs` | ✅ Live | BTC timestamping, checkpoint proofs |
+| **BitVM2** | `internal/engine/src/bitcoin/bitvm_adapter.rs` | 🟡 Boundary | Metadata adapter plus validated Groth16 envelope handoff; cryptographic backend pending |
+| **Babylon** | `internal/engine/src/bitcoin/babylon_adapter.rs` | 🟡 Boundary stub | Header-chain/SPV verification pending while PR #253 is open |
 | **Fedimint** | `internal/engine/src/bitcoin/fedimint_adapter.rs` | ✅ Live | Federated e-cash mint coordination |
 | **Strata** | `internal/engine/src/bitcoin/strata_adapter.rs` | ✅ Testnet | Bitcoin rollup bridge |
 | **RISC Zero** | `internal/engine/src/bitcoin/risc0_verifier.rs` | 🟡 Unwired | ZK proof verifier for Bitcoin state transitions |
@@ -461,7 +461,7 @@ conxian-gateway/
 2. cargo clippy --workspace --all-targets --all-features -- -D warnings
 3. cargo test --workspace && cargo test --workspace --features mock-integrations
 4. pnpm install && pnpm build && pnpm test
-5. GET /api/v1/health → healthy
+5. GET /api/v1/health → HTTP 200 `{"status":"ok"}`
 6. python3 scripts/verify_contamination_guard.py
 ```
 
