@@ -91,6 +91,7 @@ pub struct Config {
     pub alex_api_url: String,
     pub liquid_rpc_url: String,
     pub rootstock_rpc_url: String,
+    pub babylon_api_url: Option<String>,
     pub redis_url: Option<String>,
     pub redis_username: Option<String>,
     pub redis_password: Option<String>,
@@ -223,6 +224,14 @@ impl Config {
             env::var("LIQUID_RPC_URL").unwrap_or_else(|_| "http://localhost:18843".to_string());
         let rootstock_rpc_url =
             env::var("ROOTSTOCK_RPC_URL").unwrap_or_else(|_| "http://localhost:4444".to_string());
+        let babylon_api_url = env::var("BABYLON_API_URL").ok().and_then(|value| {
+            let value = value.trim().to_string();
+            if value.is_empty() {
+                None
+            } else {
+                Some(value)
+            }
+        });
 
         let (btc_url, stx_url, alex_url) = match network {
             Network::Mainnet => (
@@ -306,6 +315,7 @@ impl Config {
             alex_api_url: env::var("ALEX_API_URL").unwrap_or(alex_url),
             liquid_rpc_url,
             rootstock_rpc_url,
+            babylon_api_url,
             redis_url,
             redis_username,
             redis_password,
@@ -361,6 +371,7 @@ mod tests {
                 "REDIS_USERNAME",
                 "REDIS_PASSWORD",
                 "TOKEN_TTL_SECONDS",
+                "BABYLON_API_URL",
             ];
             let vars = keys.into_iter().map(|k| (k, env::var(k).ok())).collect();
             Self { vars }
@@ -431,6 +442,24 @@ mod tests {
             .or_else(|| err.downcast_ref::<&str>().map(|s| s.to_string()))
             .unwrap_or_default();
         assert!(message.contains("must be distinct"));
+    }
+
+    #[test]
+    fn from_env_reads_optional_babylon_api_url() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        let _env_restore = FullEnvRestore::new();
+        set_test_envs();
+
+        env::set_var("BABYLON_API_URL", "  https://babylon.example  ");
+        let config = Config::from_env();
+        assert_eq!(
+            config.babylon_api_url.as_deref(),
+            Some("https://babylon.example")
+        );
+
+        env::set_var("BABYLON_API_URL", "   ");
+        let config = Config::from_env();
+        assert_eq!(config.babylon_api_url, None);
     }
 
     #[test]

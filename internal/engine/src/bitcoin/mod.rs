@@ -12,7 +12,10 @@ pub use rgb_adapter::NodeRgbAdapter;
 pub mod liquid_adapter;
 pub use liquid_adapter::LiquidAdapter;
 pub mod babylon_adapter;
-pub use babylon_adapter::BabylonAdapter;
+pub use babylon_adapter::{
+    BabylonAdapter, BabylonHeaderInfoResponse, BabylonHeaderSource, BabylonHttpClient,
+    BabylonMainChainResponse, BabylonPagination, BabylonTipResponse, BtcHeaderInfo,
+};
 pub mod bitvm_adapter;
 pub use bitvm_adapter::BitVmAdapter;
 pub mod fedimint_adapter;

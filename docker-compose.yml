@@ -10,6 +10,7 @@ services:
     environment:
       - API_TOKEN=${SOVEREIGN_API_TOKEN:-local-dev-token}
       - BITCOIN_RPC_URL=${BITCOIN_RPC_URL:-https://bitcoin-rpc.publicnode.com}
+      - BABYLON_API_URL=${BABYLON_API_URL:-}
       - STACKS_RPC_URL=${STACKS_RPC_URL:-https://api.mainnet.hiro.so}
       - FIAT_WEBHOOK_SECRET=${FIAT_WEBHOOK_SECRET:-sentinel_fiat_secret}
       - SETTLEMENT_INGRESS_SECRET=${SETTLEMENT_INGRESS_SECRET:-sentinel_ingress_secret}
@@ -28,6 +29,7 @@ services:
     environment:
       - API_TOKEN=${BUSINESS_API_TOKEN:-business-dev-token}
       - BITCOIN_RPC_URL=${BITCOIN_RPC_URL}
+      - BABYLON_API_URL=${BABYLON_API_URL:-}
       - STACKS_RPC_URL=${STACKS_RPC_URL}
       - FIAT_WEBHOOK_SECRET=${FIAT_WEBHOOK_SECRET}
       - SETTLEMENT_INGRESS_SECRET=${SETTLEMENT_INGRESS_SECRET}
@@ -47,6 +49,7 @@ services:
     environment:
       - API_TOKEN=${ENTERPRISE_API_TOKEN:-enterprise-dev-token}
       - BITCOIN_RPC_URL=${BITCOIN_RPC_URL}
+      - BABYLON_API_URL=${BABYLON_API_URL:-}
       - STACKS_RPC_URL=${STACKS_RPC_URL}
       - FIAT_WEBHOOK_SECRET=${FIAT_WEBHOOK_SECRET}
       - SETTLEMENT_INGRESS_SECRET=${SETTLEMENT_INGRESS_SECRET}
