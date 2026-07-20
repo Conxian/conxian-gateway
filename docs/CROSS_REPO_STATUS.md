@@ -1,6 +1,6 @@
 # Cross-Repository Status Dashboard
 
-**Last Updated:** 2026-07-15  
+**Last Updated:** 2026-07-20
 **Sprint:** W29 (2026-07-15 to 2026-07-25)  
 **Maintained By:** Agent sessions
 
@@ -56,7 +56,7 @@ lib-conclave-sdk  ←  shares types with SDK (L3)
 
 ## W29 Sprint Status (2026-07-15)
 
-### conxian-gateway (W29 Complete ✅)
+### conxian-gateway (W29 Verification Status)
 
 **Sprint Start Verification (2026-07-15):**
 - ✅ Full repository verification complete
@@ -76,7 +76,7 @@ lib-conclave-sdk  ←  shares types with SDK (L3)
 | #236 SDK | Version drift + README | ✅ Fixed (0.1.4, Developer Preview) |
 | #220 DLC CET | dlc-manager integration | ⚠️ Attempted in `453a15a`/`8ef9d05`, then reverted in `cb8b680` after API incompatibility/CI failures; remains open |
 | #219 Groth16 | Verifier boundary | ✅ Defined (groth16_verifier.rs) |
-| #216 Babylon | BTC header SPV | ✅ Implemented (babylon_adapter.rs) |
+| #216 Babylon | BTC header SPV | 🟡 Reimplemented on `feat/216-babylon-header-chain`; pending review/merge |
 
 **Historical DLC commits:**
 - `453a15a` attempted the W29 P0 implementation, including `dlc_cet.rs` and `dlc-manager`.
@@ -84,12 +84,18 @@ lib-conclave-sdk  ←  shares types with SDK (L3)
 - `cb8b680` removed `dlc_cet`, `dlc-manager`, and related wiring after API incompatibility/CI failures.
 - `cc10886` recorded the superseded completion claim; see `docs/SESSION_SUMMARY_2026-07-20.md` for the correction.
 
+**Continuity correction (2026-07-20):** PR #246 was documentation-only; the
+main-branch `babylon_adapter.rs` still returned `0` without a Bitcoin RPC and
+did not verify raw header hashes or parent links. Issue #216 is not claimed
+merged or closed by this status entry.
+
 ---
 
 ## Session History
 
 | Date | Repository | Session Summary |
 |------|------------|-----------------|
+| 2026-07-20 | conxian-gateway | #216 continuity correction and Babylon header-chain implementation on a focused branch; no commit, push, or PR created. |
 | 2026-07-15 | conxian-gateway | W29 P0 implementation attempt recorded; later verification found the DLC CET attempt reverted in `cb8b680`, so #220 remains open. |
 | 2026-07-15 | conxian-gateway | W29 sprint start. Full verification complete. |
 | 2026-07-14 | conxian-gateway | W28 sprint close. Gap analysis of 11 issues. Session Continuity Protocol implemented. |
@@ -123,4 +129,4 @@ Before starting work on any repo, verify:
 ---
 
 *This file is auto-maintained by agent sessions.*
-*Last Major Update: 2026-07-15 (W29 P0 Complete)*
+*Last Major Update: 2026-07-20 (Babylon #216 correctness follow-up)*

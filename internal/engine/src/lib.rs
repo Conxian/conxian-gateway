@@ -5,8 +5,10 @@ pub mod stacks;
 pub mod treasury;
 
 pub use bitcoin::{
-    BabylonAdapter, BitVmAdapter, BitcoinListener, BitcoinRpc, BitcoinRpcClient, FedimintAdapter,
-    FeeBumpPolicyConfig, LiquidAdapter, MempoolOrchestrator, NodeRgbAdapter, StrataAdapter,
+    BabylonAdapter, BabylonHeaderInfoResponse, BabylonHeaderSource, BabylonHttpClient,
+    BabylonMainChainResponse, BabylonPagination, BabylonTipResponse, BitVmAdapter, BitcoinListener,
+    BitcoinRpc, BitcoinRpcClient, BtcHeaderInfo, FedimintAdapter, FeeBumpPolicyConfig,
+    LiquidAdapter, MempoolOrchestrator, NodeRgbAdapter, StrataAdapter,
 };
 pub use coordination::RedisCoordinator;
 pub use ntt::{CitreaAdapter, NttRelayer, RootstockAdapter};

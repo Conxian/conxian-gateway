@@ -199,12 +199,14 @@ async fn main() -> anyhow::Result<()> {
         )),
     );
 
-    multi_chain.insert(
-        "babylon".to_string(),
-        Arc::new(conxian_engine::BabylonAdapter::new(
+    let babylon_adapter = match config.babylon_api_url.as_deref() {
+        Some(api_url) => conxian_engine::BabylonAdapter::with_babylon_api_url(
             config.network.to_string(),
-        )),
-    );
+            api_url,
+        )?,
+        None => conxian_engine::BabylonAdapter::new(config.network.to_string()),
+    };
+    multi_chain.insert("babylon".to_string(), Arc::new(babylon_adapter));
 
     multi_chain.insert(
         "bitvm".to_string(),
