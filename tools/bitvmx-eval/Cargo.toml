@@ -1,0 +1,40 @@
+[package]
+name = "conxian-bitvmx-eval"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT"
+description = "Research-only bounded BitVMX-CPU evaluation harness"
+
+[workspace]
+resolver = "2"
+
+[features]
+default = []
+bitvmx-eval = [
+    "dep:clap",
+    "dep:libc",
+    "dep:serde",
+    "dep:serde_json",
+    "dep:sha2",
+]
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "bitvmx-eval"
+path = "src/main.rs"
+required-features = ["bitvmx-eval"]
+
+[dependencies]
+clap = { version = "4.5.41", features = ["derive"], optional = true }
+libc = { version = "0.2.174", optional = true }
+serde = { version = "1.0.219", features = ["derive"], optional = true }
+serde_json = { version = "1.0.141", optional = true }
+sha2 = { version = "0.10.9", optional = true }
+
+[[test]]
+name = "contract"
+path = "tests/contract.rs"
+required-features = ["bitvmx-eval"]

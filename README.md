@@ -18,7 +18,7 @@ The Conxian Gateway provides a single API layer for indexing, verifying, and orc
 
 ## Workflow & Consumption
 1. **Discovery**: Review the [PRD.md](PRD.md) and [ADAPTER_FAMILY_STRATEGY.md](docs/research/ADAPTER_FAMILY_STRATEGY.md).
-2. **Pilot**: Integrate via the [`@conxian/client-sdk`](packages/client-sdk) in a sandbox environment.
+2. **Pilot**: Run the [developer sandbox](examples/developer-sandbox/README.md), which uses the workspace [`@conxian/client-sdk`](packages/client-sdk) for the narrow health, supported-chain, and BitVM rehearsal path.
 3. **Production**: Deploy the gateway behind your own institutional security perimeter using the provided [Docker Compose](docker-compose.yml) baseline.
 4. **Expansion**: Add custom chain adapters or compliance rules using the [`ChainAdapter`](pkg/conxian-core/src/lib.rs) trait.
 
