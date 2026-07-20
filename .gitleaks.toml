@@ -4,7 +4,8 @@ title = "Conxian Gateway gitleaks configuration"
 useDefault = true
 
 [allowlist]
-description = "Allow generic-api-key in test fixture files (field names like device_key)"
+description = "Allow the existing test-suite exception and the one known synthetic Groth16 fixture; neighboring fixture files remain scanned."
 paths = [
     "cmd/gateway/tests/",
+    '''^internal/engine/tests/fixtures/groth16/bitvm_fixture\.json$''',
 ]

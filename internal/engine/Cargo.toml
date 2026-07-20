@@ -14,6 +14,8 @@ tokio.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
 async-trait.workspace = true
+thiserror.workspace = true
+hex = "0.4.3"
 minreq = { version = "3.0.0", features = ["https", "json-using-serde"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
@@ -25,4 +27,10 @@ rgb = { package = "rgb-std", version = "0.12.0-rc.3", optional = true }
 esplora = { package = "bp-esplora", version = "0.12.0-rc.3", optional = true, default-features = false, features = ["blocking-https-rustls"] }
 
 [features]
+mock-integrations = []
 rgb-native = ["dep:bp", "dep:rgbcore", "dep:rgb", "dep:esplora"]
+
+[[test]]
+name = "groth16_boundary"
+path = "tests/groth16_boundary.rs"
+required-features = ["mock-integrations"]

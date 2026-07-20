@@ -1085,6 +1085,63 @@ async fn test_verify_state_proof_bitvm() {
 }
 
 #[tokio::test]
+async fn test_verify_state_proof_liquid_rejects_arbitrary_metadata() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+    let payload = json!({
+        "verified": true,
+        "claim": "accepted",
+        "proof": "caller-supplied"
+    });
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/chains/liquid/verify")
+                .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("x-402-payment", TEST_X402_PROOF)
+                .header("Content-Type", "application/json")
+                .body(Body::from(serde_json::to_string(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(body["chain"], "liquid");
+    assert_eq!(body["verified"], false);
+}
+
+#[tokio::test]
+async fn test_verify_state_proof_liquid_rejects_empty_metadata() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/chains/liquid/verify")
+                .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("x-402-payment", TEST_X402_PROOF)
+                .header("Content-Type", "application/json")
+                .body(Body::from("{}"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(body["chain"], "liquid");
+    assert_eq!(body["verified"], false);
+}
+
+#[tokio::test]
 async fn test_resolve_identity_with_invalid_bip322_signature() {
     let state = Arc::new(RwLock::new(GatewayState::default()));
     let app = setup_app(state);
