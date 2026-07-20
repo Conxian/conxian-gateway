@@ -3,21 +3,40 @@ name: Liquid E2E
 on:
   pull_request:
     branches: [main, staged, dev]
-    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - ".github/workflows/liquid-e2e.yml"
-      - "scripts/liquid-e2e.sh"
-      - "tests/liquid-e2e/**"
       - "tests/liquid/**"
       - "internal/engine/src/bitcoin/liquid_adapter.rs"
+      - "internal/compliance/src/verifier.rs"
+      - "cmd/gateway/tests/api_tests.rs"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "internal/engine/Cargo.toml"
+      - "internal/compliance/Cargo.toml"
+      - "internal/api/Cargo.toml"
+      - "cmd/gateway/Cargo.toml"
+      - "pkg/conxian-core/Cargo.toml"
   push:
     branches: [main, staged, dev]
+    paths:
+      - ".github/workflows/liquid-e2e.yml"
+      - "tests/liquid/**"
+      - "internal/engine/src/bitcoin/liquid_adapter.rs"
+      - "internal/compliance/src/verifier.rs"
+      - "cmd/gateway/tests/api_tests.rs"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "internal/engine/Cargo.toml"
+      - "internal/compliance/Cargo.toml"
+      - "internal/api/Cargo.toml"
+      - "cmd/gateway/Cargo.toml"
+      - "pkg/conxian-core/Cargo.toml"
   workflow_dispatch:
     inputs:
       pegin_confirmation_depth:
-        description: "Elements peg-in confirmation depth (2-1000)"
+        description: "Elements peg-in confirmation depth (2-1000; effective target is max(102, depth + 2))"
         required: false
-        default: "10"
+        default: "100"
         type: string
 
 permissions:
@@ -27,74 +46,14 @@ concurrency:
   group: liquid-e2e-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  COMPOSE_PROJECT_NAME: liquid-e2e-${{ github.run_id }}
-  PEGIN_CONFIRMATION_DEPTH: ${{ inputs.pegin_confirmation_depth || '10' }}
-
 jobs:
-  liquid-regtest:
-    name: Bitcoin + Elements regtest harness
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          persist-credentials: false
-
-      - name: Verify Docker and jq prerequisites
-        run: |
-          docker --version
-          docker compose version
-          jq --version
-
-      - name: Check harness syntax
-        run: bash -n scripts/liquid-e2e.sh
-
-      - name: Validate harness configuration without Docker
-        run: ./scripts/liquid-e2e.sh --validate-config
-
-      - name: Validate Docker Compose configuration
-        run: docker compose --file tests/liquid-e2e/docker-compose.yml config --quiet
-
-      - name: Run local Liquid E2E harness
-        run: ./scripts/liquid-e2e.sh
-        env:
-          OUTPUT_DIR: target/liquid-e2e
-
-      - name: Clean up Liquid E2E Compose project
-        if: always()
-        run: |
-          mkdir -p target/liquid-e2e
-          docker compose \
-            --project-name "$COMPOSE_PROJECT_NAME" \
-            --file tests/liquid-e2e/docker-compose.yml \
-            ps --all --format json \
-            | jq -r '[.Service, .State] | @tsv' \
-            > target/liquid-e2e/workflow-compose-ps.txt 2>&1 || true
-          docker compose \
-            --project-name "$COMPOSE_PROJECT_NAME" \
-            --file tests/liquid-e2e/docker-compose.yml \
-            logs --no-color > target/liquid-e2e/workflow-compose.log 2>&1 || true
-          docker compose \
-            --project-name "$COMPOSE_PROJECT_NAME" \
-            --file tests/liquid-e2e/docker-compose.yml \
-            down --volumes --remove-orphans || true
-
-      - name: Upload Liquid E2E fixtures and logs
-        if: always()
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
-        with:
-          name: liquid-e2e-${{ github.run_id }}
-          path: target/liquid-e2e
-          if-no-files-found: warn
-          retention-days: 7
-
   liquid-e2e:
     name: Elements peg-in/peg-out harness
     runs-on: ubuntu-latest
     timeout-minutes: 20
+
+    env:
+      LIQUID_PEGIN_CONFIRMATION_DEPTH: ${{ github.event_name == 'workflow_dispatch' && inputs.pegin_confirmation_depth || '100' }}
 
     steps:
       - name: Checkout repository
