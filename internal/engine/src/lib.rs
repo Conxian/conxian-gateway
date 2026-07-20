@@ -6,7 +6,8 @@ pub mod treasury;
 
 pub use bitcoin::{
     BabylonAdapter, BitVmAdapter, BitcoinListener, BitcoinRpc, BitcoinRpcClient, FedimintAdapter,
-    FeeBumpPolicyConfig, LiquidAdapter, MempoolOrchestrator, NodeRgbAdapter, StrataAdapter,
+    FeeBumpPolicyConfig, LiquidAdapter, MempoolOrchestrator, NodeRgbAdapter, StashResolver,
+    StrataAdapter,
 };
 pub use coordination::RedisCoordinator;
 pub use ntt::{CitreaAdapter, NttRelayer, RootstockAdapter};

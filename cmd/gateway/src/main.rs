@@ -1,6 +1,8 @@
 use conxian_api::{configure_routes, new_lightning_adapter, new_settlement_log, AppState};
 use conxian_compliance::{CoreVerifier, IdentityManager, ZkcVerifier};
 use conxian_core::{GatewayState, Persistence, SharedState};
+#[cfg(feature = "rgb-native")]
+use conxian_engine::StashResolver;
 use conxian_engine::{
     stacks::alex::{AlexClient, AlexRpcClient},
     BitcoinListener, BitcoinRpcClient, FeeBumpPolicyConfig, MempoolOrchestrator, NodeRgbAdapter,
@@ -106,10 +108,19 @@ async fn main() -> anyhow::Result<()> {
     // CON-768: Initialize RGB adapter
     let rgb_adapter: Option<Arc<dyn conxian_core::RgbAdapter>> =
         if config.rgb_mode != conxian_core::RolloutMode::Disabled {
-            Some(Arc::new(NodeRgbAdapter::new(
-                config.rgb_mode,
-                config.rgb_node_url.clone(),
-            )))
+            let adapter = NodeRgbAdapter::new(config.rgb_mode, config.rgb_node_url.clone());
+            #[cfg(feature = "rgb-native")]
+            let adapter = if let (Some(stash_path), Some(esplora_url)) = (
+                config.rgb_stash_path.as_deref(),
+                config.rgb_esplora_url.as_deref(),
+            ) {
+                let resolver = StashResolver::new(stash_path, esplora_url)
+                    .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+                adapter.with_stash(Arc::new(resolver))
+            } else {
+                adapter
+            };
+            Some(Arc::new(adapter))
         } else {
             None
         };
