@@ -44,7 +44,7 @@ For complete organizational protocol, see:
 
 ---
 
-## Current State (2026-07-14, updated)
+## Current State (2026-07-20, updated)
 - **Status Audit**: Holistic review of Nexus/Gateway alignment complete (CON-1353).
 - **Protocol Drift**: Resolved — Fedimint, Citrea, and Strata adapters implemented and in production paths.
 - **RGB G-1385 (Phase 1)**: StashResolver delivered (commit `124d17e`) with `rgb-std` v0.12.0-rc.3 + `bp-esplora` v0.12.0-rc.3 behind `rgb-native` feature. Phase 2 (ContractVerify, consignment) blocked on rgb-std ecosystem stabilization.
@@ -52,7 +52,7 @@ For complete organizational protocol, see:
 - **Gap Analysis (2026-07-14)**: Full review of 11 open issues vs. codebase complete. Report at `docs/GAP_ANALYSIS_2026-07-14.md`. Key findings:
   - ⚠️ #236 SDK: Version drift (SDK 0.1.0 vs workspace 0.1.4), README claims "Production Ready" (overstated)
   - ⚠️ #220 DLC: Oracle abstraction done, CET construction missing (no dlc-manager dep)
-  - ❌ #219 Groth16: Verifier boundary NOT defined anywhere in codebase
+  - ⚠️ #219 Groth16: a partial trait skeleton exists on `main`; the canonical contract, BitVM handoff, fixture, and rejection tests are implemented on the focused `charlie/issue-219-groth16-boundary` branch and are not merged yet
   - ❌ #216 Babylon: BTC header-chain returns `0`, no SPV implementation
 - **Sprint Protocol (2026-07-14)**: Session Continuity Protocol implemented. All agent sessions now verify prior work before proceeding. See:
   - `docs/SPRINT_SESSION_PROTOCOL.md` — Org-wide standards
@@ -61,6 +61,7 @@ For complete organizational protocol, see:
 - **CI status**: All workflows green on main. `cargo-audit.yml` augmented with `.cargo/audit.toml` ignore list for transitive `rustls-webpki` CVEs.
 - **P3 Sprint Review (commit `07c9508`)**: All review findings resolved — G-C6 verdict logic, signature verification for all machine providers, SystemTime→now_unix, inline test backend. 29 canton_m2m_tests pass; 158 workspace tests pass.
 - **Strategic Research (2026-07-06)**: Canton Network & Machine Economy deep-dive complete. Key finding: "route without touch" — Conxian as sovereign routing layer between Canton's $6T+ institutional capital and Bitcoin's permissionless settlement. Machine Economy: $1.1B/month Lightning M2M volume, peaq 60+ DePINs, DIMO vehicle identity. See `docs/research/CANTON_NETWORK_AND_MACHINE_ECONOMY_RESEARCH.md` and `docs/research/KNOWLEDGE_MAP.md`.
+- **Issue #219 boundary update (2026-07-20)**: `internal/engine/src/bitcoin/groth16_verifier.rs` now defines the BN254 canonical statement/hash contract, witness-privacy boundary, key binding, and deterministic test verifier. `bitvm_adapter.rs` parses and validates the envelope before delegating to an injected verifier. This remains a boundary milestone, not cryptographic Groth16 verification.
 
 ### Protocol Implementations (2026-07-05)
 | Protocol | Status | File |
@@ -68,7 +69,7 @@ For complete organizational protocol, see:
 | NWC NIP-47 | тЬЕ Integrated | `internal/api/src/nwc_backend.rs` |
 | Rootstock | тЬЕ Integrated | `internal/engine/src/ntt/rootstock_adapter.rs` |
 | Babylon | тЬЕ Integrated | `internal/engine/src/bitcoin/babylon_adapter.rs` |
-| BitVM2 | тЬЕ Integrated | `internal/engine/src/bitcoin/bitvm_adapter.rs` |
+| BitVM2 | Partial — metadata adapter plus explicit Groth16 handoff on focused branch | `internal/engine/src/bitcoin/bitvm_adapter.rs` |
 | RGB | тЬЕ v0.12 + Stash (P1) | `internal/engine/src/bitcoin/rgb_adapter.rs` + `rgb_native.rs` + `rgb_stash.rs` |
 | Liquid | тЬЕ Integrated | `internal/engine/src/bitcoin/liquid_adapter.rs` |
 | Citrea | тЬЕ Integrated | `internal/engine/src/ntt/citrea_adapter.rs` |
@@ -126,7 +127,7 @@ Before submitting changes, you MUST:
 - [x] G-1380: SBOM and Provenance to release workflow — merged `19181c5`
 - [ ] #236: SDK version drift + README overclaim — see `docs/GAP_ANALYSIS_2026-07-14.md`
 - [ ] #220: DLC CET construction — dlc-manager dependency missing
-- [ ] #219: Groth16 verifier boundary — NOT defined in codebase
+- [ ] #219: Groth16 cryptographic backend — boundary contract and deterministic fixture handoff implemented on `charlie/issue-219-groth16-boundary`; not merged or cryptographic
 - [ ] #216: Babylon BTC header-chain SPV — returns 0, needs implementation
 - [ ] #189: BitVMX GC adapter — pending 2026 garbled circuits release (see research below)
 - [x] #231: BRICS Pay — DCMS settlement rail (closed — research complete, no adapter needed)
@@ -138,10 +139,10 @@ Full gap analysis: `docs/GAP_ANALYSIS_2026-07-14.md`
 1. **Fix SDK version** — `packages/client-sdk/package.json`: `0.1.0` → `0.1.4`
 2. **Fix SDK README** — Remove "Production Ready" claim → "Developer Preview"
 3. **Add DLC CET** — Add `dlc-manager` dependency for #220
-4. **Define Groth16 boundary** — Create internal verifier trait for #219
+4. **Define Groth16 boundary** — Canonical contract and BitVM handoff implemented on the focused #219 branch; merge and add a real backend separately
 5. **Implement Babylon SPV** — BTC header-chain for #216
 
-**Status:** All P0 items APPROVED for W29 implementation (2026-07-14)
+**Status:** P0 items remain approved; #219's boundary milestone is implemented locally on 2026-07-20, while a production cryptographic backend remains out of scope.
 
 ### New Strategic Gaps (2026-07-06)
 - [x] G-C1: CBTC non-custodial verification — conxian-core types + `POST /api/v1/canton/cbtc/verify` handler with 6-point attestation check (commit pending)

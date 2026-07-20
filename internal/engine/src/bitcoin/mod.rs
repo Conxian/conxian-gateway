@@ -30,7 +30,12 @@ pub use dlc_oracle::{
 };
 
 pub mod groth16_verifier;
+pub use bitvm_adapter::parse_bitvm_groth16_envelope;
 pub use groth16_verifier::{
-    BitVmGroth16Adapter, Groth16Proof, Groth16Verifier, MockGroth16Verifier, PublicInput,
-    VerificationError, VerificationKeyId, VerificationResult,
+    compute_witness_commitment, BitVmGroth16Adapter, BitcoinBlockContext, BitcoinNetwork,
+    FieldElement, Groth16Curve, Groth16Proof, Groth16Statement, Groth16VerificationRequest,
+    Groth16Verifier, MockGroth16Verifier, PublicInput, VerificationError, VerificationKeyId,
+    VerificationResult, BN254_FIELD_ELEMENT_BYTES, BN254_SCALAR_MODULUS,
+    GROTH16_COMPRESSED_PROOF_BYTES, GROTH16_SCHEMA_VERSION, MAX_CIRCUIT_ID_BYTES,
+    MAX_FIELD_ELEMENTS, MAX_VERIFICATION_KEY_BYTES,
 };

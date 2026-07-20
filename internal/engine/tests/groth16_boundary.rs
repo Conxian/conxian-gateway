@@ -1,0 +1,321 @@
+use conxian_engine::bitcoin::{
+    compute_witness_commitment, parse_bitvm_groth16_envelope, BitcoinBlockContext, BitcoinNetwork,
+    FieldElement, Groth16Curve, Groth16Proof, Groth16Statement, Groth16VerificationRequest,
+    Groth16Verifier, MockGroth16Verifier, PublicInput, VerificationError, VerificationKeyId,
+    BN254_SCALAR_MODULUS, GROTH16_COMPRESSED_PROOF_BYTES, GROTH16_SCHEMA_VERSION,
+};
+use conxian_engine::BitVmAdapter;
+use serde::Deserialize;
+use serde_json::{json, Value};
+use std::sync::Arc;
+
+const FIXTURE_JSON: &str = include_str!("fixtures/groth16/bitvm_fixture.json");
+
+#[derive(Debug, Deserialize)]
+struct Fixture {
+    schema_version: u16,
+    curve: String,
+    circuit_id: String,
+    verification_key_bytes: String,
+    verification_key_id: String,
+    public_inputs: Vec<String>,
+    witness_values: Vec<String>,
+    witness_commitment: String,
+    block_context: FixtureBlockContext,
+    proof: String,
+    statement_hash: String,
+    current_block_height: u64,
+    expected_valid: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct FixtureBlockContext {
+    network: String,
+    block_height: u64,
+    block_hash: String,
+    max_valid_height: Option<u64>,
+}
+
+fn fixture() -> Fixture {
+    serde_json::from_str(FIXTURE_JSON).expect("fixture JSON must be valid")
+}
+
+fn decode_32(value: &str) -> [u8; 32] {
+    hex::decode(value)
+        .expect("fixture hex must decode")
+        .try_into()
+        .expect("fixture value must be 32 bytes")
+}
+
+fn field(value: &str) -> FieldElement {
+    FieldElement::from_bytes(decode_32(value)).expect("fixture field must be canonical")
+}
+
+fn fixture_statement(data: &Fixture) -> Groth16Statement {
+    let key_bytes = hex::decode(&data.verification_key_bytes).expect("fixture key hex");
+    let key_id = VerificationKeyId::from_key_bytes(&key_bytes).expect("fixture key id");
+    assert_eq!(hex::encode(key_id.0), data.verification_key_id);
+
+    let witness: Vec<_> = data
+        .witness_values
+        .iter()
+        .map(|value| field(value))
+        .collect();
+    let witness_commitment = compute_witness_commitment(&witness).expect("fixture commitment");
+    assert_eq!(hex::encode(witness_commitment), data.witness_commitment);
+
+    Groth16Statement {
+        schema_version: data.schema_version,
+        curve: data.curve.parse::<Groth16Curve>().expect("fixture curve"),
+        circuit_id: data.circuit_id.clone(),
+        verification_key_id: key_id,
+        public_inputs: PublicInput::new(
+            data.public_inputs
+                .iter()
+                .map(|value| field(value))
+                .collect(),
+        )
+        .expect("fixture public inputs"),
+        witness_commitment,
+        block_context: BitcoinBlockContext {
+            network: data
+                .block_context
+                .network
+                .parse::<BitcoinNetwork>()
+                .expect("fixture network"),
+            block_height: data.block_context.block_height,
+            block_hash: decode_32(&data.block_context.block_hash),
+            max_valid_height: data.block_context.max_valid_height,
+        },
+    }
+}
+
+fn fixture_request(data: &Fixture, current_height: u64) -> Groth16VerificationRequest {
+    let statement = fixture_statement(data);
+    let proof = Groth16Proof::from_bytes(hex::decode(&data.proof).expect("fixture proof hex"))
+        .expect("fixture proof encoding");
+    let request = Groth16VerificationRequest::new(statement, proof, current_height)
+        .expect("fixture request must validate");
+    assert_eq!(hex::encode(request.statement_hash), data.statement_hash);
+    request
+}
+
+fn fixture_envelope(data: &Fixture) -> Value {
+    json!({
+        "schema_version": data.schema_version,
+        "curve": data.curve,
+        "circuit_id": data.circuit_id,
+        "verification_key_id": data.verification_key_id,
+        "public_inputs": data.public_inputs,
+        "witness_commitment": data.witness_commitment,
+        "block_context": {
+            "network": data.block_context.network,
+            "block_height": data.block_context.block_height,
+            "block_hash": data.block_context.block_hash,
+            "max_valid_height": data.block_context.max_valid_height,
+        },
+        "proof": data.proof,
+        "statement_hash": data.statement_hash,
+    })
+}
+
+#[tokio::test]
+async fn fixture_reproduces_commitment_hash_and_validates_end_to_end() {
+    let data = fixture();
+    assert!(data.expected_valid);
+    assert_eq!(data.schema_version, GROTH16_SCHEMA_VERSION);
+
+    let request = fixture_request(&data, data.current_block_height);
+    let key_bytes = hex::decode(&data.verification_key_bytes).unwrap();
+    let verifier = Arc::new(MockGroth16Verifier::new());
+    verifier
+        .register_fixture(&request, key_bytes)
+        .await
+        .unwrap();
+
+    let result = verifier.verify(&request).await.unwrap();
+    assert!(result.valid);
+    assert_eq!(result.statement_hash, request.statement_hash);
+    assert_eq!(result.public_inputs.values.len(), 3);
+
+    let adapter = BitVmAdapter::with_verifier("regtest".to_owned(), Arc::clone(&verifier));
+    let handoff = adapter
+        .verify_groth16_envelope(fixture_envelope(&data), data.current_block_height)
+        .await
+        .unwrap();
+    assert!(handoff.valid);
+    assert_eq!(handoff.statement_hash, request.statement_hash);
+}
+
+#[tokio::test]
+async fn borrowed_bitvm_handoff_validates_before_delegation() {
+    let data = fixture();
+    let request = fixture_request(&data, data.current_block_height);
+    let verifier = MockGroth16Verifier::new();
+    verifier
+        .register_fixture(&request, hex::decode(&data.verification_key_bytes).unwrap())
+        .await
+        .unwrap();
+
+    let adapter = BitVmAdapter::new("regtest".to_owned());
+    let result = adapter
+        .verify_groth16_envelope_with(
+            &verifier,
+            fixture_envelope(&data),
+            data.current_block_height,
+        )
+        .await
+        .unwrap();
+    assert!(result.valid);
+}
+
+#[tokio::test]
+async fn public_input_reorder_mutation_and_statement_hash_tampering_are_rejected() {
+    let data = fixture();
+    let request = fixture_request(&data, data.current_block_height);
+    let verifier = MockGroth16Verifier::new();
+    verifier
+        .register_fixture(&request, hex::decode(&data.verification_key_bytes).unwrap())
+        .await
+        .unwrap();
+
+    let mut stale_hash = request.clone();
+    stale_hash.statement.public_inputs.values.swap(0, 1);
+    assert!(matches!(
+        verifier.verify(&stale_hash).await,
+        Err(VerificationError::StatementHashMismatch { .. })
+    ));
+
+    let mut reordered = request.statement.clone();
+    reordered.public_inputs.values.swap(0, 1);
+    let reordered_request = Groth16VerificationRequest::new(
+        reordered,
+        request.proof.clone(),
+        request.current_block_height,
+    )
+    .unwrap();
+    assert!(matches!(
+        verifier.verify(&reordered_request).await,
+        Err(VerificationError::FixtureNotRegistered(_))
+    ));
+
+    let mut envelope = fixture_envelope(&data);
+    envelope["statement_hash"] = json!("00".repeat(32));
+    assert!(matches!(
+        parse_bitvm_groth16_envelope(envelope, data.current_block_height),
+        Err(VerificationError::StatementHashMismatch { .. })
+    ));
+}
+
+#[tokio::test]
+async fn witness_commitment_proof_vk_and_circuit_mutations_are_rejected() {
+    let data = fixture();
+    let request = fixture_request(&data, data.current_block_height);
+    let verifier = MockGroth16Verifier::new();
+    verifier
+        .register_fixture(&request, hex::decode(&data.verification_key_bytes).unwrap())
+        .await
+        .unwrap();
+
+    let mut stale_commitment = request.clone();
+    stale_commitment.statement.witness_commitment[0] ^= 1;
+    assert!(matches!(
+        verifier.verify(&stale_commitment).await,
+        Err(VerificationError::StatementHashMismatch { .. })
+    ));
+
+    let mut proof_bytes = request.proof.bytes.clone();
+    proof_bytes[17] ^= 1;
+    let proof_mutation = Groth16VerificationRequest {
+        proof: Groth16Proof::from_bytes(proof_bytes).unwrap(),
+        ..request.clone()
+    };
+    assert!(matches!(
+        verifier.verify(&proof_mutation).await,
+        Err(VerificationError::InvalidProof(_))
+    ));
+
+    let wrong_key_statement = Groth16Statement {
+        verification_key_id: VerificationKeyId::from_key_bytes(b"wrong-vk").unwrap(),
+        ..request.statement.clone()
+    };
+    let wrong_key_request = Groth16VerificationRequest::new(
+        wrong_key_statement,
+        request.proof.clone(),
+        request.current_block_height,
+    )
+    .unwrap();
+    assert!(matches!(
+        verifier.verify(&wrong_key_request).await,
+        Err(VerificationError::VerificationKeyNotFound(_))
+    ));
+
+    let wrong_circuit_statement = Groth16Statement {
+        circuit_id: "different-circuit-v1".to_owned(),
+        ..request.statement.clone()
+    };
+    let wrong_circuit_request = Groth16VerificationRequest::new(
+        wrong_circuit_statement,
+        request.proof.clone(),
+        request.current_block_height,
+    )
+    .unwrap();
+    assert!(matches!(
+        verifier.verify(&wrong_circuit_request).await,
+        Err(VerificationError::FixtureNotRegistered(_))
+    ));
+
+    assert!(matches!(
+        verifier
+            .register_verification_key(VerificationKeyId([9u8; 32]), b"wrong-vk".to_vec())
+            .await,
+        Err(VerificationError::VerificationKeyIdMismatch { .. })
+    ));
+}
+
+#[test]
+fn malformed_field_and_proof_encodings_are_rejected_before_handoff() {
+    let data = fixture();
+    let mut malformed_field = fixture_envelope(&data);
+    malformed_field["public_inputs"][0] = json!(hex::encode(BN254_SCALAR_MODULUS));
+    assert!(matches!(
+        parse_bitvm_groth16_envelope(malformed_field, data.current_block_height),
+        Err(VerificationError::InvalidFieldElement { index: Some(0), .. })
+    ));
+
+    let mut malformed_proof = fixture_envelope(&data);
+    malformed_proof["proof"] = json!(hex::encode(vec![1u8; GROTH16_COMPRESSED_PROOF_BYTES - 1]));
+    assert!(matches!(
+        parse_bitvm_groth16_envelope(malformed_proof, data.current_block_height),
+        Err(VerificationError::MalformedEnvelope(_))
+    ));
+}
+
+#[test]
+fn invalid_and_expired_block_context_and_raw_witness_are_rejected() {
+    let data = fixture();
+
+    assert!(matches!(
+        Groth16VerificationRequest::new(
+            fixture_statement(&data),
+            Groth16Proof::from_bytes(hex::decode(&data.proof).unwrap()).unwrap(),
+            data.block_context.block_height - 1,
+        ),
+        Err(VerificationError::ProofFromFuture { .. })
+    ));
+    assert!(matches!(
+        Groth16VerificationRequest::new(
+            fixture_statement(&data),
+            Groth16Proof::from_bytes(hex::decode(&data.proof).unwrap()).unwrap(),
+            data.block_context.max_valid_height.unwrap() + 1,
+        ),
+        Err(VerificationError::ProofExpired { .. })
+    ));
+
+    let mut raw_witness_envelope = fixture_envelope(&data);
+    raw_witness_envelope["witness"] = json!(["not-accepted-at-runtime"]);
+    assert!(matches!(
+        parse_bitvm_groth16_envelope(raw_witness_envelope, data.current_block_height),
+        Err(VerificationError::RawWitnessProvided)
+    ));
+}

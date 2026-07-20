@@ -1,6 +1,6 @@
 # Cross-Repository Status Dashboard
 
-**Last Updated:** 2026-07-15  
+**Last Updated:** 2026-07-20
 **Sprint:** W29 (2026-07-15 to 2026-07-25)  
 **Maintained By:** Agent sessions
 
@@ -12,7 +12,7 @@
 | Repository | Production Path | Last Session | W29 Status |
 |------------|-----------------|--------------|------------|
 | **conxian-nexus** | main (Mainnet) | ⏳ Not reviewed | - |
-| **conxian-gateway** | main (Mainnet) | 2026-07-15 ✅ | ✅ P0 Complete |
+| **conxian-gateway** | main (Mainnet) | 2026-07-20 ⚠️ | ⚠️ P0 status corrected; #219 branch pending review/merge |
 
 ### Layer 2: User & Application Surface
 | Repository | Production Path | Last Session | W29 Status |
@@ -56,7 +56,7 @@ lib-conclave-sdk  ←  shares types with SDK (L3)
 
 ## W29 Sprint Status (2026-07-15)
 
-### conxian-gateway (W29 Complete ✅)
+### conxian-gateway (W29 status corrected — 2026-07-20)
 
 **Sprint Start Verification (2026-07-15):**
 - ✅ Full repository verification complete
@@ -70,12 +70,12 @@ lib-conclave-sdk  ←  shares types with SDK (L3)
 - ✅ GitHub issues reviewed (37 total)
 - ✅ Security advisories: None found
 
-**P0 Implementation Status — DLC correction (2026-07-20):**
+**P0 Implementation Status — continuity correction (2026-07-20):**
 | # | Issue | Status |
 |---|-------|--------|
 | #236 SDK | Version drift + README | ✅ Fixed (0.1.4, Developer Preview) |
 | #220 DLC CET | dlc-manager integration | ⚠️ Attempted in `453a15a`/`8ef9d05`, then reverted in `cb8b680` after API incompatibility/CI failures; remains open |
-| #219 Groth16 | Verifier boundary | ✅ Defined (groth16_verifier.rs) |
+| #219 Groth16 | Verifier boundary | 🟡 Canonical contract, fixture, and BitVM handoff implemented on `charlie/issue-219-groth16-boundary`; not merged and not cryptographic |
 | #216 Babylon | BTC header SPV | ✅ Implemented (babylon_adapter.rs) |
 
 **Historical DLC commits:**
@@ -90,6 +90,7 @@ lib-conclave-sdk  ←  shares types with SDK (L3)
 
 | Date | Repository | Session Summary |
 |------|------------|-----------------|
+| 2026-07-20 | conxian-gateway | #219 boundary milestone: canonical contract, BitVM handoff, deterministic fixture, and rejection tests completed locally; production backend remains open. |
 | 2026-07-15 | conxian-gateway | W29 P0 implementation attempt recorded; later verification found the DLC CET attempt reverted in `cb8b680`, so #220 remains open. |
 | 2026-07-15 | conxian-gateway | W29 sprint start. Full verification complete. |
 | 2026-07-14 | conxian-gateway | W28 sprint close. Gap analysis of 11 issues. Session Continuity Protocol implemented. |
@@ -123,4 +124,4 @@ Before starting work on any repo, verify:
 ---
 
 *This file is auto-maintained by agent sessions.*
-*Last Major Update: 2026-07-15 (W29 P0 Complete)*
+*Last Major Update: 2026-07-20 (W29 P0 status corrected; #219 boundary milestone local only)*

@@ -1154,6 +1154,7 @@ dependencies = [
  "bitcoincore-rpc",
  "bp-esplora",
  "conxian_core",
+ "hex",
  "minreq 3.0.0",
  "redis",
  "reqwest",
@@ -1161,6 +1162,7 @@ dependencies = [
  "rgb-std",
  "serde",
  "serde_json",
+ "thiserror 2.0.19",
  "tokio",
  "tracing",
 ]
