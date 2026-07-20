@@ -70,17 +70,19 @@ lib-conclave-sdk  ←  shares types with SDK (L3)
 - ✅ GitHub issues reviewed (37 total)
 - ✅ Security advisories: None found
 
-**P0 Implementation Complete (2026-07-15):**
+**P0 Implementation Status — DLC correction (2026-07-20):**
 | # | Issue | Status |
 |---|-------|--------|
 | #236 SDK | Version drift + README | ✅ Fixed (0.1.4, Developer Preview) |
-| #220 DLC CET | dlc-manager integration | ✅ Implemented (dlc_cet.rs) |
+| #220 DLC CET | dlc-manager integration | ⚠️ Attempted in `453a15a`/`8ef9d05`, then reverted in `cb8b680` after API incompatibility/CI failures; remains open |
 | #219 Groth16 | Verifier boundary | ✅ Defined (groth16_verifier.rs) |
 | #216 Babylon | BTC header SPV | ✅ Implemented (babylon_adapter.rs) |
 
-**Commits:**
-- `453a15a` feat: implement W29 P0 items
-- `cc10886` docs: update session summary
+**Historical DLC commits:**
+- `453a15a` attempted the W29 P0 implementation, including `dlc_cet.rs` and `dlc-manager`.
+- `8ef9d05` adjusted the attempted `dlc-manager` version.
+- `cb8b680` removed `dlc_cet`, `dlc-manager`, and related wiring after API incompatibility/CI failures.
+- `cc10886` recorded the superseded completion claim; see `docs/SESSION_SUMMARY_2026-07-20.md` for the correction.
 
 ---
 
@@ -88,7 +90,7 @@ lib-conclave-sdk  ←  shares types with SDK (L3)
 
 | Date | Repository | Session Summary |
 |------|------------|-----------------|
-| 2026-07-15 | conxian-gateway | W29 P0 all complete. SDK fix, DLC CET, Groth16, Babylon SPV. Commits pushed to main. |
+| 2026-07-15 | conxian-gateway | W29 P0 implementation attempt recorded; later verification found the DLC CET attempt reverted in `cb8b680`, so #220 remains open. |
 | 2026-07-15 | conxian-gateway | W29 sprint start. Full verification complete. |
 | 2026-07-14 | conxian-gateway | W28 sprint close. Gap analysis of 11 issues. Session Continuity Protocol implemented. |
 | 2026-07-14 | conxian-gateway | Initial gap analysis. AGENTS.md updated. 11 GitHub issues commented. |
