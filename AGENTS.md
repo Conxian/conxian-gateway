@@ -61,14 +61,14 @@ For complete organizational protocol, see:
 - **CI status**: All workflows green on main. `cargo-audit.yml` augmented with `.cargo/audit.toml` ignore list for transitive `rustls-webpki` CVEs.
 - **P3 Sprint Review (commit `07c9508`)**: All review findings resolved — G-C6 verdict logic, signature verification for all machine providers, SystemTime→now_unix, inline test backend. 29 canton_m2m_tests pass; 158 workspace tests pass.
 - **Strategic Research (2026-07-06)**: Canton Network & Machine Economy deep-dive complete. Key finding: "route without touch" — Conxian as sovereign routing layer between Canton's $6T+ institutional capital and Bitcoin's permissionless settlement. Machine Economy: $1.1B/month Lightning M2M volume, peaq 60+ DePINs, DIMO vehicle identity. See `docs/research/CANTON_NETWORK_AND_MACHINE_ECONOMY_RESEARCH.md` and `docs/research/KNOWLEDGE_MAP.md`.
-- **Issue #219 boundary update (2026-07-20)**: `internal/engine/src/bitcoin/groth16_verifier.rs` now defines the BN254 canonical statement/hash contract, witness-privacy boundary, key binding, and deterministic test verifier. `bitvm_adapter.rs` parses and validates the envelope before delegating to an injected verifier. This remains a boundary milestone, not cryptographic Groth16 verification.
+- **Issue #219 boundary update (2026-07-20)**: `internal/engine/src/bitcoin/groth16_verifier.rs` now defines the BN254 canonical statement/hash contract, witness-commitment public-input binding, circuit/key association, witness-privacy boundary, and deterministic test verifier. `bitvm_adapter.rs` parses and validates the envelope before delegating to an injected verifier. This remains a boundary milestone, not cryptographic Groth16 verification.
 
 ### Protocol Implementations (2026-07-05)
 | Protocol | Status | File |
 |---|---|---|
 | NWC NIP-47 | тЬЕ Integrated | `internal/api/src/nwc_backend.rs` |
 | Rootstock | тЬЕ Integrated | `internal/engine/src/ntt/rootstock_adapter.rs` |
-| Babylon | тЬЕ Integrated | `internal/engine/src/bitcoin/babylon_adapter.rs` |
+| Babylon | Pending — header-chain/SPV remains unimplemented while PR #253 is open | `internal/engine/src/bitcoin/babylon_adapter.rs` |
 | BitVM2 | Partial — metadata adapter plus explicit Groth16 handoff on focused branch | `internal/engine/src/bitcoin/bitvm_adapter.rs` |
 | RGB | тЬЕ v0.12 + Stash (P1) | `internal/engine/src/bitcoin/rgb_adapter.rs` + `rgb_native.rs` + `rgb_stash.rs` |
 | Liquid | тЬЕ Integrated | `internal/engine/src/bitcoin/liquid_adapter.rs` |
@@ -102,7 +102,7 @@ Before submitting changes, you MUST:
 2. Run `cargo fmt --all -- --check`
 3. Run all tests: `cargo test --workspace` AND `cargo test --workspace --features mock-integrations`
 4. Run `pnpm install && pnpm build && pnpm test`
-5. Verify health check: `GET /api/v1/health` returns `healthy`.
+5. Verify health check: `GET /api/v1/health` returns HTTP 200 with `{"status":"ok"}`.
 6. Run `python3 scripts/verify_contamination_guard.py`
 
 ## Module Map

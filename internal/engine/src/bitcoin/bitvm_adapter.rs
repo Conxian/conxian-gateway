@@ -7,9 +7,9 @@ use tracing::{info, warn};
 
 use super::groth16_verifier::{
     BitcoinBlockContext, BitcoinNetwork, FieldElement, Groth16Curve, Groth16Proof,
-    Groth16Statement, Groth16VerificationRequest, Groth16Verifier, PublicInput, VerificationError,
-    VerificationKeyId, VerificationResult, GROTH16_COMPRESSED_PROOF_BYTES, GROTH16_SCHEMA_VERSION,
-    MAX_FIELD_ELEMENTS,
+    Groth16Statement, Groth16VerificationRequest, Groth16Verifier, InvalidProofReason, PublicInput,
+    VerificationError, VerificationKeyId, VerificationResult, GROTH16_COMPRESSED_PROOF_BYTES,
+    GROTH16_SCHEMA_VERSION, MAX_FIELD_ELEMENTS,
 };
 
 /// Protocol adapter for BitVM.
@@ -80,6 +80,10 @@ impl BitVmAdapter {
                 .to_string(),
             ));
         }
+        verifier
+            .validate_verification_key_association(&request.statement)
+            .await
+            .map_err(|error| ConxianError::Security(error.to_string()))?;
 
         info!(
             chain = "bitvm",
@@ -88,10 +92,17 @@ impl BitVmAdapter {
             "delegating validated Groth16 statement to injected verifier"
         );
 
-        verifier
+        let result = verifier
             .verify(&request)
             .await
-            .map_err(|error| ConxianError::Security(error.to_string()))
+            .map_err(|error| ConxianError::Security(error.to_string()))?;
+        if !result.valid {
+            return Err(ConxianError::Security(
+                VerificationError::InvalidProof(InvalidProofReason::BackendRejected).to_string(),
+            ));
+        }
+
+        Ok(result)
     }
 }
 

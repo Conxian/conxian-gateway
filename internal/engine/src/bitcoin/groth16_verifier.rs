@@ -14,7 +14,11 @@
 use async_trait::async_trait;
 use bitcoin::hashes::{sha256, Hash};
 use serde::{de::Error as _, Deserialize, Deserializer, Serialize};
-use std::{collections::HashMap, fmt, str::FromStr, sync::RwLock};
+#[cfg(any(test, feature = "mock-integrations"))]
+use std::collections::HashMap;
+#[cfg(any(test, feature = "mock-integrations"))]
+use std::sync::RwLock;
+use std::{fmt, str::FromStr};
 use thiserror::Error;
 
 /// Current canonical statement schema version.
@@ -35,12 +39,20 @@ pub const MAX_FIELD_ELEMENTS: usize = 256;
 /// Maximum verification-key byte length accepted at registration.
 pub const MAX_VERIFICATION_KEY_BYTES: usize = 1024 * 1024;
 
+/// Number of reserved public-input slots used for the witness commitment.
+pub const WITNESS_COMMITMENT_PUBLIC_INPUT_LIMBS: usize = 2;
+
+/// Width of each witness-commitment limb before zero-extension to a field
+/// element.
+pub const WITNESS_COMMITMENT_PUBLIC_INPUT_LIMB_BYTES: usize = 16;
+
 const FIELD_ENCODING_BN254_BIG_ENDIAN_32: u8 = 1;
 const STATEMENT_ENCODING_DOMAIN: &[u8] = b"CONXIAN-GROTH16-STATEMENT-ENCODING-V1";
 const STATEMENT_HASH_DOMAIN: &[u8] = b"CONXIAN-GROTH16-STATEMENT-HASH-V1";
 const VERIFICATION_KEY_ID_DOMAIN: &[u8] = b"CONXIAN-GROTH16-VERIFICATION-KEY-ID-V1";
 const WITNESS_COMMITMENT_DOMAIN: &[u8] = b"CONXIAN-GROTH16-WITNESS-COMMITMENT-V1";
 const PROOF_DIGEST_DOMAIN: &[u8] = b"CONXIAN-GROTH16-PROOF-DIGEST-V1";
+#[cfg(any(test, feature = "mock-integrations"))]
 const TRANSCRIPT_DOMAIN: &[u8] = b"CONXIAN-GROTH16-TRANSCRIPT-V1";
 
 /// BN254 scalar-field modulus, encoded as a 32-byte big-endian integer.
@@ -99,7 +111,7 @@ impl<'de> Deserialize<'de> for FieldElement {
 
 /// Identifier for the only curve/field encoding currently admitted by this
 /// version of the contract.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Groth16Curve {
     /// BN254 with scalar-field elements encoded as 32-byte big-endian values.
@@ -231,9 +243,15 @@ impl BitcoinBlockContext {
 
 /// Public input vector. The vector order is consensus-critical and is
 /// preserved exactly in canonical encoding; it is never sorted.
+///
+/// Schema version 1 reserves the final two slots for the witness commitment:
+/// the first is the high 128-bit limb and the second is the low 128-bit limb.
+/// Both limbs are encoded as 32-byte big-endian BN254 field elements with 16
+/// leading zero bytes. Circuit-specific public inputs precede these slots.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PublicInput {
-    /// Ordered BN254 scalar-field public inputs.
+    /// Ordered BN254 scalar-field public inputs, ending with the reserved
+    /// witness-commitment limbs for schema version 1.
     pub values: Vec<FieldElement>,
 }
 
@@ -295,6 +313,51 @@ impl VerificationKeyId {
     }
 }
 
+/// Encode a 32-byte witness commitment as the two schema-v1 public-input
+/// limbs. The commitment bytes are interpreted in big-endian order: bytes
+/// `0..16` become the high 128-bit limb and bytes `16..32` become the low
+/// 128-bit limb. Each limb is zero-extended on the left to a 32-byte BN254
+/// field element; no modulus reduction is performed.
+pub fn witness_commitment_public_inputs(
+    witness_commitment: [u8; 32],
+) -> Result<[FieldElement; WITNESS_COMMITMENT_PUBLIC_INPUT_LIMBS], VerificationError> {
+    let mut high = [0u8; BN254_FIELD_ELEMENT_BYTES];
+    let mut low = [0u8; BN254_FIELD_ELEMENT_BYTES];
+    let high_start = BN254_FIELD_ELEMENT_BYTES - WITNESS_COMMITMENT_PUBLIC_INPUT_LIMB_BYTES;
+    let split = WITNESS_COMMITMENT_PUBLIC_INPUT_LIMB_BYTES;
+    high[high_start..].copy_from_slice(&witness_commitment[..split]);
+    low[high_start..].copy_from_slice(&witness_commitment[split..]);
+
+    Ok([
+        FieldElement::from_bytes(high)?,
+        FieldElement::from_bytes(low)?,
+    ])
+}
+
+fn validate_circuit_id(circuit_id: &str) -> Result<(), VerificationError> {
+    if circuit_id.is_empty() {
+        return Err(VerificationError::InvalidCircuitId(
+            "circuit_id must not be empty".to_owned(),
+        ));
+    }
+    if circuit_id.len() > MAX_CIRCUIT_ID_BYTES {
+        return Err(VerificationError::InvalidCircuitId(format!(
+            "circuit_id is larger than the {MAX_CIRCUIT_ID_BYTES}-byte limit"
+        )));
+    }
+    if !circuit_id.is_ascii()
+        || circuit_id
+            .chars()
+            .any(|character| !character.is_ascii_graphic())
+    {
+        return Err(VerificationError::InvalidCircuitId(
+            "circuit_id must contain only non-whitespace ASCII graphic characters".to_owned(),
+        ));
+    }
+
+    Ok(())
+}
+
 /// Canonical Groth16 statement. No raw witness material is present here.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Groth16Statement {
@@ -328,26 +391,7 @@ impl Groth16Statement {
                 self.schema_version
             )));
         }
-        if self.circuit_id.is_empty() {
-            return Err(VerificationError::InvalidCircuitId(
-                "circuit_id must not be empty".to_owned(),
-            ));
-        }
-        if self.circuit_id.len() > MAX_CIRCUIT_ID_BYTES {
-            return Err(VerificationError::InvalidCircuitId(format!(
-                "circuit_id is larger than the {MAX_CIRCUIT_ID_BYTES}-byte limit"
-            )));
-        }
-        if !self.circuit_id.is_ascii()
-            || self
-                .circuit_id
-                .chars()
-                .any(|character| !character.is_ascii_graphic())
-        {
-            return Err(VerificationError::InvalidCircuitId(
-                "circuit_id must contain only non-whitespace ASCII graphic characters".to_owned(),
-            ));
-        }
+        validate_circuit_id(&self.circuit_id)?;
         if self.verification_key_id.0 == [0u8; 32] {
             return Err(VerificationError::InvalidVerificationKey(
                 "verification_key_id must be non-zero".to_owned(),
@@ -360,7 +404,37 @@ impl Groth16Statement {
         }
 
         self.public_inputs.validate()?;
+        self.validate_witness_commitment_public_inputs()?;
         self.block_context.validate()
+    }
+
+    fn validate_witness_commitment_public_inputs(&self) -> Result<(), VerificationError> {
+        let expected = witness_commitment_public_inputs(self.witness_commitment)?;
+        let start = self
+            .public_inputs
+            .values
+            .len()
+            .checked_sub(WITNESS_COMMITMENT_PUBLIC_INPUT_LIMBS)
+            .ok_or_else(|| {
+                VerificationError::InvalidPublicInputs(format!(
+                    "schema version {GROTH16_SCHEMA_VERSION} reserves the final {} public-input slots for the witness commitment",
+                    WITNESS_COMMITMENT_PUBLIC_INPUT_LIMBS
+                ))
+            })?;
+
+        for (offset, expected_value) in expected.iter().enumerate() {
+            let slot = start + offset;
+            let found = self.public_inputs.values[slot];
+            if found != *expected_value {
+                return Err(VerificationError::WitnessCommitmentPublicInputMismatch {
+                    slot,
+                    expected: *expected_value,
+                    found,
+                });
+            }
+        }
+
+        Ok(())
     }
 
     /// Return the deterministic, length-framed statement encoding.
@@ -431,13 +505,17 @@ impl Groth16Proof {
     /// Construct a proof from the exact fixed-width compressed encoding.
     pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, VerificationError> {
         if bytes.len() != GROTH16_COMPRESSED_PROOF_BYTES {
-            return Err(VerificationError::InvalidProof(format!(
-                "compressed BN254 proof must be exactly {GROTH16_COMPRESSED_PROOF_BYTES} bytes"
-            )));
+            return Err(VerificationError::InvalidProof(
+                InvalidProofReason::MalformedEncoding(format!(
+                    "compressed BN254 proof must be exactly {GROTH16_COMPRESSED_PROOF_BYTES} bytes"
+                )),
+            ));
         }
         if bytes.iter().all(|byte| *byte == 0) {
             return Err(VerificationError::InvalidProof(
-                "compressed proof must not be all zero bytes".to_owned(),
+                InvalidProofReason::MalformedEncoding(
+                    "compressed proof must not be all zero bytes".to_owned(),
+                ),
             ));
         }
 
@@ -544,6 +622,17 @@ pub struct VerificationResult {
     pub verified_at_height: u64,
 }
 
+/// Stable reasons for a proof being rejected as invalid.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Error)]
+pub enum InvalidProofReason {
+    #[error("malformed proof encoding: {0}")]
+    MalformedEncoding(String),
+    #[error("backend returned an invalid proof result")]
+    BackendRejected,
+    #[error("proof digest does not match the registered deterministic fixture")]
+    FixtureMismatch,
+}
+
 /// Errors raised by the contract boundary or a test backend.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Error)]
 pub enum VerificationError {
@@ -564,8 +653,14 @@ pub enum VerificationError {
     InvalidWitness(String),
     #[error("invalid witness commitment: {0}")]
     InvalidWitnessCommitment(String),
+    #[error("witness commitment public-input mismatch at slot {slot}: expected {expected:?}, found {found:?}")]
+    WitnessCommitmentPublicInputMismatch {
+        slot: usize,
+        expected: FieldElement,
+        found: FieldElement,
+    },
     #[error("invalid proof: {0}")]
-    InvalidProof(String),
+    InvalidProof(InvalidProofReason),
     #[error("invalid verification key: {0}")]
     InvalidVerificationKey(String),
     #[error("verification key id mismatch: supplied {supplied:?}, derived {derived:?}")]
@@ -575,6 +670,18 @@ pub enum VerificationError {
     },
     #[error("verification key is not registered: {0:?}")]
     VerificationKeyNotFound(VerificationKeyId),
+    #[error(
+        "verification-key association mismatch for {verification_key_id:?}: registered ({registered_circuit_id}, schema {registered_schema_version}, curve {registered_curve:?}), requested ({requested_circuit_id}, schema {requested_schema_version}, curve {requested_curve:?})"
+    )]
+    VerificationKeyAssociationMismatch {
+        verification_key_id: VerificationKeyId,
+        registered_circuit_id: String,
+        registered_schema_version: u16,
+        registered_curve: Groth16Curve,
+        requested_circuit_id: String,
+        requested_schema_version: u16,
+        requested_curve: Groth16Curve,
+    },
     #[error("statement hash mismatch: expected {expected:?}, supplied {supplied:?}")]
     StatementHashMismatch {
         expected: [u8; 32],
@@ -607,7 +714,8 @@ pub enum VerificationError {
 }
 
 /// Backend-neutral verifier trait. Implementations must validate or otherwise
-/// honor [`Groth16VerificationRequest::validate`] before doing backend work.
+/// honor [`Groth16VerificationRequest::validate`] and the explicit
+/// circuit-to-verification-key association before doing cryptographic work.
 #[async_trait]
 pub trait Groth16Verifier: Send + Sync {
     /// Verify a canonical proof request. No raw witness is available here.
@@ -616,15 +724,23 @@ pub trait Groth16Verifier: Send + Sync {
         request: &Groth16VerificationRequest,
     ) -> Result<VerificationResult, VerificationError>;
 
-    /// Register a key only when its identifier matches the exact key bytes.
+    /// Register exact key bytes together with the circuit/schema/curve they
+    /// serve. The key identifier must match the exact bytes.
     async fn register_verification_key(
         &self,
+        circuit_id: String,
+        schema_version: u16,
+        curve: Groth16Curve,
         vk_id: VerificationKeyId,
         vk_bytes: Vec<u8>,
     ) -> Result<(), VerificationError>;
 
-    /// Check whether a self-consistent verification key is known.
-    async fn is_verification_key_known(&self, vk_id: &VerificationKeyId) -> bool;
+    /// Reject unknown or mismatched circuit/schema/curve-to-key associations
+    /// before proof verification is attempted.
+    async fn validate_verification_key_association(
+        &self,
+        statement: &Groth16Statement,
+    ) -> Result<(), VerificationError>;
 }
 
 /// Deterministic, test-only verifier.
@@ -634,12 +750,23 @@ pub trait Groth16Verifier: Send + Sync {
 /// enforces the full boundary contract and accepts only that deterministic
 /// fixture. It is intentionally unsuitable for production cryptographic
 /// verification.
+#[cfg(any(test, feature = "mock-integrations"))]
 #[derive(Debug, Default)]
 pub struct MockGroth16Verifier {
-    key_bytes: RwLock<HashMap<VerificationKeyId, Vec<u8>>>,
+    key_records: RwLock<HashMap<VerificationKeyId, VerificationKeyRecord>>,
     fixture_proofs: RwLock<HashMap<[u8; 32], [u8; 32]>>,
 }
 
+#[cfg(any(test, feature = "mock-integrations"))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct VerificationKeyRecord {
+    circuit_id: String,
+    schema_version: u16,
+    curve: Groth16Curve,
+    bytes: Vec<u8>,
+}
+
+#[cfg(any(test, feature = "mock-integrations"))]
 impl MockGroth16Verifier {
     /// Create an empty deterministic fixture verifier.
     pub fn new() -> Self {
@@ -653,8 +780,14 @@ impl MockGroth16Verifier {
         vk_bytes: Vec<u8>,
     ) -> Result<(), VerificationError> {
         request.validate()?;
-        self.register_verification_key(request.statement.verification_key_id, vk_bytes)
-            .await?;
+        self.register_verification_key(
+            request.statement.circuit_id.clone(),
+            request.statement.schema_version,
+            request.statement.curve,
+            request.statement.verification_key_id,
+            vk_bytes,
+        )
+        .await?;
         let mut fixtures = self
             .fixture_proofs
             .write()
@@ -664,6 +797,7 @@ impl MockGroth16Verifier {
     }
 }
 
+#[cfg(any(test, feature = "mock-integrations"))]
 #[async_trait]
 impl Groth16Verifier for MockGroth16Verifier {
     async fn verify(
@@ -671,21 +805,8 @@ impl Groth16Verifier for MockGroth16Verifier {
         request: &Groth16VerificationRequest,
     ) -> Result<VerificationResult, VerificationError> {
         request.validate()?;
-
-        let keys = self.key_bytes.read().map_err(|_| {
-            VerificationError::BackendState("verification-key lock poisoned".to_owned())
-        })?;
-        let key_bytes = keys.get(&request.statement.verification_key_id).ok_or(
-            VerificationError::VerificationKeyNotFound(request.statement.verification_key_id),
-        )?;
-        let derived = VerificationKeyId::from_key_bytes(key_bytes)?;
-        if derived != request.statement.verification_key_id {
-            return Err(VerificationError::VerificationKeyIdMismatch {
-                supplied: request.statement.verification_key_id,
-                derived,
-            });
-        }
-        drop(keys);
+        self.validate_verification_key_association(&request.statement)
+            .await?;
 
         let fixtures = self
             .fixture_proofs
@@ -697,7 +818,7 @@ impl Groth16Verifier for MockGroth16Verifier {
         let actual_proof_digest = request.proof.digest();
         if *expected_proof_digest != actual_proof_digest {
             return Err(VerificationError::InvalidProof(
-                "proof digest does not match the registered deterministic fixture".to_owned(),
+                InvalidProofReason::FixtureMismatch,
             ));
         }
 
@@ -717,9 +838,22 @@ impl Groth16Verifier for MockGroth16Verifier {
 
     async fn register_verification_key(
         &self,
+        circuit_id: String,
+        schema_version: u16,
+        curve: Groth16Curve,
         vk_id: VerificationKeyId,
         vk_bytes: Vec<u8>,
     ) -> Result<(), VerificationError> {
+        validate_circuit_id(&circuit_id)?;
+        if schema_version != GROTH16_SCHEMA_VERSION {
+            return Err(VerificationError::UnsupportedSchemaVersion(schema_version));
+        }
+        if curve != Groth16Curve::Bn254 {
+            return Err(VerificationError::UnsupportedCurve(format!(
+                "unsupported curve tag for schema version {schema_version}"
+            )));
+        }
+
         let derived = VerificationKeyId::from_key_bytes(&vk_bytes)?;
         if derived != vk_id {
             return Err(VerificationError::VerificationKeyIdMismatch {
@@ -728,23 +862,65 @@ impl Groth16Verifier for MockGroth16Verifier {
             });
         }
 
-        let mut keys = self.key_bytes.write().map_err(|_| {
+        let record = VerificationKeyRecord {
+            circuit_id,
+            schema_version,
+            curve,
+            bytes: vk_bytes,
+        };
+        let mut keys = self.key_records.write().map_err(|_| {
             VerificationError::BackendState("verification-key lock poisoned".to_owned())
         })?;
-        keys.insert(vk_id, vk_bytes);
+        if let Some(existing) = keys.get(&vk_id) {
+            if existing != &record {
+                return Err(VerificationError::VerificationKeyAssociationMismatch {
+                    verification_key_id: vk_id,
+                    registered_circuit_id: existing.circuit_id.clone(),
+                    registered_schema_version: existing.schema_version,
+                    registered_curve: existing.curve,
+                    requested_circuit_id: record.circuit_id,
+                    requested_schema_version: record.schema_version,
+                    requested_curve: record.curve,
+                });
+            }
+        } else {
+            keys.insert(vk_id, record);
+        }
         Ok(())
     }
 
-    async fn is_verification_key_known(&self, vk_id: &VerificationKeyId) -> bool {
-        let Ok(keys) = self.key_bytes.read() else {
-            return false;
-        };
-        let Some(key_bytes) = keys.get(vk_id) else {
-            return false;
-        };
-        VerificationKeyId::from_key_bytes(key_bytes)
-            .map(|derived| derived == *vk_id)
-            .unwrap_or(false)
+    async fn validate_verification_key_association(
+        &self,
+        statement: &Groth16Statement,
+    ) -> Result<(), VerificationError> {
+        let keys = self.key_records.read().map_err(|_| {
+            VerificationError::BackendState("verification-key lock poisoned".to_owned())
+        })?;
+        let record = keys.get(&statement.verification_key_id).ok_or(
+            VerificationError::VerificationKeyNotFound(statement.verification_key_id),
+        )?;
+        let derived = VerificationKeyId::from_key_bytes(&record.bytes)?;
+        if derived != statement.verification_key_id {
+            return Err(VerificationError::VerificationKeyIdMismatch {
+                supplied: statement.verification_key_id,
+                derived,
+            });
+        }
+        if record.circuit_id != statement.circuit_id
+            || record.schema_version != statement.schema_version
+            || record.curve != statement.curve
+        {
+            return Err(VerificationError::VerificationKeyAssociationMismatch {
+                verification_key_id: statement.verification_key_id,
+                registered_circuit_id: record.circuit_id.clone(),
+                registered_schema_version: record.schema_version,
+                registered_curve: record.curve,
+                requested_circuit_id: statement.circuit_id.clone(),
+                requested_schema_version: statement.schema_version,
+                requested_curve: statement.curve,
+            });
+        }
+        Ok(())
     }
 }
 
@@ -826,13 +1002,17 @@ mod tests {
 
     fn statement() -> Groth16Statement {
         let key_id = VerificationKeyId::from_key_bytes(b"test-vk").unwrap();
+        let witness_commitment = compute_witness_commitment(&[field(3), field(4)]).unwrap();
+        let commitment_inputs = witness_commitment_public_inputs(witness_commitment).unwrap();
+        let mut public_inputs = vec![field(1), field(2)];
+        public_inputs.extend_from_slice(&commitment_inputs);
         Groth16Statement {
             schema_version: GROTH16_SCHEMA_VERSION,
             curve: Groth16Curve::Bn254,
             circuit_id: "test-circuit-v1".to_owned(),
             verification_key_id: key_id,
-            public_inputs: PublicInput::new(vec![field(1), field(2)]).unwrap(),
-            witness_commitment: compute_witness_commitment(&[field(3), field(4)]).unwrap(),
+            public_inputs: PublicInput::new(public_inputs).unwrap(),
+            witness_commitment,
             block_context: BitcoinBlockContext {
                 network: BitcoinNetwork::Regtest,
                 block_height: 100,

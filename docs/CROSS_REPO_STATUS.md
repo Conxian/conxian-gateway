@@ -75,8 +75,8 @@ lib-conclave-sdk  ←  shares types with SDK (L3)
 |---|-------|--------|
 | #236 SDK | Version drift + README | ✅ Fixed (0.1.4, Developer Preview) |
 | #220 DLC CET | dlc-manager integration | ⚠️ Attempted in `453a15a`/`8ef9d05`, then reverted in `cb8b680` after API incompatibility/CI failures; remains open |
-| #219 Groth16 | Verifier boundary | 🟡 Canonical contract, fixture, and BitVM handoff implemented on `charlie/issue-219-groth16-boundary`; not merged and not cryptographic |
-| #216 Babylon | BTC header SPV | ✅ Implemented (babylon_adapter.rs) |
+| #219 Groth16 | Verifier boundary | 🟡 Canonical contract, commitment binding, fixture, and BitVM handoff defined on `charlie/issue-219-groth16-boundary`; not merged and not cryptographic |
+| #216 Babylon | BTC header SPV | ❌ Pending; adapter remains a stub while PR #253 is open |
 
 **Historical DLC commits:**
 - `453a15a` attempted the W29 P0 implementation, including `dlc_cet.rs` and `dlc-manager`.
@@ -90,7 +90,7 @@ lib-conclave-sdk  ←  shares types with SDK (L3)
 
 | Date | Repository | Session Summary |
 |------|------------|-----------------|
-| 2026-07-20 | conxian-gateway | #219 boundary milestone: canonical contract, BitVM handoff, deterministic fixture, and rejection tests completed locally; production backend remains open. |
+| 2026-07-20 | conxian-gateway | #219 boundary milestone: canonical contract, commitment binding, circuit/key association, BitVM handoff, deterministic fixture, and rejection tests completed locally; production backend remains open. |
 | 2026-07-15 | conxian-gateway | W29 P0 implementation attempt recorded; later verification found the DLC CET attempt reverted in `cb8b680`, so #220 remains open. |
 | 2026-07-15 | conxian-gateway | W29 sprint start. Full verification complete. |
 | 2026-07-14 | conxian-gateway | W28 sprint close. Gap analysis of 11 issues. Session Continuity Protocol implemented. |

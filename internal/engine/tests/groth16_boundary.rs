@@ -1,10 +1,11 @@
 use async_trait::async_trait;
+use conxian_core::ConxianError;
 use conxian_engine::bitcoin::{
-    compute_witness_commitment, parse_bitvm_groth16_envelope, BitcoinBlockContext, BitcoinNetwork,
-    FieldElement, Groth16Curve, Groth16Proof, Groth16Statement, Groth16VerificationRequest,
-    Groth16Verifier, MockGroth16Verifier, PublicInput, VerificationError, VerificationKeyId,
-    VerificationResult, BN254_SCALAR_MODULUS, GROTH16_COMPRESSED_PROOF_BYTES,
-    GROTH16_SCHEMA_VERSION,
+    compute_witness_commitment, parse_bitvm_groth16_envelope, witness_commitment_public_inputs,
+    BitcoinBlockContext, BitcoinNetwork, FieldElement, Groth16Curve, Groth16Proof,
+    Groth16Statement, Groth16VerificationRequest, Groth16Verifier, InvalidProofReason,
+    MockGroth16Verifier, PublicInput, VerificationError, VerificationKeyId, VerificationResult,
+    BN254_SCALAR_MODULUS, GROTH16_COMPRESSED_PROOF_BYTES, GROTH16_SCHEMA_VERSION,
 };
 use conxian_engine::BitVmAdapter;
 use serde::Deserialize;
@@ -20,7 +21,7 @@ const EXPECTED_FIXTURE_VERIFICATION_KEY_ID: &str =
 const EXPECTED_FIXTURE_WITNESS_COMMITMENT: &str =
     "011d59399ff1bdd26b5928ae8d0ea549017a4441a37b76e8af0392de98b0ebad";
 const EXPECTED_FIXTURE_STATEMENT_HASH: &str =
-    "76714243d66aaf96609914690c6b87856310f8dc53dcbe12c54377e103f0e00b";
+    "cb583f8fc4f52243c60340851d9fe4bfe865bfbe0ae41f1a316cefd893649758";
 
 #[derive(Debug, Deserialize)]
 struct Fixture {
@@ -80,18 +81,24 @@ fn fixture_statement(data: &Fixture) -> Groth16Statement {
     assert_eq!(data.witness_commitment, EXPECTED_FIXTURE_WITNESS_COMMITMENT);
     assert_eq!(hex::encode(witness_commitment), data.witness_commitment);
 
+    let public_inputs = PublicInput::new(
+        data.public_inputs
+            .iter()
+            .map(|value| field(value))
+            .collect(),
+    )
+    .expect("fixture public inputs");
+    let commitment_inputs = witness_commitment_public_inputs(witness_commitment)
+        .expect("fixture commitment public inputs");
+    assert_eq!(public_inputs.values.len(), 5);
+    assert_eq!(&public_inputs.values[3..], commitment_inputs.as_slice());
+
     Groth16Statement {
         schema_version: data.schema_version,
         curve: data.curve.parse::<Groth16Curve>().expect("fixture curve"),
         circuit_id: data.circuit_id.clone(),
         verification_key_id: key_id,
-        public_inputs: PublicInput::new(
-            data.public_inputs
-                .iter()
-                .map(|value| field(value))
-                .collect(),
-        )
-        .expect("fixture public inputs"),
+        public_inputs,
         witness_commitment,
         block_context: BitcoinBlockContext {
             network: data
@@ -149,20 +156,67 @@ impl Groth16Verifier for CountingVerifier {
     ) -> Result<VerificationResult, VerificationError> {
         self.verify_calls.fetch_add(1, Ordering::SeqCst);
         Err(VerificationError::InvalidProof(
-            "test verifier must not be called for malformed input".to_owned(),
+            InvalidProofReason::BackendRejected,
         ))
     }
 
     async fn register_verification_key(
         &self,
+        _circuit_id: String,
+        _schema_version: u16,
+        _curve: Groth16Curve,
         _vk_id: VerificationKeyId,
         _vk_bytes: Vec<u8>,
     ) -> Result<(), VerificationError> {
         Ok(())
     }
 
-    async fn is_verification_key_known(&self, _vk_id: &VerificationKeyId) -> bool {
-        false
+    async fn validate_verification_key_association(
+        &self,
+        _statement: &Groth16Statement,
+    ) -> Result<(), VerificationError> {
+        Ok(())
+    }
+}
+
+#[derive(Default)]
+struct InvalidResultVerifier {
+    verify_calls: AtomicUsize,
+}
+
+#[async_trait]
+impl Groth16Verifier for InvalidResultVerifier {
+    async fn verify(
+        &self,
+        request: &Groth16VerificationRequest,
+    ) -> Result<VerificationResult, VerificationError> {
+        self.verify_calls.fetch_add(1, Ordering::SeqCst);
+        Ok(VerificationResult {
+            valid: false,
+            vk_id: request.statement.verification_key_id,
+            public_inputs: request.statement.public_inputs.clone(),
+            statement_hash: request.statement_hash,
+            transcript: [0u8; 32],
+            verified_at_height: request.current_block_height,
+        })
+    }
+
+    async fn register_verification_key(
+        &self,
+        _circuit_id: String,
+        _schema_version: u16,
+        _curve: Groth16Curve,
+        _vk_id: VerificationKeyId,
+        _vk_bytes: Vec<u8>,
+    ) -> Result<(), VerificationError> {
+        Ok(())
+    }
+
+    async fn validate_verification_key_association(
+        &self,
+        _statement: &Groth16Statement,
+    ) -> Result<(), VerificationError> {
+        Ok(())
     }
 }
 
@@ -183,7 +237,7 @@ async fn fixture_reproduces_commitment_hash_and_validates_end_to_end() {
     let result = verifier.verify(&request).await.unwrap();
     assert!(result.valid);
     assert_eq!(result.statement_hash, request.statement_hash);
-    assert_eq!(result.public_inputs.values.len(), 3);
+    assert_eq!(result.public_inputs.values.len(), 5);
 
     let adapter = BitVmAdapter::with_verifier("regtest".to_owned(), Arc::clone(&verifier));
     let handoff = adapter
@@ -229,6 +283,53 @@ async fn malformed_envelope_is_rejected_before_verifier_invocation() {
         .await
         .is_err());
     assert_eq!(verifier.verify_calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn witness_commitment_public_input_mismatch_is_rejected_before_backend() {
+    let data = fixture();
+    let verifier = CountingVerifier::default();
+    let adapter = BitVmAdapter::new("regtest".to_owned());
+    let mut envelope = fixture_envelope(&data);
+    envelope["public_inputs"][4] =
+        json!("00000000000000000000000000000000017a4441a37b76e8af0392de98b0ebae");
+
+    assert!(matches!(
+        parse_bitvm_groth16_envelope(envelope.clone(), data.current_block_height),
+        Err(VerificationError::WitnessCommitmentPublicInputMismatch { slot: 4, .. })
+    ));
+    let error = adapter
+        .verify_groth16_envelope_with(&verifier, envelope, data.current_block_height)
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        ConxianError::Security(message)
+            if message.contains("witness commitment public-input mismatch")
+    ));
+    assert_eq!(verifier.verify_calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn backend_invalid_result_is_mapped_to_fail_closed_invalid_proof() {
+    let data = fixture();
+    let verifier = InvalidResultVerifier::default();
+    let adapter = BitVmAdapter::new("regtest".to_owned());
+
+    let error = adapter
+        .verify_groth16_envelope_with(
+            &verifier,
+            fixture_envelope(&data),
+            data.current_block_height,
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        ConxianError::Security(message)
+            if message.contains("invalid proof: backend returned an invalid proof result")
+    ));
+    assert_eq!(verifier.verify_calls.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test]
@@ -283,7 +384,7 @@ async fn witness_commitment_proof_vk_and_circuit_mutations_are_rejected() {
     stale_commitment.statement.witness_commitment[0] ^= 1;
     assert!(matches!(
         verifier.verify(&stale_commitment).await,
-        Err(VerificationError::StatementHashMismatch { .. })
+        Err(VerificationError::WitnessCommitmentPublicInputMismatch { .. })
     ));
 
     let mut proof_bytes = request.proof.as_bytes().to_vec();
@@ -324,12 +425,18 @@ async fn witness_commitment_proof_vk_and_circuit_mutations_are_rejected() {
     .unwrap();
     assert!(matches!(
         verifier.verify(&wrong_circuit_request).await,
-        Err(VerificationError::FixtureNotRegistered(_))
+        Err(VerificationError::VerificationKeyAssociationMismatch { .. })
     ));
 
     assert!(matches!(
         verifier
-            .register_verification_key(VerificationKeyId([9u8; 32]), b"wrong-vk".to_vec())
+            .register_verification_key(
+                data.circuit_id.clone(),
+                data.schema_version,
+                Groth16Curve::Bn254,
+                VerificationKeyId([9u8; 32]),
+                b"wrong-vk".to_vec(),
+            )
             .await,
         Err(VerificationError::VerificationKeyIdMismatch { .. })
     ));
@@ -374,6 +481,10 @@ fn statement_hash_binds_identity_inputs_commitment_and_block_context() {
 
     let mut commitment = statement.clone();
     commitment.witness_commitment[0] ^= 1;
+    let commitment_inputs =
+        witness_commitment_public_inputs(commitment.witness_commitment).unwrap();
+    let commitment_start = commitment.public_inputs.values.len() - commitment_inputs.len();
+    commitment.public_inputs.values[commitment_start..].copy_from_slice(&commitment_inputs);
     assert_ne!(commitment.statement_hash().unwrap(), baseline);
 
     let mut network = statement.clone();

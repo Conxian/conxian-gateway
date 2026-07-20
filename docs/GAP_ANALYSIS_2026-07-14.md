@@ -9,20 +9,20 @@
 
 This report provides a systematic gap analysis comparing all 11 open GitHub issues against the actual codebase implementation. Issues are classified by implementation status.
 
-> **Continuity correction — 2026-07-20:** The tables above are the original
-> 2026-07-14 snapshot. A follow-up check found that `main` contained a partial
-> `groth16_verifier.rs` trait skeleton, so the original “not implemented” label
-> understated the existing code while overstating the completed contract. The
-> focused `charlie/issue-219-groth16-boundary` branch now completes the
-> canonical statement contract, validation, BitVM handoff, fixture, and
-> rejection tests. It is not merged in this phase and does not provide a
+> **Continuity correction — 2026-07-20:** A follow-up check found that `main`
+> contained a partial `groth16_verifier.rs` trait skeleton, so the original
+> “not implemented” label understated the existing code while overstating the
+> completed contract. The focused `charlie/issue-219-groth16-boundary` branch
+> defines the canonical statement contract, commitment public-input binding,
+> circuit/key association, validation, BitVM handoff, fixture, and rejection
+> tests. It is not merged in this phase and does not provide a production
 > cryptographic Groth16 backend.
 
 | Status | Count | Issues |
 |--------|-------|--------|
 | ✅ Complete | 2 | #228 (Phase 1), #222 (mostly) |
-| ⚠️ Partial | 4 | #236, #220, #218, #193, #199 |
-| ❌ Not Implemented | 3 | #219, #216, #202 |
+| ⚠️ Partial | 6 | #236, #220, #219, #218, #193, #199 |
+| ❌ Not Implemented | 1 | #216 |
 | 🔬 Research Only | 2 | #189, #202 |
 
 ---
@@ -126,16 +126,16 @@ This report provides a systematic gap analysis comparing all 11 open GitHub issu
 
 ### #219: [BITVM] Define Groth16 verifier boundary and test-vector contract
 
-**Status:** ⚠️ Partial — a trait skeleton exists on `main`; the canonical boundary milestone is implemented on the focused 2026-07-20 branch
+**Status:** ⚠️ Partial — the canonical boundary milestone is defined on the focused 2026-07-20 branch; production cryptographic verification remains unimplemented
 
 **Code Verified:**
-- ✅ `internal/engine/src/bitcoin/groth16_verifier.rs` — initial trait/types existed on `main`; the focused branch hardens them into a backend-neutral canonical contract
+- ✅ `internal/engine/src/bitcoin/groth16_verifier.rs` — initial trait/types existed on `main`; the focused branch hardens them into a backend-neutral canonical contract with circuit-bound commitment limbs and key association
 - ✅ `internal/engine/src/bitcoin/bitvm_adapter.rs` — metadata adapter remains, with an explicit validated Groth16 envelope handoff on the focused branch
 - ❌ No production Groth16 pairing backend or prover dependency (intentionally out of scope)
 
 **What Exists:**
 - ✅ `risc0_verifier.rs` — RISC Zero STF verifier (Bonsai, Boundless, Local)
-- ✅ `bitvm_adapter.rs` — Stub adapter (returns 0 for height)
+- ✅ `bitvm_adapter.rs` — Legacy metadata adapter (height remains `0` in the chain-state path) plus a validated Groth16 envelope handoff on the focused branch
 - ✅ `citrea_adapter.rs` — ZK-rollup adapter
 
 **Required Actions:**
@@ -170,7 +170,7 @@ This report provides a systematic gap analysis comparing all 11 open GitHub issu
 
 ### #216: [BABYLON] Implement BTC header-chain query + verification path before EOTS work
 
-**Status:** ❌ Not Implemented — BTC header-chain verification missing
+**Status:** ❌ Not Implemented — BTC header-chain verification missing; PR #253 remains open
 
 **Code Verified:**
 - ✅ `babylon_adapter.rs`:
