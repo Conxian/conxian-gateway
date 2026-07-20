@@ -2,9 +2,9 @@
 
 > **Experimental BitVMX evaluation only; unaudited; not valid for settlement.**
 
-This document records the approved, deliberately narrow implementation for
-GitHub issue #189. It is an evaluation harness, not a production BitVM3 or
-BitVMX-GC integration.
+This document records the deliberately narrow implementation for GitHub issue
+#189. It is an evaluation harness, not a production BitVM3, BitVMX-GC, Groth16,
+garbled-circuit, settlement, compliance, or gateway integration.
 
 ## Decision and exact pin
 
@@ -16,10 +16,9 @@ d390832c8e0f2a01453e8ef4bf65dbe715fb9236
 
 GOATNetwork/bitvm2-gc, garbled circuits, Groth16, recursive proofs, and BitVM3
 remain follow-up research, not dependencies of this spike. Upstream source and
-binaries are not vendored because the repository's public license metadata and
-checked-in license text are not treated as reconciled. Operators build the
-upstream emulator externally, record the exact revision in a sidecar, and pin
-the resulting executable SHA-256 in a local manifest.
+binaries are not vendored because public license metadata and checked-in license
+text are not treated as reconciled. Operators build the upstream emulator
+externally and record the exact revision and executable hash locally.
 
 ## Architecture and threat model
 
@@ -28,90 +27,130 @@ the resulting executable SHA-256 in a local manifest.
 workspace, gateway adapters, API, compliance, auth, metrics, persistence, and
 settlement paths do not depend on or invoke it.
 
-The harness validates a versioned manifest, executable hash, revision sidecar,
-fixture hash, and fixed safety flags before constructing a direct argv vector.
-It closes stdin, clears the child environment, captures stdout/stderr with a
-1 GiB aggregate bound, monitors wall time/RSS, and parses only the upstream
-`Execution result: Halt(value, step)` and `LimitStepReached(step)` shapes.
-Reports record measurements and hashes but never assert proof validity.
+The schema-v2 manifest requires fixed safety flags, lowercase executable and
+fixture hashes, an exact revision sidecar, and an external network-deny marker.
+Before canonicalization, every original input path component is checked for
+symlinks and directory/regular-file type. Canonical path and file identity are
+rechecked immediately before execution and before post-run collection. Reports
+record pre/post hashes and identities; this is not a claim that a general
+filesystem race is impossible at the kernel level.
 
-The primary threats are a wrong or replaced executable, corrupted fixture,
-unbounded resource use, output parser confusion, accidental network access, and
-result-class overclaiming. Hashes, revision sidecars, post-run rehashing,
-timeouts, RSS/output limits, strict parsing, and fixed non-production report
-flags address the first five partially. A path-level TOCTOU window and host
-process-monitoring limitations remain.
+Relative input paths are resolved from the manifest directory; absolute paths
+are allowed but receive the same component/type/identity checks. The runner
+closes stdin, clears the child environment, captures stdout/stderr
+with an aggregate bound, monitors direct-child wall time/RSS, detects Linux
+descendant processes, cleans up only verified child-owned processes, and parses
+one anchored upstream result line. Artifact files are streamed through hard
+per-file and aggregate byte limits and checked against manifest SHA-256 values.
+Reports are published through a unique `create_new` temporary file, file sync,
+atomic rename, and a Unix parent-directory sync.
 
-Network isolation is **not** implemented portably by the runner. The caller
-must launch it inside an approved external sandbox with network denied and set:
+Network isolation is **not** implemented by the runner. The caller must launch
+it inside an approved external sandbox with network denied and set:
 
 ```text
 BITVMX_EVAL_SANDBOX_ACTIVE=1
 BITVMX_EVAL_SANDBOX_MODE=network-deny
 ```
 
-The runner fails closed if either marker is absent or wrong. These markers are
-only a preflight protocol; they do not prove that the caller actually isolated
-the process. The exact behavior and platform caveat are documented in
-[`tools/bitvmx-eval/README.md`](../../tools/bitvmx-eval/README.md).
+These markers are only a preflight protocol; they do not prove that the caller
+actually isolated the process.
 
 ## Manifest/report contract
 
 The checked-in template is
-[`tools/bitvmx-eval/manifests/bitvmx-cpu-eval-v1.json`](../../tools/bitvmx-eval/manifests/bitvmx-cpu-eval-v1.json).
-Manifest schema is `bitvmx-eval-manifest-v1`; report schema is
-`bitvmx-eval-report-v1`.
+[`tools/bitvmx-eval/manifests/bitvmx-cpu-eval-v2.json`](../../tools/bitvmx-eval/manifests/bitvmx-cpu-eval-v2.json).
+The manifest schema is `bitvmx-eval-manifest-v2`; the report schema is
+`bitvmx-eval-report-v2`.
+
+Artifact entries require `name`, `path`, an expected lowercase `sha256`, and a
+`max_size_bytes` value. `limits.max_artifact_bytes` and
+`limits.max_total_artifact_bytes` provide hard per-artifact and aggregate
+ceilings. Defaults are 64 MiB and 256 MiB; the hard artifact ceiling is 1 GiB.
+Missing, non-regular, unreadable, oversized, aggregate-limit, and hash-mismatch
+artifacts are explicit report failures. No unbounded artifact read is used.
 
 Every report carries:
 
-- `experimental: true`, `production_supported: false`,
-  `cryptographic_verification: false`;
+- the exact warning and fixed `experimental`/non-production flags;
 - backend and exact upstream revision;
-- executable and fixture identity/SHA-256 values;
-- expected and actual result class;
-- exact command and arguments;
-- wall time, best-effort CPU timings, maximum RSS, and parseable executed steps;
-- captured output and selected artifact sizes/SHA-256 hashes;
-- OS/tool versions and process exit status;
+- the resource scope and whether a descendant process was detected;
+- executable and fixture pre/post hashes, sizes, identities, and errors;
+- exact pre/post revision-sidecar bytes as hex and exactness flags;
+- expected/actual result class and return value, plus limit-step observations;
+- command, arguments, wall/CPU/RSS measurements, and output hashes;
+- artifact expectations, sizes, hashes, completeness, and errors;
+- environment/tool versions, exit status, and failure details;
 - `proof_size_bytes: null` and
   `proof_size_reason: "not_applicable_cpu_backend"`.
 
-The exact warning string must remain unchanged:
+Once the report destination itself is valid and writable, execution and
+post-run failures publish a durable failure report before returning rejection.
+The report path cannot alias the executable, sidecar, fixture, or artifact by
+canonical path or Unix device/inode identity.
+
+## Resource policy and platform boundary
+
+The Linux manifest must select exactly:
 
 ```text
-Experimental BitVMX evaluation only; unaudited; not valid for settlement.
+linux-direct-child-only-with-descendant-detection-fail-closed
 ```
 
-## Resource policy and fail-closed cases
+Metrics and limits apply to the direct child only. Linux `/proc` inspection
+detects descendants and fails closed if one appears; it is not aggregate
+process-tree accounting and not a cgroup guarantee. A dedicated process group
+and start-time checks prevent killing an unrelated reused PID/group during
+cleanup. Nonblocking Linux pipe readers plus a stop flag prevent rejection
+cleanup from waiting indefinitely on inherited output descriptors.
 
-The defaults are 2.5 GiB maximum RSS, five minutes for `small`, ten minutes
-for `scaled`, and 1 GiB aggregate captured output. A manifest may request
-stricter values, never looser ones. The harness rejects missing/non-regular
-files, symlinks, hash or revision mismatches, malformed manifests or input,
-fixture corruption, nonzero exits, timeout/RSS/output-limit violations,
-malformed/unrecognized output, post-run file changes, and unexpected result
-classes. It has no `MockGroth16Verifier` fallback and no success-to-verification
-mapping.
+Non-Linux execution is explicitly unavailable in this build. The schema reserves
+`non-linux-direct-child-only-weaker-mode`, but the runner rejects it instead of
+silently claiming equivalent cleanup or resource semantics.
 
-## Reproducible external build and benchmark
+The default direct-child RSS ceiling is 2.5 GiB, small/scaled timeouts are five
+and ten minutes, and aggregate stdout/stderr capture defaults to 1 GiB. Values
+can only be tightened in a manifest.
 
-Build the upstream emulator from a detached checkout of the exact pin, hash the
-result, and create the required revision sidecar. Do not commit that binary.
-See the command sequence and license caveat in the tool README.
+## Result parser and fail-closed cases
 
-For a benchmark, use one warmup and five small samples, then three samples for
-an approximately 100K-step fixture. Run sequentially with `/usr/bin/time -v`.
-Record median/min/max/stddev for wall and CPU time, RSS, steps, output/artifact
-sizes, and hashes. Compare execute-only against trace/checkpoint modes and
-measure the wrapper's process/serialization overhead separately. Trace bytes
-must never be described as proof bytes.
+Exactly one complete result line is accepted across stdout/stderr:
+
+```text
+INFO Execution result: Halt(<u32>, <u64>)
+Execution result: Halt(<u32>, <u64>)
+INFO Execution result: LimitStepReached(<u64>)
+Execution result: LimitStepReached(<u64>)
+```
+
+Any other line containing `Execution result:`, multiple candidates, malformed
+fields, missing output, wrong class, unexpected return value, or unexpected
+limit-step count rejects the evaluation. Other rejection classes include path
+component/type violations, exact sidecar/hash/identity failures, process
+timeout/RSS/output/descendant/cleanup failures, nonzero exits, and all artifact
+failures. There is no `MockGroth16Verifier` fallback.
+
+An expected `halt_failure` is only a deterministic result classification and
+still has `cryptographic_verification: false`. A successful report is not proof,
+settlement authorization, or compliance approval.
+
+## Test provenance
+
+The integration tests compile `tests/fixtures/helper.rs` into temporary
+per-case executables. The helper is synthetic and is **not** upstream BitVMX
+execution. No test downloads, vendors, or claims upstream execution. Coverage
+includes positive success, expected halt failure, positive limit-reached
+results, symlink and non-regular path bypasses, exact sidecar bytes, pre/post
+hash and identity mutation/deletion, parser spoofing, same-class return-value
+errors, sandbox markers, Linux descendant cleanup, resource limits, artifact
+hash/size/missing/read failures, report aliasing, and repeated report writes.
 
 ## Graduation criteria
 
 Do not promote this spike into gateway code until licensing is resolved, an
 external build is reproducible, positive and negative vectors are independently
 reviewed and deterministic, resource use fits the target environment, network
-and process isolation are enforced rather than merely asserted, a real
-cryptographic verification contract exists, and a separate security review
+and aggregate process isolation are enforced rather than merely asserted, a
+real cryptographic verification contract exists, and a separate security review
 approves the intended role. Otherwise retain the **Research / Evaluation Only**
 classification.

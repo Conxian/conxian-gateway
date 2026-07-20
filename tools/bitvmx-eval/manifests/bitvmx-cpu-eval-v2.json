@@ -1,6 +1,6 @@
 {
-  "schema_version": "bitvmx-eval-manifest-v1",
-  "manifest_version": 1,
+  "schema_version": "bitvmx-eval-manifest-v2",
+  "manifest_version": 2,
   "warning": "Experimental BitVMX evaluation only; unaudited; not valid for settlement.",
   "experimental": true,
   "production_supported": false,
@@ -30,11 +30,14 @@
   "limits": {
     "max_rss_bytes": null,
     "timeout_seconds": null,
-    "max_output_bytes": null
+    "max_output_bytes": null,
+    "max_artifact_bytes": null,
+    "max_total_artifact_bytes": null
   },
   "sandbox": {
     "mode": "external-preflight",
-    "network_policy": "deny"
+    "network_policy": "deny",
+    "resource_scope": "linux-direct-child-only-with-descendant-detection-fail-closed"
   },
   "artifacts": []
 }
