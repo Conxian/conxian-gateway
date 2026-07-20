@@ -1,0 +1,68 @@
+services:
+  bitcoin:
+    image: bitcoin/bitcoin:31.1@sha256:da25cedc66b1daefff9f412ee196c901a899c3fa68a33b20849c3e08b5c40d63
+    command:
+      - -printtoconsole
+      - -regtest
+      - -server=1
+      - -txindex=1
+      - -listen=0
+      - -discover=0
+      - -rpcbind=0.0.0.0
+      - -rpcallowip=172.30.0.0/24
+      - -rpcport=18443
+      # These credentials are intentionally static and test-only.
+      - -rpcuser=regtest
+      - -rpcpassword=bitcoin-regtest-only-password
+      - -fallbackfee=0.0002
+    ports:
+      - "127.0.0.1:${BITCOIN_RPC_PORT:-18443}:18443"
+    volumes:
+      - bitcoin-data:/home/bitcoin/.bitcoin
+    networks:
+      - liquid-e2e
+
+  elements:
+    image: blockstream/elementsd:23.3.3@sha256:1abe3ae514662492279c9ba8adc94fea46a0fa60efdd62f4eb93d3e803adff37
+    depends_on:
+      bitcoin:
+        condition: service_started
+    command:
+      - elementsd
+      - -printtoconsole
+      - -chain=elementsregtest
+      - -server=1
+      - -txindex=1
+      - -listen=0
+      - -discover=0
+      - -rpcbind=0.0.0.0
+      - -rpcallowip=172.30.0.0/24
+      - -rpcport=18884
+      # These credentials are intentionally static and test-only.
+      - -rpcuser=elements
+      - -rpcpassword=elements-regtest-only-password
+      - -fallbackfee=0.0002
+      - -validatepegin=1
+      - -fedpegscript=512103dff4923d778550cc13ce0d887d737553b4b58f4e8e886507fc39f5e447b2186451ae
+      - -peginconfirmationdepth=${PEGIN_CONFIRMATION_DEPTH:-10}
+      - -mainchainrpchost=bitcoin
+      - -mainchainrpcport=18443
+      - -mainchainrpcuser=regtest
+      - -mainchainrpcpassword=bitcoin-regtest-only-password
+    ports:
+      - "127.0.0.1:${ELEMENTS_RPC_PORT:-18884}:18884"
+    volumes:
+      - elements-data:/root/.elements
+    networks:
+      - liquid-e2e
+
+networks:
+  liquid-e2e:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+
+volumes:
+  bitcoin-data:
+  elements-data:

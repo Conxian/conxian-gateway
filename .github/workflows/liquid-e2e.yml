@@ -1,0 +1,78 @@
+name: Liquid Regtest E2E
+
+on:
+  pull_request:
+    branches: [main, staged, dev]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - ".github/workflows/liquid-e2e.yml"
+      - "scripts/liquid-e2e.sh"
+      - "tests/liquid-e2e/**"
+      - "internal/engine/src/bitcoin/liquid_adapter.rs"
+  workflow_dispatch:
+    inputs:
+      pegin_confirmation_depth:
+        description: "Elements peg-in confirmation depth (2-1000)"
+        required: false
+        default: "10"
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  COMPOSE_PROJECT_NAME: liquid-e2e-${{ github.run_id }}
+  PEGIN_CONFIRMATION_DEPTH: ${{ inputs.pegin_confirmation_depth || '10' }}
+
+jobs:
+  liquid-regtest:
+    name: Bitcoin + Elements regtest harness
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v4.2.2
+
+      - name: Verify Docker and jq prerequisites
+        run: |
+          docker --version
+          docker compose version
+          jq --version
+
+      - name: Check harness syntax
+        run: bash -n scripts/liquid-e2e.sh
+
+      - name: Validate Docker Compose configuration
+        run: docker compose --file tests/liquid-e2e/docker-compose.yml config --quiet
+
+      - name: Run local Liquid E2E harness
+        run: ./scripts/liquid-e2e.sh
+        env:
+          OUTPUT_DIR: target/liquid-e2e
+
+      - name: Clean up Liquid E2E Compose project
+        if: always()
+        run: |
+          mkdir -p target/liquid-e2e
+          docker compose \
+            --project-name "$COMPOSE_PROJECT_NAME" \
+            --file tests/liquid-e2e/docker-compose.yml \
+            ps > target/liquid-e2e/workflow-compose-ps.txt 2>&1 || true
+          docker compose \
+            --project-name "$COMPOSE_PROJECT_NAME" \
+            --file tests/liquid-e2e/docker-compose.yml \
+            logs --no-color > target/liquid-e2e/workflow-compose.log 2>&1 || true
+          docker compose \
+            --project-name "$COMPOSE_PROJECT_NAME" \
+            --file tests/liquid-e2e/docker-compose.yml \
+            down --volumes --remove-orphans || true
+
+      - name: Upload Liquid E2E fixtures and logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4.6.1
+        with:
+          name: liquid-e2e-${{ github.run_id }}
+          path: target/liquid-e2e
+          if-no-files-found: warn
+          retention-days: 7
