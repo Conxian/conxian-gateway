@@ -13,23 +13,23 @@ describe('ConxianClient', () => {
     });
 
     it('should verify state proof via UCV-1 endpoint', async () => {
-        const mockResponse = { chain: 'bitcoin', verified: true };
+        const mockResponse = { chain: 'bitvm', verified: true };
         (global.fetch as any).mockResolvedValue({
             ok: true,
             json: async () => mockResponse,
         });
 
-        const result = await client.verifyStateProof('bitcoin', { txid: '123' });
+        const result = await client.verifyStateProof('bitvm', { root_hash: '0xabc123' });
 
         expect(global.fetch).toHaveBeenCalledWith(
-            expect.stringContaining('/api/v1/chains/bitcoin/verify'),
+            expect.stringContaining('/api/v1/chains/bitvm/verify'),
             expect.objectContaining({
                 method: 'POST',
                 headers: expect.objectContaining({
                     'Authorization': 'Bearer test-token',
                     'Content-Type': 'application/json',
                 }),
-                body: JSON.stringify({ txid: '123' }),
+                body: JSON.stringify({ root_hash: '0xabc123' }),
             })
         );
         expect(result).toEqual(mockResponse);
