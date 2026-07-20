@@ -3,6 +3,10 @@ name = "gateway"
 version.workspace = true
 edition.workspace = true
 
+[features]
+default = []
+rgb-native = ["conxian_engine/rgb-native"]
+
 [lib]
 name = "gateway_lib"
 path = "src/config.rs"
@@ -23,6 +27,7 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 serde_json.workspace = true
 tower.workspace = true
+url.workspace = true
 http-body-util = "0.1.3"
 
 [dev-dependencies]
