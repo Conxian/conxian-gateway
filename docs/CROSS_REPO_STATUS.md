@@ -1,6 +1,6 @@
 # Cross-Repository Status Dashboard
 
-**Last Updated:** 2026-07-15  
+**Last Updated:** 2026-07-20
 **Sprint:** W29 (2026-07-15 to 2026-07-25)  
 **Maintained By:** Agent sessions
 
@@ -84,6 +84,21 @@ lib-conclave-sdk  ←  shares types with SDK (L3)
 - `cb8b680` removed `dlc_cet`, `dlc-manager`, and related wiring after API incompatibility/CI failures.
 - `cc10886` recorded the superseded completion claim; see `docs/SESSION_SUMMARY_2026-07-20.md` for the correction.
 
+**Liquid #218/#193 status (2026-07-20):**
+
+- ✅ PR #257 merged the host-daemon Elements/Bitcoin peg-in/peg-out harness in
+  `tests/liquid/`, including pinned daemon archives, checksum verification,
+  real `claimpegin`/confidential-transfer/`sendtomainchain` coverage, and
+  artifact upload.
+- 🟡 PR #258 is the narrow follow-up for workflow/path hardening, configurable
+  peg-in depth, verifier delegation coverage, and gateway API coverage.  It
+  removes the duplicate Compose harness and keeps the merged host-daemon
+  workflow as the CI entry point.
+- ⚠️ The merged harness is not a production proof backend.  The
+  `LiquidAdapter::verify_state_proof` boundary remains unwired and
+  fail-closed; caller-supplied metadata is rejected rather than treated as a
+  trusted Liquid state proof.
+
 ---
 
 ## Session History
@@ -117,7 +132,7 @@ Before starting work on any repo, verify:
 
 ### P1-P3 Issues (Future Sprints)
 - #222 CI/CD coverage threshold
-- #218/#193 Liquid harness
+- #218/#193 Liquid harness ✅ host-daemon harness merged; PR #258 hardening follow-up open; production proof backend unwired
 - #189 BitVM3 research monitoring
 
 ---

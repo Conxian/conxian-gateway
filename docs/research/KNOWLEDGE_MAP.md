@@ -66,7 +66,7 @@
 |:---|:---|:---|:---|
 | **Bitcoin L1** | `internal/engine/src/bitcoin/` | ✅ Live | Block listener, UTXO tracking, reorg detection |
 | **Lightning** | `internal/api/src/lightning.rs` | ✅ Live | x402 payment execution, replay guard, retry |
-| **Liquid** | `internal/engine/src/bitcoin/liquid_adapter.rs` | ✅ Live | Confidential assets, federated peg tracking |
+| **Liquid** | `internal/engine/src/bitcoin/liquid_adapter.rs` | 🟡 Harnessed / fail-closed proof boundary | Elements peg-in/peg-out harness; production state-proof backend unwired |
 | **RGB v0.12** | `internal/engine/src/bitcoin/rgb_adapter.rs` + `rgb_native.rs` + `rgb_stash.rs` | ✅ Live | StashResolver (P1), ContractVerify pending (P2), consignment pending |
 | **BitVM2** | `internal/engine/src/bitcoin/bitvm_adapter.rs` | ✅ Live | Verification bridges, Groth16 proof verification |
 | **Babylon** | `internal/engine/src/bitcoin/babylon_adapter.rs` | ✅ Live | BTC timestamping, checkpoint proofs |
