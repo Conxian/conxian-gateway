@@ -8,7 +8,7 @@ pub use bitcoin::{
     BabylonAdapter, BabylonHeaderInfoResponse, BabylonHeaderSource, BabylonHttpClient,
     BabylonMainChainResponse, BabylonPagination, BabylonTipResponse, BitVmAdapter, BitcoinListener,
     BitcoinRpc, BitcoinRpcClient, BtcHeaderInfo, FedimintAdapter, FeeBumpPolicyConfig,
-    LiquidAdapter, MempoolOrchestrator, NodeRgbAdapter, StrataAdapter,
+    LiquidAdapter, MempoolOrchestrator, NodeRgbAdapter, StashResolver, StrataAdapter,
 };
 pub use coordination::RedisCoordinator;
 pub use ntt::{CitreaAdapter, NttRelayer, RootstockAdapter};

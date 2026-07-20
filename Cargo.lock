@@ -1152,6 +1152,7 @@ dependencies = [
  "async-trait",
  "bitcoin",
  "bitcoincore-rpc",
+ "bp-core",
  "bp-esplora",
  "conxian_core",
  "minreq 3.0.0",
@@ -1163,6 +1164,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "tracing",
+ "url",
 ]
 
 [[package]]
@@ -1740,6 +1742,7 @@ dependencies = [
  "tower",
  "tracing",
  "tracing-subscriber 0.3.23",
+ "url",
 ]
 
 [[package]]
