@@ -7,6 +7,20 @@ import {
   runProofPath,
 } from './index';
 
+const HEALTH_RESPONSE = {
+  status: 'ok',
+  version: '0.1.4',
+  bitcoin: {
+    status: 'syncing',
+    height: 0,
+  },
+  stacks: {
+    status: 'syncing',
+    height: 0,
+    epoch: null,
+  },
+} as const;
+
 describe('developer sandbox proof path', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -19,7 +33,7 @@ describe('developer sandbox proof path', () => {
     fetchMock
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ status: 'healthy' }),
+        json: async () => HEALTH_RESPONSE,
       })
       .mockResolvedValueOnce({
         ok: true,
@@ -59,7 +73,7 @@ describe('developer sandbox proof path', () => {
       }),
     );
     expect(result).toEqual({
-      health: { status: 'healthy' },
+      health: HEALTH_RESPONSE,
       supportedChains: { supported_chains: ['bitvm'] },
       bitvmProofRehearsal: { chain: 'bitvm', verified: true },
     });
@@ -72,7 +86,7 @@ describe('developer sandbox proof path', () => {
 
   it('allows the proof path to be injected with a client double', async () => {
     const client: DeveloperSandboxClient = {
-      getHealth: vi.fn().mockResolvedValue({ status: 'healthy' }),
+      getHealth: vi.fn().mockResolvedValue(HEALTH_RESPONSE),
       getSupportedChains: vi.fn().mockResolvedValue({ supported_chains: ['bitvm'] }),
       verifyStateProof: vi.fn().mockResolvedValue({ chain: 'bitvm', verified: true }),
     };
