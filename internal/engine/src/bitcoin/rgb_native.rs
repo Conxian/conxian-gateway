@@ -1,8 +1,7 @@
 //! RGB v0.12 native boundaries, feature-gated behind `rgb-native`.
 //!
-//! Phase 1.5 deliberately stops at canonical contract-ID parsing and stash
-//! metadata presence. Full `ContractVerify`, consignment handling, and
-//! signature policy remain Phase 2 work for issue #228.
+//! Native boundaries use the RGB filesystem stockpile for consensus presence
+//! checks. Metadata lookup remains descriptive only; it is never a proof.
 
 use conxian_core::{ConxianError, ConxianResult};
 use std::sync::Arc;
@@ -14,7 +13,7 @@ use crate::bitcoin::StashResolver;
 
 const INVALID_CONTRACT_ID: &str = "invalid RGB contract ID; expected contract: Baid64";
 
-/// Verifies an RGB transition against the local Phase 1.5 stash boundary.
+/// Verifies an RGB transition against a persisted RGB stockpile contract.
 ///
 /// The input must be a canonical `contract:` Baid64 ID. A valid but unknown
 /// contract is rejected (`Ok(false)`); an invalid ID or missing native resolver
@@ -31,7 +30,10 @@ pub fn verify_transition_native(
     resolver.verify_transition(&canonical_id)
 }
 
-/// Resolves RGB contract metadata from the local Phase 1.5 stash.
+/// Resolves descriptive RGB contract metadata from the JSON cache.
+///
+/// This function is intentionally not a consensus-verification API. Callers
+/// must use [`verify_transition_native`] for the stockpile boundary.
 #[cfg(feature = "rgb-native")]
 pub fn lookup_contract_native(
     contract_id: &str,
