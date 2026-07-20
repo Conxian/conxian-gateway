@@ -1,0 +1,40 @@
+{
+  "schema_version": "bitvmx-eval-manifest-v1",
+  "manifest_version": 1,
+  "warning": "Experimental BitVMX evaluation only; unaudited; not valid for settlement.",
+  "experimental": true,
+  "production_supported": false,
+  "cryptographic_verification": false,
+  "backend": "bitvmx-cpu",
+  "upstream_revision": "d390832c8e0f2a01453e8ef4bf65dbe715fb9236",
+  "executable": {
+    "path": "./bin/bitvmx-cpu",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "revision_file": "./bin/bitvmx-cpu.revision"
+  },
+  "fixture": {
+    "id": "operator-supplied-bitvmx-cpu-elf",
+    "path": "./fixtures/operator-supplied.elf",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "kind": "elf",
+    "expected_result_class": "halt_success",
+    "expected_return_value": 0
+  },
+  "execution": {
+    "workload": "small",
+    "input_hex": null,
+    "limit_steps": null,
+    "trace": false,
+    "no_hash": true
+  },
+  "limits": {
+    "max_rss_bytes": null,
+    "timeout_seconds": null,
+    "max_output_bytes": null
+  },
+  "sandbox": {
+    "mode": "external-preflight",
+    "network_policy": "deny"
+  },
+  "artifacts": []
+}
