@@ -3,9 +3,41 @@ name: Liquid E2E
 on:
   pull_request:
     branches: [main, staged, dev]
+    paths:
+      - ".github/workflows/liquid-e2e.yml"
+      - "tests/liquid/**"
+      - "internal/engine/src/bitcoin/liquid_adapter.rs"
+      - "internal/compliance/src/verifier.rs"
+      - "cmd/gateway/tests/api_tests.rs"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "internal/engine/Cargo.toml"
+      - "internal/compliance/Cargo.toml"
+      - "internal/api/Cargo.toml"
+      - "cmd/gateway/Cargo.toml"
+      - "pkg/conxian-core/Cargo.toml"
   push:
     branches: [main, staged, dev]
+    paths:
+      - ".github/workflows/liquid-e2e.yml"
+      - "tests/liquid/**"
+      - "internal/engine/src/bitcoin/liquid_adapter.rs"
+      - "internal/compliance/src/verifier.rs"
+      - "cmd/gateway/tests/api_tests.rs"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "internal/engine/Cargo.toml"
+      - "internal/compliance/Cargo.toml"
+      - "internal/api/Cargo.toml"
+      - "cmd/gateway/Cargo.toml"
+      - "pkg/conxian-core/Cargo.toml"
   workflow_dispatch:
+    inputs:
+      pegin_confirmation_depth:
+        description: "Elements peg-in confirmation depth (2-1000; effective target is max(102, depth + 2))"
+        required: false
+        default: "100"
+        type: string
 
 permissions:
   contents: read
@@ -19,6 +51,9 @@ jobs:
     name: Elements peg-in/peg-out harness
     runs-on: ubuntu-latest
     timeout-minutes: 20
+
+    env:
+      LIQUID_PEGIN_CONFIRMATION_DEPTH: ${{ github.event_name == 'workflow_dispatch' && inputs.pegin_confirmation_depth || '100' }}
 
     steps:
       - name: Checkout repository

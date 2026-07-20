@@ -11,8 +11,117 @@ readonly ELEMENTS_URL_BASE="https://github.com/ElementsProject/elements/releases
 
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
-readonly CACHE_DIR="${LIQUID_DAEMON_CACHE_DIR:-/tmp/conxian-regtest-bins}"
-readonly INSTALL_DIR="${LIQUID_DAEMON_INSTALL_DIR:-${REPO_ROOT}/target/liquid-daemons}"
+readonly DEFAULT_CACHE_DIR="${REPO_ROOT}/target/liquid-daemon-cache"
+readonly DEFAULT_INSTALL_DIR="${REPO_ROOT}/target/liquid-daemons"
+
+fail() {
+    printf 'Liquid daemon installer failure: %s\n' "$*" >&2
+    exit 1
+}
+
+command -v realpath >/dev/null 2>&1 || fail "required command not found: realpath"
+mkdir -p -- "${REPO_ROOT}/target"
+readonly TARGET_ROOT="$(cd -- "${REPO_ROOT}/target" && pwd -P)"
+
+assert_no_symlink_components() {
+    local raw_path="$1"
+    local current="/"
+    local component
+    local -a components=()
+
+    IFS='/' read -r -a components <<<"${raw_path#/}"
+    for component in "${components[@]}"; do
+        [[ -z "$component" || "$component" == "." ]] && continue
+        current="${current%/}/${component}"
+        [[ -L "$current" ]] && fail "unsafe symlink component in path: ${raw_path}"
+    done
+}
+
+require_owned_directory_or_parent() {
+    local path="$1"
+    local label="$2"
+    local probe="$path"
+
+    if [[ -e "$path" || -L "$path" ]]; then
+        [[ -d "$path" && ! -L "$path" && -O "$path" ]] || \
+            fail "${label} must be an owned, non-symlink directory: ${path}"
+        return 0
+    fi
+
+    while [[ ! -e "$probe" && ! -L "$probe" && "$probe" != "/" ]]; do
+        probe="$(dirname -- "$probe")"
+    done
+    [[ -d "$probe" && ! -L "$probe" && -O "$probe" ]] || \
+        fail "nearest existing ${label} parent must be an owned, non-symlink directory: ${probe}"
+}
+
+resolve_safe_target_path() {
+    local configured_path="$1"
+    local label="$2"
+    local absolute_path="$configured_path"
+    local resolved_path
+
+    if [[ "$absolute_path" != /* ]]; then
+        absolute_path="${REPO_ROOT}/${absolute_path}"
+    fi
+    assert_no_symlink_components "$absolute_path"
+    resolved_path="$(realpath -m -- "$absolute_path")" || \
+        fail "could not resolve ${label}: ${configured_path}"
+
+    [[ "$resolved_path" != "/" && "$resolved_path" != "${HOME:-}" && \
+        "$resolved_path" != "$REPO_ROOT" && "$resolved_path" != "$TARGET_ROOT" ]] || \
+        fail "${label} must be a subdirectory inside repo target/: ${configured_path}"
+    case "$resolved_path" in
+        "${TARGET_ROOT}"/*) ;;
+        *) fail "${label} must resolve inside repo target/: ${configured_path}" ;;
+    esac
+
+    require_owned_directory_or_parent "$resolved_path" "$label"
+    printf '%s\n' "$resolved_path"
+}
+
+readonly CACHE_DIR="$(resolve_safe_target_path \
+    "${LIQUID_DAEMON_CACHE_DIR:-${DEFAULT_CACHE_DIR}}" "daemon cache directory")"
+readonly INSTALL_DIR="$(resolve_safe_target_path \
+    "${LIQUID_DAEMON_INSTALL_DIR:-${DEFAULT_INSTALL_DIR}}" "daemon install directory")"
+readonly INSTALL_MARKER_NAME=".conxian-liquid-daemon-install-owner"
+
+write_install_marker() {
+    local marker="${INSTALL_DIR}/${INSTALL_MARKER_NAME}"
+    printf 'conxian-liquid-daemon-install-v1\nrepo=%s\n' "$REPO_ROOT" >"$marker"
+}
+
+verify_install_marker() {
+    local marker="${INSTALL_DIR}/${INSTALL_MARKER_NAME}"
+    [[ -f "$marker" && ! -L "$marker" && -O "$marker" ]] || return 1
+    cmp -s <(printf 'conxian-liquid-daemon-install-v1\nrepo=%s\n' "$REPO_ROOT") "$marker"
+}
+
+prepare_install_dir() {
+    local is_default=0
+    [[ "$INSTALL_DIR" == "$DEFAULT_INSTALL_DIR" ]] && is_default=1
+
+    if [[ -e "$INSTALL_DIR" || -L "$INSTALL_DIR" ]]; then
+        [[ -d "$INSTALL_DIR" && ! -L "$INSTALL_DIR" && -O "$INSTALL_DIR" ]] || \
+            fail "daemon install directory is unsafe: ${INSTALL_DIR}"
+        if (( is_default == 0 )) && ! verify_install_marker; then
+            fail "refusing to recursively delete unmarked override install directory: ${INSTALL_DIR}"
+        fi
+    else
+        mkdir -p -- "$INSTALL_DIR"
+        if (( is_default == 0 )); then
+            write_install_marker
+            verify_install_marker || fail "could not establish override install ownership marker"
+        fi
+    fi
+
+    # The canonical default is harness-owned by location.  Any override must
+    # have passed the marker check above before this recursive deletion.
+    rm -rf -- "$INSTALL_DIR"
+    mkdir -p -- "$INSTALL_DIR"
+    write_install_marker
+    verify_install_marker || fail "could not verify daemon install ownership marker"
+}
 
 case "$(uname -m)" in
     x86_64)
@@ -41,6 +150,11 @@ need_command() {
 need_command curl
 need_command sha256sum
 need_command tar
+need_command cmp
+
+mkdir -p -- "$CACHE_DIR"
+require_owned_directory_or_parent "$CACHE_DIR" "daemon cache directory"
+prepare_install_dir
 
 find_cached_archive() {
     local kind="$1"
@@ -70,7 +184,12 @@ fetch_and_verify() {
     local expected_sha256="$3"
     local archive_path="$4"
 
-    mkdir -p "$(dirname -- "$archive_path")"
+    [[ "$archive_path" == "$CACHE_DIR"/* ]] || fail "archive path escaped daemon cache directory: ${archive_path}"
+    if [[ -e "$archive_path" || -L "$archive_path" ]]; then
+        [[ -f "$archive_path" && ! -L "$archive_path" && -O "$archive_path" ]] || \
+            fail "cached archive is unsafe or not owned: ${archive_path}"
+    fi
+    mkdir -p -- "$(dirname -- "$archive_path")"
     if [[ ! -f "$archive_path" ]]; then
         printf 'Downloading %s from official release URL\n' "$name" >&2
         curl --fail --location --retry 3 --proto '=https' --tlsv1.2 \
@@ -83,9 +202,6 @@ fetch_and_verify() {
         exit 1
     }
 }
-
-mkdir -p "$CACHE_DIR"
-mkdir -p "$(dirname -- "$INSTALL_DIR")"
 
 btc_archive="$(find_cached_archive bitcoin "$BTC_VERSION" \
     bitcoin.tar.gz \
@@ -112,8 +228,6 @@ fetch_and_verify \
     "$ELEMENTS_SHA256" \
     "$elements_archive"
 
-rm -rf -- "$INSTALL_DIR"
-mkdir -p "$INSTALL_DIR"
 tar --extract --gzip --file "$btc_archive" --directory "$INSTALL_DIR"
 tar --extract --gzip --file "$elements_archive" --directory "$INSTALL_DIR"
 

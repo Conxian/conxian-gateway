@@ -30,8 +30,8 @@
 |-------|-------------|--------|-------------|
 | #236 | TypeScript SDK npm publish | ⚠️ Partial | Fix version drift (0.1.0 → 0.1.4), fix README claim |
 | #220 | DLC CET construction | ⚠️ Partial | Add dlc-manager dependency |
-| #219 | Groth16 verifier boundary | ❌ Not Started | Define internal trait |
-| #216 | Babylon BTC header-chain | ❌ Not Started | Implement SPV verification |
+| #219 | Groth16 verifier boundary | ⚠️ Partial | Review/merge the canonical boundary; add a production cryptographic backend separately |
+| #216 | Babylon BTC header-chain | ❌ Not Started | Keep pending while PR #253 is open; implement and verify SPV separately |
 
 ---
 
@@ -40,9 +40,18 @@
 | Status | Count | Issues |
 |--------|-------|--------|
 | ✅ Complete | 2 | #228 (RGB P1), #222 (CI/CD) |
-| ⚠️ Partial | 5 | #236, #220, #218, #193, #199 |
-| ❌ Not Implemented | 2 | #219, #216 |
+| ⚠️ Partial | 6 | #236, #220, #219, #218, #193, #199 |
+| ❌ Not Implemented | 1 | #216 |
 | 🔬 Research Only | 2 | #189, #202 |
+
+> **Continuity correction — 2026-07-20:** W28's original status table treated
+> #219 as not started. The base `main` branch actually contained a partial
+> trait skeleton. The focused `charlie/issue-219-groth16-boundary` branch now
+> supplies the canonical BN254 statement/hash contract, circuit-bound
+> witness-commitment limbs, verification-key association invariants, explicit
+> BitVM envelope handoff, deterministic fixture, and tamper/rejection tests.
+> This is a local boundary milestone, not a merged or cryptographic Groth16
+> implementation. #216 remains pending while PR #253 is open.
 
 ---
 
@@ -86,9 +95,10 @@
 - [ ] Add oracle fixture-based testing
 
 #### 3. #219 Groth16 Verifier Boundary (P0 — High Priority)
-- [ ] Define `Groth16Verifier` trait in `internal/engine/src/`
-- [ ] Add test fixtures validating witness/public-input contract
-- [ ] Document how BitVM adapters plug into verifier surface
+- [x] Define and harden `Groth16Verifier` trait in `internal/engine/src/`
+- [x] Add test fixtures validating witness/public-input contract
+- [x] Document how BitVM adapters plug into verifier surface
+- [ ] Review/merge the focused branch and add a production cryptographic backend
 
 #### 4. #216 Babylon BTC Header-Chain (P0 — High Priority)
 - [ ] Implement BTC header-chain query in `babylon_adapter.rs`
