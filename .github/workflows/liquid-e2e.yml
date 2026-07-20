@@ -1,0 +1,47 @@
+name: Liquid E2E
+
+on:
+  pull_request:
+    branches: [main, staged, dev]
+  push:
+    branches: [main, staged, dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: liquid-e2e-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  liquid-e2e:
+    name: Elements peg-in/peg-out harness
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
+        with:
+          toolchain: 1.96.0
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
+
+      - name: Run fail-closed Liquid adapter tests
+        run: cargo test -p conxian_engine liquid_adapter --lib
+
+      - name: Run pinned Bitcoin/Elements daemon harness
+        run: bash tests/liquid/liquid_peg_e2e.sh
+
+      - name: Upload Liquid daemon logs and proof artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: liquid-e2e-artifacts
+          path: target/liquid-e2e-artifacts
+          if-no-files-found: warn
