@@ -151,8 +151,9 @@ and any `witness`/`raw_witness` field, and calls `Groth16VerificationRequest::va
 before delegation. `BitVmAdapter::verify_groth16_envelope_with` then delegates
 to a borrowed `Groth16Verifier`; `with_verifier` provides the injected `Arc`
 form. The envelope network must also match the adapter's configured Bitcoin
-network. Structured tracing records only the circuit ID, anchor height, and
-statement hash.
+network. Structured tracing records only the anchor height and statement hash;
+it does not emit circuit identifiers, proof bytes, witness material, or key
+bytes.
 
 The existing `ChainAdapter::verify_state_proof` method remains a metadata-only
 compatibility path. It must not be interpreted as cryptographic Groth16

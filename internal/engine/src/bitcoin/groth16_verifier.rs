@@ -13,7 +13,7 @@
 
 use async_trait::async_trait;
 use bitcoin::hashes::{sha256, Hash};
-use serde::{Deserialize, Serialize};
+use serde::{de::Error as _, Deserialize, Deserializer, Serialize};
 use std::{collections::HashMap, fmt, str::FromStr, sync::RwLock};
 use thiserror::Error;
 
@@ -54,8 +54,8 @@ pub const BN254_SCALAR_MODULUS: [u8; BN254_FIELD_ELEMENT_BYTES] = [
 ];
 
 /// A BN254 scalar-field element in canonical big-endian form.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct FieldElement(pub [u8; BN254_FIELD_ELEMENT_BYTES]);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+pub struct FieldElement([u8; BN254_FIELD_ELEMENT_BYTES]);
 
 impl FieldElement {
     /// Construct a field element and reject non-canonical values.
@@ -84,6 +84,16 @@ impl FieldElement {
         }
 
         Ok(())
+    }
+}
+
+impl<'de> Deserialize<'de> for FieldElement {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let bytes = <[u8; BN254_FIELD_ELEMENT_BYTES]>::deserialize(deserializer)?;
+        Self::from_bytes(bytes).map_err(D::Error::custom)
     }
 }
 
@@ -119,9 +129,13 @@ impl FromStr for Groth16Curve {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum BitcoinNetwork {
+    /// Bitcoin mainnet.
     Mainnet,
+    /// Bitcoin public testnet.
     Testnet,
+    /// Bitcoin signet.
     Signet,
+    /// Bitcoin regtest.
     Regtest,
 }
 
@@ -219,10 +233,12 @@ impl BitcoinBlockContext {
 /// preserved exactly in canonical encoding; it is never sorted.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PublicInput {
+    /// Ordered BN254 scalar-field public inputs.
     pub values: Vec<FieldElement>,
 }
 
 impl PublicInput {
+    /// Construct an ordered public-input vector and validate every field.
     pub fn new(values: Vec<FieldElement>) -> Result<Self, VerificationError> {
         let inputs = Self { values };
         inputs.validate()?;
@@ -282,16 +298,24 @@ impl VerificationKeyId {
 /// Canonical Groth16 statement. No raw witness material is present here.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Groth16Statement {
+    /// Canonical schema version for this statement.
     pub schema_version: u16,
+    /// Curve and scalar-field encoding selected by the schema.
     pub curve: Groth16Curve,
+    /// Stable circuit identifier included in the statement hash.
     pub circuit_id: String,
+    /// Domain-separated identifier of the exact verification-key bytes.
     pub verification_key_id: VerificationKeyId,
+    /// Ordered public inputs supplied to the circuit.
     pub public_inputs: PublicInput,
+    /// Commitment to prover-side witness field elements.
     pub witness_commitment: [u8; 32],
+    /// Bitcoin anchor and freshness context bound into the statement.
     pub block_context: BitcoinBlockContext,
 }
 
 impl Groth16Statement {
+    /// Validate all statement fields without invoking a backend.
     pub fn validate(&self) -> Result<(), VerificationError> {
         if self.schema_version != GROTH16_SCHEMA_VERSION {
             return Err(VerificationError::UnsupportedSchemaVersion(
@@ -397,12 +421,14 @@ impl Groth16Statement {
 /// 64 bytes for compressed G2 B, and 32 bytes for compressed G1 C. The
 /// boundary checks width and presence only; subgroup, curve-point, and pairing
 /// checks belong to a future backend and are intentionally not claimed here.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Groth16Proof {
-    pub bytes: Vec<u8>,
+    /// Canonical 128-byte compressed proof encoding.
+    bytes: Vec<u8>,
 }
 
 impl Groth16Proof {
+    /// Construct a proof from the exact fixed-width compressed encoding.
     pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, VerificationError> {
         if bytes.len() != GROTH16_COMPRESSED_PROOF_BYTES {
             return Err(VerificationError::InvalidProof(format!(
@@ -418,10 +444,12 @@ impl Groth16Proof {
         Ok(Self { bytes })
     }
 
+    /// Return the canonical compressed proof bytes.
     pub fn as_bytes(&self) -> &[u8] {
         &self.bytes
     }
 
+    /// Hash the proof bytes for deterministic fixture matching.
     pub fn digest(&self) -> [u8; 32] {
         hash_domain_separated(PROOF_DIGEST_DOMAIN, &self.bytes)
     }
@@ -431,13 +459,25 @@ impl Groth16Proof {
     }
 }
 
+impl<'de> Deserialize<'de> for Groth16Proof {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let bytes = Vec::<u8>::deserialize(deserializer)?;
+        Self::from_bytes(bytes).map_err(D::Error::custom)
+    }
+}
+
 /// Runtime request passed from an adapter to an injected verifier backend.
 ///
 /// It contains public inputs, a witness commitment, a statement hash, and the
 /// proof bytes. It never carries raw witness values.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Groth16VerificationRequest {
+    /// Canonical statement bound to the proof.
     pub statement: Groth16Statement,
+    /// Opaque compressed proof bytes for the selected curve.
     pub proof: Groth16Proof,
     /// The caller-supplied expected hash. It must equal the hash of
     /// `statement` before any backend call.
@@ -448,6 +488,7 @@ pub struct Groth16VerificationRequest {
 }
 
 impl Groth16VerificationRequest {
+    /// Build and fully validate a request using a freshly computed statement hash.
     pub fn new(
         statement: Groth16Statement,
         proof: Groth16Proof,
@@ -489,11 +530,17 @@ impl Groth16VerificationRequest {
 /// mock backend below is explicitly not cryptographic.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VerificationResult {
+    /// Whether the injected backend accepted the request.
     pub valid: bool,
+    /// Verification key identifier used by the backend.
     pub vk_id: VerificationKeyId,
+    /// Ordered public inputs accepted by the backend.
     pub public_inputs: PublicInput,
+    /// Canonical statement hash that was verified.
     pub statement_hash: [u8; 32],
+    /// Backend transcript or acceptance digest.
     pub transcript: [u8; 32],
+    /// Current chain height at which the request was accepted.
     pub verified_at_height: u64,
 }
 
@@ -594,6 +641,7 @@ pub struct MockGroth16Verifier {
 }
 
 impl MockGroth16Verifier {
+    /// Create an empty deterministic fixture verifier.
     pub fn new() -> Self {
         Self::default()
     }

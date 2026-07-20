@@ -14,11 +14,13 @@ use super::groth16_verifier::{
 
 /// Protocol adapter for BitVM.
 pub struct BitVmAdapter {
+    /// Configured Bitcoin network name, such as `mainnet` or `regtest`.
     pub network: String,
     verifier: Option<Arc<dyn Groth16Verifier>>,
 }
 
 impl BitVmAdapter {
+    /// Construct a metadata-compatible adapter without a cryptographic backend.
     pub fn new(network: String) -> Self {
         Self {
             network,
@@ -81,7 +83,6 @@ impl BitVmAdapter {
 
         info!(
             chain = "bitvm",
-            circuit_id = %request.statement.circuit_id,
             block_height = request.statement.block_context.block_height,
             statement_hash = %hex::encode(request.statement_hash),
             "delegating validated Groth16 statement to injected verifier"

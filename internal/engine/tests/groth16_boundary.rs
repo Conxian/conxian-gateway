@@ -1,15 +1,26 @@
+use async_trait::async_trait;
 use conxian_engine::bitcoin::{
     compute_witness_commitment, parse_bitvm_groth16_envelope, BitcoinBlockContext, BitcoinNetwork,
     FieldElement, Groth16Curve, Groth16Proof, Groth16Statement, Groth16VerificationRequest,
     Groth16Verifier, MockGroth16Verifier, PublicInput, VerificationError, VerificationKeyId,
-    BN254_SCALAR_MODULUS, GROTH16_COMPRESSED_PROOF_BYTES, GROTH16_SCHEMA_VERSION,
+    VerificationResult, BN254_SCALAR_MODULUS, GROTH16_COMPRESSED_PROOF_BYTES,
+    GROTH16_SCHEMA_VERSION,
 };
 use conxian_engine::BitVmAdapter;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
 
 const FIXTURE_JSON: &str = include_str!("fixtures/groth16/bitvm_fixture.json");
+const EXPECTED_FIXTURE_VERIFICATION_KEY_ID: &str =
+    "1577f847a088d7ba6df804f6f5fc2b31a3b1b42e896a5faaa50c2df7585f5727";
+const EXPECTED_FIXTURE_WITNESS_COMMITMENT: &str =
+    "011d59399ff1bdd26b5928ae8d0ea549017a4441a37b76e8af0392de98b0ebad";
+const EXPECTED_FIXTURE_STATEMENT_HASH: &str =
+    "76714243d66aaf96609914690c6b87856310f8dc53dcbe12c54377e103f0e00b";
 
 #[derive(Debug, Deserialize)]
 struct Fixture {
@@ -54,6 +65,10 @@ fn field(value: &str) -> FieldElement {
 fn fixture_statement(data: &Fixture) -> Groth16Statement {
     let key_bytes = hex::decode(&data.verification_key_bytes).expect("fixture key hex");
     let key_id = VerificationKeyId::from_key_bytes(&key_bytes).expect("fixture key id");
+    assert_eq!(
+        data.verification_key_id,
+        EXPECTED_FIXTURE_VERIFICATION_KEY_ID
+    );
     assert_eq!(hex::encode(key_id.0), data.verification_key_id);
 
     let witness: Vec<_> = data
@@ -62,6 +77,7 @@ fn fixture_statement(data: &Fixture) -> Groth16Statement {
         .map(|value| field(value))
         .collect();
     let witness_commitment = compute_witness_commitment(&witness).expect("fixture commitment");
+    assert_eq!(data.witness_commitment, EXPECTED_FIXTURE_WITNESS_COMMITMENT);
     assert_eq!(hex::encode(witness_commitment), data.witness_commitment);
 
     Groth16Statement {
@@ -96,6 +112,7 @@ fn fixture_request(data: &Fixture, current_height: u64) -> Groth16VerificationRe
         .expect("fixture proof encoding");
     let request = Groth16VerificationRequest::new(statement, proof, current_height)
         .expect("fixture request must validate");
+    assert_eq!(data.statement_hash, EXPECTED_FIXTURE_STATEMENT_HASH);
     assert_eq!(hex::encode(request.statement_hash), data.statement_hash);
     request
 }
@@ -117,6 +134,36 @@ fn fixture_envelope(data: &Fixture) -> Value {
         "proof": data.proof,
         "statement_hash": data.statement_hash,
     })
+}
+
+#[derive(Default)]
+struct CountingVerifier {
+    verify_calls: AtomicUsize,
+}
+
+#[async_trait]
+impl Groth16Verifier for CountingVerifier {
+    async fn verify(
+        &self,
+        _request: &Groth16VerificationRequest,
+    ) -> Result<VerificationResult, VerificationError> {
+        self.verify_calls.fetch_add(1, Ordering::SeqCst);
+        Err(VerificationError::InvalidProof(
+            "test verifier must not be called for malformed input".to_owned(),
+        ))
+    }
+
+    async fn register_verification_key(
+        &self,
+        _vk_id: VerificationKeyId,
+        _vk_bytes: Vec<u8>,
+    ) -> Result<(), VerificationError> {
+        Ok(())
+    }
+
+    async fn is_verification_key_known(&self, _vk_id: &VerificationKeyId) -> bool {
+        false
+    }
 }
 
 #[tokio::test]
@@ -167,6 +214,21 @@ async fn borrowed_bitvm_handoff_validates_before_delegation() {
         .await
         .unwrap();
     assert!(result.valid);
+}
+
+#[tokio::test]
+async fn malformed_envelope_is_rejected_before_verifier_invocation() {
+    let data = fixture();
+    let verifier = CountingVerifier::default();
+    let adapter = BitVmAdapter::new("regtest".to_owned());
+    let mut envelope = fixture_envelope(&data);
+    envelope["statement_hash"] = json!("00".repeat(32));
+
+    assert!(adapter
+        .verify_groth16_envelope_with(&verifier, envelope, data.current_block_height)
+        .await
+        .is_err());
+    assert_eq!(verifier.verify_calls.load(Ordering::SeqCst), 0);
 }
 
 #[tokio::test]
@@ -224,7 +286,7 @@ async fn witness_commitment_proof_vk_and_circuit_mutations_are_rejected() {
         Err(VerificationError::StatementHashMismatch { .. })
     ));
 
-    let mut proof_bytes = request.proof.bytes.clone();
+    let mut proof_bytes = request.proof.as_bytes().to_vec();
     proof_bytes[17] ^= 1;
     let proof_mutation = Groth16VerificationRequest {
         proof: Groth16Proof::from_bytes(proof_bytes).unwrap(),
@@ -289,6 +351,62 @@ fn malformed_field_and_proof_encodings_are_rejected_before_handoff() {
         parse_bitvm_groth16_envelope(malformed_proof, data.current_block_height),
         Err(VerificationError::MalformedEnvelope(_))
     ));
+}
+
+#[test]
+fn statement_hash_binds_identity_inputs_commitment_and_block_context() {
+    let data = fixture();
+    let statement = fixture_statement(&data);
+    let baseline = statement.statement_hash().unwrap();
+
+    let mut circuit = statement.clone();
+    circuit.circuit_id = "different-circuit-v1".to_owned();
+    assert_ne!(circuit.statement_hash().unwrap(), baseline);
+
+    let mut key = statement.clone();
+    key.verification_key_id = VerificationKeyId::from_key_bytes(b"different-vk").unwrap();
+    assert_ne!(key.statement_hash().unwrap(), baseline);
+
+    let mut public_input = statement.clone();
+    public_input.public_inputs.values[0] =
+        field("000000000000000000000000000000000000000000000000000000000000000b");
+    assert_ne!(public_input.statement_hash().unwrap(), baseline);
+
+    let mut commitment = statement.clone();
+    commitment.witness_commitment[0] ^= 1;
+    assert_ne!(commitment.statement_hash().unwrap(), baseline);
+
+    let mut network = statement.clone();
+    network.block_context.network = BitcoinNetwork::Mainnet;
+    assert_ne!(network.statement_hash().unwrap(), baseline);
+
+    let mut height = statement.clone();
+    height.block_context.block_height += 1;
+    assert_ne!(height.statement_hash().unwrap(), baseline);
+
+    let mut block_hash = statement.clone();
+    block_hash.block_context.block_hash[0] ^= 1;
+    assert_ne!(block_hash.statement_hash().unwrap(), baseline);
+
+    let mut expiry = statement;
+    expiry.block_context.max_valid_height = Some(
+        expiry
+            .block_context
+            .max_valid_height
+            .expect("fixture expiry")
+            + 1,
+    );
+    assert_ne!(expiry.statement_hash().unwrap(), baseline);
+}
+
+#[test]
+fn public_field_and_proof_deserialization_reject_noncanonical_values() {
+    let modulus_json = serde_json::to_string(&BN254_SCALAR_MODULUS).unwrap();
+    assert!(serde_json::from_str::<FieldElement>(&modulus_json).is_err());
+
+    let short_proof_json =
+        serde_json::to_string(&vec![1u8; GROTH16_COMPRESSED_PROOF_BYTES - 1]).unwrap();
+    assert!(serde_json::from_str::<Groth16Proof>(&short_proof_json).is_err());
 }
 
 #[test]

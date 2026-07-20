@@ -68,7 +68,7 @@
 | **Lightning** | `internal/api/src/lightning.rs` | ✅ Live | x402 payment execution, replay guard, retry |
 | **Liquid** | `internal/engine/src/bitcoin/liquid_adapter.rs` | ✅ Live | Confidential assets, federated peg tracking |
 | **RGB v0.12** | `internal/engine/src/bitcoin/rgb_adapter.rs` + `rgb_native.rs` + `rgb_stash.rs` | ✅ Live | StashResolver (P1), ContractVerify pending (P2), consignment pending |
-| **BitVM2** | `internal/engine/src/bitcoin/bitvm_adapter.rs` | ✅ Live | Verification bridges, Groth16 proof verification |
+| **BitVM2** | `internal/engine/src/bitcoin/bitvm_adapter.rs` | 🟡 Boundary | Metadata adapter plus validated Groth16 envelope handoff; cryptographic backend pending |
 | **Babylon** | `internal/engine/src/bitcoin/babylon_adapter.rs` | ✅ Live | BTC timestamping, checkpoint proofs |
 | **Fedimint** | `internal/engine/src/bitcoin/fedimint_adapter.rs` | ✅ Live | Federated e-cash mint coordination |
 | **Strata** | `internal/engine/src/bitcoin/strata_adapter.rs` | ✅ Testnet | Bitcoin rollup bridge |
