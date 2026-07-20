@@ -64,7 +64,7 @@ jobs:
             --project-name "$COMPOSE_PROJECT_NAME" \
             --file tests/liquid-e2e/docker-compose.yml \
             ps --all --format json \
-            | jq -r '.[] | [.Service, .State] | @tsv' \
+            | jq -r '[.Service, .State] | @tsv' \
             > target/liquid-e2e/workflow-compose-ps.txt 2>&1 || true
           docker compose \
             --project-name "$COMPOSE_PROJECT_NAME" \

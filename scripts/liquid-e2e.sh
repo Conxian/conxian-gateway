@@ -181,7 +181,7 @@ cleanup() {
 
   if (( COMPOSE_STARTED == 1 )); then
     compose ps --all --format json |
-      jq -r '.[] | [.Service, .State] | @tsv' >"$OUTPUT_DIR/compose-ps.txt" 2>&1
+      jq -r '[.Service, .State] | @tsv' >"$OUTPUT_DIR/compose-ps.txt" 2>&1
     compose logs --no-color bitcoin >"$OUTPUT_DIR/bitcoin.log" 2>&1
     compose logs --no-color elements >"$OUTPUT_DIR/elements.log" 2>&1
     compose logs --no-color >"$OUTPUT_DIR/compose.log" 2>&1
