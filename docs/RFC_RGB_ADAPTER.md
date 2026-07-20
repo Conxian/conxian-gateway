@@ -1,7 +1,9 @@
 # RFC: RGB Protocol-Rail Adapter
 
 ## Status
-- **Implemented** (Milestone 2 PoC)
+- **Phase 1.5 hardening implemented**
+- Full issue #228 remains open: consignment/Stockpile integration and
+  consensus verification are Phase 2 follow-ups.
 
 ## Context
 As part of the Conxian Gateway evolution, we need to support the RGB protocol as a first-class citizen for smart contract and asset logic on Bitcoin. This adapter provides the bridge between the Conxian engine and the RGB node/state.
@@ -23,6 +25,8 @@ pub enum RolloutMode {
 pub struct RgbAdapterConfig {
     pub mode: RolloutMode,
     pub node_url: String,
+    pub stash_path: Option<String>,
+    pub esplora_url: Option<String>,
 }
 
 #[async_trait]
@@ -35,34 +39,55 @@ pub trait RgbAdapter {
 ## Rollout Modes
 
 ### 1. Disabled
-- The adapter returns an error or empty result for all calls.
+- The adapter is a no-op and returns empty/false results.
 - No interaction with the RGB node.
 
 ### 2. Shadow (Current Goal)
 - The adapter performs lookups and verifications but results do not affect the main execution path.
-- Used for telemetry and validation against live node data.
-- Errors are logged but do not panic or block processing.
+- Node failures and unknown responses may use an explicitly simulated result.
+- Simulation is never used by Active mode.
 
 ### 3. Active
-- Fully integrated into the execution path.
-- Results from the adapter drive decision-making (e.g., settlement triggers).
+- Native and HTTP results drive the execution path.
+- Unknown contracts and native/HTTP failures fail closed; Active never turns a
+  missing node result into a simulated success.
+- With `rgb-native`, `RGB_STASH_PATH` and `RGB_ESPLORA_URL` are required.
 
-## Implementation Details (Milestone 2)
+## Implementation Details (Phase 1.5)
 - Concrete implementation in `internal/engine/src/bitcoin/rgb_adapter.rs`.
-- Uses `minreq` for lightweight HTTP communication with the RGB node.
-- Implements simulation fallback for development and research (`rgb:` prefix).
-- Shadow mode is hardened to catch and log errors without interrupting the caller.
+- Uses `minreq` on a blocking task for lightweight HTTP communication with the RGB node.
+- Native contract IDs are parsed by `rgb::ContractId` and stored in canonical
+  `contract:` Baid64 form. Legacy `rgb:` values are not consensus-valid IDs.
+- `StashResolver` persists metadata with atomic temp-file replacement and
+  distinguishes spent, unspent, not-found, and transport-error UTXO results.
+- Mempool orchestration does not synthesize an RGB contract ID from a Bitcoin
+  transaction ID.
 
-## Setup Assumptions
-- The gateway has network access to an RGB node (default: `http://localhost:8080`).
-- `RGB_MODE` environment variable is set to `shadow` or `active`.
-- Contracts are identified by the `rgb:` prefix for simulation.
+## Setup and Configuration
+- `RGB_MODE` defaults to `disabled`.
+- `RGB_NODE_URL` defaults to `http://localhost:8080`; plain HTTP is allowed
+  only for localhost/loopback development. Embedded credentials are rejected.
+- `RGB_STASH_PATH` and `RGB_ESPLORA_URL` are optional in Disabled/Shadow, but
+  must be configured together. Active mode with `rgb-native` requires both.
+- Simulation uses only the `contract:` HRI and is explicitly non-consensus.
 
-## Observed Behavior
-- When a transaction is tracked in the mempool, the orchestrator triggers a lookup via the RGB adapter.
-- In `shadow` mode, the logs will show "node returned nothing, using simulated state" if the node is unavailable.
+## Boundary Behavior
+- A tracked Bitcoin transaction ID is not an RGB contract ID. The mempool
+  orchestrator intentionally skips RGB lookup until a real contract-ID source
+  exists.
+- The Phase 1.5 stash check establishes canonical ID parsing and local metadata
+  presence only. It does not claim full `ContractVerify` completion.
 
 ## Error Semantics
-- `ConxianError::Bitcoin`: Used for transport errors when communicating with the RGB node.
-- `ConxianError::Internal`: Used for async task failures.
-- In 'shadow' mode, all errors are caught, logged, and the execution path continues as if no match was found.
+- `ConxianError::Rgb`: Used for invalid IDs, configuration, persistence, native
+  resolver, and RGB node errors.
+- In Shadow mode, failures may fall back to simulation without affecting the
+  main execution path.
+- In Active mode, failures are returned and unknown contracts resolve to false
+  or no result; they are never treated as positive proof.
+
+## Phase 2 Blockers
+- `rgb-persist-fs::StockpileDir` integration.
+- Consignment import/export and receiver `AuthToken` → seal-definition registry.
+- Signature policy and full consensus verification against Bitcoin state.
+- Deterministic regtest fixtures/harness for end-to-end RGB transitions.

@@ -1,4 +1,7 @@
+use std::net::IpAddr;
 use std::{env, panic};
+
+use url::Url;
 
 const FIAT_WEBHOOK_SECRET_SENTINEL: &str = "sentinel_FIAT_WEBHOOK_SECRET";
 const SETTLEMENT_INGRESS_SECRET_SENTINEL: &str = "sentinel_SETTLEMENT_INGRESS_SECRET";
@@ -80,6 +83,10 @@ pub struct Config {
     pub offline_queue_secret: String,
     pub rgb_mode: conxian_core::RolloutMode,
     pub rgb_node_url: String,
+    #[allow(dead_code)]
+    pub rgb_stash_path: Option<String>,
+    #[allow(dead_code)]
+    pub rgb_esplora_url: Option<String>,
     pub network: Network,
     pub alex_api_url: String,
     pub liquid_rpc_url: String,
@@ -98,6 +105,35 @@ impl Config {
             panic!("{} must be a non-empty secret (not {})", key, sentinel);
         }
         val
+    }
+
+    fn optional_env(key: &str) -> Option<String> {
+        env::var(key).ok().and_then(|value| {
+            let value = value.trim().to_string();
+            (!value.is_empty()).then_some(value)
+        })
+    }
+
+    fn validate_rgb_endpoint(key: &str, raw: &str) -> String {
+        let url = Url::parse(raw).unwrap_or_else(|_| panic!("{} must be a valid URL", key));
+        if url.scheme() != "http" && url.scheme() != "https" {
+            panic!("{} must use http or https", key);
+        }
+        if !url.username().is_empty() || url.password().is_some() {
+            panic!("{} must not contain embedded credentials", key);
+        }
+        let host = url
+            .host_str()
+            .unwrap_or_else(|| panic!("{} must include a host", key));
+        let local_host = host.eq_ignore_ascii_case("localhost")
+            || host
+                .parse::<IpAddr>()
+                .map(|address| address.is_loopback())
+                .unwrap_or(false);
+        if url.scheme() == "http" && !local_host {
+            panic!("{} may use plain HTTP only for local development", key);
+        }
+        raw.to_string()
     }
 
     pub fn from_env() -> Self {
@@ -164,6 +200,24 @@ impl Config {
             "shadow" => conxian_core::RolloutMode::Shadow,
             _ => conxian_core::RolloutMode::Disabled,
         };
+        let rgb_node_url = Self::validate_rgb_endpoint(
+            "RGB_NODE_URL",
+            &env::var("RGB_NODE_URL").unwrap_or_else(|_| "http://localhost:8080".to_string()),
+        );
+        let rgb_stash_path = Self::optional_env("RGB_STASH_PATH");
+        let rgb_esplora_url = Self::optional_env("RGB_ESPLORA_URL")
+            .map(|url| Self::validate_rgb_endpoint("RGB_ESPLORA_URL", &url));
+        if rgb_stash_path.is_some() != rgb_esplora_url.is_some() {
+            panic!("RGB_STASH_PATH and RGB_ESPLORA_URL must be configured together");
+        }
+        #[cfg(feature = "rgb-native")]
+        if matches!(rgb_mode, conxian_core::RolloutMode::Active)
+            && (rgb_stash_path.is_none() || rgb_esplora_url.is_none())
+        {
+            panic!(
+                "RGB_STASH_PATH and RGB_ESPLORA_URL are required for Active mode with rgb-native"
+            );
+        }
         let network = Network::from_env();
         let liquid_rpc_url =
             env::var("LIQUID_RPC_URL").unwrap_or_else(|_| "http://localhost:18843".to_string());
@@ -245,8 +299,9 @@ impl Config {
             settlement_ingress_secret,
             offline_queue_secret,
             rgb_mode,
-            rgb_node_url: env::var("RGB_NODE_URL")
-                .unwrap_or_else(|_| "http://localhost:8080".to_string()),
+            rgb_node_url,
+            rgb_stash_path,
+            rgb_esplora_url,
             network,
             alex_api_url: env::var("ALEX_API_URL").unwrap_or(alex_url),
             liquid_rpc_url,
@@ -293,6 +348,10 @@ mod tests {
                 "INFOBIP_API_KEY",
                 "HMAC_SECRET",
                 "OFFLINE_QUEUE_SECRET",
+                "RGB_MODE",
+                "RGB_NODE_URL",
+                "RGB_STASH_PATH",
+                "RGB_ESPLORA_URL",
                 "MEMPOOL_ORCHESTRATOR_INTERVAL",
                 "MEMPOOL_STUCK_THRESHOLD_SECS",
                 "MEMPOOL_MAX_FEE_BUMP_ATTEMPTS",
@@ -333,6 +392,10 @@ mod tests {
             "OFFLINE_QUEUE_SECRET",
             "offline-queue-secret-that-is-at-least-32-bytes-long-for-prod",
         );
+        env::set_var("RGB_MODE", "disabled");
+        env::remove_var("RGB_NODE_URL");
+        env::remove_var("RGB_STASH_PATH");
+        env::remove_var("RGB_ESPLORA_URL");
     }
 
     #[test]
@@ -368,5 +431,36 @@ mod tests {
             .or_else(|| err.downcast_ref::<&str>().map(|s| s.to_string()))
             .unwrap_or_default();
         assert!(message.contains("must be distinct"));
+    }
+
+    #[test]
+    fn rgb_endpoints_reject_credentials_and_remote_plain_http() {
+        let credentials = std::panic::catch_unwind(|| {
+            Config::validate_rgb_endpoint("RGB_NODE_URL", "https://user:pass@example.com")
+        });
+        assert!(credentials.is_err());
+
+        let remote_http = std::panic::catch_unwind(|| {
+            Config::validate_rgb_endpoint("RGB_ESPLORA_URL", "http://example.com/api")
+        });
+        assert!(remote_http.is_err());
+    }
+
+    #[cfg(feature = "rgb-native")]
+    #[test]
+    fn active_native_mode_requires_stash_configuration() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        let _env_restore = FullEnvRestore::new();
+        set_test_envs();
+        env::set_var("RGB_MODE", "active");
+
+        let err =
+            std::panic::catch_unwind(Config::from_env).expect_err("expected RGB config panic");
+        let message = err
+            .downcast_ref::<String>()
+            .cloned()
+            .or_else(|| err.downcast_ref::<&str>().map(|s| s.to_string()))
+            .unwrap_or_default();
+        assert!(message.contains("RGB_STASH_PATH"));
     }
 }
