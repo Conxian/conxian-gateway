@@ -7,33 +7,140 @@ set -euo pipefail
 
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
-readonly ARTIFACT_DIR="${LIQUID_E2E_ARTIFACT_DIR:-${REPO_ROOT}/target/liquid-e2e-artifacts}"
-readonly RUN_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/conxian-liquid-e2e.XXXXXX")"
-readonly BTC_DATA="${RUN_ROOT}/bitcoin"
-readonly ELEMENTS_DATA="${RUN_ROOT}/elements"
-readonly BTC_RPC_PORT="${LIQUID_BTC_RPC_PORT:-18888}"
-readonly ELEMENTS_RPC_PORT="${LIQUID_ELEMENTS_RPC_PORT:-18884}"
-readonly BTC_P2P_PORT="${LIQUID_BTC_P2P_PORT:-18889}"
-readonly ELEMENTS_P2P_PORT="${LIQUID_ELEMENTS_P2P_PORT:-18885}"
 readonly REQUIRED_PARENT_CONFIRMATIONS=102
 readonly RPC_USER="${LIQUID_RPC_USER:-liquid_e2e}"
 readonly RPC_PASSWORD="${LIQUID_RPC_PASSWORD:-$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')}"
 readonly BTC_WALLET="liquid-e2e-bitcoin"
 readonly ELEMENTS_WALLET="liquid-e2e-elements"
 
+fail() {
+    printf 'Liquid E2E failure: %s\n' "$*" >&2
+    exit 1
+}
+
+command -v mktemp >/dev/null 2>&1 || fail "required command not found: mktemp"
+command -v realpath >/dev/null 2>&1 || fail "required command not found: realpath"
+
+mkdir -p -- "${REPO_ROOT}/target"
+readonly TARGET_ROOT="$(cd -- "${REPO_ROOT}/target" && pwd -P)"
+
+assert_no_symlink_components() {
+    local raw_path="$1"
+    local current="/"
+    local component
+    local -a components=()
+
+    IFS='/' read -r -a components <<<"${raw_path#/}"
+    for component in "${components[@]}"; do
+        [[ -z "$component" || "$component" == "." ]] && continue
+        current="${current%/}/${component}"
+        [[ -L "$current" ]] && fail "unsafe symlink component in path: ${raw_path}"
+    done
+}
+
+require_owned_directory_or_parent() {
+    local path="$1"
+    local label="$2"
+    local probe="$path"
+
+    if [[ -e "$path" || -L "$path" ]]; then
+        [[ -d "$path" && ! -L "$path" && -O "$path" ]] || \
+            fail "${label} must be an owned, non-symlink directory: ${path}"
+        return 0
+    fi
+
+    while [[ ! -e "$probe" && ! -L "$probe" && "$probe" != "/" ]]; do
+        probe="$(dirname -- "$probe")"
+    done
+    [[ -d "$probe" && ! -L "$probe" && -O "$probe" ]] || \
+        fail "nearest existing ${label} parent must be an owned, non-symlink directory: ${probe}"
+}
+
+resolve_artifact_parent() {
+    local configured_path="$1"
+    local absolute_path="$configured_path"
+    local resolved_path
+
+    if [[ "$absolute_path" != /* ]]; then
+        absolute_path="${REPO_ROOT}/${absolute_path}"
+    fi
+    assert_no_symlink_components "$absolute_path"
+    resolved_path="$(realpath -m -- "$absolute_path")" || \
+        fail "could not resolve LIQUID_E2E_ARTIFACT_DIR: ${configured_path}"
+
+    [[ "$resolved_path" != "/" && "$resolved_path" != "$HOME" && \
+        "$resolved_path" != "$REPO_ROOT" && "$resolved_path" != "$TARGET_ROOT" ]] || \
+        fail "LIQUID_E2E_ARTIFACT_DIR must be a subdirectory inside repo target/: ${configured_path}"
+    case "$resolved_path" in
+        "${TARGET_ROOT}"/*) ;;
+        *) fail "LIQUID_E2E_ARTIFACT_DIR must resolve inside repo target/: ${configured_path}" ;;
+    esac
+
+    require_owned_directory_or_parent "$resolved_path" "artifact directory"
+    printf '%s\n' "$resolved_path"
+}
+
+validate_bounded_decimal() {
+    local name="$1"
+    local value="$2"
+    local minimum="$3"
+    local maximum="$4"
+    local max_digits="$5"
+
+    [[ "$value" =~ ^[0-9]+$ ]] || \
+        fail "${name} must be a strict decimal integer in the range ${minimum}..${maximum}"
+    (( ${#value} <= max_digits )) || \
+        fail "${name} must be a strict decimal integer in the range ${minimum}..${maximum}"
+
+    local normalized=$((10#$value))
+    (( normalized >= minimum && normalized <= maximum )) || \
+        fail "${name} must be a strict decimal integer in the range ${minimum}..${maximum}"
+    printf '%d\n' "$normalized"
+}
+
+LIQUID_PEGIN_CONFIRMATION_DEPTH="${LIQUID_PEGIN_CONFIRMATION_DEPTH:-100}"
+LIQUID_BTC_RPC_PORT="${LIQUID_BTC_RPC_PORT:-18888}"
+LIQUID_ELEMENTS_RPC_PORT="${LIQUID_ELEMENTS_RPC_PORT:-18884}"
+LIQUID_BTC_P2P_PORT="${LIQUID_BTC_P2P_PORT:-18889}"
+LIQUID_ELEMENTS_P2P_PORT="${LIQUID_ELEMENTS_P2P_PORT:-18885}"
+
+LIQUID_PEGIN_CONFIRMATION_DEPTH="$(validate_bounded_decimal \
+    LIQUID_PEGIN_CONFIRMATION_DEPTH "$LIQUID_PEGIN_CONFIRMATION_DEPTH" 2 1000 4)"
+LIQUID_BTC_RPC_PORT="$(validate_bounded_decimal LIQUID_BTC_RPC_PORT "$LIQUID_BTC_RPC_PORT" 1 65535 5)"
+LIQUID_ELEMENTS_RPC_PORT="$(validate_bounded_decimal LIQUID_ELEMENTS_RPC_PORT "$LIQUID_ELEMENTS_RPC_PORT" 1 65535 5)"
+LIQUID_BTC_P2P_PORT="$(validate_bounded_decimal LIQUID_BTC_P2P_PORT "$LIQUID_BTC_P2P_PORT" 1 65535 5)"
+LIQUID_ELEMENTS_P2P_PORT="$(validate_bounded_decimal LIQUID_ELEMENTS_P2P_PORT "$LIQUID_ELEMENTS_P2P_PORT" 1 65535 5)"
+
+if (( LIQUID_BTC_RPC_PORT == LIQUID_ELEMENTS_RPC_PORT ||
+    LIQUID_BTC_RPC_PORT == LIQUID_BTC_P2P_PORT ||
+    LIQUID_BTC_RPC_PORT == LIQUID_ELEMENTS_P2P_PORT ||
+    LIQUID_ELEMENTS_RPC_PORT == LIQUID_BTC_P2P_PORT ||
+    LIQUID_ELEMENTS_RPC_PORT == LIQUID_ELEMENTS_P2P_PORT ||
+    LIQUID_BTC_P2P_PORT == LIQUID_ELEMENTS_P2P_PORT )); then
+    fail "all Liquid E2E RPC and P2P ports must be pairwise distinct"
+fi
+
+readonly LIQUID_PEGIN_CONFIRMATION_DEPTH
+readonly LIQUID_BTC_RPC_PORT LIQUID_ELEMENTS_RPC_PORT
+readonly LIQUID_BTC_P2P_PORT LIQUID_ELEMENTS_P2P_PORT
+readonly ARTIFACT_PARENT="$(resolve_artifact_parent \
+    "${LIQUID_E2E_ARTIFACT_DIR:-${TARGET_ROOT}/liquid-e2e-artifacts}")"
+mkdir -p -- "$ARTIFACT_PARENT"
+require_owned_directory_or_parent "$ARTIFACT_PARENT" "artifact directory"
+readonly ARTIFACT_DIR="$(mktemp -d -- "${ARTIFACT_PARENT}/run.XXXXXX")"
+readonly ARTIFACT_OWNER_MARKER="${ARTIFACT_DIR}/.conxian-liquid-e2e-artifact-owner"
+printf 'conxian-liquid-e2e-artifact-v1\nrepo=%s\n' "$REPO_ROOT" >"$ARTIFACT_OWNER_MARKER"
+
+readonly RUN_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/conxian-liquid-e2e.XXXXXX")"
+readonly BTC_DATA="${RUN_ROOT}/bitcoin"
+readonly ELEMENTS_DATA="${RUN_ROOT}/elements"
+
 BITCOIND_PID=""
 ELEMENTSD_PID=""
 BITCOIN_LOG="${ARTIFACT_DIR}/bitcoin-stdout.log"
 ELEMENTS_LOG="${ARTIFACT_DIR}/elements-stdout.log"
 
-mkdir -p "$ARTIFACT_DIR"
-rm -f -- "$ARTIFACT_DIR"/*
 mkdir -p "$BTC_DATA" "$ELEMENTS_DATA"
-
-fail() {
-    printf 'Liquid E2E failure: %s\n' "$*" >&2
-    exit 1
-}
 
 cleanup() {
     local status=$?
@@ -208,6 +315,7 @@ BITCOIND_PID=$!
     -anyonecanspendaremine=1 \
     -initialfreecoins=0 \
     -validatepegin=1 \
+    -peginconfirmationdepth="$LIQUID_PEGIN_CONFIRMATION_DEPTH" \
     -fedpegscript=51 \
     -mainchainrpchost=127.0.0.1 \
     -mainchainrpcport="$BTC_RPC_PORT" \
@@ -246,7 +354,8 @@ readonly BTC_GENESIS="$(btc getblockhash 0)"
 
 [[ "$BTC_GENESIS" == "$SIDECHAIN_PARENT_GENESIS" ]] || fail \
     "Elements parent genesis ${SIDECHAIN_PARENT_GENESIS} does not match Bitcoin genesis ${BTC_GENESIS}"
-(( PEGIN_CONFIRMATION_DEPTH > 0 )) || fail "Elements returned an invalid peg-in confirmation policy"
+[[ "$PEGIN_CONFIRMATION_DEPTH" == "$LIQUID_PEGIN_CONFIRMATION_DEPTH" ]] || fail \
+    "Elements reported peg-in confirmation depth ${PEGIN_CONFIRMATION_DEPTH}, expected configured ${LIQUID_PEGIN_CONFIRMATION_DEPTH}"
 [[ "$PEGGED_ASSET" =~ ^[0-9a-fA-F]{64}$ ]] || fail "Elements returned an invalid pegged asset: ${PEGGED_ASSET}"
 
 # Elements' claimpegin path requires the live policy depth plus two parent
