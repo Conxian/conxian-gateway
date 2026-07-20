@@ -114,8 +114,12 @@ async fn main() -> anyhow::Result<()> {
                 config.rgb_stash_path.as_deref(),
                 config.rgb_esplora_url.as_deref(),
             ) {
-                let resolver = StashResolver::new(stash_path, esplora_url)
-                    .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+                let resolver = StashResolver::new_with_network(
+                    stash_path,
+                    esplora_url,
+                    matches!(config.network, config::Network::Testnet),
+                )
+                .map_err(|error| anyhow::anyhow!(error.to_string()))?;
                 adapter.with_stash(Arc::new(resolver))
             } else {
                 adapter

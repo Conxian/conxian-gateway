@@ -118,8 +118,8 @@ fn parse_verify_response(data: Value, expected_id: &str) -> ConxianResult<bool> 
 ///
 /// - Disabled: no RGB work is performed.
 /// - Shadow: node/native failures may use an explicitly simulated response.
-/// - Active: native and HTTP failures are returned; unknown contracts do not
-///   become simulated successes.
+/// - Active: the native stockpile is authoritative for verification and no
+///   HTTP/simulation fallback is used as proof.
 pub struct NodeRgbAdapter {
     pub mode: RolloutMode,
     pub node_url: String,
@@ -180,18 +180,21 @@ impl RgbAdapter for NodeRgbAdapter {
             RolloutMode::Shadow | RolloutMode::Active => {
                 let canonical_id = rgb_native::normalize_contract_id(contract_id)?;
                 if matches!(self.mode, RolloutMode::Active) {
-                    if let Ok(Some(data)) =
-                        rgb_native::lookup_contract_native(&canonical_id, &self.stash)
-                    {
-                        return Ok(Some(ContractState {
-                            contract_id: canonical_id.clone(),
-                            schema_id: data["schema_id"]
-                                .as_str()
-                                .unwrap_or("urn:rgb:schema:fungible")
-                                .to_string(),
-                            state_data: data,
-                        }));
+                    if !rgb_native::verify_transition_native(&canonical_id, &self.stash)? {
+                        return Ok(None);
                     }
+                    return rgb_native::lookup_contract_native(&canonical_id, &self.stash).map(
+                        |data| {
+                            data.map(|data| ContractState {
+                                contract_id: canonical_id.clone(),
+                                schema_id: data["schema_id"]
+                                    .as_str()
+                                    .unwrap_or("urn:rgb:schema:fungible")
+                                    .to_string(),
+                                state_data: data,
+                            })
+                        },
+                    );
                 }
 
                 match self
@@ -226,11 +229,7 @@ impl RgbAdapter for NodeRgbAdapter {
             RolloutMode::Shadow | RolloutMode::Active => {
                 let canonical_id = rgb_native::normalize_contract_id(transition_id)?;
                 if matches!(self.mode, RolloutMode::Active) {
-                    match rgb_native::verify_transition_native(&canonical_id, &self.stash) {
-                        Ok(true) => return Ok(true),
-                        Ok(false) => return Ok(false),
-                        Err(_) => {}
-                    }
+                    return rgb_native::verify_transition_native(&canonical_id, &self.stash);
                 }
 
                 match self
@@ -356,11 +355,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn active_lookup_rejects_malformed_http_success() {
+    async fn active_lookup_requires_native_stockpile_before_any_http_lookup() {
         let adapter = adapter(RolloutMode::Active, Ok(Some(json!({}))));
         assert!(matches!(
             adapter.lookup_contract(VALID_ID).await,
-            Err(ConxianError::Rgb(message)) if message.contains("malformed")
+            Err(ConxianError::Rgb(_))
         ));
     }
 
@@ -373,37 +372,34 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn active_lookup_rejects_mismatched_http_contract_id() {
+    async fn active_lookup_rejects_missing_native_stockpile_before_http_contract_id() {
         let adapter = adapter(
             RolloutMode::Active,
             Ok(Some(valid_lookup_response(OTHER_ID))),
         );
         assert!(matches!(
             adapter.lookup_contract(VALID_ID).await,
-            Err(ConxianError::Rgb(message)) if message.contains("mismatched contract ID")
+            Err(ConxianError::Rgb(_))
         ));
     }
 
     #[tokio::test]
-    async fn active_lookup_uses_canonical_id_for_http_and_returned_state() {
+    async fn active_lookup_does_not_use_http_as_native_proof() {
         let (adapter, paths) = adapter_with_paths(
             RolloutMode::Active,
             Ok(Some(valid_lookup_response(MNEMONIC_ID))),
         );
-        let result = adapter.lookup_contract(MNEMONIC_ID).await.unwrap().unwrap();
-        assert_eq!(result.contract_id, VALID_ID);
-        assert_eq!(result.schema_id, "urn:rgb:schema:fungible");
-        assert_eq!(result.state_data["ticker"], "CONX");
-        assert_eq!(
-            paths.lock().expect("test path lock").as_slice(),
-            [format!("/contract/{VALID_ID}")]
-        );
+        assert!(adapter.lookup_contract(MNEMONIC_ID).await.is_err());
+        assert!(paths.lock().expect("test path lock").is_empty());
     }
 
     #[tokio::test]
     async fn active_verify_fails_closed_for_unknown_contract() {
         let adapter = adapter(RolloutMode::Active, Ok(None));
-        assert!(!adapter.verify_transition(VALID_ID).await.unwrap());
+        assert!(matches!(
+            adapter.verify_transition(VALID_ID).await,
+            Err(ConxianError::Rgb(_))
+        ));
     }
 
     #[tokio::test]
@@ -413,11 +409,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn active_verify_rejects_malformed_http_success() {
+    async fn active_verify_does_not_accept_malformed_http_success_as_proof() {
         let adapter = adapter(RolloutMode::Active, Ok(Some(json!({}))));
         assert!(matches!(
             adapter.verify_transition(VALID_ID).await,
-            Err(ConxianError::Rgb(message)) if message.contains("malformed verification")
+            Err(ConxianError::Rgb(_))
         ));
     }
 
@@ -428,28 +424,48 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn active_verify_rejects_mismatched_response_id() {
+    async fn active_verify_does_not_accept_mismatched_http_id_as_proof() {
         let adapter = adapter(
             RolloutMode::Active,
             Ok(Some(json!({"valid": true, "contract_id": OTHER_ID}))),
         );
         assert!(matches!(
             adapter.verify_transition(VALID_ID).await,
-            Err(ConxianError::Rgb(message)) if message.contains("mismatched verification ID")
+            Err(ConxianError::Rgb(_))
         ));
     }
 
     #[tokio::test]
-    async fn active_verify_uses_canonical_id_for_http() {
+    async fn active_verify_does_not_use_canonical_id_for_http() {
         let (adapter, paths) = adapter_with_paths(
             RolloutMode::Active,
             Ok(Some(json!({"valid": true, "contract_id": MNEMONIC_ID}))),
         );
-        assert!(adapter.verify_transition(MNEMONIC_ID).await.unwrap());
-        assert_eq!(
-            paths.lock().expect("test path lock").as_slice(),
-            [format!("/verify/{VALID_ID}")]
-        );
+        assert!(adapter.verify_transition(MNEMONIC_ID).await.is_err());
+        assert!(paths.lock().expect("test path lock").is_empty());
+    }
+
+    #[cfg(feature = "rgb-native")]
+    #[tokio::test]
+    async fn active_metadata_cache_never_counts_as_consensus_proof() {
+        let path = std::env::temp_dir().join("conxian-rgb-adapter-cache-only");
+        let _ = std::fs::remove_dir_all(&path);
+        let resolver = StashResolver::new(&path, "https://blockstream.info/api").unwrap();
+        resolver
+            .store_contract(crate::bitcoin::rgb_stash::ContractMeta {
+                contract_id: VALID_ID.to_string(),
+                ticker: Some("CONX".to_string()),
+                name: Some("Conxian".to_string()),
+                supply: Some(1_000_000),
+                precision: Some(8),
+                last_transition: None,
+            })
+            .unwrap();
+        let (adapter, paths) = adapter_with_paths(RolloutMode::Active, Ok(None));
+        let adapter = adapter.with_stash(Arc::new(resolver));
+        assert!(!adapter.verify_transition(VALID_ID).await.unwrap());
+        assert!(paths.lock().expect("test path lock").is_empty());
+        let _ = std::fs::remove_dir_all(path);
     }
 
     #[tokio::test]
