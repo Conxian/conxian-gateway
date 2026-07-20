@@ -4,14 +4,17 @@ set -Eeuo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: scripts/liquid-e2e.sh
+Usage: scripts/liquid-e2e.sh [--validate-config]
 
 Run the local Bitcoin + Elements regtest peg-in/peg-out harness.
 
+Use --validate-config to validate configuration and exit without checking for
+Docker or starting any services.
+
 Configuration is supplied through environment variables:
   PEGIN_CONFIRMATION_DEPTH  Elements confirmation depth (default: 10; minimum: 2)
-  PEGIN_AMOUNT               Bitcoin amount to peg in (default: 1)
-  PEGOUT_AMOUNT              Representative peg-out amount (default: 0.25)
+  PEGIN_AMOUNT               Canonical non-negative BTC decimal, max 8 places (default: 1)
+  PEGOUT_AMOUNT              Canonical non-negative BTC decimal, max 8 places (default: 0.25)
   OUTPUT_DIR                 Fixture/log directory (default: target/liquid-e2e)
   COMPOSE_PROJECT_NAME       Compose project name (default: unique per run)
   COMPOSE_FILE               Compose file override
@@ -21,13 +24,26 @@ regtest daemons and does not connect to public Bitcoin or Liquid services.
 EOF
 }
 
-if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
-  usage
-  exit 0
-fi
+VALIDATE_CONFIG_ONLY=0
+case "${1:-}" in
+  "" )
+    ;;
+  --help|-h)
+    usage
+    exit 0
+    ;;
+  --validate-config)
+    VALIDATE_CONFIG_ONLY=1
+    ;;
+  *)
+    echo "Unexpected argument: $1" >&2
+    usage >&2
+    exit 2
+    ;;
+esac
 
-if (( $# > 0 )); then
-  echo "Unexpected argument: $1" >&2
+if (( $# > 1 )); then
+  echo "Unexpected argument: $2" >&2
   usage >&2
   exit 2
 fi
@@ -52,6 +68,8 @@ ELEMENTS_RPC_USER="elements"
 ELEMENTS_RPC_PASSWORD="elements-regtest-only-password"
 BITCOIN_WALLET="liquid-e2e-bitcoin"
 ELEMENTS_WALLET="liquid-e2e-elements"
+DECIMAL_AMOUNT_RE='^(0|[1-9][0-9]*)(\.[0-9]{1,8})?$'
+EXPECTED_EARLY_CLAIM_ERROR='Peg-in Bitcoin transaction needs more confirmations to be sent.'
 
 require_command() {
   local command_name="$1"
@@ -61,44 +79,77 @@ require_command() {
   fi
 }
 
-require_command docker
+validate_decimal_amount() {
+  local name="$1"
+  local amount="$2"
+
+  if [[ ! "$amount" =~ $DECIMAL_AMOUNT_RE ]]; then
+    echo "$name must be canonical non-negative decimal text with at most 8 fractional digits (no exponent, sign, NaN, Infinity, or surrounding whitespace): $amount" >&2
+    return 2
+  fi
+
+  if ! jq -ne --arg amount "$amount" '($amount | tonumber) >= 0' >/dev/null; then
+    echo "$name must be a finite non-negative decimal amount: $amount" >&2
+    return 2
+  fi
+}
+
+validate_config() {
+  if [[ ! "$PEGIN_CONFIRMATION_DEPTH" =~ ^[0-9]+$ ]]; then
+    echo "PEGIN_CONFIRMATION_DEPTH must be an integer between 2 and 1000" >&2
+    return 2
+  fi
+  PEGIN_CONFIRMATION_DEPTH=$((10#$PEGIN_CONFIRMATION_DEPTH))
+  if (( PEGIN_CONFIRMATION_DEPTH < 2 || PEGIN_CONFIRMATION_DEPTH > 1000 )); then
+    echo "PEGIN_CONFIRMATION_DEPTH must be an integer between 2 and 1000" >&2
+    return 2
+  fi
+
+  validate_decimal_amount PEGIN_AMOUNT "$PEGIN_AMOUNT"
+  if ! jq -ne --arg amount "$PEGIN_AMOUNT" '($amount | tonumber) > 0' >/dev/null; then
+    echo "PEGIN_AMOUNT must be greater than zero; received: $PEGIN_AMOUNT" >&2
+    return 2
+  fi
+
+  validate_decimal_amount PEGOUT_AMOUNT "$PEGOUT_AMOUNT"
+  if ! jq -ne --arg amount "$PEGOUT_AMOUNT" '($amount | tonumber) > 0' >/dev/null; then
+    echo "PEGOUT_AMOUNT must be greater than zero; received: $PEGOUT_AMOUNT" >&2
+    return 2
+  fi
+  if ! jq -ne \
+    --arg pegin "$PEGIN_AMOUNT" \
+    --arg pegout "$PEGOUT_AMOUNT" \
+    '($pegout | tonumber) < ($pegin | tonumber)' \
+    >/dev/null; then
+    echo "PEGOUT_AMOUNT must be smaller than PEGIN_AMOUNT; received PEGOUT_AMOUNT=$PEGOUT_AMOUNT and PEGIN_AMOUNT=$PEGIN_AMOUNT" >&2
+    return 2
+  fi
+
+  if [[ ! "$RPC_TIMEOUT_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
+    echo "RPC_TIMEOUT_SECONDS must be a positive integer" >&2
+    return 2
+  fi
+
+  if [[ ! -f "$COMPOSE_FILE" ]]; then
+    echo "Compose file not found: $COMPOSE_FILE" >&2
+    return 2
+  fi
+}
+
 require_command jq
+validate_config
+
+if (( VALIDATE_CONFIG_ONLY == 1 )); then
+  printf 'Configuration validation passed: PEGIN_AMOUNT=%s PEGOUT_AMOUNT=%s PEGIN_CONFIRMATION_DEPTH=%s RPC_TIMEOUT_SECONDS=%s\n' \
+    "$PEGIN_AMOUNT" "$PEGOUT_AMOUNT" "$PEGIN_CONFIRMATION_DEPTH" "$RPC_TIMEOUT_SECONDS"
+  exit 0
+fi
+
+require_command docker
 
 COMPOSE_VERSION="$(docker compose version 2>/dev/null || true)"
 if [[ -z "$COMPOSE_VERSION" || ! "$COMPOSE_VERSION" =~ v2([.[:space:]-]|$) ]]; then
   echo "Docker Compose v2 is required; found: ${COMPOSE_VERSION:-unavailable}" >&2
-  exit 2
-fi
-
-if [[ ! -f "$COMPOSE_FILE" ]]; then
-  echo "Compose file not found: $COMPOSE_FILE" >&2
-  exit 2
-fi
-
-if [[ ! "$PEGIN_CONFIRMATION_DEPTH" =~ ^[0-9]+$ ]]; then
-  echo "PEGIN_CONFIRMATION_DEPTH must be an integer between 2 and 1000" >&2
-  exit 2
-fi
-PEGIN_CONFIRMATION_DEPTH=$((10#$PEGIN_CONFIRMATION_DEPTH))
-if (( PEGIN_CONFIRMATION_DEPTH < 2 || PEGIN_CONFIRMATION_DEPTH > 1000 )); then
-  echo "PEGIN_CONFIRMATION_DEPTH must be an integer between 2 and 1000" >&2
-  exit 2
-fi
-
-if ! jq -n --arg amount "$PEGIN_AMOUNT" '($amount | tonumber) > 0' >/dev/null 2>&1; then
-  echo "PEGIN_AMOUNT must be a positive decimal amount" >&2
-  exit 2
-fi
-
-if ! jq -n --arg pegin "$PEGIN_AMOUNT" --arg pegout "$PEGOUT_AMOUNT" \
-  '($pegin | tonumber) > 0 and ($pegout | tonumber) > 0 and ($pegout | tonumber) < ($pegin | tonumber)' \
-  >/dev/null 2>&1; then
-  echo "PEGOUT_AMOUNT must be positive and smaller than PEGIN_AMOUNT" >&2
-  exit 2
-fi
-
-if [[ ! "$RPC_TIMEOUT_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
-  echo "RPC_TIMEOUT_SECONDS must be a positive integer" >&2
   exit 2
 fi
 
@@ -129,7 +180,8 @@ cleanup() {
   set +e
 
   if (( COMPOSE_STARTED == 1 )); then
-    compose ps >"$OUTPUT_DIR/compose-ps.txt" 2>&1
+    compose ps --all --format json |
+      jq -r '.[] | [.Service, .State] | @tsv' >"$OUTPUT_DIR/compose-ps.txt" 2>&1
     compose logs --no-color bitcoin >"$OUTPUT_DIR/bitcoin.log" 2>&1
     compose logs --no-color elements >"$OUTPUT_DIR/elements.log" 2>&1
     compose logs --no-color >"$OUTPUT_DIR/compose.log" 2>&1
@@ -319,12 +371,17 @@ BITCOIN_PEGIN_BLOCK_HASH="$(jq -r '.blockhash // empty' <<<"$BITCOIN_PEGIN_TX_IN
 [[ -n "$BITCOIN_PEGIN_BLOCK_HASH" ]] || die "Peg-in transaction has no containing block"
 
 EARLY_CLAIM_REJECTED=false
+EARLY_CLAIM_OBSERVED_ERROR=""
 if EARLY_CLAIM_OUTPUT="$(elements_wallet_cli claimpegin "$BITCOIN_PEGIN_RAW_TX" "$BITCOIN_PEGIN_TXOUT_PROOF" "$CLAIM_SCRIPT" 2>&1)"; then
   die "Immature claimpegin unexpectedly succeeded: $EARLY_CLAIM_OUTPUT"
 else
+  if [[ "$EARLY_CLAIM_OUTPUT" != *"$EXPECTED_EARLY_CLAIM_ERROR"* ]]; then
+    die "Immature claimpegin returned an unexpected error; expected substring '$EXPECTED_EARLY_CLAIM_ERROR'; observed: $EARLY_CLAIM_OUTPUT"
+  fi
   EARLY_CLAIM_REJECTED=true
+  EARLY_CLAIM_OBSERVED_ERROR="$EARLY_CLAIM_OUTPUT"
   printf '%s\n' "$EARLY_CLAIM_OUTPUT" >"$OUTPUT_DIR/early-claim-rejection.txt"
-  log "PASS: immature claimpegin was rejected"
+  log "PASS: immature claimpegin was rejected with the expected maturity error"
 fi
 
 REQUIRED_PARENT_CONFIRMATIONS=$((PEGIN_CONFIRMATION_DEPTH + 2))
@@ -373,6 +430,8 @@ jq -n \
   --arg bitcoin_raw_tx "$BITCOIN_PEGIN_RAW_TX" \
   --arg bitcoin_txout_proof "$BITCOIN_PEGIN_TXOUT_PROOF" \
   --arg claim_txid "$CLAIM_TXID" \
+  --arg early_claim_expected_error "$EXPECTED_EARLY_CLAIM_ERROR" \
+  --arg early_claim_observed_error "$EARLY_CLAIM_OBSERVED_ERROR" \
   --argjson claim_tx "$CLAIM_TX_INFO" \
   --argjson bitcoin_confirmations "$BITCOIN_PEGIN_CONFIRMATIONS" \
   --argjson claim_confirmations "$CLAIM_CONFIRMATIONS" \
@@ -401,6 +460,8 @@ jq -n \
       bitcoin_raw_transaction: $bitcoin_raw_tx,
       bitcoin_txout_proof: $bitcoin_txout_proof,
       early_claim_rejected: $early_claim_rejected,
+      early_claim_expected_error: $early_claim_expected_error,
+      early_claim_observed_error: $early_claim_observed_error,
       claim_txid: $claim_txid,
       claim_confirmations: $claim_confirmations,
       claim_transaction: $claim_tx,
@@ -422,6 +483,8 @@ PEGOUT_TX_INFO="$(elements_cli decoderawtransaction "$PEGOUT_RAW_TX")"
 PEGOUT_OUTPUTS="$(jq '[.vout[]? | select(.scriptPubKey?.pegout_chain != null)]' <<<"$PEGOUT_TX_INFO")"
 PEGOUT_OUTPUT_COUNT="$(jq 'length' <<<"$PEGOUT_OUTPUTS")"
 [[ "$PEGOUT_OUTPUT_COUNT" == "1" ]] || die "Expected exactly one decoded peg-out nulldata output; found $PEGOUT_OUTPUT_COUNT"
+assert_json "decoded peg-out scriptPubKey.type is nulldata" \
+  '.[0].scriptPubKey.type == "nulldata"' "$PEGOUT_OUTPUTS"
 PEGOUT_METADATA="$(jq -c '.[0].scriptPubKey' <<<"$PEGOUT_OUTPUTS")"
 PEGOUT_CHAIN="$(jq -r '.pegout_chain // empty' <<<"$PEGOUT_METADATA")"
 PEGOUT_ADDRESS="$(jq -r '.pegout_address // empty' <<<"$PEGOUT_METADATA")"

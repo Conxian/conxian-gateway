@@ -32,7 +32,9 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v4.2.2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
 
       - name: Verify Docker and jq prerequisites
         run: |
@@ -42,6 +44,9 @@ jobs:
 
       - name: Check harness syntax
         run: bash -n scripts/liquid-e2e.sh
+
+      - name: Validate harness configuration without Docker
+        run: ./scripts/liquid-e2e.sh --validate-config
 
       - name: Validate Docker Compose configuration
         run: docker compose --file tests/liquid-e2e/docker-compose.yml config --quiet
@@ -58,7 +63,9 @@ jobs:
           docker compose \
             --project-name "$COMPOSE_PROJECT_NAME" \
             --file tests/liquid-e2e/docker-compose.yml \
-            ps > target/liquid-e2e/workflow-compose-ps.txt 2>&1 || true
+            ps --all --format json \
+            | jq -r '.[] | [.Service, .State] | @tsv' \
+            > target/liquid-e2e/workflow-compose-ps.txt 2>&1 || true
           docker compose \
             --project-name "$COMPOSE_PROJECT_NAME" \
             --file tests/liquid-e2e/docker-compose.yml \
@@ -70,7 +77,7 @@ jobs:
 
       - name: Upload Liquid E2E fixtures and logs
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4.6.1
+        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
         with:
           name: liquid-e2e-${{ github.run_id }}
           path: target/liquid-e2e

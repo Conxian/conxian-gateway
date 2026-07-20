@@ -12,8 +12,8 @@ The harness uses pinned multi-architecture images:
 
 Both images are pinned by digest in
 [`docker-compose.yml`](./docker-compose.yml). The daemons run on regtest with
-P2P listening disabled, an internal-only Docker network, and host RPC ports
-bound to `127.0.0.1`.
+P2P listening disabled, and an internal-only Docker network. No host ports are
+published; all RPC calls use `docker compose exec` inside the Compose network.
 
 ## Prerequisites
 
@@ -23,6 +23,17 @@ bound to `127.0.0.1`.
 
 Docker is required because the harness validates real daemon behavior. No
 public Liquid service is contacted.
+
+To validate amounts and other configuration without Docker:
+
+```bash
+PEGIN_AMOUNT=1 PEGOUT_AMOUNT=0.25 ./scripts/liquid-e2e.sh --validate-config
+```
+
+`PEGIN_AMOUNT` and `PEGOUT_AMOUNT` must use canonical non-negative decimal
+text with no exponent notation, sign, surrounding whitespace, or more than
+eight fractional digits. Both amounts must be greater than zero, and the
+peg-out amount must be smaller than the peg-in amount.
 
 ## One-command local run
 
@@ -70,7 +81,7 @@ available before tearing down the daemons:
 | `elements-sidechain-info.json` | Elements `getsidechaininfo` response, including effective peg-in depth and parent genesis. |
 | `early-claim-rejection.txt` | Daemon error returned by the intentionally immature `claimpegin` attempt. |
 | `bitcoin.log`, `elements.log`, `compose.log` | Captured daemon/Compose logs. |
-| `compose-ps.txt`, `cleanup.log` | Container state and cleanup output. |
+| `compose-ps.txt`, `cleanup.log` | Container service state and cleanup output (without full process command lines). |
 
 ### `pegin.json` schema
 
@@ -82,8 +93,9 @@ The top-level object contains `schema_version`, `network`, and
   `bitcoin_txout_proof` for adapter/fixture consumers;
 - `bitcoin_confirmations` and
   `configuration.required_parent_confirmations`;
-- `early_claim_rejected`, `claim_txid`, `claim_confirmations`, and the decoded
-  `claim_transaction`;
+- `early_claim_rejected`, `early_claim_expected_error`,
+  `early_claim_observed_error`, `claim_txid`, `claim_confirmations`, and the
+  decoded `claim_transaction`;
 - `sidechain_balance_before` and `sidechain_balance_after`.
 
 ### `pegout.json` schema
@@ -95,6 +107,7 @@ transaction. The decoded metadata is checked for:
 
 - `pegout_chain` equal to the Bitcoin regtest genesis hash;
 - `pegout_address` or `pegout_hex` matching the generated Bitcoin destination;
+- decoded `scriptPubKey.type` equal to `nulldata`;
 - a non-empty `pegout_type`.
 
 ## Determinism and fixture reuse

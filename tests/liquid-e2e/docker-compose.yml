@@ -15,8 +15,6 @@ services:
       - -rpcuser=regtest
       - -rpcpassword=bitcoin-regtest-only-password
       - -fallbackfee=0.0002
-    ports:
-      - "127.0.0.1:${BITCOIN_RPC_PORT:-18443}:18443"
     volumes:
       - bitcoin-data:/home/bitcoin/.bitcoin
     networks:
@@ -49,8 +47,6 @@ services:
       - -mainchainrpcport=18443
       - -mainchainrpcuser=regtest
       - -mainchainrpcpassword=bitcoin-regtest-only-password
-    ports:
-      - "127.0.0.1:${ELEMENTS_RPC_PORT:-18884}:18884"
     volumes:
       - elements-data:/root/.elements
     networks:
