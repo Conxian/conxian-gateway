@@ -38,3 +38,31 @@ This repair does **not** claim full issue completion. Phase 2 still requires:
 - A deterministic Bitcoin/RGB regtest fixture and end-to-end harness.
 
 No fake signature verification or no-op consensus proof was added.
+
+## Phase 2 implementation checkpoint — 2026-07-20
+
+The approved Phase 2 branch adds the strongest safe boundary available from
+the pinned `rgb-std` v0.12.0-rc.3 ecosystem:
+
+- `rgb-persist-fs = 0.12.0-rc.3` is exact-pinned and owns a
+  `StockpileDir<bp::seals::TxoSeal>` under `RGB_STASH_PATH`.
+- A wallet-owned, atomic `AuthToken -> WTxoSeal` registry validates the seal's
+  committed auth token, treats identical replay as idempotent, rejects
+  overwrite, and fails closed on corrupt persistence.
+- Consignment import preflights the binary envelope and contract ID, rejects
+  unsigned articles, invokes an application-provided issuer signature
+  validator, and delegates operation/codex/witness verification to
+  `rgb::Contracts::consume_from_file`. Export is stockpile-backed and carries
+  only RGB auth-token terminals.
+- Active adapter verification no longer falls through to HTTP or simulation;
+  the JSON metadata cache is explicitly descriptive and never proof.
+- Deterministic tests cover malformed consignments, contract-ID mismatch,
+  invalid/fail-closed signature policy, unknown auth tokens, replay/overwrite,
+  and corrupted metadata/registry persistence.
+
+### Honest limitations
+
+The pinned RGB API abstracts issuer cryptography, so no production signature
+algorithm is claimed. The repository also does not yet include a complete
+signed RGB/Bitcoin regtest fixture harness. Active consignment rollout remains
+fail-closed until those fixtures and an approved signature backend exist.
