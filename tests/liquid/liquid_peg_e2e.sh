@@ -188,7 +188,7 @@ btc() {
         -regtest \
         -datadir="$BTC_DATA" \
         -rpcconnect=127.0.0.1 \
-        -rpcport="$BTC_RPC_PORT" \
+        -rpcport="$LIQUID_BTC_RPC_PORT" \
         -rpcuser="$RPC_USER" \
         -rpcpassword="$RPC_PASSWORD" \
         "$@"
@@ -203,7 +203,7 @@ elm() {
         -chain=elementsregtest \
         -datadir="$ELEMENTS_DATA" \
         -rpcconnect=127.0.0.1 \
-        -rpcport="$ELEMENTS_RPC_PORT" \
+        -rpcport="$LIQUID_ELEMENTS_RPC_PORT" \
         -rpcuser="$RPC_USER" \
         -rpcpassword="$RPC_PASSWORD" \
         "$@"
@@ -293,10 +293,10 @@ printf 'Starting pinned Bitcoin Core %s and Elements Core %s\n' "31.1" "23.3.3"
     -dnsseed=0 \
     -txindex=1 \
     -fallbackfee=0.0002 \
-    -port="$BTC_P2P_PORT" \
+    -port="$LIQUID_BTC_P2P_PORT" \
     -rpcbind=127.0.0.1 \
     -rpcallowip=127.0.0.1 \
-    -rpcport="$BTC_RPC_PORT" \
+    -rpcport="$LIQUID_BTC_RPC_PORT" \
     -rpcuser="$RPC_USER" \
     -rpcpassword="$RPC_PASSWORD" \
     >"$BITCOIN_LOG" 2>&1 &
@@ -318,13 +318,13 @@ BITCOIND_PID=$!
     -peginconfirmationdepth="$LIQUID_PEGIN_CONFIRMATION_DEPTH" \
     -fedpegscript=51 \
     -mainchainrpchost=127.0.0.1 \
-    -mainchainrpcport="$BTC_RPC_PORT" \
+    -mainchainrpcport="$LIQUID_BTC_RPC_PORT" \
     -mainchainrpcuser="$RPC_USER" \
     -mainchainrpcpassword="$RPC_PASSWORD" \
-    -port="$ELEMENTS_P2P_PORT" \
+    -port="$LIQUID_ELEMENTS_P2P_PORT" \
     -rpcbind=127.0.0.1 \
     -rpcallowip=127.0.0.1 \
-    -rpcport="$ELEMENTS_RPC_PORT" \
+    -rpcport="$LIQUID_ELEMENTS_RPC_PORT" \
     -rpcuser="$RPC_USER" \
     -rpcpassword="$RPC_PASSWORD" \
     >"$ELEMENTS_LOG" 2>&1 &
