@@ -16,7 +16,7 @@ metadata changes were made.
 - Workflow conflict resolution and host-daemon workflow hardening: included in merge commit `a394ec3ac974aa8d0e15cdab52eefca0157b739c`
 - Harness hardening/removal commit: `b09a6e31a700ba3a3cdf0922b92358bd79700386`
 - Final harness path/depth refinement commit: `eec6ad252c13dc3c853a30e0b03a54ffb839b890`
-- Verifier/API coverage commit: `89a45d359c8db53d0256aa5e8e95d90e4faca07c`
+- Verifier/API coverage commit: `89a45d359c8d`
 
 The merge was a normal `--no-ff` merge; no rebase or force-push was used.
 The workflow conflict was resolved in favor of the merged host-daemon
