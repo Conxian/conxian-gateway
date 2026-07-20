@@ -153,6 +153,8 @@ pub enum ConxianError {
     Io(String),
     #[error("Persistence error: {0}")]
     Persistence(String),
+    #[error("RGB error: {0}")]
+    Rgb(String),
     #[error("Machine identity error: {0}")]
     MachineIdentity(String),
 }
