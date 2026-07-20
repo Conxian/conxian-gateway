@@ -2000,6 +2000,7 @@ fn sample_process(pid: u32) -> io::Result<Option<ProcSample>> {
             None
         } else {
             let mut recovered = None;
+            let mut zombie_seen = false;
             for _ in 0..8 {
                 thread::sleep(Duration::from_millis(1));
                 status = match fs::read_to_string(format!("/proc/{pid}/status")) {
@@ -2012,11 +2013,13 @@ fn sample_process(pid: u32) -> io::Result<Option<ProcSample>> {
                     break;
                 }
                 if process_status_is_zombie(&status) {
+                    zombie_seen = true;
                     break;
                 }
             }
             match recovered {
                 Some(high_water_rss_bytes) => Some(high_water_rss_bytes),
+                None if zombie_seen => None,
                 None => {
                     return Err(io::Error::new(
                         io::ErrorKind::InvalidData,

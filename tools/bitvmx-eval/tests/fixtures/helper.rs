@@ -31,6 +31,7 @@ fn main() {
     let scenario = fs::read_to_string(&fixture).expect("fixture must be readable");
     match scenario.trim() {
         "success" => println!("INFO Execution result: Halt(0, 7)"),
+        "short-lived" => println!("INFO Execution result: Halt(0, 7)"),
         "failure" => println!("INFO Execution result: Halt(7, 9)"),
         "limit" => println!("INFO Execution result: LimitStepReached(100)"),
         "malformed" => println!("INFO Execution result: NotARealBitVMXResult"),

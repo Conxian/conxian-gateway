@@ -242,6 +242,44 @@ fn success_report_has_non_production_contract_and_integrity_pairs() {
 }
 
 #[test]
+fn short_lived_child_exit_race_is_not_process_setup_failure() {
+    for iteration in 0..8 {
+        let (manifest, report, _) = case(
+            &format!("short-lived-child-{iteration}"),
+            "short-lived",
+            "halt_success",
+        );
+        let result = run_manifest(&manifest, &report)
+            .unwrap_or_else(|error| panic!("short-lived iteration {iteration} failed: {error}"));
+        assert_eq!(result.actual_result_class.as_deref(), Some("halt_success"));
+        assert_eq!(result.actual_return_value, Some(0));
+        assert_eq!(result.executed_steps, Some(7));
+        assert!(
+            result.failure.is_none(),
+            "short-lived iteration {iteration} unexpectedly failed: {:?}",
+            result.failure
+        );
+
+        let json = report_json(&report);
+        assert_eq!(json["actual_result_class"], "halt_success");
+        assert_eq!(json["actual_return_value"], 0);
+        assert_eq!(json["exit_status"]["success"], true);
+        assert_eq!(json["exit_status"]["code"], 0);
+        assert_eq!(json["failure"], serde_json::Value::Null);
+        assert!(
+            !json["failure_details"]
+                .as_array()
+                .expect("failure details array")
+                .iter()
+                .any(|detail| detail
+                    .as_str()
+                    .is_some_and(|detail| detail.contains("process_setup_failure"))),
+            "short-lived iteration {iteration} recorded process setup failure: {json}"
+        );
+    }
+}
+
+#[test]
 fn expected_halt_failure_is_classified_without_verification() {
     let (manifest, report, _) = case("expected-failure", "failure", "halt_failure");
     let result = run_manifest(&manifest, &report).expect("expected failure class is valid");
