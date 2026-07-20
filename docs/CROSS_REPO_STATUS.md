@@ -76,13 +76,19 @@ lib-conclave-sdk  ←  shares types with SDK (L3)
 | #236 SDK | Version drift + README | ✅ Fixed (0.1.4, Developer Preview) |
 | #220 DLC CET | dlc-manager integration | ⚠️ Attempted in `453a15a`/`8ef9d05`, then reverted in `cb8b680` after API incompatibility/CI failures; remains open |
 | #219 Groth16 | Verifier boundary | 🟡 Canonical contract, commitment binding, fixture, and BitVM handoff defined on `charlie/issue-219-groth16-boundary`; not merged and not cryptographic |
-| #216 Babylon | BTC header SPV | ❌ Pending; adapter remains a stub while PR #253 is open |
+| #216 Babylon | BTC header SPV | 🟡 Implemented on PR #253 (`feat/216-babylon-header-chain`); pending review/merge |
 
 **Historical DLC commits:**
 - `453a15a` attempted the W29 P0 implementation, including `dlc_cet.rs` and `dlc-manager`.
 - `8ef9d05` adjusted the attempted `dlc-manager` version.
 - `cb8b680` removed `dlc_cet`, `dlc-manager`, and related wiring after API incompatibility/CI failures.
 - `cc10886` recorded the superseded completion claim; see `docs/SESSION_SUMMARY_2026-07-20.md` for the correction.
+
+**Babylon #216 status (2026-07-20):** PR #253 carries the BTC header-chain
+query and verification implementation. Until that PR is merged, the
+main-branch `babylon_adapter.rs` remains the stub that returned `0` without a
+Bitcoin RPC and did not verify raw header hashes or parent links. Issue #216 is
+not claimed merged or closed by this status entry.
 
 **Liquid #218/#193 status (2026-07-20):**
 
@@ -105,6 +111,7 @@ lib-conclave-sdk  ←  shares types with SDK (L3)
 
 | Date | Repository | Session Summary |
 |------|------------|-----------------|
+| 2026-07-20 | conxian-gateway | #216 continuity correction and Babylon header-chain implementation delivered in PR #253; pending merge. |
 | 2026-07-20 | conxian-gateway | #219 boundary milestone: canonical contract, commitment binding, circuit/key association, BitVM handoff, deterministic fixture, and rejection tests completed locally; production backend remains open. |
 | 2026-07-15 | conxian-gateway | W29 P0 implementation attempt recorded; later verification found the DLC CET attempt reverted in `cb8b680`, so #220 remains open. |
 | 2026-07-15 | conxian-gateway | W29 sprint start. Full verification complete. |
@@ -139,4 +146,4 @@ Before starting work on any repo, verify:
 ---
 
 *This file is auto-maintained by agent sessions.*
-*Last Major Update: 2026-07-20 (W29 P0 status corrected; #219 boundary milestone local only)*
+*Last Major Update: 2026-07-20 (W29 P0 status corrected; #216 PR #253 pending merge)*
