@@ -56,8 +56,13 @@ pub trait RgbAdapter {
 ## Implementation Details (Phase 1.5)
 - Concrete implementation in `internal/engine/src/bitcoin/rgb_adapter.rs`.
 - Uses `minreq` on a blocking task for lightweight HTTP communication with the RGB node.
-- Native contract IDs are parsed by `rgb::ContractId` and stored in canonical
-  `contract:` Baid64 form. Legacy `rgb:` values are not consensus-valid IDs.
+- All non-disabled paths pass through one shared contract-ID normalizer. Native
+  builds use `rgb::ContractId` for full Baid64 validation and canonicalization;
+  default-feature builds still reject empty, legacy, prefixless, and malformed
+  IDs at the boundary and accept only the canonical chunked `contract:` shape.
+  An optional Baid64 mnemonic fragment is accepted but removed before stash,
+  HTTP, and response propagation. Legacy `rgb:` values are not consensus-valid
+  IDs.
 - `StashResolver` persists metadata with atomic temp-file replacement and
   distinguishes spent, unspent, not-found, and transport-error UTXO results.
 - Mempool orchestration does not synthesize an RGB contract ID from a Bitcoin
@@ -77,6 +82,12 @@ pub trait RgbAdapter {
   exists.
 - The Phase 1.5 stash check establishes canonical ID parsing and local metadata
   presence only. It does not claim full `ContractVerify` completion.
+- A successful HTTP contract lookup must contain a matching `contract_id`, a
+  non-empty `schema_id`, and an object-valued `state`. Empty or mismatched 200
+  bodies are errors in Active mode and use Shadow-only simulation fallback.
+- A successful HTTP verification response must contain a boolean `valid` field.
+  If the response includes `contract_id` or `transition_id`, it must match the
+  normalized request ID; malformed verdicts are not accepted as verification.
 
 ## Error Semantics
 - `ConxianError::Rgb`: Used for invalid IDs, configuration, persistence, native

@@ -4,15 +4,15 @@
 //! metadata presence. Full `ContractVerify`, consignment handling, and
 //! signature policy remain Phase 2 work for issue #228.
 
-use conxian_core::ConxianResult;
+use conxian_core::{ConxianError, ConxianResult};
 use std::sync::Arc;
 
 #[cfg(feature = "rgb-native")]
 use crate::bitcoin::rgb_stash::StashResolver;
 #[cfg(not(feature = "rgb-native"))]
 use crate::bitcoin::StashResolver;
-#[cfg(not(feature = "rgb-native"))]
-use conxian_core::ConxianError;
+
+const INVALID_CONTRACT_ID: &str = "invalid RGB contract ID; expected contract: Baid64";
 
 /// Verifies an RGB transition against the local Phase 1.5 stash boundary.
 ///
@@ -24,11 +24,11 @@ pub fn verify_transition_native(
     transition_id: &str,
     stash: &Option<Arc<StashResolver>>,
 ) -> ConxianResult<bool> {
-    validate_contract_id_native(transition_id)?;
+    let canonical_id = normalize_contract_id(transition_id)?;
     let resolver = stash.as_ref().ok_or_else(|| {
         conxian_core::ConxianError::Rgb("RGB native resolver is not configured".to_string())
     })?;
-    resolver.verify_transition(transition_id)
+    resolver.verify_transition(&canonical_id)
 }
 
 /// Resolves RGB contract metadata from the local Phase 1.5 stash.
@@ -37,12 +37,12 @@ pub fn lookup_contract_native(
     contract_id: &str,
     stash: &Option<Arc<StashResolver>>,
 ) -> ConxianResult<Option<serde_json::Value>> {
-    validate_contract_id_native(contract_id)?;
+    let canonical_id = normalize_contract_id(contract_id)?;
     let resolver = stash.as_ref().ok_or_else(|| {
         conxian_core::ConxianError::Rgb("RGB native resolver is not configured".to_string())
     })?;
 
-    resolver.lookup_contract(contract_id).map(|meta| {
+    resolver.lookup_contract(&canonical_id).map(|meta| {
         meta.map(|meta| {
             serde_json::json!({
                 "contract_id": meta.contract_id,
@@ -57,31 +57,88 @@ pub fn lookup_contract_native(
     })
 }
 
-/// Validates and canonicalizes the native contract-ID boundary before any
-/// HTTP fallback is attempted by Active mode.
-#[cfg(feature = "rgb-native")]
-pub fn validate_contract_id_native(input: &str) -> ConxianResult<String> {
-    let parsed = input.parse::<rgb::ContractId>().map_err(|_| {
-        conxian_core::ConxianError::Rgb(
-            "invalid RGB contract ID; expected contract: Baid64".to_string(),
-        )
-    })?;
-    let canonical = parsed.to_string();
-    if !input.starts_with("contract:") || !canonical.starts_with("contract:") {
-        return Err(conxian_core::ConxianError::Rgb(
-            "invalid RGB contract ID; expected contract: Baid64".to_string(),
-        ));
+/// Normalizes an RGB contract ID for all adapter boundaries.
+///
+/// Native builds use `rgb::ContractId` for full Baid64 checksum and payload
+/// validation. Default-feature builds still reject empty, legacy, prefixless,
+/// and malformed IDs at the boundary; they intentionally accept only the
+/// canonical chunked `contract:` shape because the native parser is not
+/// available. An optional Baid64 mnemonic fragment (`#word-word-word`) is
+/// accepted and removed from the returned wire/canonical ID in both modes.
+pub fn normalize_contract_id(input: &str) -> ConxianResult<String> {
+    if input.is_empty() || input.trim() != input {
+        return Err(ConxianError::Rgb(INVALID_CONTRACT_ID.to_string()));
     }
-    Ok(canonical)
+
+    #[cfg(feature = "rgb-native")]
+    {
+        let parsed = input
+            .parse::<rgb::ContractId>()
+            .map_err(|_| ConxianError::Rgb(INVALID_CONTRACT_ID.to_string()))?;
+        let canonical = parsed.to_string();
+        if !input.starts_with("contract:") || !canonical.starts_with("contract:") {
+            return Err(ConxianError::Rgb(INVALID_CONTRACT_ID.to_string()));
+        }
+        Ok(canonical)
+    }
+
+    #[cfg(not(feature = "rgb-native"))]
+    {
+        normalize_contract_id_without_native(input)
+    }
+}
+
+/// Compatibility name retained for callers that specifically refer to the
+/// native validation boundary. The shared normalizer is the actual boundary
+/// used by the adapter, stash, and HTTP paths.
+pub fn validate_contract_id_native(input: &str) -> ConxianResult<String> {
+    normalize_contract_id(input)
+}
+
+#[cfg(not(feature = "rgb-native"))]
+fn normalize_contract_id_without_native(input: &str) -> ConxianResult<String> {
+    let (base, mnemonic) = input.split_once('#').unwrap_or((input, ""));
+    if base.contains('#') || (input.contains('#') && mnemonic.is_empty()) {
+        return Err(ConxianError::Rgb(INVALID_CONTRACT_ID.to_string()));
+    }
+
+    let payload = base
+        .strip_prefix("contract:")
+        .filter(|payload| !payload.is_empty())
+        .ok_or_else(|| ConxianError::Rgb(INVALID_CONTRACT_ID.to_string()))?;
+
+    let chunks: Vec<&str> = payload.split('-').collect();
+    let canonical_chunks = chunks.len() == 6
+        && chunks[0].len() == 8
+        && chunks[1..].iter().all(|chunk| chunk.len() == 7);
+    if !canonical_chunks
+        || chunks
+            .iter()
+            .flat_map(|chunk| chunk.bytes())
+            .any(|byte| !matches!(byte, b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'_' | b'~'))
+    {
+        return Err(ConxianError::Rgb(INVALID_CONTRACT_ID.to_string()));
+    }
+
+    if !mnemonic.is_empty()
+        && mnemonic
+            .split('-')
+            .any(|word| word.is_empty() || !word.bytes().all(|byte| byte.is_ascii_lowercase()))
+    {
+        return Err(ConxianError::Rgb(INVALID_CONTRACT_ID.to_string()));
+    }
+
+    Ok(base.to_string())
 }
 
 // ── Fallback (feature disabled) ────────────────────────────────────────
 
 #[cfg(not(feature = "rgb-native"))]
 pub fn verify_transition_native(
-    _transition_id: &str,
+    transition_id: &str,
     _stash: &Option<Arc<StashResolver>>,
 ) -> ConxianResult<bool> {
+    normalize_contract_id(transition_id)?;
     Err(ConxianError::Rgb(
         "rgb-native feature not enabled".to_string(),
     ))
@@ -89,9 +146,10 @@ pub fn verify_transition_native(
 
 #[cfg(not(feature = "rgb-native"))]
 pub fn lookup_contract_native(
-    _contract_id: &str,
+    contract_id: &str,
     _stash: &Option<Arc<StashResolver>>,
 ) -> ConxianResult<Option<serde_json::Value>> {
+    normalize_contract_id(contract_id)?;
     Err(ConxianError::Rgb(
         "rgb-native feature not enabled".to_string(),
     ))
@@ -125,6 +183,13 @@ mod tests {
     #[test]
     fn native_parser_accepts_known_baid64_and_rejects_mutations() {
         assert_eq!(validate_contract_id_native(VALID_ID).unwrap(), VALID_ID);
+        assert_eq!(
+            validate_contract_id_native(
+                "contract:n4bQgYhM-fWWaL_q-gxVrQFa-O~TxsrC-4Is0V1s-FbDwCgg#fractal-fashion-capsule"
+            )
+            .unwrap(),
+            VALID_ID
+        );
         assert!(validate_contract_id_native(
             "contractx:n4bQgYhM-fWWaL_q-gxVrQFa-O~TxsrC-4Is0V1s-FbDwCgg"
         )
@@ -137,8 +202,31 @@ mod tests {
 
     #[cfg(not(feature = "rgb-native"))]
     #[test]
-    fn fallback_reports_missing_native_support() {
+    fn fallback_normalizes_canonical_ids_and_mnemonics() {
+        assert_eq!(validate_contract_id_native(VALID_ID).unwrap(), VALID_ID);
+        assert_eq!(
+            validate_contract_id_native(
+                "contract:n4bQgYhM-fWWaL_q-gxVrQFa-O~TxsrC-4Is0V1s-FbDwCgg#fractal-fashion-capsule"
+            )
+            .unwrap(),
+            VALID_ID
+        );
+    }
+
+    #[cfg(not(feature = "rgb-native"))]
+    #[test]
+    fn fallback_rejects_empty_legacy_and_noncanonical_ids() {
+        for input in [
+            "",
+            "rgb:n4bQgYhM-fWWaL_q-gxVrQFa-O~TxsrC-4Is0V1s-FbDwCgg",
+            "n4bQgYhM-fWWaL_q-gxVrQFa-O~TxsrC-4Is0V1s-FbDwCgg",
+            "contract:",
+            "contract:not-a-contract",
+        ] {
+            assert!(validate_contract_id_native(input).is_err(), "{input:?}");
+        }
+
         let result = verify_transition_native(VALID_ID, &None);
-        assert!(matches!(result, Err(ConxianError::Rgb(_))));
+        assert!(matches!(result, Err(ConxianError::Rgb(message)) if message.contains("feature")));
     }
 }

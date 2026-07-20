@@ -202,16 +202,7 @@ impl StashResolver {
 
 #[cfg(feature = "rgb-native")]
 fn canonical_contract_id(input: &str) -> ConxianResult<String> {
-    let parsed = input.parse::<rgb::ContractId>().map_err(|_| {
-        ConxianError::Rgb("invalid RGB contract ID; expected contract: Baid64".to_string())
-    })?;
-    let canonical = parsed.to_string();
-    if !input.starts_with("contract:") || !canonical.starts_with("contract:") {
-        return Err(ConxianError::Rgb(
-            "invalid RGB contract ID; expected contract: Baid64".to_string(),
-        ));
-    }
-    Ok(canonical)
+    crate::bitcoin::rgb_native::normalize_contract_id(input)
 }
 
 #[cfg(feature = "rgb-native")]
@@ -342,6 +333,13 @@ mod tests {
     #[test]
     fn parses_canonical_contract_id_and_rejects_legacy_rgb_ids() {
         assert_eq!(canonical_contract_id(VALID_ID).unwrap(), VALID_ID);
+        assert_eq!(
+            canonical_contract_id(
+                "contract:n4bQgYhM-fWWaL_q-gxVrQFa-O~TxsrC-4Is0V1s-FbDwCgg#fractal-fashion-capsule"
+            )
+            .unwrap(),
+            VALID_ID
+        );
         assert!(
             canonical_contract_id("rgb:n4bQgYhM-fWWaL_q-gxVrQFa-O~TxsrC-4Is0V1s-FbDwCgg").is_err()
         );
