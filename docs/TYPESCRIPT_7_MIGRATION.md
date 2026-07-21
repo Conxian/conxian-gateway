@@ -26,6 +26,8 @@ split.
 This is a compatibility bridge, not a second typechecking path: CI verifies
 that workspace `tsc` commands report TypeScript 7.0.2 and that the control
 plane's `tsc6` compatibility executable is present only for legacy tooling.
+The package alias is pinned to `@typescript/typescript6@6.0.2`; its `tsc6`
+executable reports the underlying `typescript@6.0.3` compiler version.
 
 ## Workspace compatibility matrix
 
@@ -77,8 +79,9 @@ Node CI must pass all of the following:
 
 1. Frozen dependency installation: `pnpm install --frozen-lockfile`.
 2. Compiler split checks: every workspace `tsc` reports `Version 7.0.2`, and
-   only the control-plane compatibility executable reports the TypeScript 6
-   compatibility version.
+   only the control-plane `tsc6` executable reports its underlying
+   `typescript@6.0.3` version; the compatibility package remains pinned at
+   `@typescript/typescript6@6.0.2`.
 3. Native typechecking: `pnpm typecheck`.
 4. Linting: `pnpm lint`.
 5. Workspace builds: `pnpm build`.
