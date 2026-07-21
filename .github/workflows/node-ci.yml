@@ -29,8 +29,27 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build packages
-        run: pnpm -r run build
+      - name: Verify TypeScript compiler split
+        run: |
+          test "$(pnpm exec tsc --version)" = "Version 7.0.2"
+          test "$(pnpm --filter control-plane exec tsc --version)" = "Version 7.0.2"
+          test "$(pnpm --filter @conxian/client-sdk exec tsc --version)" = "Version 7.0.2"
+          test "$(pnpm --filter @conxian/schemas exec tsc --version)" = "Version 7.0.2"
+          test "$(pnpm --filter @conxian/developer-sandbox exec tsc --version)" = "Version 7.0.2"
+          test "$(pnpm --filter control-plane exec node -p 'require("@typescript/native/package.json").name')" = "typescript"
+          test "$(pnpm --filter control-plane exec node -p 'require("@typescript/native/package.json").version')" = "7.0.2"
+          test "$(pnpm --filter control-plane exec node -p 'require("typescript/package.json").name')" = "@typescript/typescript6"
+          test "$(pnpm --filter control-plane exec node -p 'require("typescript/package.json").version')" = "6.0.2"
+          pnpm --filter control-plane exec tsc6 --version | grep -Eq '^Version 6\.'
+
+      - name: Typecheck workspaces with TypeScript 7
+        run: pnpm typecheck
+
+      - name: Lint workspaces
+        run: pnpm lint
+
+      - name: Build workspaces
+        run: pnpm build
 
       - name: Install Playwright Browsers
         run: pnpm --filter control-plane exec playwright install --with-deps

@@ -20,9 +20,31 @@ updates:
     labels:
       - "dependencies"
     groups:
+      npm-typescript-major:
+        patterns:
+          - "typescript"
+          - "@typescript/*"
+          - "typescript-eslint"
+          - "@typescript-eslint/*"
+        update-types:
+          - "major"
+      npm-typescript-updates:
+        patterns:
+          - "typescript"
+          - "@typescript/*"
+          - "typescript-eslint"
+          - "@typescript-eslint/*"
+        update-types:
+          - "minor"
+          - "patch"
       npm-dependencies:
         patterns:
           - "*"
+        exclude-patterns:
+          - "typescript"
+          - "@typescript/*"
+          - "typescript-eslint"
+          - "@typescript-eslint/*"
 
   - package-ecosystem: "github-actions"
     directory: "/"
