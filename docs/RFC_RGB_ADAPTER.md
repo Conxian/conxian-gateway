@@ -67,16 +67,34 @@ pub trait RgbAdapter {
 - `StashResolver` owns an exact-pinned
   `rgb_persist_fs::StockpileDir<bp::seals::TxoSeal>` and reloads it after
   successful imports. Corrupt contract directories fail closed at startup.
+- Unknown-contract imports run in a same-filesystem staging directory and are
+  atomically promoted only after `rgb::Contracts::consume_from_file` succeeds.
+  This compensates for the pinned `rgb-persist-fs` behavior that creates the
+  `*.contract` directory before `evaluate_commit` completes; every failed
+  import removes only its own staging directory and reports cleanup failures
+  separately. Existing contract updates are rejected until a copy-on-write
+  update path is available, so an import cannot mutate a valid contract in
+  place.
 - Descriptive metadata remains in an atomic JSON cache, but it is never used
   by `verify_transition` or the Active proof path.
 - The wallet-owned auth-token registry stores only strict-encoded seal
   definitions and RGB auth tokens. It validates the committed token, is
   idempotent for identical replays, and rejects overwrite attempts and corrupt
-  persistence atomically.
+  persistence atomically. The stash is a local-filesystem trust boundary, not
+  an encryption boundary: on Unix the resolver restricts its owned directory
+  to the owner and writes registry files with owner read/write permissions;
+  file data is synced before rename and the parent directory is synced after
+  atomic replacement.
 - `import_consignment` preflights the pinned RGB consignment envelope, rejects
   unsigned consignments, invokes the caller-owned issuer signature validator,
   and delegates full operation/codex/witness consensus checks to
   `rgb::Contracts::consume_from_file`.
+- In the pinned `allow_unknown = true` first-contract branch, RGB imports the
+  articles and genesis stockpile without invoking the supplied seal resolver.
+  Therefore contract genesis/import does not by itself prove wallet-owned seal
+  ownership or query Esplora. Paths for already-known contracts retain the
+  resolver callback and fail closed when a registered seal is absent or its
+  Esplora check is not unspent.
 - `export_consignment` serializes only registered RGB terminal auth tokens;
   no identity or other PII is stored in the registry.
 - Esplora UTXO queries preserve spent, unspent, not-found, and transport-error
@@ -121,9 +139,11 @@ pub trait RgbAdapter {
   `RejectIssuerSignatures` fail-closed policy; it does not claim Ed25519,
   secp256k1, or another cryptographic backend.
 - Deterministic unit coverage exercises malformed envelopes, contract-ID
-  mismatch, registry replay/overwrite, unknown auth tokens, invalid signature
-  policy, and corrupted persistence. A complete signed RGB/Bitcoin regtest
-  fixture is still required before treating Active consignment import as a
-  production rollout milestone.
+  mismatch, staged cleanup after a semantically invalid unknown-contract
+  import, fresh-stash reload after cleanup, the pinned unknown-contract
+  resolver boundary, Unix permission hardening, registry replay/overwrite,
+  unknown auth tokens, invalid signature policy, and corrupted persistence. A
+  complete signed RGB/Bitcoin regtest fixture is still required before treating
+  Active consignment import as a production rollout milestone.
 - The JSON cache remains for descriptive lookup compatibility and must not be
   interpreted as consensus evidence.

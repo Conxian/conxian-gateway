@@ -3,15 +3,26 @@ use conxian_core::{ConxianError, ConxianResult};
 #[cfg(feature = "rgb-native")]
 use std::collections::{BTreeMap, HashMap};
 #[cfg(feature = "rgb-native")]
-use std::fs;
+use std::fs::{self, File, OpenOptions};
+#[cfg(feature = "rgb-native")]
+use std::io::Write;
 #[cfg(feature = "rgb-native")]
 use std::net::IpAddr;
 #[cfg(feature = "rgb-native")]
+use std::panic::{catch_unwind, AssertUnwindSafe};
+#[cfg(feature = "rgb-native")]
 use std::path::{Path, PathBuf};
+#[cfg(feature = "rgb-native")]
+use std::process;
 #[cfg(feature = "rgb-native")]
 use std::str::FromStr;
 #[cfg(feature = "rgb-native")]
+use std::sync::atomic::{AtomicU64, Ordering};
+#[cfg(feature = "rgb-native")]
 use std::sync::{Mutex, RwLock};
+
+#[cfg(all(feature = "rgb-native", unix))]
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 
 #[cfg(feature = "rgb-native")]
 use binfile::BinFile;
@@ -25,6 +36,11 @@ use rgbcore::RgbSealDef;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "rgb-native")]
 use strict_encoding::{StreamReader, StrictDecode, StrictEncode, StrictReader, StrictWriter};
+
+#[cfg(feature = "rgb-native")]
+const IMPORT_STAGING_PREFIX: &str = ".rgb-import-";
+#[cfg(feature = "rgb-native")]
+static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(0);
 
 /// The result of resolving a Bitcoin outpoint through Esplora.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -99,6 +115,12 @@ struct SealRegistryRecord {
 /// The stockpile is the only source used for native consensus verification.
 /// The JSON cache is retained for backwards-compatible descriptive lookup, but
 /// it can never make a contract or transition consensus-valid.
+///
+/// The stash directory is a local-filesystem trust boundary. Its contract
+/// files, metadata, and wallet-correlated seal registry are trusted only after
+/// strict decoding and consistency checks; they are not encrypted by this
+/// component. On Unix, this resolver creates the directory with owner-only
+/// permissions and persists the registry with owner read/write permissions.
 #[cfg(feature = "rgb-native")]
 pub struct StashResolver {
     cache: RwLock<HashMap<String, ContractMeta>>,
@@ -142,9 +164,17 @@ impl StashResolver {
         fs::create_dir_all(&stockpile_dir).map_err(|_| {
             ConxianError::Rgb("failed to create RGB stockpile directory".to_string())
         })?;
+        restrict_directory(&stockpile_dir).map_err(|_| {
+            ConxianError::Rgb("failed to restrict RGB stockpile directory permissions".to_string())
+        })?;
 
         let metadata_path = stockpile_dir.join("contract-metadata.json");
         let seal_registry_path = stockpile_dir.join("seal-registry.json");
+        if seal_registry_path.exists() {
+            restrict_file(&seal_registry_path).map_err(|_| {
+                ConxianError::Rgb("failed to restrict RGB seal registry permissions".to_string())
+            })?;
+        }
         let cache = load_cache(&metadata_path)?;
         let seal_registry = load_seal_registry(&seal_registry_path)?;
         let stockpile = load_stockpile(&stockpile_dir, testnet)?;
@@ -280,6 +310,15 @@ impl StashResolver {
     /// performs a preflight decode and rejects unsigned consignments before
     /// invoking the consensus importer. The supplied validator must implement
     /// the actual issuer signature scheme; the gateway does not invent one.
+    ///
+    /// Unknown-contract imports are evaluated in a private staging directory
+    /// and promoted only after the pinned RGB verifier returns success. This is
+    /// necessary because `rgb-persist-fs` creates the contract directory before
+    /// `evaluate_commit` finishes and does not provide a rollback transaction.
+    /// The pinned `allow_unknown = true` branch also does not invoke its
+    /// `seal_resolver`; wallet-owned seal/Esplora validation therefore begins
+    /// only on paths for contracts already known to the stockpile. Existing
+    /// contract updates are rejected until a copy-on-write update path exists.
     pub fn import_consignment<V: IssuerSignatureValidator>(
         &self,
         path: impl AsRef<Path>,
@@ -287,46 +326,103 @@ impl StashResolver {
         signature_validator: &V,
     ) -> ConxianResult<()> {
         let expected = canonical_contract_id(expected_contract_id)?;
-        preflight_consignment(path.as_ref(), &expected, signature_validator)?;
+        let contract_id = preflight_consignment(path.as_ref(), &expected, signature_validator)?;
 
         let mut stockpile = self
             .stockpile
             .lock()
             .map_err(|_| ConxianError::Rgb("RGB stockpile lock is poisoned".to_string()))?;
-        let persistence = stockpile.clone();
-        let mut contracts: rgb::Contracts<StockpileDir<bp::seals::TxoSeal>> =
-            rgb::Contracts::load(persistence);
-        let registry = &self.seal_registry;
-        let result = contracts.consume_from_file(
-            true,
-            path,
-            |operation| {
-                resolve_registered_seals(registry, operation, |seal| {
-                    let Some(source) = seal.to_src() else {
-                        // Witness-relative seals are checked by RGB's
-                        // consensus verifier against the consignment witness.
-                        return true;
-                    };
-                    matches!(
-                        self.check_utxo(
-                            &source.primary.txid.to_string(),
-                            source.primary.vout_u32(),
-                        ),
-                        Ok(UtxoStatus::Unspent)
-                    )
-                })
-            },
-            |hash, issuer, signature| {
-                signature_validator.validate(
-                    &hash.to_byte_array(),
-                    &issuer.to_string(),
-                    signature.as_slice(),
+
+        if rgb::Stockpile::has_contract(&*stockpile, contract_id) {
+            return Err(ConxianError::Rgb(
+                "RGB imports for existing contracts are rejected until transactional update support is available"
+                    .to_string(),
+            ));
+        }
+
+        let staging_dir = create_import_staging_dir(&self.stockpile_dir)?;
+        let import_result = catch_unwind(AssertUnwindSafe(|| {
+            let staged_stockpile = load_stockpile(&staging_dir, self.testnet)?;
+            consume_consignment(self, staged_stockpile, path.as_ref(), signature_validator)
+        }))
+        .map_err(|_| {
+            ConxianError::Rgb(
+                "RGB consignment importer panicked during staged verification".to_string(),
+            )
+        })
+        .and_then(|result| result);
+
+        if let Err(error) = import_result {
+            return fail_import_with_cleanup(error, &staging_dir);
+        }
+
+        let staged_contract = match find_staged_contract(&staging_dir, contract_id) {
+            Ok(path) => path,
+            Err(error) => return fail_import_with_cleanup(error, &staging_dir),
+        };
+        if let Err(error) = sync_directory_tree(&staged_contract) {
+            return fail_import_with_cleanup(
+                ConxianError::Rgb(format!(
+                    "failed to sync staged RGB contract before promotion: {error}"
+                )),
+                &staging_dir,
+            );
+        }
+        if let Err(error) = sync_parent_directory(&staging_dir) {
+            return fail_import_with_cleanup(
+                ConxianError::Rgb(format!(
+                    "failed to sync staged RGB import directory before promotion: {error}"
+                )),
+                &staging_dir,
+            );
+        }
+
+        let contract_name = match staged_contract.file_name() {
+            Some(name) => name,
+            None => {
+                return fail_import_with_cleanup(
+                    ConxianError::Rgb("staged RGB contract has no directory name".to_string()),
+                    &staging_dir,
                 )
-            },
-        );
-        result.map_err(|_| {
-            ConxianError::Rgb("RGB consignment consensus verification failed".to_string())
-        })?;
+            }
+        };
+        let live_contract = self.stockpile_dir.join(contract_name);
+        if path_exists(&live_contract) {
+            return fail_import_with_cleanup(
+                ConxianError::Rgb(
+                    "RGB contract promotion refused because the destination already exists"
+                        .to_string(),
+                ),
+                &staging_dir,
+            );
+        }
+
+        if let Err(error) = fs::rename(&staged_contract, &live_contract) {
+            return fail_import_with_cleanup(
+                ConxianError::Rgb(format!("failed to promote staged RGB contract: {error}")),
+                &staging_dir,
+            );
+        }
+        if let Err(error) = sync_parent_directory(&self.stockpile_dir) {
+            return rollback_promoted_import(
+                ConxianError::Rgb(format!(
+                    "RGB contract promotion directory sync failed: {error}"
+                )),
+                &live_contract,
+                &staging_dir,
+                &self.stockpile_dir,
+            );
+        }
+        if let Err(error) = fs::remove_dir(&staging_dir) {
+            return rollback_promoted_import(
+                ConxianError::Rgb(format!(
+                    "RGB contract staging directory cleanup failed: {error}"
+                )),
+                &live_contract,
+                &staging_dir,
+                &self.stockpile_dir,
+            );
+        }
 
         *stockpile = load_stockpile(&self.stockpile_dir, self.testnet)?;
         Ok(())
@@ -403,20 +499,274 @@ impl StashResolver {
     fn persist_snapshot(&self, snapshot: &HashMap<String, ContractMeta>) -> ConxianResult<()> {
         let json = serde_json::to_vec_pretty(snapshot)
             .map_err(|_| ConxianError::Rgb("failed to serialize RGB stash metadata".to_string()))?;
-        let temp_path = self.metadata_path.with_extension("tmp");
+        persist_atomic_file(&self.metadata_path, &json, "RGB stash metadata")
+    }
+}
 
-        if fs::write(&temp_path, json).is_err() {
-            let _ = fs::remove_file(&temp_path);
+#[cfg(feature = "rgb-native")]
+fn consume_consignment<V: IssuerSignatureValidator>(
+    resolver: &StashResolver,
+    persistence: StockpileDir<bp::seals::TxoSeal>,
+    path: &Path,
+    signature_validator: &V,
+) -> ConxianResult<()> {
+    let mut contracts: rgb::Contracts<StockpileDir<bp::seals::TxoSeal>> =
+        rgb::Contracts::load(persistence);
+    let registry = &resolver.seal_registry;
+    contracts
+        .consume_from_file(
+            true,
+            path,
+            |operation| {
+                resolve_registered_seals(registry, operation, |seal| {
+                    let Some(source) = seal.to_src() else {
+                        // Witness-relative seals are checked by RGB's consensus
+                        // verifier against the consignment witness.
+                        return true;
+                    };
+                    matches!(
+                        resolver.check_utxo(
+                            &source.primary.txid.to_string(),
+                            source.primary.vout_u32(),
+                        ),
+                        Ok(UtxoStatus::Unspent)
+                    )
+                })
+            },
+            |hash, issuer, signature| {
+                signature_validator.validate(
+                    &hash.to_byte_array(),
+                    &issuer.to_string(),
+                    signature.as_slice(),
+                )
+            },
+        )
+        .map_err(|_| ConxianError::Rgb("RGB consignment consensus verification failed".to_string()))
+}
+
+#[cfg(feature = "rgb-native")]
+fn create_import_staging_dir(root: &Path) -> ConxianResult<PathBuf> {
+    for _ in 0..32 {
+        let id = NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed);
+        let path = root.join(format!("{IMPORT_STAGING_PREFIX}{}-{id}", process::id()));
+        match fs::create_dir(&path) {
+            Ok(()) => {
+                if let Err(error) = restrict_directory(&path) {
+                    let _ = fs::remove_dir(&path);
+                    return Err(ConxianError::Rgb(format!(
+                        "failed to restrict RGB import staging directory: {error}"
+                    )));
+                }
+                return Ok(path);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => {
+                return Err(ConxianError::Rgb(format!(
+                    "failed to create RGB import staging directory: {error}"
+                )))
+            }
+        }
+    }
+
+    Err(ConxianError::Rgb(
+        "unable to allocate a unique RGB import staging directory".to_string(),
+    ))
+}
+
+#[cfg(feature = "rgb-native")]
+fn find_staged_contract(path: &Path, expected: rgb::ContractId) -> ConxianResult<PathBuf> {
+    let mut matches = Vec::new();
+    for entry in fs::read_dir(path)
+        .map_err(|_| ConxianError::Rgb("failed to inspect staged RGB contract".to_string()))?
+    {
+        let entry = entry
+            .map_err(|_| ConxianError::Rgb("failed to inspect staged RGB contract".to_string()))?;
+        let entry_path = entry.path();
+        let file_type = entry
+            .file_type()
+            .map_err(|_| ConxianError::Rgb("failed to inspect staged RGB contract".to_string()))?;
+        if !file_type.is_dir()
+            || entry_path.extension().and_then(|value| value.to_str()) != Some("contract")
+        {
+            continue;
+        }
+        let Some(stem) = entry_path.file_stem().and_then(|value| value.to_str()) else {
             return Err(ConxianError::Rgb(
-                "failed to write RGB stash metadata".to_string(),
+                "staged RGB contract has an invalid name".to_string(),
+            ));
+        };
+        let Some((_, contract_id)) = stem.split_once('.') else {
+            return Err(ConxianError::Rgb(
+                "staged RGB contract has an invalid name".to_string(),
+            ));
+        };
+        let parsed = rgb::ContractId::from_str(contract_id).map_err(|_| {
+            ConxianError::Rgb("staged RGB contract has an invalid contract ID".to_string())
+        })?;
+        if parsed != expected {
+            return Err(ConxianError::Rgb(
+                "staged RGB contract ID does not match the consignment".to_string(),
             ));
         }
-        if fs::rename(&temp_path, &self.metadata_path).is_err() {
-            let _ = fs::remove_file(&temp_path);
-            return Err(ConxianError::Rgb(
-                "failed to commit RGB stash metadata".to_string(),
+        matches.push(entry_path);
+    }
+
+    match matches.as_slice() {
+        [path] => Ok(path.clone()),
+        [] => Err(ConxianError::Rgb(
+            "successful RGB import did not create a contract directory".to_string(),
+        )),
+        _ => Err(ConxianError::Rgb(
+            "successful RGB import created multiple contract directories".to_string(),
+        )),
+    }
+}
+
+#[cfg(feature = "rgb-native")]
+fn fail_import_with_cleanup(error: ConxianError, staging_dir: &Path) -> ConxianResult<()> {
+    match fs::remove_dir_all(staging_dir) {
+        Ok(()) => Err(error),
+        Err(cleanup_error) if cleanup_error.kind() == std::io::ErrorKind::NotFound => Err(error),
+        Err(cleanup_error) => Err(ConxianError::Rgb(format!(
+            "{error}; cleanup of staged RGB import artifacts failed: {cleanup_error}"
+        ))),
+    }
+}
+
+#[cfg(feature = "rgb-native")]
+fn rollback_promoted_import(
+    error: ConxianError,
+    live_contract: &Path,
+    staging_dir: &Path,
+    stockpile_dir: &Path,
+) -> ConxianResult<()> {
+    let mut cleanup_errors = Vec::new();
+    if let Err(cleanup_error) = fs::remove_dir_all(live_contract) {
+        if cleanup_error.kind() != std::io::ErrorKind::NotFound {
+            cleanup_errors.push(format!("promoted contract cleanup failed: {cleanup_error}"));
+        }
+    }
+    if let Err(cleanup_error) = fs::remove_dir_all(staging_dir) {
+        if cleanup_error.kind() != std::io::ErrorKind::NotFound {
+            cleanup_errors.push(format!("staging cleanup failed: {cleanup_error}"));
+        }
+    }
+    if cleanup_errors.is_empty() {
+        if let Err(sync_error) = sync_parent_directory(stockpile_dir) {
+            cleanup_errors.push(format!(
+                "post-cleanup stockpile directory sync failed: {sync_error}"
             ));
         }
+    }
+
+    if cleanup_errors.is_empty() {
+        Err(error)
+    } else {
+        Err(ConxianError::Rgb(format!(
+            "{error}; {}",
+            cleanup_errors.join("; ")
+        )))
+    }
+}
+
+#[cfg(feature = "rgb-native")]
+fn path_exists(path: &Path) -> bool {
+    fs::symlink_metadata(path).is_ok()
+}
+
+#[cfg(feature = "rgb-native")]
+fn persist_atomic_file(path: &Path, data: &[u8], label: &str) -> ConxianResult<()> {
+    let file_name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("rgb-persistence");
+    let temp_path = path.with_file_name(format!(
+        ".{file_name}.tmp-{}-{}",
+        process::id(),
+        NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed)
+    ));
+
+    let result = (|| -> std::io::Result<()> {
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        options.mode(0o600);
+        let mut file = options.open(&temp_path)?;
+        file.write_all(data)?;
+        file.sync_all()?;
+        drop(file);
+        restrict_file(&temp_path)?;
+        fs::rename(&temp_path, path)?;
+        sync_parent_directory(path.parent().unwrap_or_else(|| Path::new(".")))?;
+        Ok(())
+    })();
+
+    match result {
+        Ok(()) => Ok(()),
+        Err(error) => match fs::remove_file(&temp_path) {
+            Ok(()) => Err(ConxianError::Rgb(format!(
+                "failed to persist {label}: {error}"
+            ))),
+            Err(cleanup_error) if cleanup_error.kind() == std::io::ErrorKind::NotFound => Err(
+                ConxianError::Rgb(format!("failed to persist {label}: {error}")),
+            ),
+            Err(cleanup_error) => Err(ConxianError::Rgb(format!(
+                "failed to persist {label}: {error}; temporary cleanup failed: {cleanup_error}"
+            ))),
+        },
+    }
+}
+
+#[cfg(feature = "rgb-native")]
+fn sync_directory_tree(path: &Path) -> std::io::Result<()> {
+    for entry in fs::read_dir(path)? {
+        let entry = entry?;
+        let entry_path = entry.path();
+        let file_type = entry.file_type()?;
+        if file_type.is_dir() {
+            sync_directory_tree(&entry_path)?;
+        } else if file_type.is_file() {
+            File::open(&entry_path)?.sync_all()?;
+        }
+    }
+    sync_parent_directory(path)
+}
+
+#[cfg(feature = "rgb-native")]
+fn sync_parent_directory(path: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        File::open(path)?.sync_all()
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+        Ok(())
+    }
+}
+
+#[cfg(feature = "rgb-native")]
+fn restrict_directory(path: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        fs::set_permissions(path, fs::Permissions::from_mode(0o700))
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+        Ok(())
+    }
+}
+
+#[cfg(feature = "rgb-native")]
+fn restrict_file(path: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        fs::set_permissions(path, fs::Permissions::from_mode(0o600))
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
         Ok(())
     }
 }
@@ -499,7 +849,7 @@ fn preflight_consignment<V: IssuerSignatureValidator>(
     path: &Path,
     expected_contract_id: &str,
     signature_validator: &V,
-) -> ConxianResult<()> {
+) -> ConxianResult<rgb::ContractId> {
     let file = BinFile::<{ rgb::CONSIGN_MAGIC_NUMBER }, { rgb::CONSIGN_VERSION }>::open(path)
         .map_err(|_| ConxianError::Rgb("malformed RGB consignment envelope".to_string()))?;
     let mut reader = StrictReader::with(StreamReader::new::<{ usize::MAX }>(file));
@@ -536,7 +886,7 @@ fn preflight_consignment<V: IssuerSignatureValidator>(
             "RGB consignment articles contract ID mismatch".to_string(),
         ));
     }
-    Ok(())
+    Ok(expected)
 }
 
 #[cfg(feature = "rgb-native")]
@@ -593,20 +943,7 @@ fn persist_seal_registry(
     records.sort_by(|left, right| left.auth_token.cmp(&right.auth_token));
     let json = serde_json::to_vec_pretty(&records)
         .map_err(|_| ConxianError::Rgb("failed to serialize RGB seal registry".to_string()))?;
-    let temp_path = path.with_extension("tmp");
-    if fs::write(&temp_path, json).is_err() {
-        let _ = fs::remove_file(&temp_path);
-        return Err(ConxianError::Rgb(
-            "failed to write RGB seal registry".to_string(),
-        ));
-    }
-    if fs::rename(&temp_path, path).is_err() {
-        let _ = fs::remove_file(&temp_path);
-        return Err(ConxianError::Rgb(
-            "failed to commit RGB seal registry".to_string(),
-        ));
-    }
-    Ok(())
+    persist_atomic_file(path, &json, "RGB seal registry")
 }
 
 #[cfg(feature = "rgb-native")]
@@ -713,8 +1050,18 @@ impl StashResolver {
 #[cfg(all(test, feature = "rgb-native"))]
 mod tests {
     use super::*;
+    use commit_verify::{DigestExt, Sha256};
+    use rgb_persist_fs::{PileFs, StockFs};
+    use std::cell::Cell;
+    use std::collections::BTreeMap;
+    use std::convert::Infallible;
     use std::sync::atomic::{AtomicU64, Ordering};
-    use strict_encoding::{StreamWriter, StrictDumb};
+    use strict_encoding::{
+        StreamWriter, StrictDecode, StrictDumb, StrictEncode, StrictReader, StrictWriter,
+    };
+
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
 
     const VALID_ID: &str = "contract:n4bQgYhM-fWWaL_q-gxVrQFa-O~TxsrC-4Is0V1s-FbDwCgg";
     static NEXT_PATH: AtomicU64 = AtomicU64::new(0);
@@ -848,6 +1195,22 @@ mod tests {
         resolver.register_auth_token(&token, seal).unwrap();
         assert_eq!(resolver.resolve_auth_token(&token).unwrap(), Some(seal));
 
+        #[cfg(unix)]
+        {
+            assert_eq!(
+                fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                0o700
+            );
+            assert_eq!(
+                fs::metadata(path.join("seal-registry.json"))
+                    .unwrap()
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o600
+            );
+        }
+
         let overwrite = fixture_seal(2);
         assert!(matches!(
             resolver.register_auth_token(&token, overwrite),
@@ -924,6 +1287,81 @@ mod tests {
         contract_id.strict_encode(writer).unwrap();
     }
 
+    fn write_consignment(root: &Path) -> (PathBuf, String) {
+        let issuer_path = root.join("Test.issuer");
+        fs::write(&issuer_path, include_bytes!("testdata/Test.issuer")).unwrap();
+        let issuer =
+            rgb::Issuer::load(&issuer_path, |_, _, _| -> Result<_, Infallible> { Ok(()) }).unwrap();
+
+        let mut noise = Sha256::default();
+        noise.input_raw(b"conxian-rgb-transactional-import");
+        let mut params = rgb::CreateParams::new_bitcoin_testnet(issuer.codex_id(), "ConxianTest");
+        params.push_owned_unlocked(
+            "amount",
+            rgb::Assignment::new_internal(bp::Outpoint::strict_dumb(), 100u64),
+        );
+        let contract_path = root.join("source.contract");
+        fs::create_dir_all(&contract_path).unwrap();
+        let contract = rgb::Contract::<StockFs, PileFs<bp::seals::TxoSeal>>::issue(
+            issuer,
+            params.transform(noise.clone()),
+            |_| Ok(contract_path.clone()),
+        )
+        .unwrap();
+
+        let consignment_path = root.join("fixture.rgb");
+        let terminal = *contract.full_state().raw.auth.keys().next().unwrap();
+        contract
+            .consign_to_file(&consignment_path, [terminal])
+            .unwrap();
+        add_article_signature(&consignment_path);
+        (consignment_path, contract.contract_id().to_string())
+    }
+
+    fn write_semantically_invalid_consignment(root: &Path) -> (PathBuf, String) {
+        let result = write_consignment(root);
+        corrupt_genesis_seal(&result.0);
+        result
+    }
+
+    fn add_article_signature(path: &Path) {
+        let mut bytes = fs::read(path).unwrap();
+        let mut reader = StrictReader::in_memory::<{ usize::MAX }>(&bytes[10..]);
+        rgb::parse_consignment(&mut reader).unwrap();
+        u8::strict_decode(&mut reader).unwrap();
+        rgb::Semantics::strict_decode(&mut reader).unwrap();
+        let offset = 10 + reader.into_cursor().position() as usize;
+        assert_eq!(bytes[offset], 0, "fixture must start unsigned");
+
+        let signature = rgb::SigBlob::from_slice_checked([0xA5; 32]);
+        let encoded = signature
+            .strict_encode(StrictWriter::in_memory::<4096>())
+            .unwrap()
+            .unbox()
+            .unconfine();
+        bytes[offset] = 1;
+        bytes.splice(offset + 1..offset + 1, encoded);
+        fs::write(path, bytes).unwrap();
+    }
+
+    fn corrupt_genesis_seal(path: &Path) {
+        let mut bytes = fs::read(path).unwrap();
+        let mut reader = StrictReader::in_memory::<{ usize::MAX }>(&bytes[10..]);
+        rgb::parse_consignment(&mut reader).unwrap();
+        u8::strict_decode(&mut reader).unwrap();
+        rgb::Semantics::strict_decode(&mut reader).unwrap();
+        Option::<rgb::SigBlob>::strict_decode(&mut reader).unwrap();
+        rgb::Issue::strict_decode(&mut reader).unwrap();
+        let seal_count = u16::strict_decode(&mut reader).unwrap();
+        assert_eq!(seal_count, 1, "fixture must have one genesis seal");
+        u16::strict_decode(&mut reader).unwrap();
+        bp::seals::WTxoSeal::strict_decode(&mut reader).unwrap();
+        let end = 10 + reader.into_cursor().position() as usize;
+        assert!(end > 10, "fixture must contain a genesis seal");
+        bytes[end - 1] ^= 0x01;
+        fs::write(path, bytes).unwrap();
+    }
+
     #[test]
     fn malformed_and_mismatched_consignments_fail_closed_before_import() {
         let path = temp_path("consignment-boundary");
@@ -946,6 +1384,122 @@ mod tests {
             resolver.import_consignment(&mismatched, VALID_ID, &validator),
             Err(ConxianError::Rgb(message)) if message.contains("mismatch")
         ));
+        cleanup(&path);
+    }
+
+    #[test]
+    fn semantically_invalid_unknown_import_cleans_orphans_and_reloads() {
+        let path = temp_path("transactional-import");
+        cleanup(&path);
+        let fixture_root = path.join("fixture");
+        fs::create_dir_all(&fixture_root).unwrap();
+        let (consignment, contract_id) = write_semantically_invalid_consignment(&fixture_root);
+        let stash_path = path.join("stash");
+        let resolver =
+            StashResolver::new_with_network(&stash_path, "http://127.0.0.1:1/api", true).unwrap();
+        let validator = |_: &[u8], _: &str, _: &[u8]| Ok::<(), String>(());
+
+        let result = resolver.import_consignment(&consignment, &contract_id, &validator);
+        assert!(matches!(
+            result,
+            Err(ConxianError::Rgb(message))
+                if message.contains("consignment consensus verification")
+                    || message.contains("importer panicked")
+        ));
+
+        let contract_dirs = fs::read_dir(&stash_path)
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| {
+                entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false)
+                    && entry.path().extension().and_then(|value| value.to_str()) == Some("contract")
+            })
+            .count();
+        assert_eq!(contract_dirs, 0, "failed import left a contract directory");
+
+        let staging_dirs = fs::read_dir(&stash_path)
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| {
+                entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false)
+                    && entry
+                        .file_name()
+                        .to_str()
+                        .map(|name| name.starts_with(IMPORT_STAGING_PREFIX))
+                        .unwrap_or(false)
+            })
+            .count();
+        assert_eq!(staging_dirs, 0, "failed import left a staging directory");
+
+        let reloaded =
+            StashResolver::new_with_network(&stash_path, "http://127.0.0.1:1/api", true).unwrap();
+        assert!(!reloaded.verify_transition(&contract_id).unwrap());
+        cleanup(&path);
+    }
+
+    #[test]
+    fn valid_unknown_import_promotes_and_preserves_existing_contract() {
+        let path = temp_path("transactional-success");
+        cleanup(&path);
+        let fixture_root = path.join("fixture");
+        fs::create_dir_all(&fixture_root).unwrap();
+        let (consignment, contract_id) = write_consignment(&fixture_root);
+        let stash_path = path.join("stash");
+        let resolver =
+            StashResolver::new_with_network(&stash_path, "http://127.0.0.1:1/api", true).unwrap();
+        let validator = |_: &[u8], _: &str, _: &[u8]| Ok::<(), String>(());
+
+        resolver
+            .import_consignment(&consignment, &contract_id, &validator)
+            .unwrap();
+        assert!(resolver.verify_transition(&contract_id).unwrap());
+
+        let second_import = resolver.import_consignment(&consignment, &contract_id, &validator);
+        assert!(matches!(
+            second_import,
+            Err(ConxianError::Rgb(message)) if message.contains("existing contracts")
+        ));
+        assert!(resolver.verify_transition(&contract_id).unwrap());
+
+        let reloaded =
+            StashResolver::new_with_network(&stash_path, "http://127.0.0.1:1/api", true).unwrap();
+        assert!(reloaded.verify_transition(&contract_id).unwrap());
+        cleanup(&path);
+    }
+
+    #[test]
+    fn unknown_contract_import_does_not_invoke_seal_resolver() {
+        let path = temp_path("unknown-import-resolver");
+        cleanup(&path);
+        let fixture_root = path.join("fixture");
+        fs::create_dir_all(&fixture_root).unwrap();
+        let (consignment, _) = write_consignment(&fixture_root);
+        let import_path = path.join("import");
+        fs::create_dir_all(&import_path).unwrap();
+        let stockpile =
+            StockpileDir::<bp::seals::TxoSeal>::load(import_path, rgb::Consensus::Bitcoin, true)
+                .unwrap();
+        let mut contracts: rgb::Contracts<StockpileDir<bp::seals::TxoSeal>> =
+            rgb::Contracts::load(stockpile);
+        let resolver_calls = Cell::new(0);
+
+        contracts
+            .consume_from_file(
+                true,
+                &consignment,
+                |_: &rgb::Operation| {
+                    resolver_calls.set(resolver_calls.get() + 1);
+                    BTreeMap::new()
+                },
+                |_, _, _| Ok::<(), Infallible>(()),
+            )
+            .unwrap();
+        assert_eq!(
+            resolver_calls.get(),
+            0,
+            "allow_unknown=true unexpectedly invoked the seal resolver"
+        );
+        drop(contracts);
         cleanup(&path);
     }
 
