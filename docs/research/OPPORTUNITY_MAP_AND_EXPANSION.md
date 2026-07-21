@@ -4,13 +4,15 @@ This document expands on existing research and maps emerging opportunities for t
 
 ## 1. Emerging Protocol Opportunities
 
-### A. BitVM3 & Recursive Proofs (Expansion of SSV-1)
-- **Status**: Research
-- **Opportunity**: BitVM3 introduces recursive SNARK verification on Bitcoin.
+### A. BitVM3, BitVMX, and Recursive Proof Research (Expansion of SSV-1)
+- **Status**: Research / Evaluation Only
+- **Canonical evidence**: [`BITVM3_BITVMX_RESEARCH_EXPANSION.md`](./BITVM3_BITVMX_RESEARCH_EXPANSION.md)
+- **Current position**: BitVM3 is a paper/protocol family centered on garbled-circuit-based off-chain verification. It is not a recursive Groth16 SDK or a Conxian dependency. BitVMX-CPU is limited to the isolated [`tools/bitvmx-eval`](../../tools/bitvmx-eval/) lane; BitVMX-GC and GOATNetwork/`bitvm2-gc` remain research/reference targets.
 - **Expansion**:
-    - Research integration of **recursive Groth16 verifiers** directly into the `UniversalVerifier`.
-    - Propose a "State Compression" layer in the Gateway that aggregates multiple Job Card proofs into a single BitVM3 commitment, reducing on-chain footprint by an estimated 60%.
-    - Target: Support 1000+ sharded labor attestations per Bitcoin anchor.
+    - Maintain an evidence matrix with exact upstream revisions, license signals, resource claims, reproducibility status, and explicit confidence.
+    - Keep the existing `Groth16Verifier` boundary backend-neutral; do not wire `UniversalVerifier`, settlement, or compliance paths to an unreviewed proof or GC implementation.
+    - Treat recursive SNARK/IVC systems such as Nova as a separate comparison track rather than an interchangeable BitVM3 or BitVMX component.
+    - Promote only after license, stable revision, reproducible build, independent positive/negative vectors, resource fit, process/network isolation, proof/key formats, and security-review gates pass.
 
 ### B. Local-First (Wasm) UCV-1
 - **Status**: Experimental
@@ -50,7 +52,7 @@ This document expands on existing research and maps emerging opportunities for t
 
 ### D. BRICS+ Multi-Currency Settlement (New — 2026-06-29)
 - **Status**: Research → Active Development
-- **Opportunity**: The global financial system is bifurcating. BRICS+ represents ~40% of global GDP with alternative payment rails (CIPS, mBridge, SPFS, BRICS Pay) that bypass Western SWIFT/CHIPS infrastructure.
+- **Opportunity**: The global financial system is bifurcating. BRICS+ has alternative payment rails (CIPS, mBridge, SPFS, BRICS Pay) that may reduce reliance on Western SWIFT/CHIPS infrastructure; the quantitative market-share claim is not established in this document.
 - **Expansion** (see `docs/research/BRICS_FINANCIAL_SYSTEMS_RESEARCH.md` for full analysis):
     - **G-B1**: CIPS-direct message normalization — CIPS processes $24.47T/year across 1,690 institutions. The Gateway now handles CIPS-specific ISO 20022 message variants (Implemented Phase 3).
     - **G-B2**: Multi-currency FX tracking — Extended `TreasuryMonitor` to track RMB, RUB, INR, AED rates across BRICS settlement corridors (Implemented Phase 3).

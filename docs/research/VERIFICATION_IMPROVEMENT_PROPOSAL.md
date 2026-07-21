@@ -34,4 +34,4 @@ Implement a `UniversalVerifier` service that utilizes the `ChainAdapter` trait t
 
 ### 2026-06-26 Full Protocol Alignment
 - **MuSig2 & DLC**: Integrated BIP-327 and Discreet Log Contract primitives into the universal verification surface.
-- **Adaptive Proofs**: Prepared the `UniversalVerifier` to consume BitVM3 recursive proofs and BitVMX adaptive computation proofs.
+- **BitVM3 / BitVMX boundary**: No production `UniversalVerifier` wiring exists for BitVM3, BitVMX-GC, or recursive proof verification. BitVMX-CPU is limited to the isolated evaluation lane, while the BitVM Groth16 path accepts an injected backend and the checked-in mock is fixture-only. See [`BITVM3_BITVMX_RESEARCH_EXPANSION.md`](./BITVM3_BITVMX_RESEARCH_EXPANSION.md) for the evidence matrix and promotion gates.

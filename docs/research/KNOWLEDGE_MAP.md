@@ -1,6 +1,6 @@
 # Conxian Gateway — Knowledge Map
 
-> Generated: 2026-07-06 | All P1/P2 strategic gaps implemented | P3 research-only
+> Generated: 2026-07-21 | All P1/P2 strategic gaps implemented | P3 research-only
 
 ---
 
@@ -69,6 +69,7 @@
 | **Liquid** | `internal/engine/src/bitcoin/liquid_adapter.rs` | 🟡 Harnessed / fail-closed proof boundary | Elements peg-in/peg-out harness; production state-proof backend unwired |
 | **RGB v0.12** | `internal/engine/src/bitcoin/rgb_adapter.rs` + `rgb_native.rs` + `rgb_stash.rs` | ✅ Live | StashResolver (P1), ContractVerify pending (P2), consignment pending |
 | **BitVM2** | `internal/engine/src/bitcoin/bitvm_adapter.rs` | 🟡 Boundary | Metadata adapter plus validated Groth16 envelope handoff; cryptographic backend pending |
+| **BitVM3 / BitVMX** | [`docs/research/BITVM3_BITVMX_RESEARCH_EXPANSION.md`](./BITVM3_BITVMX_RESEARCH_EXPANSION.md) + `tools/bitvmx-eval/` | 🔬 Research only | BitVM3/GC are not integrated; BitVMX-CPU evaluator only; no production cryptographic verifier or settlement adapter |
 | **Babylon** | `internal/engine/src/bitcoin/babylon_adapter.rs` | 🟡 Boundary stub | Header-chain/SPV verification pending while PR #253 is open |
 | **Fedimint** | `internal/engine/src/bitcoin/fedimint_adapter.rs` | ✅ Live | Federated e-cash mint coordination |
 | **Strata** | `internal/engine/src/bitcoin/strata_adapter.rs` | ✅ Testnet | Bitcoin rollup bridge |
@@ -89,6 +90,16 @@
 | **Musig2** | `internal/api/src/handlers.rs` (`aggregate_musig2_keys`) | ✅ Key aggregation |
 | **x402** | `internal/api/src/x402.rs` | ✅ Payment protocol |
 | **DLC** | `POST /api/v1/dlc/bond` | ✅ Discreet Log Contracts |
+
+---
+
+## BitVM3 / BitVMX Research Boundary (#189)
+
+- Canonical evidence and promotion gates: [`BITVM3_BITVMX_RESEARCH_EXPANSION.md`](./BITVM3_BITVMX_RESEARCH_EXPANSION.md).
+- [`tools/bitvmx-eval/`](../../tools/bitvmx-eval/) and [`BITVMX_EVAL.md`](./BITVMX_EVAL.md) are isolated, feature-gated BitVMX-CPU evaluation tooling; they are not BitVM3, BitVMX-GC, garbled-circuit verification, Groth16 verification, settlement, or compliance paths.
+- [`bitvm_adapter.rs`](../../internal/engine/src/bitcoin/bitvm_adapter.rs) parses and validates the canonical envelope and delegates to an injected verifier. Its legacy state-proof method remains metadata-only.
+- [`groth16_verifier.rs`](../../internal/engine/src/bitcoin/groth16_verifier.rs) defines a backend-neutral boundary and a deterministic fixture mock; it does not perform cryptographic Groth16 pairings.
+- [`UniversalVerifier`](../../internal/compliance/src/verifier.rs) has no special production Groth16, BitVM3, BitVMX-GC, or recursive SNARK wiring.
 
 ---
 
@@ -447,7 +458,9 @@ conxian-gateway/
 │   ├── KNOWLEDGE_MAP.md  # This file
 │   ├── CANTON_NETWORK_AND_MACHINE_ECONOMY_RESEARCH.md
 │   ├── CANDIDATE_MATRIX.md
-│   └── OPPORTUNITY_MAP_AND_EXPANSION.md
+│   ├── OPPORTUNITY_MAP_AND_EXPANSION.md
+│   ├── BITVM3_BITVMX_RESEARCH_EXPANSION.md
+│   └── BITVMX_EVAL.md
 └── scripts/
     └── verify_contamination_guard.py
 ```

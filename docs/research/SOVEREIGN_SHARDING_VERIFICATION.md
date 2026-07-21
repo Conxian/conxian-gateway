@@ -9,7 +9,7 @@ Utilizes the **Conxian Unified Theory v2.0** for sharded state consistency acros
 ### Core Components:
 - **Labor Attestation**: TEE-signed proofs of work/service completion (Job Cards).
 - **Jurisdictional Sharding**: Mapping of settlement rails to regional compliance rules (BRICS, PAPSS) verified via UCV-1.
-- **State Root Aggregation**: 364-segment BitVM2 SNARK checkpoints for high-integrity audit trails.
+- **State Root Aggregation**: A research concept for checkpointing sharded state. No segment count or benchmark is verified for the Gateway.
 
 ## 3. Implementation Path
 1. **ZkcVerifier Expansion**: Integrated with Tableland for decentralized state commit (SovereignCommit trait).
@@ -20,7 +20,12 @@ Utilizes the **Conxian Unified Theory v2.0** for sharded state consistency acros
 - **OData v4 ERP Sync**: Automatic field extraction for SAP/Oracle audit alignment.
 - **Fail-Closed Readiness**: All labor settlements require context-aware BitVM attestations (CON-1279).
 
-## 5. Emerging BitVM3 & Recursive Proofs (2026-06-25 Update)
-- **Recursive Verification**: BitVM3 introduces recursive Groth16 verification, allowing the Gateway to verify complex labor sharding logic with significantly reduced on-chain overhead.
-- **Prover Efficiency**: New research identifies a 40% reduction in prover time for 364-segment state roots, enabling near-real-time audit readiness.
-- **Adaptive Proofs**: BitVMX primitives are being monitored for future integration into the `UniversalVerifier` pipeline to support highly efficient large-scale computation verification.
+## 5. Emerging BitVM3, BitVMX, and Recursive Proof Research (2026-07-21 alignment)
+
+The detailed, dated evidence record is [`BITVM3_BITVMX_RESEARCH_EXPANSION.md`](./BITVM3_BITVMX_RESEARCH_EXPANSION.md). The classification remains **Research / Evaluation Only**; it does not authorize production integration, settlement, or compliance decisions.
+
+- **BitVM3** is a paper/protocol family centered on garbled-circuit-based off-chain verification. Its paper uses a Groth16 verifier as a circuit in the construction; it is not a recursive Groth16 SDK and is not a Conxian dependency.
+- **BitVM2/Groth16** are separate layers: BitVM2 is a challenge protocol, while Groth16 is a proof system whose verifier can be the computation under review. Conxian's current boundary accepts an injected verifier but does not provide a production pairing backend.
+- **BitVMX-CPU** is covered only by the isolated [`tools/bitvmx-eval`](../../tools/bitvmx-eval/) lane. It is not BitVM3, BitVMX-GC, garbled-circuit verification, or Groth16 verification.
+- **BitVMX-GC and GOATNetwork/`bitvm2-gc`** remain research/reference material pending a stable public target, license review, reproducible build, independent vectors, resource fit, and security review.
+- **Recursive SNARK/IVC systems such as Nova** are a separate research track and must not be treated as interchangeable with BitVM3, BitVMX-GC, or the current Gateway verifier boundary.
