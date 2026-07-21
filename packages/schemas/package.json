@@ -7,9 +7,10 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "test": "echo No tests in schemas",
-    "build": "tsc"
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "typescript": "^6.0.3"
+    "@typescript/native": "npm:typescript@7.0.2"
   }
 }
