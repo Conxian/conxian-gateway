@@ -172,6 +172,12 @@ Before any Gateway manifest or runtime change, the next checkpoint must provide:
 Until these criteria pass, issue #220 remains open and the Gateway's existing
 HTTP oracle/bond scaffold remains unchanged.
 
+The next isolated checkpoint is recorded in
+[`DLC_STAGE1_CONFORMANCE_2026-07-22.md`](DLC_STAGE1_CONFORMANCE_2026-07-22.md).
+It documents the narrowly scoped `localPayout` compatibility normalization,
+the deterministic hyperbola wire mismatch, and supported rejection coverage;
+it does not change the Stage 0 decision or authorize Gateway integration.
+
 ## Canonical sources
 
 - [`DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md`](DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md)

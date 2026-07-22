@@ -141,6 +141,13 @@ selecting a dependency. The first implementation milestone should be a
 deterministic enumerated-outcome offer/accept/sign, funding/CET/refund fixture
 with real announcement and attestation signature verification.
 
+> **2026-07-22 isolated checkpoint:** The follow-up
+> [`DLC_STAGE1_CONFORMANCE_2026-07-22.md`](research/DLC_STAGE1_CONFORMANCE_2026-07-22.md)
+> adds a documented in-memory payout-field compatibility path, deterministic
+> hyperbola mismatch evidence, and seven supported rejection checks. It does
+> not satisfy the full fixture/readiness gate and does not change the
+> production-status assessment above.
+
 ---
 
 ### #219: [BITVM] Define Groth16 verifier boundary and test-vector contract
