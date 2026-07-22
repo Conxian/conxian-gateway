@@ -89,7 +89,7 @@
 | **NWC NIP-47** | `internal/api/src/nwc_backend.rs` | ✅ Integrated |
 | **Musig2** | `internal/api/src/handlers.rs` (`aggregate_musig2_keys`) | ✅ Key aggregation |
 | **x402** | `internal/api/src/x402.rs` | ✅ Payment protocol |
-| **DLC** | `POST /api/v1/dlc/bond` | ⚠️ Bond/API scaffold only; no cryptographic oracle verification or CET construction. See [`DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md`](DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md). |
+| **DLC** | `POST /api/v1/dlc/bond` | ⚠️ Bond/API scaffold only; no cryptographic oracle verification or CET construction. See [`DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md`](DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md) and the gated [`DLC_STAGE0_SDK_COMPARISON_2026-07-22.md`](DLC_STAGE0_SDK_COMPARISON_2026-07-22.md). |
 
 ---
 
