@@ -1,0 +1,12 @@
+[package]
+name = "ddk-stage0-probe"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+bitcoin = { version = "0.32.101", default-features = false, features = ["std", "serde", "rand"] }
+ddk-dlc = { package = "ddk-dlc", git = "https://github.com/bennyhodl/dlcdevkit.git", rev = "e0ead55870fab97510242b8d6d2a57ce1033008f", version = "1.1.2", features = ["std", "use-serde"] }
+ddk-manager = { package = "ddk-manager", git = "https://github.com/bennyhodl/dlcdevkit.git", rev = "e0ead55870fab97510242b8d6d2a57ce1033008f", version = "1.1.2", features = ["std", "use-serde"] }
+ddk-messages = { package = "ddk-messages", git = "https://github.com/bennyhodl/dlcdevkit.git", rev = "e0ead55870fab97510242b8d6d2a57ce1033008f", version = "1.1.2", features = ["std", "use-serde"] }
+secp256k1-zkp = { version = "=0.11.0", features = ["rand", "global-context", "serde"] }
