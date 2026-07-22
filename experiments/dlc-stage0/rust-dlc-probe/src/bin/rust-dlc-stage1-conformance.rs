@@ -19,6 +19,7 @@ const EVENT_ID: &str = "stage1-enum-event";
 struct OracleFixture {
     announcement: OracleAnnouncement,
     attestation: OracleAttestation,
+    oracle_secret: SecretKey,
     nonce_secret: SecretKey,
 }
 
@@ -81,6 +82,7 @@ fn oracle_fixture() -> Result<OracleFixture, Box<dyn std::error::Error>> {
     Ok(OracleFixture {
         announcement,
         attestation,
+        oracle_secret,
         nonce_secret,
     })
 }
@@ -93,17 +95,62 @@ fn validate_attestation_binding(
     if attestation.event_id != announcement.oracle_event.event_id {
         return Err(dlc::Error::InvalidArgument);
     }
-    attestation.validate(secp, announcement)
+    attestation.validate(secp, announcement)?;
+
+    match &announcement.oracle_event.event_descriptor {
+        EventDescriptor::EnumEvent(descriptor) => {
+            if attestation
+                .outcomes
+                .iter()
+                .any(|outcome| !descriptor.outcomes.contains(outcome))
+            {
+                return Err(dlc::Error::InvalidArgument);
+            }
+        }
+        EventDescriptor::DigitDecompositionEvent(_) => {}
+    }
+
+    Ok(())
 }
 
-fn require_rejected<T>(
+fn require_error_category<T>(
+    label: &str,
+    result: Result<T, dlc::Error>,
+    expected: impl Fn(&dlc::Error) -> bool,
+    expected_category: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match result {
+        Ok(_) => Err(format!("{label} was accepted unexpectedly").into()),
+        Err(error) if expected(&error) => Ok(()),
+        Err(error) => Err(format!(
+            "{label} returned an unexpected error category: expected {expected_category}, got {error:?}"
+        )
+        .into()),
+    }
+}
+
+fn require_invalid_argument<T>(
     label: &str,
     result: Result<T, dlc::Error>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    if result.is_ok() {
-        return Err(format!("{label} was accepted unexpectedly").into());
-    }
-    Ok(())
+    require_error_category(
+        label,
+        result,
+        |error| matches!(error, dlc::Error::InvalidArgument),
+        "dlc::Error::InvalidArgument",
+    )
+}
+
+fn require_secp256k1<T>(
+    label: &str,
+    result: Result<T, dlc::Error>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    require_error_category(
+        label,
+        result,
+        |error| matches!(error, dlc::Error::Secp256k1(_)),
+        "dlc::Error::Secp256k1",
+    )
 }
 
 fn check_valid_oracle_boundary() -> Result<(), Box<dyn std::error::Error>> {
@@ -125,7 +172,7 @@ fn check_wrong_event_id() -> Result<(), Box<dyn std::error::Error>> {
     if wrong_event.validate(&secp, &fixture.announcement).is_err() {
         return Err("upstream event-id behavior changed; refresh the Stage 1 evidence".into());
     }
-    require_rejected(
+    require_invalid_argument(
         "wrong event id",
         validate_attestation_binding(&secp, &wrong_event, &fixture.announcement),
     )
@@ -139,21 +186,48 @@ fn check_wrong_oracle_key() -> Result<(), Box<dyn std::error::Error>> {
     let mut wrong_key = fixture.attestation.clone();
     wrong_key.oracle_public_key = XOnlyPublicKey::from_keypair(&alternate_keypair).0;
 
-    require_rejected(
+    require_invalid_argument(
         "wrong oracle key",
         validate_attestation_binding(&secp, &wrong_key, &fixture.announcement),
     )
 }
 
-fn check_wrong_outcome() -> Result<(), Box<dyn std::error::Error>> {
+fn check_signed_outcome_mutation() -> Result<(), Box<dyn std::error::Error>> {
     let secp = Secp256k1::new();
     let fixture = oracle_fixture()?;
-    let mut wrong_outcome = fixture.attestation.clone();
-    wrong_outcome.outcomes[0] = "no".into();
+    let mut mutated_outcome = fixture.attestation.clone();
+    mutated_outcome.outcomes[0] = "no".into();
 
-    require_rejected(
-        "wrong outcome",
-        validate_attestation_binding(&secp, &wrong_outcome, &fixture.announcement),
+    require_invalid_argument(
+        "signed-outcome mutation (signature/outcome binding)",
+        validate_attestation_binding(&secp, &mutated_outcome, &fixture.announcement),
+    )
+}
+
+fn check_unannounced_outcome_domain() -> Result<(), Box<dyn std::error::Error>> {
+    let secp = Secp256k1::new();
+    let fixture = oracle_fixture()?;
+    let mut unannounced_outcome = fixture.attestation.clone();
+    unannounced_outcome.outcomes[0] = "maybe".into();
+    unannounced_outcome.signatures[0] = sign_outcome(
+        &secp,
+        &fixture.oracle_secret,
+        &fixture.nonce_secret,
+        "maybe",
+    );
+
+    // rust-dlc v0.8.0 verifies the signature/key/nonce material but does not
+    // check that an enumerated outcome belongs to the announcement descriptor.
+    if let Err(error) = unannounced_outcome.validate(&secp, &fixture.announcement) {
+        return Err(format!(
+            "upstream began rejecting a correctly signed unannounced outcome; refresh the Stage 1 evidence: {error:?}"
+        )
+        .into());
+    }
+
+    require_invalid_argument(
+        "unannounced outcome/domain",
+        validate_attestation_binding(&secp, &unannounced_outcome, &fixture.announcement),
     )
 }
 
@@ -168,7 +242,7 @@ fn check_invalid_announcement_signature() -> Result<(), Box<dyn std::error::Erro
         &alternate_keypair,
     );
 
-    require_rejected("invalid announcement signature", invalid.validate(&secp))
+    require_secp256k1("invalid announcement signature", invalid.validate(&secp))
 }
 
 fn check_invalid_attestation_signature() -> Result<(), Box<dyn std::error::Error>> {
@@ -178,7 +252,7 @@ fn check_invalid_attestation_signature() -> Result<(), Box<dyn std::error::Error
     let mut invalid = fixture.attestation.clone();
     invalid.signatures[0] = sign_outcome(&secp, &alternate_secret, &fixture.nonce_secret, "yes");
 
-    require_rejected(
+    require_invalid_argument(
         "invalid attestation signature",
         validate_attestation_binding(&secp, &invalid, &fixture.announcement),
     )
@@ -268,7 +342,7 @@ fn check_wrong_funding_outpoint() -> Result<(), Box<dyn std::error::Error>> {
         txid: Txid::from_byte_array([0x42; 32]),
         vout: 1,
     };
-    require_rejected(
+    require_secp256k1(
         "wrong funding outpoint/transaction binding",
         dlc::verify_cet_adaptor_sig_from_oracle_info(
             &secp,
@@ -287,7 +361,8 @@ fn run_all_checks() -> Result<(), Box<dyn std::error::Error>> {
     check_valid_oracle_boundary()?;
     check_wrong_event_id()?;
     check_wrong_oracle_key()?;
-    check_wrong_outcome()?;
+    check_signed_outcome_mutation()?;
+    check_unannounced_outcome_domain()?;
     check_invalid_announcement_signature()?;
     check_invalid_attestation_signature()?;
     check_wrong_funding_outpoint()?;
@@ -297,10 +372,11 @@ fn run_all_checks() -> Result<(), Box<dyn std::error::Error>> {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     run_all_checks()?;
     println!("stage1=valid_oracle_boundary passed=1");
-    println!("stage1=oracle_rejection_cases passed=5");
+    println!("stage1=oracle_rejection_cases passed=6");
     println!("stage1=transaction_binding_rejection_cases passed=1");
-    println!("stage1=total passed=7 failed=0");
+    println!("stage1=total passed=8 failed=0");
     println!("upstream_event_id_check=not_implemented wrapper_enforced=true");
+    println!("upstream_enum_domain_check=not_implemented wrapper_enforced=true");
     Ok(())
 }
 
@@ -308,8 +384,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 mod tests {
     use super::{
         check_invalid_announcement_signature, check_invalid_attestation_signature,
+        check_signed_outcome_mutation, check_unannounced_outcome_domain,
         check_valid_oracle_boundary, check_wrong_event_id, check_wrong_funding_outpoint,
-        check_wrong_oracle_key, check_wrong_outcome,
+        check_wrong_oracle_key,
     };
 
     #[test]
@@ -328,8 +405,13 @@ mod tests {
     }
 
     #[test]
-    fn wrong_outcome_rejects() {
-        check_wrong_outcome().unwrap();
+    fn signed_outcome_mutation_rejects() {
+        check_signed_outcome_mutation().unwrap();
+    }
+
+    #[test]
+    fn unannounced_outcome_domain_rejects_at_binding_boundary() {
+        check_unannounced_outcome_domain().unwrap();
     }
 
     #[test]

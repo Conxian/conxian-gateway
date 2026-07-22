@@ -20,8 +20,10 @@
   in memory; it does not rewrite canonical fixtures.
 - Added normalization tests for the scoped mapping and ambiguous-key rejection.
 - Added `rust-dlc-stage1-conformance`, a deterministic isolated binary/test
-  covering valid oracle validation, wrong event/key/outcome rejection, invalid
-  announcement/attestation signatures, and mutated-CET transaction binding.
+  covering valid oracle validation, wrong event/key rejection, signed-outcome
+  mutation rejection, correctly signed unannounced-outcome/domain rejection,
+  invalid announcement/attestation signatures, and mutated-CET transaction
+  binding.
 - Captured the hyperbola mismatch at byte offset `104` (`0x01` expected,
   `0x40` actual), with the spec fixed-point versus upstream `f64` encoding
   classification.
@@ -40,13 +42,13 @@
 - Compatibility mode: `14` parsed, `0` blocked, `13` complete
   offer/accept/sign byte sets matching, `28` normalized fields.
 - Vector probe unit tests: `2 passed, 0 failed` on Rust `1.85.1` and `1.96.0`.
-- Stage 1 conformance tests: `7 passed, 0 failed` on Rust `1.85.1` and
+- Stage 1 conformance tests: `8 passed, 0 failed` on Rust `1.85.1` and
   `1.96.0`.
-- Stage 1 report: `valid_oracle_boundary=1`, `oracle_rejection_cases=5`,
-  `transaction_binding_rejection_cases=1`, `total passed=7 failed=0`.
-- The pinned upstream event-ID comparison is not implemented in
-  `OracleAttestation::validate`; the experiment wrapper enforces it and records
-  that boundary explicitly.
+- Stage 1 report: `valid_oracle_boundary=1`, `oracle_rejection_cases=6`,
+  `transaction_binding_rejection_cases=1`, `total passed=8 failed=0`.
+- The pinned upstream event-ID and enumerated-outcome-domain comparisons are not
+  implemented in `OracleAttestation::validate`; the experiment wrapper enforces
+  both and records those boundaries explicitly.
 
 ## Verification scope
 

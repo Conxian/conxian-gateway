@@ -368,13 +368,15 @@ offset `104` (`0x01` expected by the pinned spec, `0x40` emitted by
 `rust-dlc`), with the spec's fixed-point sign/`u64`/`u16` encoding differing
 from the library's IEEE-754 `f64` encoding.
 
-The same isolated checkpoint has `7` deterministic tests passing: one valid
-oracle boundary, wrong event/key/outcome rejection, invalid announcement and
-attestation signature rejection, and mutated-CET transaction-binding
-rejection. The pinned upstream attestation validator does not compare event
-IDs, so the experiment wrapper enforces that binding explicitly. None of this
-changes the Gateway's HTTP oracle/UUID scaffold or authorizes a dependency,
-custody, CET, funding, refund, or production integration.
+The same isolated checkpoint has `8` deterministic tests passing: one valid
+oracle boundary, wrong event/key rejection, signed-outcome mutation rejection,
+correctly signed unannounced-outcome/domain rejection, invalid announcement and
+attestation signature rejection, and mutated-CET transaction-binding rejection.
+The pinned upstream attestation validator does not compare event IDs or
+enumerated outcome membership, so the experiment wrapper enforces both bindings
+explicitly. None of this changes the Gateway's HTTP oracle/UUID scaffold or
+authorizes a dependency, custody, CET, funding, refund, or production
+integration.
 
 ## 9. Readiness and security gates
 

@@ -40,7 +40,7 @@ Run from the repository root with the pinned toolchains installed:
 | --- | --- | --- | --- |
 | `cargo fmt --manifest-path experiments/dlc-stage0/Cargo.toml --all -- --check` | — | **PASS** | Both standalone probes format cleanly. |
 | `cargo check --manifest-path experiments/dlc-stage0/Cargo.toml --workspace` | — | **PASS** | Both probe packages compile from the exact git pins. |
-| `cargo run --manifest-path experiments/dlc-stage0/Cargo.toml -p rust-dlc-stage0-probe --bin rust-dlc-stage0-probe` | **PASS** | **PASS** | Announcement/attestation validation, wrong-outcome rejection, funding transaction, two CETs, and refund construction pass. The deterministic funding txid is `c293224d29382edf7a7cd482b0dfb953938eaf9a45ad1ad603cf970bd284561c`. |
+| `cargo run --manifest-path experiments/dlc-stage0/Cargo.toml -p rust-dlc-stage0-probe --bin rust-dlc-stage0-probe` | **PASS** | **PASS** | Announcement/attestation validation, signed-outcome mutation rejection, funding transaction, two CETs, and refund construction pass. The deterministic funding txid is `c293224d29382edf7a7cd482b0dfb953938eaf9a45ad1ad603cf970bd284561c`. |
 | `cargo run --manifest-path experiments/dlc-stage0/Cargo.toml -p ddk-stage0-probe --bin ddk-stage0-probe` | **BLOCKED** by the MSRV failure below | **PASS** | Enum oracle validation, two CETs, refund locktime, adaptor generation/verification, CET signing, and manager validation pass on 1.96.0. |
 | `cargo check --manifest-path experiments/dlc-stage0/Cargo.toml -p rust-dlc-stage0-probe` | **PASS** | **PASS** | The bounded upstream low-level surface is compatible with the Gateway MSRV gate. |
 | `cargo check --manifest-path experiments/dlc-stage0/Cargo.toml -p ddk-stage0-probe` | **EXPECTED FAIL** | **PASS** | DDK `ddk-messages` uses `usize::is_multiple_of`; Rust 1.85.1 reports the unstable `unsigned_is_multiple_of` library feature. The source is not weakened to force a pass. |
@@ -58,7 +58,7 @@ part of the bounded checked-in probe.
 Covered:
 
 - deterministic Schnorr oracle announcement validation;
-- deterministic oracle attestation validation and rejection after outcome tampering;
+- deterministic oracle attestation validation and rejection after signed-outcome mutation;
 - synthetic offer/accept party parameters with fixed keys and inputs;
 - funding transaction creation;
 - two payout/CET transactions;
@@ -162,8 +162,9 @@ Before any Gateway manifest or runtime change, the next checkpoint must provide:
    seven numerical vectors;
 3. all numerical offer/accept/sign bytes passing, including the hyperbola offer;
 4. every applicable CET and refund fixture passing with deterministic bytes;
-5. malformed, wrong-event, wrong-oracle, wrong-outcome, invalid-signature, and
-   wrong-transaction rejection tests;
+5. malformed, wrong-event, wrong-oracle, signed-outcome-mutation,
+   unannounced-enum-domain, invalid-signature, and wrong-transaction rejection
+   tests;
 6. a locked dependency graph that satisfies the Gateway MSRV of Rust 1.85.1;
 7. an explicit decision about manager/provider integration and persistence;
 8. persistence, restart/recovery, transport, and production operations deferred

@@ -144,9 +144,11 @@ with real announcement and attestation signature verification.
 > **2026-07-22 isolated checkpoint:** The follow-up
 > [`DLC_STAGE1_CONFORMANCE_2026-07-22.md`](research/DLC_STAGE1_CONFORMANCE_2026-07-22.md)
 > adds a documented in-memory payout-field compatibility path, deterministic
-> hyperbola mismatch evidence, and seven supported rejection checks. It does
-> not satisfy the full fixture/readiness gate and does not change the
-> production-status assessment above.
+> hyperbola mismatch evidence, and eight deterministic checks: one valid oracle
+> boundary plus seven rejection checks (six oracle cases, including signed
+> outcome mutation and correctly signed unannounced-outcome rejection, plus one
+> transaction-binding case). It does not satisfy the full fixture/readiness
+> gate and does not change the production-status assessment above.
 
 ---
 

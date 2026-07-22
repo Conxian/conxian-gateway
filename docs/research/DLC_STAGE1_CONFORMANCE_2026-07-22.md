@@ -13,8 +13,8 @@ implementation surface. This checkpoint adds:
   JSON uses `localPayout` while the pinned `rust-dlc` serde model requires
   `offerPayout`;
 - deterministic first-difference diagnostics for the numerical hyperbola offer;
-- seven deterministic oracle/transaction checks, including five oracle
-  rejection cases and a transaction-binding rejection case.
+- eight deterministic oracle/transaction checks: one valid oracle boundary, six
+  oracle rejection cases, and one transaction-binding rejection case.
 
 The compatibility path is an experiment-only normalization, not a production
 schema decision. It does not rewrite the pinned fixtures and it does not make
@@ -100,22 +100,38 @@ oracle fixture, synthetic DLC transactions, and the selected library's actual
 validation/adaptor-signature functions. It does not persist or export private
 keys.
 
-Seven tests pass on both supported toolchains:
+Eight tests pass on both supported toolchains:
 
 1. valid announcement and attestation boundary accepts;
 2. wrong event ID rejects at the experiment's binding wrapper;
 3. wrong oracle key rejects;
-4. wrong outcome rejects;
-5. invalid announcement signature rejects;
-6. invalid attestation signature rejects;
-7. a mutated CET funding input/outpoint rejects adaptor-signature verification.
+4. a signed-outcome mutation rejects because the retained signature no longer
+   binds to the changed outcome;
+5. a correctly signed but unannounced enum outcome rejects at the experiment's
+   descriptor-membership boundary;
+6. invalid announcement signature rejects;
+7. invalid attestation signature rejects;
+8. a mutated CET funding input/outpoint rejects adaptor-signature verification.
 
-The wrong-event test records an important upstream boundary: the pinned
-`OracleAttestation::validate` implementation verifies lengths, oracle key,
-outcome signatures, and nonce points, but does not compare
-`OracleAttestation.event_id` with `OracleEvent.event_id`. The experiment
-wrapper adds that comparison and fails closed. This wrapper is not wired into
-the Gateway.
+The signed-outcome mutation is intentionally distinct from descriptor-domain
+membership: it changes `yes` to `no` while retaining the original `yes`
+signature, so it tests signature/outcome binding only. The unannounced-outcome
+case signs `maybe` with the fixture oracle key and nonce, then verifies that
+the pinned upstream validator accepts the cryptographically valid attestation
+even though `maybe` is absent from the announcement's `yes`/`no` descriptor.
+The experiment wrapper rejects that attestation with `dlc::Error::InvalidArgument`.
+
+The wrong-event and unannounced-outcome tests record important upstream
+boundaries: the pinned `OracleAttestation::validate` implementation verifies
+lengths, oracle key, outcome signatures, and nonce points, but does not compare
+`OracleAttestation.event_id` with `OracleEvent.event_id` or check enumerated
+outcome membership in `OracleEvent.event_descriptor`. The experiment wrapper
+adds both comparisons and fails closed. This wrapper is not wired into the
+Gateway.
+
+The probe asserts stable `dlc::Error::InvalidArgument` and
+`dlc::Error::Secp256k1` categories where the pinned implementation exposes
+them; it does not couple tests to display-text wording.
 
 The transaction test first verifies a valid adaptor signature, then mutates the
 CET input's `previous_output` and confirms verification fails. This exercises
@@ -155,10 +171,15 @@ python3 scripts/verify_contamination_guard.py
 Observed targeted results on 2026-07-22:
 
 - vector probe unit tests: `2 passed, 0 failed` on Rust 1.85.1 and 1.96.0;
-- Stage 1 conformance tests: `7 passed, 0 failed` on Rust 1.85.1 and 1.96.0;
+- Stage 1 conformance tests: `8 passed, 0 failed` on Rust 1.85.1 and 1.96.0;
 - direct vectors: `parsed:7 blocked:7 all_bytes_match:6`;
 - compatibility vectors: `parsed:14 blocked:0 all_bytes_match:13 normalized_local_payouts:28`;
-- the Stage 1 report: `total passed=7 failed=0`;
+- the Stage 1 report: `valid_oracle_boundary=1`,
+  `oracle_rejection_cases=6`, `transaction_binding_rejection_cases=1`, and
+  `total passed=8 failed=0`;
+- the probe reports both `upstream_event_id_check=not_implemented` and
+  `upstream_enum_domain_check=not_implemented`, with the isolated wrapper
+  enforcing both bindings;
 - the contamination guard result is recorded in the session summary for this
   checkpoint.
 
