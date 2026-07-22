@@ -1,6 +1,6 @@
 # Cross-Repository Status Dashboard
 
-**Last Updated:** 2026-07-20
+**Last Updated:** 2026-07-21
 **Sprint:** W29 (2026-07-15 to 2026-07-25)  
 **Maintained By:** Agent sessions
 
@@ -12,7 +12,7 @@
 | Repository | Production Path | Last Session | W29 Status |
 |------------|-----------------|--------------|------------|
 | **conxian-nexus** | main (Mainnet) | ⏳ Not reviewed | - |
-| **conxian-gateway** | main (Mainnet) | 2026-07-20 ⚠️ | ⚠️ P0 status corrected; #219 branch pending review/merge |
+| **conxian-gateway** | main (Mainnet) | 2026-07-21 ⚠️ | ⚠️ #189 evaluator merged; BitVM3/GC research only; #219 boundary on main, cryptographic backend open |
 
 ### Layer 2: User & Application Surface
 | Repository | Production Path | Last Session | W29 Status |
@@ -75,8 +75,15 @@ lib-conclave-sdk  ←  shares types with SDK (L3)
 |---|-------|--------|
 | #236 SDK | Version drift + README | ✅ Fixed (0.1.4, Developer Preview) |
 | #220 DLC CET | dlc-manager integration | ⚠️ Attempted in `453a15a`/`8ef9d05`, then reverted in `cb8b680` after API incompatibility/CI failures; remains open |
-| #219 Groth16 | Verifier boundary | 🟡 Canonical contract, commitment binding, fixture, and BitVM handoff defined on `charlie/issue-219-groth16-boundary`; not merged and not cryptographic |
+| #219 Groth16 | Verifier boundary | 🟡 Canonical contract, commitment binding, fixture, and BitVM handoff are on `main`; no production cryptographic backend |
 | #216 Babylon | BTC header SPV | 🟡 Implemented on PR #253 (`feat/216-babylon-header-chain`); pending review/merge |
+
+**#189 / #219 current status (2026-07-21):**
+
+- ✅ PR #259 merged the isolated, feature-gated BitVMX-CPU evaluator and its research-only contract tests.
+- 📄 The current evidence record is [`docs/research/BITVM3_BITVMX_RESEARCH_EXPANSION.md`](research/BITVM3_BITVMX_RESEARCH_EXPANSION.md).
+- 🔬 BitVM3, BitVMX-GC, and GOATNetwork/`bitvm2-gc` remain research/reference topics; no production BitVM3 or garbled-circuit adapter is present.
+- 🟡 The Groth16 boundary is backend-neutral. The injected verifier/mock is not cryptographic Groth16 verification, and no production cryptographic verifier or settlement adapter is wired.
 
 **Historical DLC commits:**
 - `453a15a` attempted the W29 P0 implementation, including `dlc_cet.rs` and `dlc-manager`.
@@ -111,6 +118,7 @@ not claimed merged or closed by this status entry.
 
 | Date | Repository | Session Summary |
 |------|------------|-----------------|
+| 2026-07-21 | conxian-gateway | #189 research expansion: evaluator PR #259 verified as merged; BitVM3/GC remain research-only; Groth16 boundary remains non-cryptographic. |
 | 2026-07-20 | conxian-gateway | #216 continuity correction and Babylon header-chain implementation delivered in PR #253; pending merge. |
 | 2026-07-20 | conxian-gateway | #219 boundary milestone: canonical contract, commitment binding, circuit/key association, BitVM handoff, deterministic fixture, and rejection tests completed locally; production backend remains open. |
 | 2026-07-15 | conxian-gateway | W29 P0 implementation attempt recorded; later verification found the DLC CET attempt reverted in `cb8b680`, so #220 remains open. |
@@ -141,9 +149,9 @@ Before starting work on any repo, verify:
 ### P1-P3 Issues (Future Sprints)
 - #222 CI/CD coverage threshold
 - #218/#193 Liquid harness ✅ host-daemon harness merged; PR #258 hardening follow-up open; production proof backend unwired
-- #189 BitVM3 research monitoring
+- #189 BitVM3/BitVMX research monitoring; evaluator merged in PR #259, no production GC or cryptographic verifier
 
 ---
 
 *This file is auto-maintained by agent sessions.*
-*Last Major Update: 2026-07-20 (W29 P0 status corrected; #216 PR #253 pending merge)*
+*Last Major Update: 2026-07-21 (W29 #189 evaluator status and Groth16 boundary updated; #216 PR #253 pending merge)*
