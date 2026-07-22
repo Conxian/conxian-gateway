@@ -116,7 +116,7 @@ fn validate_principal(network: AlexNetwork, value: &str) -> Result<(), AlexPolic
     }
 
     // Stacks c32 addresses vary in length when leading zeroes are present, but
-    // are materially longer than a ticker or short placeholder. Exact
+    // are materially longer than a ticker or short identifier. Exact
     // allowlisting remains the authoritative deployment check.
     if address.len() < 20
         || address.len() > 42
