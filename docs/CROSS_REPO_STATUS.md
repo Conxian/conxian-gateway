@@ -1,6 +1,12 @@
 # Cross-Repository Status Dashboard
 
-**Last Updated:** 2026-07-22 (current/live refresh for issue #245; dated history preserved)
+**Status snapshot:** 2026-07-22T14:42:43Z (observed via GitHub CLI; not live)
+**Source commit:** `764859fd19c6b4305c0b7b9222c71493b3587177` (`origin/main`)
+**Refresh rule:** Re-query GitHub before treating issue or PR counts as current;
+dated history is preserved below.
+**Superseded observation:** The preceding pre-merge snapshot recorded PR #274
+as open; it merged into `main` at 2026-07-22T14:25:01Z as commit
+`764859fd19c6b4305c0b7b9222c71493b3587177`.
 **Sprint:** W29 (2026-07-15 to 2026-07-25)  
 **Maintained By:** Agent sessions
 
@@ -12,7 +18,7 @@
 | Repository | Production Path | Last Session | W29 Status |
 |------------|-----------------|--------------|------------|
 | **conxian-nexus** | main (Mainnet) | ⏳ Not reviewed | - |
-| **conxian-gateway** | main (Mainnet) | 2026-07-22 | Six Gateway issues remain open (#189, #220, #222, #228, #245, #247); no Gateway PR is open; #216/#219/#236 are closed milestones and #189 remains research-only |
+| **conxian-gateway** | main (Mainnet) | 2026-07-22 | Six Gateway issues remain open (#189, #220, #222, #228, #245, #247); PR #274 is merged in the timestamped snapshot; #216/#219/#236 are closed milestones and #189 remains research-only |
 
 ### Layer 2: User & Application Surface
 | Repository | Production Path | Last Session | W29 Status |
@@ -54,9 +60,9 @@ lib-conclave-sdk  ←  shares types with SDK (L3)
 
 ---
 
-## Current/live Gateway status — 2026-07-22
+## Gateway status snapshot — 2026-07-22T14:42:43Z (not live)
 
-**Verified base:** `main` at [`6838d872513b681cf88f07fc5431f02b856b6d0e`](https://github.com/Conxian/conxian-gateway/commit/6838d872513b681cf88f07fc5431f02b856b6d0e).
+**Verified base:** `origin/main` at [`764859fd19c6b4305c0b7b9222c71493b3587177`](https://github.com/Conxian/conxian-gateway/commit/764859fd19c6b4305c0b7b9222c71493b3587177).
 
 - `gh issue list --state open` returns exactly six open Gateway issues:
   [#189](https://github.com/Conxian/conxian-gateway/issues/189),
@@ -65,8 +71,11 @@ lib-conclave-sdk  ←  shares types with SDK (L3)
   [#228](https://github.com/Conxian/conxian-gateway/issues/228),
   [#245](https://github.com/Conxian/conxian-gateway/issues/245), and
   [#247](https://github.com/Conxian/conxian-gateway/issues/247).
-- `gh pr list --state open` returns zero open Gateway pull requests. PRs #268,
-  #269, #270, #271, and #272 are merged; the latest base includes PR #272.
+- The snapshot query found no open Gateway pull requests. PRs #268, #269,
+  #270, #271, #272, #273, and [#274](https://github.com/Conxian/conxian-gateway/pull/274)
+  are merged; PR #274 is titled “docs: correct ALEX evidence gate status and
+  auth details” and merged at 2026-07-22T14:25:01Z. The source commit above
+  includes the merged base through PR #274.
 
 ### Open Gateway issues
 
@@ -74,7 +83,7 @@ lib-conclave-sdk  ←  shares types with SDK (L3)
 |---|---|---|
 | [#189](https://github.com/Conxian/conxian-gateway/issues/189) | Research-only; no stable BitVM3/BitVMX-GC SDK, production deployment, or production pairing backend verified | Keep the canonical evidence/triage report current; require stable revision, vectors, resource, protocol, security, and cross-repo gates |
 | [#220](https://github.com/Conxian/conxian-gateway/issues/220) | Isolated DLC research/conformance/fixture slices merged; no Gateway runtime dependency or production CET path | Select manager/provider API only after independent offer/accept/sign/funding/CET/refund vectors and wallet/signing boundaries pass |
-| [#222](https://github.com/Conxian/conxian-gateway/issues/222) | Phase 3 release-governance implementation is prepared on `charlie/issue-245-audit-2026-07-22`; tag/version validation, production binary packaging, checksums, CycloneDX SBOM, SLSA subjects, and release ordering are now explicit; issue remains open pending merge, admin controls, and a live release rehearsal | Review/merge the narrow release-governance slice; configure required checks and the protected `release` environment; verify one tagged release |
+| [#222](https://github.com/Conxian/conxian-gateway/issues/222) | The audit follow-up adds an exact-tag-commit baseline for Rust, Node, Cargo audit, Gitleaks, Lightning coverage, deterministic artifact verification, and SLSA subjects; issue remains open pending merge, admin controls, and a live release rehearsal | Review/merge the narrow release-governance slice; configure required checks and the protected `release` environment; verify one tagged release |
 | [#228](https://github.com/Conxian/conxian-gateway/issues/228) | RGB Phase 1 plus Phase 2 stockpile/import hardening merged in PRs #256/#261/#262; issue remains open | Add a concrete issuer-signature backend, signed Bitcoin/RGB regtest fixture, and transactional existing-contract update path |
 | [#245](https://github.com/Conxian/conxian-gateway/issues/245) | Research/observability; no current Gateway BIP-110 integration or fee predictor; no fee multiplier/model rewrite justified | Define deployment/status observability, Core preflight passthrough, fee telemetry, route confidence, and acceptance metrics |
 | [#247](https://github.com/Conxian/conxian-gateway/issues/247) | Blocked/high-risk; ALEX quote/prepared-payload surfaces exist, while secure signer, exact contract/escrow semantics, and governance controls remain unresolved | Approve exact signer/contract/governance design, prove testnet controls, and reconcile the rehearsal/API contract |
@@ -226,4 +235,4 @@ Before starting work on any repo, verify:
 ---
 
 *This file is auto-maintained by agent sessions.*
-*Last Major Update: 2026-07-22 (current #245 audit; #222 Phase 3 release-governance patch prepared on the audit branch; #216/#219 milestones, #258, #268, and #272 merged; six Gateway issues open)*
+*Last Major Update: 2026-07-22T14:42:43Z (timestamped #245/#222 audit snapshot; PR #274 merged at observation time; #216/#219 milestones, #258, #268, #272, #273, and #274 merged; six Gateway issues open)*

@@ -2,8 +2,10 @@
 
 This runbook describes the tag-driven release flow for the Gateway binary. The
 workflow is deliberately fail-closed: GitHub Release publication is downstream
-of metadata validation, the production build, checksum/SBOM verification, and
-GitHub artifact attestation.
+of exact-commit repository baselines, metadata validation, the production build,
+checksum/SBOM verification, and GitHub artifact attestation. The release
+workflow reruns repository-controlled gates directly on the exact tag commit;
+it does not trust potentially stale check-run results from another event.
 
 The workflow currently publishes one supported release target:
 `x86_64-unknown-linux-gnu`.
@@ -28,6 +30,9 @@ Before creating a release tag:
    cargo clippy --workspace --all-targets --all-features -- -D warnings
    cargo test --workspace
    cargo test --workspace --features mock-integrations
+   cargo audit # cargo-audit 0.22.2
+   ./scripts/lightning_coverage_gate.sh 90 # cargo-llvm-cov 0.8.7
+   python3 -m unittest discover -s tests -p 'test_verify_release_artifacts.py'
    pnpm install
    pnpm build
    pnpm test
@@ -60,16 +65,45 @@ dispatch is rejected before any release job can create or publish a release.
 
 ## 3. Automated workflow order
 
-`.github/workflows/release.yml` runs these jobs in order:
+`.github/workflows/release.yml` runs these jobs in order. All baseline jobs have
+only `contents: read`; no environment secret is available before validation and
+packaging succeed.
 
-### `validate-release`
+### `release-identity`
+
+This job checks out the tag with full history, verifies the `vMAJOR.MINOR.PATCH`
+format and manual version confirmation, checks that the tag resolves to the
+workflow's exact `GITHUB_SHA`, fetches `origin/main`, and rejects the release
+unless the tag commit is reachable from that reviewed main history. A tag on an
+arbitrary unreviewed commit is therefore not an allowed release source.
+
+### Exact-commit baseline jobs
+
+The following jobs each check out the commit emitted by `release-identity`, not
+the moving branch name and not a prior check-run result:
+
+- `baseline-rust` runs formatting, workspace Clippy with warnings denied, both
+  workspace test modes, the contamination guard, and the release-artifact
+  verifier regression suite;
+- `baseline-node` mirrors the Node workflow's compiler split, typecheck, lint,
+  build, Playwright installation, and tests;
+- `baseline-cargo-audit` installs and asserts `cargo-audit 0.22.2` with
+  `--locked` before running `cargo audit`;
+- `baseline-secret-scan` verifies the pinned Gitleaks `8.30.1` archive against
+  the pinned SHA-256 of the official release checksum manifest and the archive
+  digest recorded in that manifest before scanning; and
+- `baseline-lightning` installs and asserts `cargo-llvm-cov 0.8.7` with
+  `--locked` before enforcing the 90% scoped Lightning gate.
+
+`package-release` requires all five baseline jobs and `release-identity`.
+Attestation and publication cannot bypass any of these dependencies.
+
+### `package-release`
 
 This job has only `contents: read` and:
 
-- verifies the tag format, tag commit, workspace package versions, and
-  `CHANGELOG.md`;
-- runs Rust formatting, Clippy, both workspace test modes, and the contamination
-  guard;
+- verifies workspace package versions and `CHANGELOG.md` after all baseline
+  jobs have passed;
 - builds the actual `gateway` production binary with the repository's pinned
   Rust toolchain for `x86_64-unknown-linux-gnu`;
 - packages the binary and deterministic metadata as
@@ -77,16 +111,18 @@ This job has only `contents: read` and:
 - generates a pinned CycloneDX 1.5 SBOM from the Gateway workspace dependency
   graph and normalizes timestamps/workspace paths;
 - writes `conxian-gateway-X.Y.Z.sha256` for the archive and SBOM; and
-- verifies the archive, ELF target, checksum manifest, and SBOM with
-  `scripts/verify_release_artifacts.py` before uploading an immutable Actions
-  artifact set.
+- verifies the archive, ELF target, full commit metadata binding, checksum
+  manifest, SBOM, tar member types/paths, and exact artifact-directory shape
+  with `scripts/verify_release_artifacts.py` before uploading an immutable
+  Actions artifact set. The artifact directory is recreated cleanly before
+  packaging.
 
 No GitHub Release action runs in this job.
 
 ### `attest-release`
 
-This job downloads the exact artifact set and verifies its checksum manifest
-again. `actions/attest` then creates SLSA build provenance for the shipped
+This job downloads the exact artifact set into a clean directory and reruns the
+same verifier against the expected full commit. `actions/attest` then creates SLSA build provenance for the shipped
 archive, checksum manifest, and CycloneDX SBOM—not merely Cargo metadata. The
 resulting signed attestation bundle is retained as a release asset and the
 workflow summary receives the GitHub attestation URL.
@@ -97,7 +133,7 @@ The job has only the permissions required for attestation:
 
 ### `create-release`
 
-This job requires both validation and attestation. It runs in the protected
+This job requires every baseline, packaging, and attestation job. It runs in the protected
 `release` environment, downloads the exact immutable artifacts, rechecks their
 checksums and SBOM identity, then publishes one GitHub Release with:
 
@@ -108,9 +144,11 @@ conxian-gateway-X.Y.Z.cdx.json
 conxian-gateway-X.Y.Z.provenance.json
 ```
 
-The release action refuses unmatched files and does not overwrite existing
-assets. A validation or attestation failure therefore prevents release
-publication rather than allowing an ad hoc rebuild.
+The publication job checks the exact commit and reruns the artifact verifier
+before invoking the release action. The release action refuses unmatched files
+and does not overwrite existing assets. A baseline, validation, attestation, or
+environment failure therefore prevents release publication rather than allowing
+an ad hoc rebuild.
 
 ## 4. Verify a published release
 
@@ -125,6 +163,13 @@ mkdir -p "verify-v${VERSION}"
 
 (cd "verify-v${VERSION}" && \
   sha256sum -c "conxian-gateway-${VERSION}.sha256")
+
+EXPECTED_COMMIT="$(git rev-list -n 1 "v${VERSION}")"
+python3 scripts/verify_release_artifacts.py \
+  --directory "verify-v${VERSION}" \
+  --version "${VERSION}" \
+  --target "${TARGET}" \
+  --expected-commit "${EXPECTED_COMMIT}"
 
 jq -e \
   --arg version "${VERSION}" \
@@ -141,7 +186,8 @@ The checksum manifest covers the archive and SBOM. The provenance bundle is a
 signed Sigstore/GitHub attestation result and is intentionally not included in
 that manifest, because the bundle is created after the manifest's subject
 digests are fixed. The SLSA attestation itself covers the archive, checksum
-manifest, and SBOM.
+manifest, and SBOM. The verifier does not extract the archive; it validates
+member paths and types before reading only the expected regular files.
 
 ## 5. Optional crates.io publication gate
 
@@ -217,6 +263,10 @@ This repository change does not claim to have configured:
   `CARGO_REGISTRY_TOKEN`; or
 - a successful live release run with assets and an attestation.
 
-Those items require repository/organization administration or a controlled live
-release rehearsal. The workflow now makes the owned build, artifact identity,
-checksum, SBOM, attestation, and publication ordering explicit and fail-closed.
+The external CodeQL, GitGuardian, and reusable dependency-review checks are not
+substitutes for the direct release baseline; they remain external evidence and
+must be evaluated separately. These items require repository/organization
+administration or a controlled live release rehearsal. The workflow now makes
+the owned baseline, build, artifact identity, checksum, SBOM, attestation, and
+publication ordering explicit and fail-closed. Pin refresh sources and
+procedure are recorded in [`docs/CI_TOOLING_PINS.md`](docs/CI_TOOLING_PINS.md).

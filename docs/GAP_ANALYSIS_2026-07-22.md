@@ -4,28 +4,35 @@
 boundaries, and next acceptance slices for the six issues that were open at the
 2026-07-22 Phase 2 audit checkpoint.
 
-**Repository snapshot:** `Conxian/conxian-gateway` `main` at
-[`6838d872513b681cf88f07fc5431f02b856b6d0e`](https://github.com/Conxian/conxian-gateway/commit/6838d872513b681cf88f07fc5431f02b856b6d0e).
+**Repository snapshot:** `Conxian/conxian-gateway` `origin/main` at
+[`764859fd19c6b4305c0b7b9222c71493b3587177`](https://github.com/Conxian/conxian-gateway/commit/764859fd19c6b4305c0b7b9222c71493b3587177).
 
 **Audit branch:** `charlie/issue-245-audit-2026-07-22`.
 
-**Important boundary:** This is a current-status audit and acceptance plan. It
-does not implement CI/workflow changes, BIP-110 enforcement, fee-model changes,
+**GitHub observation:** 2026-07-22T14:42:43Z; PR #274 merged at
+2026-07-22T14:25:01Z. The preceding pre-merge observation is retained in the
+status history rather than treated as live.
+
+**Important boundary:** This is a timestamped current-status audit and
+acceptance plan. The audit follow-up changes CI/workflow and release-verifier
+controls only; it does not change BIP-110 enforcement, fee-model behavior,
 cryptographic backends, or production settlement integrations. Earlier dated
 gap analyses and sprint reviews remain historical records; they are not silently
 rewritten by this document.
 
 ## Executive outcome
 
-The current GitHub inventory contains exactly six open Gateway issues:
+The 2026-07-22T14:42:43Z GitHub snapshot contained exactly six open Gateway
+issues:
 [#189](https://github.com/Conxian/conxian-gateway/issues/189),
 [#220](https://github.com/Conxian/conxian-gateway/issues/220),
 [#222](https://github.com/Conxian/conxian-gateway/issues/222),
 [#228](https://github.com/Conxian/conxian-gateway/issues/228),
 [#245](https://github.com/Conxian/conxian-gateway/issues/245), and
 [#247](https://github.com/Conxian/conxian-gateway/issues/247). No Gateway pull
-requests were open at the checkpoint; recent work through PRs #268, #269,
-#270, #271, and #272 is merged.
+request was open at the checkpoint; recent work through PRs #268, #269, #270,
+#271, #272, #273, and [#274](https://github.com/Conxian/conxian-gateway/pull/274)
+is merged.
 
 The highest overall triage score is **#222**, because its remaining work is
 well-evidenced, mostly self-contained, and directly reduces release and proof
@@ -119,17 +126,29 @@ broad workflow rewrite is not justified.
   `.github/workflows/lightning-coverage.yml`.
 - The current Gateway release surface includes `v0.1.4`; the SDK package is
   `0.1.4`. The old `v0.1.0`/`0.1.4` drift is historical.
-- The Phase 3 `release.yml` implementation makes tag/version/commit validation,
-  Rust release checks, the production `gateway` binary build, deterministic
-  archive packaging, CycloneDX 1.5 normalization, checksum verification, and
-  immutable artifact handoff explicit. Release publication depends on both
-  validation and SLSA provenance for the archive, checksum manifest, and SBOM.
+- The release workflow now validates that the exact tag commit is reachable
+  from the fetched `origin/main` history, then runs direct exact-commit baseline
+  jobs for Rust/contamination/verifier tests, the complete Node CI command set,
+  `cargo-audit 0.22.2`, Gitleaks `8.30.1` with a pinned official checksum
+  manifest, and `cargo-llvm-cov 0.8.7` Lightning coverage. Packaging cannot
+  start unless every one of those jobs succeeds.
+- The package job builds the production `gateway` binary, creates a clean
+  deterministic archive directory, records the full release commit in
+  `RELEASE-METADATA.txt`, normalizes the CycloneDX 1.5 SBOM, verifies the exact
+  archive/checksum/SBOM set, and uploads it immutably. Attestation and GitHub
+  Release publication depend on that package plus the same verifier rerun.
 - `RELEASE.md` now documents preflight, artifact verification, the protected
   release environment, the optional crates.io gate, rollback/yank guidance, and
   partial/draft-release recovery.
 - `scripts/normalize_release_sbom.py` and
   `scripts/verify_release_artifacts.py` provide deterministic local checks for
-  SBOM identity, archive metadata/ELF target, checksums, and release file shape.
+  SBOM identity, archive metadata/ELF target, full-commit binding, duplicate or
+  unsafe tar members, checksums, and exact release file shape. Focused stdlib
+  regression tests cover valid, malformed, duplicate, unsafe, symlink, extra,
+  missing, and checksum-mismatch fixtures.
+- The shared security-tool versions and refresh procedure are recorded in
+  [`docs/CI_TOOLING_PINS.md`](CI_TOOLING_PINS.md); the scheduled workflows and
+  release baseline use the same pins.
 - GitHub currently exposes one active “Code Quality Copilot review for default
   branch” repository ruleset. That is not evidence that every required CI,
   security, release, and artifact check is merge-required.
@@ -137,7 +156,7 @@ broad workflow rewrite is not justified.
 **Dependencies:** merging the implementation, repository settings/admin
 ownership for required checks and environment protection, exact release
 artifact publication semantics, a controlled live tag release, and the existing
-workflow checks. The optional crates.io path also depends on publishable Cargo
+external checks. The optional crates.io path also depends on publishable Cargo
 package metadata/path-dependency version requirements. No new protocol
 dependency is required.
 
@@ -362,25 +381,30 @@ release workflow and runbook without changing Gateway runtime behavior.
 
 ## Phase 3 implementation checkpoint — #222
 
-The Phase 3 implementation is scoped to `.github/workflows/release.yml`,
-`RELEASE.md`, and deterministic artifact verification scripts. It resolves the
-Gateway-owned workflow gaps identified in the audit:
+The Phase 3 implementation is scoped to the release/security/coverage
+workflows, `RELEASE.md`, `docs/CI_TOOLING_PINS.md`, deterministic artifact
+verification, and its stdlib regression tests. It resolves the Gateway-owned
+workflow gaps identified in the audit:
 
-1. Release jobs require a valid tag, exact tag commit, matching workspace
-   versions, Rust validation, and a successful production build before any
-   release publication step can run.
+1. Release jobs require a valid tag whose exact commit is reachable from the
+   fetched `origin/main` history. Direct exact-commit baseline jobs then run
+   Rust formatting/Clippy/tests, mock-integrations tests, contamination and
+   verifier tests, the Node typecheck/lint/build/test flow, pinned Cargo audit,
+   pinned/checksummed Gitleaks, and the Lightning coverage gate. Packaging and
+   every later release job depend on all baseline jobs.
 2. The shipped artifact is the built `gateway` binary packaged for
    `x86_64-unknown-linux-gnu`; the workflow does not rebuild a separate binary
    during release publication.
 3. The release asset set contains the archive, SHA-256 manifest, normalized
    CycloneDX 1.5 SBOM, and signed provenance bundle. `actions/attest` attests
    the archive, checksum manifest, and SBOM as the exact subjects.
-4. GitHub Release publication waits for validation and attestation and runs in
-   the `release` environment. The optional crates.io job remains separately
+4. GitHub Release publication waits for every baseline, packaging, and
+   attestation job and runs in the `release` environment. The optional crates.io job remains separately
    environment-gated and fails before reading its token when Cargo packaging is
    not publishable.
 
 This checkpoint does **not** claim that GitHub branch protection/rulesets,
-environment reviewers, tag restrictions, Cargo registry secrets, or a live
-release rehearsal are configured. Those controls must be verified by repository
-administrators or a controlled release owner after merge.
+environment reviewers, tag restrictions, required-check administration, Cargo
+registry secrets, external CodeQL/GitGuardian/dependency-review results, or a
+live release rehearsal are configured. Those controls must be verified by
+repository administrators or a controlled release owner after merge.
