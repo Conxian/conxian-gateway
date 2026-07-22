@@ -4,6 +4,13 @@ This is the next bounded, non-production checkpoint for GitHub issue [#220](http
 It extends the Stage 0 comparison without changing the Gateway workspace,
 runtime, endpoints, custody boundary, or production dependency graph.
 
+> **Dated correction — 2026-07-22:** The approved isolated deterministic
+> contract-fixture milestone is now implemented separately in
+> [`DLC_STAGE1_FIXTURE_2026-07-22.md`](DLC_STAGE1_FIXTURE_2026-07-22.md). The
+> unresolved “full fixture” wording in this historical checkpoint refers to the
+> state before that addition and remains open for authoritative vector
+> compatibility and all manager/runtime/integration gates.
+
 ## Scope and decision
 
 The low-level `rust-dlc v0.8.0` candidate remains the preferred isolated
