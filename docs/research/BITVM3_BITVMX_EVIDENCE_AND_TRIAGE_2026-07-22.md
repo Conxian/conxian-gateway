@@ -18,6 +18,26 @@ The evidence now supports five distinct conclusions:
 
 The Gateway posture is therefore unchanged: retain the isolated BitVMX-CPU evaluator and backend-neutral Groth16 boundary as research/interface artifacts, keep production verification and settlement paths fail-closed, and use the linked cross-repository issues for remediation.
 
+## Phase 4 refresh record — 2026-07-22
+
+This documentation consolidation preserves the Phase 1 cross-repository contract
+findings, the Phase 2 upstream research refresh, and the implementation handoff
+for [Gateway PR #278](https://github.com/Conxian/conxian-gateway/pull/278).
+
+- The verified research base before PR #278 was Gateway commit
+  [`d7032ab621ad038f247566f820ac664a6c8c071c`](https://github.com/Conxian/conxian-gateway/commit/d7032ab621ad038f247566f820ac664a6c8c071c).
+- The fail-closed implementation is commit
+  [`114b857ed9d400beaf474cb68e7ac5f25ef58d78`](https://github.com/Conxian/conxian-gateway/commit/114b857ed9d400beaf474cb68e7ac5f25ef58d78)
+  on `charlie/issue-189-bitvm-fail-closed`.
+- Before this documentation consolidation, the existing PR branch was at
+  [`c893cbb39ea9d680b229a89035ab38f29ed51b8b`](https://github.com/Conxian/conxian-gateway/commit/c893cbb39ea9d680b229a89035ab38f29ed51b8b),
+  including the `main` merge at
+  [`81d175540922b25192b683e95c9b48230c009454`](https://github.com/Conxian/conxian-gateway/commit/81d175540922b25192b683e95c9b48230c009454).
+- PR #278 is **pending and not merged**. This report is a research and
+  implementation handoff; it does not resolve [issue #189](https://github.com/Conxian/conxian-gateway/issues/189)
+  or authorize a cryptographic backend, settlement, custody, compliance, or
+  production deployment.
+
 ## 1. Evidence taxonomy
 
 | Evidence class | Meaning in this report | What it does not prove |
@@ -50,7 +70,7 @@ Release labels below are reproduced as upstream metadata; labels such as `alpha`
 | **BitVM Rust repository** | [`BitVM/BitVM`](https://github.com/BitVM/BitVM) | MIT metadata; releases include `v0.1.2-dev`, `v0.1.1-dev`, and `v0.1.0-alpha`. README says **DO NOT USE IN PRODUCTION** and describes the implementation as BitVM2/SNARK-verifier work. | Developer preview/reference only; not a BitVM3 SDK or production bridge dependency. |
 | **BitVM official demo** | [`BitVM/bitvm.github.io/demo`](https://github.com/BitVM/bitvm.github.io/tree/main/demo) and [`DEMO_INSTRUCTIONS.md`](https://github.com/BitVM/BitVM/blob/main/DEMO_INSTRUCTIONS.md) | Calls itself a BitVM Developer Preview and identifies a public BitVM signet/`bitvmnet` for development/testing. The demo code tag is `v0.1.0-alpha`. | Signet demo evidence only; never call its graph Bitcoin mainnet evidence. |
 | **BitVMX platform** | [`bitvmx.org/platform`](https://bitvmx.org/platform) | Public platform description: BitVMX-CPU is the first integrated verification protocol; BitVMX-GC support is described as coming in 2026. No versioned GC SDK/API was verified. | Roadmap/design evidence; monitor, do not integrate. |
-| **BitVMX-CPU** | [`FairgateLabs/BitVMX-CPU`](https://github.com/FairgateLabs/BitVMX-CPU) | README says under development, unaudited, not production-ready, and breaking changes may occur. Latest GitHub release endpoint is `v0.5.11`, while newer `v0.7.x`/`v0.8.0` tags exist. Repository metadata and `LICENSE` say Apache-2.0 while README says MIT. | Isolated evaluator only; license and release maturity remain unresolved. |
+| **BitVMX-CPU** | [`FairgateLabs/BitVMX-CPU`](https://github.com/FairgateLabs/BitVMX-CPU), [pinned `main`/`v0.7.0`](https://github.com/FairgateLabs/BitVMX-CPU/tree/d390832c8e0f2a01453e8ef4bf65dbe715fb9236), [tag `v0.8.0`](https://github.com/FairgateLabs/BitVMX-CPU/tree/v0.8.0), [release `v0.5.11`](https://github.com/FairgateLabs/BitVMX-CPU/releases/tag/v0.5.11) | README says under development, unaudited, not production-ready, and breaking changes may occur. The pinned/default-branch commit is `d390832c8e0f2a01453e8ef4bf65dbe715fb9236` (`v0.7.0`), newer tag `v0.8.0` resolves to `e23fbfccb0b50b52c882e6ba4f57eba3b7c3887f`, and the latest GitHub Release is `v0.5.11`; default branch, tag, and release therefore diverge. Repository metadata and `LICENSE` say Apache-2.0 while README says MIT. | Isolated evaluator only; license and release maturity remain unresolved. |
 | **BitVMX client** | [`FairgateLabs/rust-bitvmx-client`](https://github.com/FairgateLabs/rust-bitvmx-client) | MIT metadata; public CLI. Releases include `v0.5.1` and `v0.1.4-alpha`; open issues cover counterproofs, dispute slots, SPV signaling, disablement, DOS, keys, and transaction speedups. | Public alpha/reviewing ecosystem component, not evidence of a stable GC verifier or production bridge. |
 | **BitVMX workspace** | [`FairgateLabs/rust-bitvmx-workspace`](https://github.com/FairgateLabs/rust-bitvmx-workspace) | Public workspace release `v0.1.2-alpha`; no stable production contract verified. | Use as source organization/release context only. |
 | **Protocol builder** | [`FairgateLabs/rust-bitvmx-protocol-builder`](https://github.com/FairgateLabs/rust-bitvmx-protocol-builder) | Public DAG transaction-template library; releases include `v0.0.2-review.1` and earlier pre-refactor labels. | Component-level review artifact; not a GC verifier or production readiness signal. |
@@ -60,8 +80,8 @@ Release labels below are reproduced as upstream metadata; labels such as `alpha`
 | **Transaction monitor** | [`FairgateLabs/rust-bitvmx-transaction-monitor`](https://github.com/FairgateLabs/rust-bitvmx-transaction-monitor) | Public component with `v0.0.2-review.1`; no stable production contract verified. | Operational component only; not proof verification. |
 | **ZK verifier toolkit** | [`FairgateLabs/bitvmx-zk-verifier`](https://github.com/FairgateLabs/bitvmx-zk-verifier) | Repository description says **WIP**; no GitHub release was verified. | WIP/reference only. |
 | **Toy garbling project** | [`FairgateLabs/BitVM3-garbling-toy`](https://github.com/FairgateLabs/BitVM3-garbling-toy) | Public toy repository with no GitHub release verified. | Educational/reference material; not a BitVM3 SDK. |
-| **GOAT GC reference** | [`GOATNetwork/bitvm2-gc`](https://github.com/GOATNetwork/bitvm2-gc) | Public source; no GitHub release and no SPDX license metadata or checked-in license artifact were verified. README reports roughly 10.4B gates and 51–374 GB peak memory for listed workloads. | Research/reference only; no vendoring, CI integration, or production claim. |
-| **Garbled SNARK verifier** | [`BitVM/garbled-snark-verifier`](https://github.com/BitVM/garbled-snark-verifier) | GPL-3.0 repository metadata; no stable GitHub release was verified. Open subgroup, on-chain-data, gate-hash, and garbling-table-hash issues remain. | GPL reference implementation; adoption blocked pending security, format, and license review. |
+| **GOAT GC reference** | [`GOATNetwork/bitvm2-gc`](https://github.com/GOATNetwork/bitvm2-gc), [`Cargo.toml`](https://github.com/GOATNetwork/bitvm2-gc/blob/main/Cargo.toml) | Public source; no GitHub release, root license artifact, or GitHub-detected license was verified. The Cargo workspace declares `MIT OR Apache-2.0`. README reports roughly 10.4B gates and 51–374 GB peak memory for listed workloads; those figures are upstream-reported. | Research/reference only; license, release, resource, and reproducibility gates block vendoring, CI integration, or production claims. |
+| **Garbled SNARK verifier** | [`BitVM/garbled-snark-verifier`](https://github.com/BitVM/garbled-snark-verifier), [Cargo package `0.5.0`](https://crates.io/crates/garbled-snark-verifier/0.5.0), [tag `v0.5.0-alpha.6`](https://github.com/BitVM/garbled-snark-verifier/tree/v0.5.0-alpha.6), [older tag `v0.3.0`](https://github.com/BitVM/garbled-snark-verifier/tree/v0.3.0), [`LICENCE`](https://github.com/BitVM/garbled-snark-verifier/blob/main/LICENCE) | Cargo package `0.5.0`; tag `v0.5.0-alpha.6` and older `v0.3.0`; GPL-3.0-only repository metadata/`LICENCE`; no GitHub Release. Open subgroup, commitment/on-chain-data, gate-hash, garbling-table-hash, and ARM64 issues remain. | GPL reference implementation; adoption blocked pending security, format, license, and platform review. |
 
 The FairgateLabs ecosystem is useful for source and component triage, but the presence of many public repositories does not establish a stable, audited, production BitVMX-GC SDK.
 
@@ -83,7 +103,7 @@ The FairgateLabs ecosystem is useful for source and component triage, but the pr
 
 | Network/evidence class | Representative artifact | Verified classification | Explicit non-claim |
 |---|---|---|---|
-| **Bitcoin mainnet prototype** | [BitVMX article](https://bitvmx.org/knowledge/a-new-era-for-bitcoin-successful-snark-proof-verification-with-bitvmx) and [transaction `75eb2ad4...`](https://mempool.space/tx/75eb2ad4f22263440fc4ceb61c51b0bb77721661dbfbec961358520b04107ec3) | Upstream BitVMX prototype transaction for an interactive SNARK-verifier execution on Bitcoin mainnet. | Not BitVM3-GC, not a stable SDK, not a production bridge, not a Conxian verifier, and not audit evidence. |
+| **Bitcoin mainnet prototype** | [BitVMX article](https://bitvmx.org/knowledge/a-new-era-for-bitcoin-successful-snark-proof-verification-with-bitvmx) and [transaction `75eb2ad4...`](https://mempool.space/tx/75eb2ad4f22263440fc4ceb61c51b0bb77721661dbfbec961358520b04107ec3) | The transaction page confirms the artifact at Bitcoin block `853871` with block time `2024-07-25`; the upstream article describes it as an interactive SNARK-verifier execution. This is historical prototype evidence. | Not BitVM3-GC, not a stable SDK, not a production bridge, not a Conxian verifier, and not audit evidence. |
 | **BitVM public signet** | [Official demo graph](https://github.com/BitVM/bitvm.github.io/blob/main/demo/README.md), [BitVM signet-network PR #228](https://github.com/BitVM/BitVM/pull/228), and representative [peg-in](https://mempool.bitvmnet.org/tx/4dd5d195073af820875b5f19dc2ab30862798af2ea63fc37aecbe1051f1e8688), [assert-final](https://mempool.bitvmnet.org/tx/e7da86777532342521f80bbf2bfc477ebbab289866b6c2842673a006ec34512a), and [disprove](https://mempool.bitvmnet.org/tx/ee29855315760b5b839ad20c9ce19a1e235c54afc2431b2a527b97458c0ab8e5) transactions | Official BitVM Developer Preview graph on BitVM signet/`bitvmnet` for development/testing. | These are signet transactions, not Bitcoin mainnet transactions and not BitVM3-GC deployment evidence. |
 | **Rootstock testnet** | [Union Bridge testnet announcement](https://bitvmx.org/knowledge/union-bridge-reaches-testnet-a-milestone-for-bitvmx-powered-bitcoin-bridging) | Experimental Rootstock Testnet bridge milestone; V1.5 dispute mechanisms inactive, no formal audit, 2027 mainnet roadmap. | Not a production bridge or Bitcoin mainnet deployment. |
 | **Paper/prototype** | [BitVM3 ePrint record](https://eprint.iacr.org/2026/933) and [paper PDF](https://bitvm.org/bitvm3.pdf) | Research paper with prototype/cost discussion. | Not a release, SDK, verified deployment, audit, or Conxian implementation. |
@@ -111,6 +131,7 @@ These are dependencies and blockers, not endorsements. All listed items were ope
 | [Issue #76](https://github.com/BitVM/garbled-snark-verifier/issues/76) | **Validate data committed onchain before groth16-verify** | On-chain commitment binding must precede proof acceptance. |
 | [Issue #82](https://github.com/BitVM/garbled-snark-verifier/issues/82) | **Gate hash may be unsuitable** | Hash-domain and binding choices affect circuit integrity. |
 | [Issue #87](https://github.com/BitVM/garbled-snark-verifier/issues/87) | **Garbling table hash may be unsuitable** | Garbling-table integrity is a protocol-critical input. |
+| [Issue #43](https://github.com/BitVM/garbled-snark-verifier/issues/43) | **ARM64 support** | The target environment and reproducible-build path need an explicit architecture decision before adoption. |
 
 ### GOAT reference implementation
 
@@ -138,7 +159,8 @@ These are dependencies and blockers, not endorsements. All listed items were ope
 
 | Area | Current verified classification | Durable reference |
 |---|---|---|
-| Gateway main | `internal/engine/src/bitcoin/groth16_verifier.rs` defines a backend-neutral BN254 statement/hash, witness-commitment binding, circuit/key association, and deterministic fixture boundary. `MockGroth16Verifier` performs no pairings. | [PR #255](https://github.com/Conxian/conxian-gateway/pull/255) merged; [Groth16 contract](https://github.com/Conxian/conxian-gateway/blob/main/docs/GROTH16_VERIFIER_CONTRACT.md) |
+| Gateway main | `internal/engine/src/bitcoin/groth16_verifier.rs` defines a versioned, backend-neutral BN254 envelope whose circuit, verification-key, public-input, witness-commitment, and block-context fields are bound by the canonical contract. `MockGroth16Verifier` performs no pairings. | [PR #255](https://github.com/Conxian/conxian-gateway/pull/255) merged; [Groth16 contract](https://github.com/Conxian/conxian-gateway/blob/main/docs/GROTH16_VERIFIER_CONTRACT.md) |
+| Gateway PR #278 (pending) | The generic BitVM route now propagates typed `VerifierUnavailable` and returns HTTP `501` with an unsupported/non-authoritative response instead of treating metadata as cryptographic verification. The documentation consolidation is pending on the branch. | [PR #278](https://github.com/Conxian/conxian-gateway/pull/278), implementation commit [`114b857ed9d400beaf474cb68e7ac5f25ef58d78`](https://github.com/Conxian/conxian-gateway/commit/114b857ed9d400beaf474cb68e7ac5f25ef58d78) |
 | BitVM adapter | `internal/engine/src/bitcoin/bitvm_adapter.rs` parses/validates the envelope and delegates to an injected verifier. The legacy state-proof path remains metadata-only. | [PR #255](https://github.com/Conxian/conxian-gateway/pull/255) |
 | BitVMX evaluator | `tools/bitvmx-eval/` is a feature-gated, isolated BitVMX-CPU subprocess evaluator with research-only contract tests. | [PR #259](https://github.com/Conxian/conxian-gateway/pull/259) |
 | Universal verifier | `internal/compliance/src/verifier.rs` performs generic adapter dispatch; no production BitVM3, BitVMX-GC, recursive-SNARK, or pairing backend is wired. | [PR #267](https://github.com/Conxian/conxian-gateway/pull/267) |
@@ -154,14 +176,33 @@ These are dependencies and blockers, not endorsements. All listed items were ope
 
 | Repository | Current source classification | Durable triage issue |
 |---|---|---|
-| [`conxius-platform`](https://github.com/Conxian/conxius-platform) | `services/admin-dashboard/src/lib/support/bitvm3.ts`, `bitvm.ts`, and `zkcp.ts` are simulations/scaffolds; default paths can produce success-shaped results without cryptographic verification. | [Platform #1187](https://github.com/Conxian/conxius-platform/issues/1187) — open P0 |
+| [`conxius-platform`](https://github.com/Conxian/conxius-platform) | `services/admin-dashboard/src/lib/support/bitvm3.ts`, `bitvm.ts`, and `zkcp.ts` are simulations/scaffolds; length-only or unconditional checks on default paths can produce success-shaped results without cryptographic verification. | [Platform #1187](https://github.com/Conxian/conxius-platform/issues/1187) — open P0 |
 | [`lib-conxian-core`](https://github.com/Conxian/lib-conxian-core) | `src/verifier.rs` and verifier architecture docs provide structural/protocol boundaries and fail-closed policy. No current BitVM2 Groth16 verification call is established; Arkworks dependencies alone are not evidence. | [Core #188](https://github.com/Conxian/lib-conxian-core/issues/188) — **closed 2026-07-22**; retain as completed remediation evidence |
-| [`conxian-nexus`](https://github.com/Conxian/conxian-nexus) | `src/executor/bitvm.rs` has a real narrow `ark_groth16::Groth16::<Bls12_381>::verify(...)` call, but state roots are not bound by that path, negative coverage is incomplete, and trial metadata/ownership/revision drift remains. | [Nexus #169](https://github.com/Conxian/conxian-nexus/issues/169) — open P1 |
+| [`conxian-nexus`](https://github.com/Conxian/conxian-nexus) | The current default branch has a real narrow `ark_groth16::Groth16::<Bls12_381>::verify(...)` call with a caller-supplied verification key, but it lacks the Gateway's canonical circuit/key/root-binding semantics, state roots are not bound by that path, negative coverage is incomplete, and trial metadata/ownership/revision drift remains. This path is not interoperable with the Gateway BN254 envelope. | [Nexus #169](https://github.com/Conxian/conxian-nexus/issues/169) — open P1 |
 | [`conxius-wallet`](https://github.com/Conxian/conxius-wallet) | TypeScript/Android BitVM paths generate simulation segments and success-shaped results; release guards reduce risk but no actual verifier is present. | [Wallet #427](https://github.com/Conxian/conxius-wallet/issues/427) — **closed 2026-07-22**; retain as completed remediation evidence |
-| [`conxius-enclave-sdk`](https://github.com/Conxian/conxius-enclave-sdk) | BitVM2 boundary is typed/fail-closed/unsupported for proof verification; generic MuSig2 signing is not SNARK verification. | [Enclave #202](https://github.com/Conxian/conxius-enclave-sdk/issues/202) — open P0 acceptance gate |
+| [`conxius-enclave-sdk`](https://github.com/Conxian/conxius-enclave-sdk) | Production proof routes are explicitly unavailable/fail-closed and bind policy/replay context; generic MuSig2 signing is not SNARK verification, and no BitVM/Groth16 backend is supplied. | [Enclave #202](https://github.com/Conxian/conxius-enclave-sdk/issues/202) — open P0 acceptance gate |
 | [`.github`](https://github.com/Conxian/.github) | Organization documentation contains mixed readiness language, including upstream/reference claims that must not be presented as Conxian production evidence. | [`.github` #41](https://github.com/Conxian/.github/issues/41) — **closed 2026-07-22**; retain as completed documentation evidence |
 
 These classifications intentionally separate a real local Arkworks call in Nexus, structural boundaries in Core/Gateway, simulation paths in Platform/Wallet, and fail-closed unsupported paths in Enclave. None is evidence of a production BitVM3 or BitVMX-GC deployment.
+
+### Cross-repository contract mismatch and ownership decision
+
+The following compatibility decisions remain open before any cryptographic
+backend is selected. These are Conxian assessments based on the linked source
+and issue evidence, not claims that any upstream repository is production-ready.
+
+| Contract surface | Verified current evidence | Compatibility impact / decision required | Tracker |
+|---|---|---|---|
+| Canonical envelope and errors | Gateway uses a versioned BN254 envelope bound to circuit, VK, public inputs, witness commitment, and block context. PR #278 makes the generic route return typed unavailable/HTTP 501 rather than a false success. | Preserve the BN254 contract and stable fail-closed errors as the only Gateway presentation; do not accept a caller-supplied curve/VK shape as interoperable by implication. | [Gateway #189](https://github.com/Conxian/conxian-gateway/issues/189), [PR #278](https://github.com/Conxian/conxian-gateway/pull/278) |
+| Cryptographic backend | Gateway has no production pairing backend. Nexus currently verifies `Bls12_381` with a caller-supplied VK and lacks Gateway root/circuit binding. | Choose an owner and exact backend/curve contract; the Nexus default path cannot be wired directly to the Gateway BN254 envelope. | [Nexus #169](https://github.com/Conxian/conxian-nexus/issues/169), [Gateway #189](https://github.com/Conxian/conxian-gateway/issues/189) |
+| VK/circuit registry | Gateway binds circuit and verification-key identifiers but no cross-repository registry or lifecycle owner is established. | Define registry ownership, revision pinning, key distribution, rotation, and circuit-schema compatibility before backend integration. | [Gateway #189](https://github.com/Conxian/conxian-gateway/issues/189), [Nexus #169](https://github.com/Conxian/conxian-nexus/issues/169) |
+| Chain observation | The envelope carries block context, but observation, reorg/finality, and inclusion evidence are not owned by the proof backend contract. | Assign chain observation and finality provenance, then define how it is bound to proof acceptance without duplicating node logic across repositories. | [Nexus #169](https://github.com/Conxian/conxian-nexus/issues/169), [Gateway #189](https://github.com/Conxian/conxian-gateway/issues/189) |
+| Enclave attestation/capability policy | Enclave production proof routes are unavailable/fail-closed and bind policy/replay context, but do not implement BitVM/Groth16 verification. | Decide whether an enclave attestation is required, which capability is attested, and how policy/replay evidence maps to the Gateway error and acceptance contract. | [Enclave #202](https://github.com/Conxian/conxius-enclave-sdk/issues/202) |
+| Client presentation | Platform simulation paths can return success from length-only/unconditional checks; Wallet #427 is closed as a remediation record, but no actual verifier is present in those client paths. | Define the client-facing distinction between verified, unavailable, simulated, and rejected; no success-shaped result may authorize value-bearing behavior. | [Platform #1187](https://github.com/Conxian/conxius-platform/issues/1187), [Wallet #427](https://github.com/Conxian/conxius-wallet/issues/427) |
+
+The ownership decision therefore remains unresolved across the canonical
+envelope/errors, cryptographic backend, VK/circuit registry, chain observation,
+enclave attestation/capability policy, and client presentation surfaces.
 
 ## 8. Explicit claim corrections
 
@@ -177,6 +218,35 @@ These classifications intentionally separate a real local Arkworks call in Nexus
 | “Union Bridge is production mainnet evidence.” | Upstream classifies Union Bridge as Rootstock testnet/experimental; V1.5 dispute mechanisms are inactive, no formal audit exists, and mainnet is a 2027 roadmap item. | [Union Bridge article](https://bitvmx.org/knowledge/union-bridge-reaches-testnet-a-milestone-for-bitvmx-powered-bitcoin-bridging) |
 
 ## 9. Promotion and readiness gates
+
+### Phase 4 candidate scorecard
+
+This is a bounded triage score, not a probability, security rating, or approval.
+Each dimension is scored from 0 (no usable evidence for the Gateway role) to 5
+(strong evidence for this specific role): canonical BN254/envelope fit, stable
+API/release maturity, security/operational evidence, and license/reproducibility.
+The local boundary row is a guardrail baseline, not a cryptographic backend.
+
+| Candidate/evidence track | BN254/envelope fit | API/release maturity | Security/ops evidence | License/reproducibility | Score /20 | Decision |
+|---|---:|---:|---:|---:|---:|---|
+| Gateway canonical boundary + PR #278 guardrail ([contract](https://github.com/Conxian/conxian-gateway/blob/main/docs/GROTH16_VERIFIER_CONTRACT.md), [PR #278](https://github.com/Conxian/conxian-gateway/pull/278)) | 5 | 4 | 3 | 4 | **16** | Boundary and fail-closed guardrail only; no backend. |
+| Nexus `Bls12_381` verifier path ([source](https://github.com/Conxian/conxian-nexus/blob/main/src/executor/bitvm.rs), [#169](https://github.com/Conxian/conxian-nexus/issues/169)) | 0 | 2 | 1 | 3 | **6** | Not interoperable with Gateway BN254; redesign/ownership required. |
+| BitVMX-CPU pinned evaluator ([`d390832`](https://github.com/FairgateLabs/BitVMX-CPU/tree/d390832c8e0f2a01453e8ef4bf65dbe715fb9236)) | 0 | 2 | 1 | 1 | **4** | Isolated CPU evaluator only; not GC or Groth16 verification. |
+| BitVMX-GC platform/article ([platform](https://bitvmx.org/platform), [article](https://bitvmx.org/knowledge/implementing-garbled-circuits-for-bitvmx)) | 1 | 0 | 0 | 0 | **1** | Roadmap/design evidence; no stable SDK or release. |
+| `garbled-snark-verifier` 0.5.0 ([crate](https://crates.io/crates/garbled-snark-verifier/0.5.0), [issues](https://github.com/BitVM/garbled-snark-verifier/issues)) | 2 | 2 | 1 | 0 | **5** | GPL reference implementation with open subgroup/commitment/hash/ARM64 gates. |
+| GOAT `bitvm2-gc` ([repository](https://github.com/GOATNetwork/bitvm2-gc), [PR #48](https://github.com/GOATNetwork/bitvm2-gc/pull/48)) | 2 | 1 | 0 | 1 | **4** | Upstream-reported resource burden plus unresolved release/license/reproducibility. |
+| Union Bridge ([testnet article](https://bitvmx.org/knowledge/union-bridge-reaches-testnet-a-milestone-for-bitvmx-powered-bitcoin-bridging)) | 1 | 1 | 0 | 1 | **3** | Rootstock Testnet/experimental; inactive dispute mechanisms and no formal audit. |
+
+### Readiness decision
+
+No external candidate satisfies the full promotion gate set. The local
+boundary's `16/20` score describes contract clarity and fail-closed behavior,
+not cryptographic readiness. PR #278 is therefore a compatibility and safety
+hardening/documentation change only; it remains pending and does not resolve
+#189. The next implementation proposal must first settle the six ownership
+surfaces above, then provide a pinned backend, registry, vectors, resource
+report, protocol/finality evidence, enclave policy, independent review, and
+client presentation contract.
 
 No candidate may move from research to production integration until every gate below is satisfied for the exact revision and deployment role:
 
@@ -200,6 +270,9 @@ No candidate may move from research to production integration until every gate b
 - Keep `tools/bitvmx-eval/` isolated and evaluation-only.
 - Keep `MockGroth16Verifier` fixture-only and the production Groth16 backend unwired.
 - Do not add BitVM3/GC dependencies, production HTTP routes, settlement authorization, or compliance decisions from any upstream paper/demo/transaction.
+- Keep [PR #278](https://github.com/Conxian/conxian-gateway/pull/278) explicitly
+  pending; its fail-closed generic route and documentation handoff do not
+  resolve [Gateway #189](https://github.com/Conxian/conxian-gateway/issues/189).
 - Track the six durable Conxian remediation references with their current
   states: [Platform #1187](https://github.com/Conxian/conxius-platform/issues/1187)
   and [Nexus #169](https://github.com/Conxian/conxian-nexus/issues/169) remain
@@ -215,6 +288,8 @@ Re-open implementation scoping only after a public candidate supplies a stable r
 
 ## Review metadata
 
-- Gateway base reviewed for this current-status refresh: `main` at [`6838d872513b681cf88f07fc5431f02b856b6d0e`](https://github.com/Conxian/conxian-gateway/commit/6838d872513b681cf88f07fc5431f02b856b6d0e). The earlier `4a0433ad92b83bb59d69cb64f86128c1e0212a8e` review base remains part of the historical PR #268 evidence chain.
+- Phase 1/2 research base verified before PR #278: Gateway `main` at [`d7032ab621ad038f247566f820ac664a6c8c071c`](https://github.com/Conxian/conxian-gateway/commit/d7032ab621ad038f247566f820ac664a6c8c071c).
+- The earlier [`6838d872513b681cf88f07fc5431f02b856b6d0e`](https://github.com/Conxian/conxian-gateway/commit/6838d872513b681cf88f07fc5431f02b856b6d0e) and [`4a0433ad92b83bb59d69cb64f86128c1e0212a8e`](https://github.com/Conxian/conxian-gateway/commit/4a0433ad92b83bb59d69cb64f86128c1e0212a8e) bases remain historical PR #268 evidence-chain metadata, not the Phase 4 implementation base.
+- PR #278 implementation commit: [`114b857ed9d400beaf474cb68e7ac5f25ef58d78`](https://github.com/Conxian/conxian-gateway/commit/114b857ed9d400beaf474cb68e7ac5f25ef58d78); pre-documentation branch head: [`c893cbb39ea9d680b229a89035ab38f29ed51b8b`](https://github.com/Conxian/conxian-gateway/commit/c893cbb39ea9d680b229a89035ab38f29ed51b8b). PR #278 remains pending and unmerged.
 - Gateway evidence merged in PRs [#253](https://github.com/Conxian/conxian-gateway/pull/253), [#255](https://github.com/Conxian/conxian-gateway/pull/255), [#259](https://github.com/Conxian/conxian-gateway/pull/259), and [#267](https://github.com/Conxian/conxian-gateway/pull/267).
 - Upstream source and issue metadata were refreshed on 2026-07-22. Upstream-reported claims remain labeled and were not converted into Conxian benchmarks or security conclusions.

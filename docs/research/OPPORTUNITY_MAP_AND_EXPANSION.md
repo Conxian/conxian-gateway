@@ -6,7 +6,7 @@ This document expands on existing research and maps emerging opportunities for t
 
 ### A. BitVM3, BitVMX, and Recursive Proof Research (Expansion of SSV-1)
 - **Status**: Research / Evaluation Only
-- **Canonical evidence**: [`BITVM3_BITVMX_RESEARCH_EXPANSION.md`](./BITVM3_BITVMX_RESEARCH_EXPANSION.md)
+- **Canonical evidence**: [`BITVM3_BITVMX_EVIDENCE_AND_TRIAGE_2026-07-22.md`](./BITVM3_BITVMX_EVIDENCE_AND_TRIAGE_2026-07-22.md); [`BITVM3_BITVMX_RESEARCH_EXPANSION.md`](./BITVM3_BITVMX_RESEARCH_EXPANSION.md) is the retained historical evidence record.
 - **Current position**: BitVM3 is a paper/protocol family centered on garbled-circuit-based off-chain verification. It is not a recursive Groth16 SDK or a Conxian dependency. BitVMX-CPU is limited to the isolated [`tools/bitvmx-eval`](../../tools/bitvmx-eval/) lane; BitVMX-GC and GOATNetwork/`bitvm2-gc` remain research/reference targets.
 - **Expansion**:
     - Maintain an evidence matrix with exact upstream revisions, license signals, resource claims, reproducibility status, and explicit confidence.

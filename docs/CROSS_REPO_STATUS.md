@@ -13,6 +13,20 @@ claim that the slice is merged into `main`.
 **Superseded observation:** The preceding pre-merge snapshot recorded PR #274
 as open; it merged into `main` at 2026-07-22T14:25:01Z as commit
 `764859fd19c6b4305c0b7b9222c71493b3587177`.
+**Post-snapshot BitVM Phase 4 note — 2026-07-22:** Gateway [PR #278](https://github.com/Conxian/conxian-gateway/pull/278)
+is pending on `charlie/issue-189-bitvm-fail-closed`. Its implementation commit
+is [`114b857ed9d400beaf474cb68e7ac5f25ef58d78`](https://github.com/Conxian/conxian-gateway/commit/114b857ed9d400beaf474cb68e7ac5f25ef58d78);
+the pre-documentation branch head was
+[`c893cbb39ea9d680b229a89035ab38f29ed51b8b`](https://github.com/Conxian/conxian-gateway/commit/c893cbb39ea9d680b229a89035ab38f29ed51b8b).
+PR #278 is not merged and does not resolve [Gateway #189](https://github.com/Conxian/conxian-gateway/issues/189),
+which remains research-only. The current open cross-repository acceptance
+issues are [Platform #1187](https://github.com/Conxian/conxius-platform/issues/1187),
+[Nexus #169](https://github.com/Conxian/conxian-nexus/issues/169), and
+[Enclave #202](https://github.com/Conxian/conxius-enclave-sdk/issues/202);
+[Wallet #427](https://github.com/Conxian/conxius-wallet/issues/427),
+[`.github` #41](https://github.com/Conxian/.github/issues/41), and
+[Core #188](https://github.com/Conxian/lib-conxian-core/issues/188) remain
+closed remediation evidence.
 **Sprint:** W29 (2026-07-15 to 2026-07-25)  
 **Maintained By:** Agent sessions
 
@@ -108,6 +122,14 @@ The detailed score and evidence inventory are in
 [`GAP_ANALYSIS_2026-07-22.md`](GAP_ANALYSIS_2026-07-22.md), and the #245 source
 ledger is in
 [`BIP110_FEE_MARKET_AND_ROUTING_2026-07-22.md`](research/BIP110_FEE_MARKET_AND_ROUTING_2026-07-22.md).
+
+**Post-snapshot #189 handoff:** The canonical current report is
+[`BITVM3_BITVMX_EVIDENCE_AND_TRIAGE_2026-07-22.md`](research/BITVM3_BITVMX_EVIDENCE_AND_TRIAGE_2026-07-22.md).
+It records the Gateway BN254 envelope/error contract, the Nexus `Bls12_381`
+compatibility mismatch, simulation success-path risk in Platform, fail-closed
+Enclave proof routes, upstream release/tag/license/network evidence, the
+candidate scorecard, and the remaining ownership decisions. These additions
+do not rewrite the historical 14:42:43Z snapshot above.
 
 ### Gateway ownership boundary for #245
 

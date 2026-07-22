@@ -27,6 +27,23 @@ cryptographic backends, or production settlement integrations. Earlier dated
 gap analyses and sprint reviews remain historical records; they are not silently
 rewritten by this document.
 
+**Post-snapshot BitVM Phase 4 note — 2026-07-22:** After the historical audit
+snapshot, [PR #278](https://github.com/Conxian/conxian-gateway/pull/278) continued
+on `charlie/issue-189-bitvm-fail-closed`. Its fail-closed implementation is
+[`114b857ed9d400beaf474cb68e7ac5f25ef58d78`](https://github.com/Conxian/conxian-gateway/commit/114b857ed9d400beaf474cb68e7ac5f25ef58d78);
+the branch was at
+[`c893cbb39ea9d680b229a89035ab38f29ed51b8b`](https://github.com/Conxian/conxian-gateway/commit/c893cbb39ea9d680b229a89035ab38f29ed51b8b)
+before this documentation consolidation. The PR remains **pending and
+unmerged**, and [Gateway #189](https://github.com/Conxian/conxian-gateway/issues/189)
+remains open and research-only. The current open cross-repository acceptance
+issues are [Platform #1187](https://github.com/Conxian/conxius-platform/issues/1187),
+[Nexus #169](https://github.com/Conxian/conxian-nexus/issues/169), and
+[Enclave #202](https://github.com/Conxian/conxius-enclave-sdk/issues/202);
+[Wallet #427](https://github.com/Conxian/conxius-wallet/issues/427),
+[`.github` #41](https://github.com/Conxian/.github/issues/41), and
+[Core #188](https://github.com/Conxian/lib-conxian-core/issues/188) are retained
+as closed remediation evidence.
+
 ## Executive outcome
 
 The 2026-07-22T14:42:43Z GitHub snapshot contained exactly six open Gateway
@@ -325,6 +342,10 @@ verified.
   and [PR #268](https://github.com/Conxian/conxian-gateway/pull/268) merged the
   research expansion and canonical SDK/paper/network-proof/cross-repository
   triage.
+- [PR #278](https://github.com/Conxian/conxian-gateway/pull/278) carries the
+  fail-closed generic BitVM verification change and this Phase 4 documentation
+  consolidation. It is pending, does not resolve #189, and does not add a
+  cryptographic backend.
 - Current Gateway boundaries are `tools/bitvmx-eval/`,
   `internal/engine/src/bitcoin/groth16_verifier.rs`,
   `internal/engine/src/bitcoin/bitvm_adapter.rs`, and

@@ -1,10 +1,18 @@
 # BitVM3 and BitVMX Research Expansion
 
-> **Research / Evaluation Only** — access date: 2026-07-21
+> **Research / Evaluation Only** — historical access date: 2026-07-21
 >
-> Canonical refresh: [`BITVM3_BITVMX_EVIDENCE_AND_TRIAGE_2026-07-22.md`](./BITVM3_BITVMX_EVIDENCE_AND_TRIAGE_2026-07-22.md). This document retains the historical 2026-07-21 evidence record; the dated refresh adds official SDK, paper, network-proof, upstream-issue, and cross-repository triage.
+> Current source of truth: [`BITVM3_BITVMX_EVIDENCE_AND_TRIAGE_2026-07-22.md`](./BITVM3_BITVMX_EVIDENCE_AND_TRIAGE_2026-07-22.md). This document retains the historical 2026-07-21 evidence record; the dated refresh adds the current official SDK, paper, network-proof, upstream-issue, release/tag/license, scorecard, and cross-repository handoff.
 
 This document is the dated evidence record for GitHub issue [#189](https://github.com/Conxian/conxian-gateway/issues/189). It does not authorize production integration, settlement, compliance, custody, or routing decisions. It records upstream claims separately from facts verified in this repository.
+
+**Current-source correction (2026-07-22):** use the canonical report for
+release/tag divergence, BitVMX-CPU `v0.5.11`/`v0.8.0` metadata, the
+Apache-2.0/README-MIT contradiction, garbled-verifier package/tag/license facts,
+the ARM64 and upstream blocker links, Bitcoin transaction block metadata, the
+cross-repository contract table, and the Phase 4 readiness scorecard. This file
+is retained for historical continuity and should not be read as a separate
+production-readiness decision.
 
 ## 1. Decision summary
 
