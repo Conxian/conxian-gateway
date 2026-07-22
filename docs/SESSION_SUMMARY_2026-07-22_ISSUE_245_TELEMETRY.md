@@ -48,9 +48,28 @@ repository verification protocol has completed.
   - Wire the existing persistence backend into `AppState` without changing the
     orchestrator or listener decisions. Lightweight test harnesses may leave
     the backend unconfigured; production wiring supplies `FilePersistence`.
+- `cmd/gateway/src/persistence.rs`
+  - `FilePersistence` now serializes in-process `load()`/`save()` calls through
+    a backend-owned mutex, writes each save to a unique temporary file in the
+    state-file directory, flushes and syncs that file, atomically renames it
+    over the state path, best-effort syncs the parent directory, and removes a
+    temporary file if the save fails. Missing files still load as the default
+    `PersistentState`.
+- `internal/api/src/handlers.rs`
+  - The telemetry JSON and Prometheus handlers run persistence `load()` calls
+    with `tokio::task::spawn_blocking`, preserving the stable 503 error codes
+    while keeping synchronous filesystem I/O off the async executor.
 - `cmd/gateway/tests/api_tests.rs`
-  - Adds route/auth coverage with a static persisted state and verifies that
-    transaction IDs and free-form errors are not returned.
+  - Adds route coverage for missing and failing persistence, persisted and
+    unavailable Prometheus telemetry, content type, closed status/strategy
+    samples, and omission of transaction IDs, aggregate zeros, and free-form
+    backend errors.
+
+The persistence hardening is intentionally bounded: the mutex coordinates
+calls sharing the same `FilePersistence` instance within one process, and the
+rename provides atomic replacement of the state path on the supported Unix
+deployment. It is not a multi-process writer-coordination layer and does not
+make a caller's separate `load` → modify → `save` sequence transactional.
 - Documentation updated:
   - `docs/research/BIP110_FEE_MARKET_AND_ROUTING_2026-07-22.md`
   - `docs/GAP_ANALYSIS_2026-07-22.md`
@@ -84,9 +103,26 @@ The following checks were run during this session:
 - `python3 scripts/verify_contamination_guard.py` — pass; 62 production files
   scanned.
 
-The full workspace clippy/test suites, mock-integration suite, Node suite,
-health probe, and release/security checks have **not** been run in this Phase 4
-session. Do not treat this summary as full verification.
+The bounded remediation follow-up also passed:
+
+- `cargo test -p gateway --bin gateway persistence -- --nocapture` — **4
+  passed**, including missing-file behavior, temporary-file cleanup, atomic
+  replacement, and concurrent complete-state loads.
+- `cargo test -p gateway --test api_tests mempool_telemetry -- --nocapture` —
+  **4 passed**, including stable missing/failing persistence 503 responses.
+- `cargo test -p gateway --test api_tests prometheus_metrics -- --nocapture` —
+  **4 passed**, including persisted and unavailable route-level metrics.
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings` — pass.
+- `cargo test --workspace` — pass.
+- `cargo test --workspace --features mock-integrations` — pass.
+- `pnpm install && pnpm build && pnpm test` — pass across the Node workspaces;
+  the existing Next.js middleware deprecation and test-server auth-secret
+  warnings did not fail the build or tests.
+- Simulated gateway startup from `/tmp` plus
+  `GET http://127.0.0.1:18080/api/v1/health` — HTTP 200 with `status: "ok"`.
+
+Release/security checks outside the required contamination guard were not
+part of this bounded follow-up.
 
 ## Remaining work and risks
 
@@ -100,8 +136,11 @@ session. Do not treat this summary as full verification.
 - The endpoint is unavailable if production persistence is not configured or
   cannot be loaded; the metrics surface exposes availability rather than
   fabricating aggregate zeros.
-- A follow-up should run the mandatory repository verification protocol and
-  inspect the final diff for scope and secret leakage before merge.
+- `FilePersistence` protects only same-process calls through the shared
+  backend; separate processes can still race, and load-modify-save sequences
+  can still lose updates because the `Persistence` trait remains unchanged.
+- Before merge, re-check the final PR checks and retain the explicit
+  single-process/non-transactional persistence limits above.
 
 ## Next-session commands
 
