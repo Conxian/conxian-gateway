@@ -1,9 +1,9 @@
-# Cross-Repository Status Dashboard
+# Cross-Repository Status Snapshot
 
 **Status snapshot:** 2026-07-22T14:42:43Z (observed via GitHub CLI; not live)
 **Source commit:** `764859fd19c6b4305c0b7b9222c71493b3587177` (`origin/main`)
 **Refresh rule:** Re-query GitHub before treating issue or PR counts as current;
-dated history is preserved below.
+this timestamped snapshot and its dated history are not live data.
 **Superseded observation:** The preceding pre-merge snapshot recorded PR #274
 as open; it merged into `main` at 2026-07-22T14:25:01Z as commit
 `764859fd19c6b4305c0b7b9222c71493b3587177`.
@@ -79,24 +79,24 @@ lib-conclave-sdk  ←  shares types with SDK (L3)
 
 ### Open Gateway issues
 
-| Issue | Current status | Next evidence/acceptance slice |
+| Issue | Status at snapshot | Next evidence/acceptance slice |
 |---|---|---|
 | [#189](https://github.com/Conxian/conxian-gateway/issues/189) | Research-only; no stable BitVM3/BitVMX-GC SDK, production deployment, or production pairing backend verified | Keep the canonical evidence/triage report current; require stable revision, vectors, resource, protocol, security, and cross-repo gates |
 | [#220](https://github.com/Conxian/conxian-gateway/issues/220) | Isolated DLC research/conformance/fixture slices merged; no Gateway runtime dependency or production CET path | Select manager/provider API only after independent offer/accept/sign/funding/CET/refund vectors and wallet/signing boundaries pass |
 | [#222](https://github.com/Conxian/conxian-gateway/issues/222) | The audit follow-up adds an exact-tag-commit baseline for Rust, Node, Cargo audit, Gitleaks, Lightning coverage, deterministic artifact verification, and SLSA subjects; issue remains open pending merge, admin controls, and a live release rehearsal | Review/merge the narrow release-governance slice; configure required checks and the protected `release` environment; verify one tagged release |
 | [#228](https://github.com/Conxian/conxian-gateway/issues/228) | RGB Phase 1 plus Phase 2 stockpile/import hardening merged in PRs #256/#261/#262; issue remains open | Add a concrete issuer-signature backend, signed Bitcoin/RGB regtest fixture, and transactional existing-contract update path |
-| [#245](https://github.com/Conxian/conxian-gateway/issues/245) | Research/observability; no current Gateway BIP-110 integration or fee predictor; no fee multiplier/model rewrite justified | Define deployment/status observability, Core preflight passthrough, fee telemetry, route confidence, and acceptance metrics |
+| [#245](https://github.com/Conxian/conxian-gateway/issues/245) | Research/observability; this snapshot records no Gateway BIP-110 integration or fee predictor; no fee multiplier/model rewrite justified | Define deployment/status observability, Core preflight passthrough, fee telemetry, route confidence, and acceptance metrics |
 | [#247](https://github.com/Conxian/conxian-gateway/issues/247) | Blocked/high-risk; ALEX quote/prepared-payload surfaces exist, while secure signer, exact contract/escrow semantics, and governance controls remain unresolved | Approve exact signer/contract/governance design, prove testnet controls, and reconcile the rehearsal/API contract |
 
 ### Closed/merged milestones that must not be listed as open
 
-| Item | Verified current state |
+| Item | Verified state at snapshot |
 |---|---|
 | [Gateway #216](https://github.com/Conxian/conxian-gateway/issues/216) / [PR #253](https://github.com/Conxian/conxian-gateway/pull/253) | Issue closed; Babylon header-chain retrieval and bounded verification merged; EOTS/finality remain separate |
 | [Gateway #219](https://github.com/Conxian/conxian-gateway/issues/219) / [PR #255](https://github.com/Conxian/conxian-gateway/pull/255) | Issue closed; backend-neutral Groth16 boundary and BitVM handoff merged; production pairing backend remains separate |
 | [Gateway #236](https://github.com/Conxian/conxian-gateway/issues/236) | Issue closed; SDK package is `0.1.4` and README status is Developer Preview |
 | [Gateway PR #258](https://github.com/Conxian/conxian-gateway/pull/258) | Merged 2026-07-20; Liquid harness hardening follow-up is not open |
-| [Gateway PR #268](https://github.com/Conxian/conxian-gateway/pull/268) | Merged 2026-07-22; BitVM evidence/triage report is current and research-only |
+| [Gateway PR #268](https://github.com/Conxian/conxian-gateway/pull/268) | Merged 2026-07-22; the timestamped BitVM evidence/triage report remains research-only |
 
 The detailed score and evidence inventory are in
 [`GAP_ANALYSIS_2026-07-22.md`](GAP_ANALYSIS_2026-07-22.md), and the #245 source
@@ -128,10 +128,10 @@ ledger is in
 | #220 DLC CET | Research/API gate before CET implementation | ⚠️ HTTP oracle/event/key/outcome scaffold only; isolated Stage 1 vector normalization and rejection evidence is recorded, but there is still no cryptographic Gateway verification, DLC dependency, funding/CET/refund/adaptor-signature construction, or real bond construction. UUID/mock bond IDs only. See [`DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md`](research/DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md) and [`DLC_STAGE1_CONFORMANCE_2026-07-22.md`](research/DLC_STAGE1_CONFORMANCE_2026-07-22.md). |
 | #219 Groth16 | Verifier boundary | ✅ Canonical contract, commitment binding, fixture, and BitVM handoff merged in PR #255; no production cryptographic backend |
 | #216 Babylon | BTC header SPV | ✅ Header-chain retrieval and bounded verification merged in PR #253; EOTS/finality extensions remain separate |
-| #245 BIP-110 | Routing and fee-market impact | 🔬 Research/observability only; use the current BIP-110 evidence ledger; no fee multiplier, model rewrite, or active-consensus claim |
+| #245 BIP-110 | Routing and fee-market impact | 🔬 Research/observability only; use the dated BIP-110 evidence ledger; no fee multiplier, model rewrite, or active-consensus claim |
 | #247 ALEX | Settlement rail integration | 🔴 Blocked/high-risk pending secure signer, exact contract/escrow semantics, treasury controls, and governance/security acceptance |
 
-**#189 / #216 / #219 current status (2026-07-22):**
+**#189 / #216 / #219 status at the 2026-07-22 snapshot:**
 
 - ✅ PR #259 merged the isolated, feature-gated BitVMX-CPU evaluator and its research-only contract tests.
 - The canonical evidence and cross-repository triage record is [`docs/research/BITVM3_BITVMX_EVIDENCE_AND_TRIAGE_2026-07-22.md`](research/BITVM3_BITVMX_EVIDENCE_AND_TRIAGE_2026-07-22.md); the prior expansion remains the historical evidence record.
@@ -145,7 +145,7 @@ ledger is in
 - [conxian-nexus #169](https://github.com/Conxian/conxian-nexus/issues/169) — open P1: bind real Arkworks verification to canonical BitVM state-transition semantics.
 - [conxius-wallet #427](https://github.com/Conxian/conxius-wallet/issues/427) — **closed 2026-07-22**; retain the merged issue as historical remediation evidence.
 - [Conxian/.github #41](https://github.com/Conxian/.github/issues/41) — **closed 2026-07-22**; retain the merged issue as historical documentation evidence.
-- [lib-conxian-core #188](https://github.com/Conxian/lib-conxian-core/issues/188) — **closed 2026-07-22**; fail-closed boundary work is recorded in the current Core tree.
+- [lib-conxian-core #188](https://github.com/Conxian/lib-conxian-core/issues/188) — **closed 2026-07-22**; fail-closed boundary work is recorded in the Core tree observed for this snapshot.
 - [conxius-enclave-sdk #202](https://github.com/Conxian/conxius-enclave-sdk/issues/202) — open P0: complete independent security/release acceptance evidence.
 
 The Platform #1187 and Nexus #169 issues remain open. The Wallet #427,
@@ -168,7 +168,7 @@ integration, or a mainnet claim.
 
 **Babylon #216 status (2026-07-22; supersedes the pending note below):** PR #253
 merged the BTC header-chain query and bounded verification implementation. The
-current `babylon_adapter.rs` has Bitcoin RPC-backed tip/mainchain queries,
+`babylon_adapter.rs` tree state observed in this snapshot has Bitcoin RPC-backed tip/mainchain queries,
 header parsing, parent-link and cumulative-work checks, and bounded traversal.
 EOTS, full Babylon finality, and other non-goals remain separate.
 
@@ -192,9 +192,9 @@ EOTS, full Babylon finality, and other non-goals remain separate.
 ## Session History
 
 > **Supersession note (2026-07-22):** The historical rows below preserve the
-> state recorded before PRs #253, #255, #258, #267, and #268 merged. The current
-> status sections above are authoritative for #216, #219, #189, #245, #247, and
-> the cross-repository issue states.
+> state recorded before PRs #253, #255, #258, #267, and #268 merged. The
+> timestamped status sections above are authoritative for #216, #219, #189,
+> #245, #247, and the cross-repository issue states as observed on 2026-07-22.
 
 | Date | Repository | Session Summary |
 |------|------------|-----------------|
@@ -214,7 +214,7 @@ EOTS, full Babylon finality, and other non-goals remain separate.
 Before starting work on any repo, verify:
 - [x] `git pull origin main` executed
 - [x] `docs/SESSION_SUMMARY_*.md` exists
-- [x] `docs/GAP_ANALYSIS_*.md` is current
+- [x] `docs/GAP_ANALYSIS_*.md` timestamped snapshots are present
 - [x] All previous session artifacts present
 - [x] PRs from previous session are merged
 
@@ -234,5 +234,5 @@ Before starting work on any repo, verify:
 
 ---
 
-*This file is auto-maintained by agent sessions.*
+*This file is maintained by agent sessions as a timestamped snapshot.*
 *Last Major Update: 2026-07-22T14:42:43Z (timestamped #245/#222 audit snapshot; PR #274 merged at observation time; #216/#219 milestones, #258, #268, #272, #273, and #274 merged; six Gateway issues open)*

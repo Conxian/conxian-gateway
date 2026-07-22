@@ -38,15 +38,25 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    document = json.loads(args.input.read_text(encoding="utf-8"))
+    try:
+        document = json.loads(args.input.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise SystemExit(f"error: SBOM is not valid UTF-8 JSON: {error}") from error
+
+    if not isinstance(document, dict):
+        raise SystemExit("error: SBOM root must be an object")
 
     if document.get("bomFormat") != "CycloneDX":
         raise SystemExit("error: SBOM is not CycloneDX")
     if document.get("specVersion") != "1.5":
         raise SystemExit("error: SBOM specVersion must be 1.5")
 
-    metadata = document.get("metadata") or {}
-    component = metadata.get("component") or {}
+    metadata = document.get("metadata")
+    if not isinstance(metadata, dict):
+        raise SystemExit("error: SBOM metadata must be an object")
+    component = metadata.get("component")
+    if not isinstance(component, dict):
+        raise SystemExit("error: SBOM root component must be an object")
     if component.get("name") != "gateway":
         raise SystemExit("error: SBOM root component is not gateway")
     if component.get("version") != args.version:
@@ -54,7 +64,14 @@ def main() -> int:
             f"error: SBOM version {component.get('version')!r} != {args.version!r}"
         )
 
-    properties = metadata.get("properties") or []
+    properties = metadata.get("properties")
+    if not isinstance(properties, list):
+        raise SystemExit("error: SBOM properties must be an array")
+    for index, item in enumerate(properties):
+        if not isinstance(item, dict):
+            raise SystemExit(f"error: SBOM property {index} must be an object")
+        if not isinstance(item.get("name"), str) or not isinstance(item.get("value"), str):
+            raise SystemExit(f"error: SBOM property {index} name/value must be strings")
     target_property = next(
         (
             item
@@ -65,7 +82,8 @@ def main() -> int:
     )
     if target_property is None or target_property.get("value") != args.target:
         raise SystemExit("error: SBOM target triple does not match the release target")
-    if not document.get("components"):
+    components = document.get("components")
+    if not isinstance(components, list) or not components:
         raise SystemExit("error: SBOM has no dependency components")
 
     document["metadata"]["timestamp"] = TIMESTAMP

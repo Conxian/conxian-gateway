@@ -137,7 +137,7 @@ jobs:
           cargo test --workspace --locked
           cargo test --workspace --features mock-integrations --locked
           python3 scripts/verify_contamination_guard.py
-          python3 -m unittest discover -s tests -p 'test_verify_release_artifacts.py'
+          python3 -m unittest discover -s tests -p 'test_*.py'
 
   baseline-node:
     name: Baseline Node build and tests
@@ -466,7 +466,8 @@ jobs:
             --directory release-assets \
             --version "${RELEASE_VERSION}" \
             --target "${TARGET_TRIPLE}" \
-            --expected-commit "${RELEASE_COMMIT}"
+            --expected-commit "${RELEASE_COMMIT}" \
+            --cargo-metadata "${RUNNER_TEMP}/cargo-metadata.json"
 
       - name: Upload immutable release artifact set
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -496,6 +497,15 @@ jobs:
           ref: ${{ needs.package-release.outputs.commit }}
           persist-credentials: false
 
+      - name: Install Rust toolchain for locked metadata verification
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - name: Capture locked Cargo workspace metadata
+        shell: bash
+        run: cargo metadata --locked --format-version 1 --no-deps > "${RUNNER_TEMP}/cargo-metadata.json"
+
       - name: Prepare clean artifact directories
         run: rm -rf release-assets release-provenance && mkdir -p release-assets release-provenance
 
@@ -515,7 +525,8 @@ jobs:
             --directory release-assets \
             --version "${RELEASE_VERSION}" \
             --target "${TARGET_TRIPLE}" \
-            --expected-commit "${RELEASE_COMMIT}"
+            --expected-commit "${RELEASE_COMMIT}" \
+            --cargo-metadata "${RUNNER_TEMP}/cargo-metadata.json"
 
       - name: Generate SLSA build provenance for shipped subjects
         id: provenance
@@ -571,6 +582,15 @@ jobs:
           ref: ${{ needs.package-release.outputs.commit }}
           persist-credentials: false
 
+      - name: Install Rust toolchain for locked metadata verification
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - name: Capture locked Cargo workspace metadata
+        shell: bash
+        run: cargo metadata --locked --format-version 1 --no-deps > "${RUNNER_TEMP}/cargo-metadata.json"
+
       - name: Prepare clean artifact directories
         run: rm -rf release-assets release-provenance && mkdir -p release-assets release-provenance
 
@@ -600,8 +620,22 @@ jobs:
             --directory release-assets \
             --version "${RELEASE_VERSION}" \
             --target "${TARGET_TRIPLE}" \
-            --expected-commit "${EXPECTED_COMMIT}"
+            --expected-commit "${EXPECTED_COMMIT}" \
+            --cargo-metadata "${RUNNER_TEMP}/cargo-metadata.json"
           test -s "release-provenance/conxian-gateway-${RELEASE_VERSION}.provenance.json"
+
+      - name: Recheck remote release tag immediately before GitHub Release
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.package-release.outputs.tag }}
+          EXPECTED_COMMIT: ${{ needs.package-release.outputs.commit }}
+        run: |
+          set -euo pipefail
+          python3 scripts/verify_remote_tag.py \
+            --repository "${GITHUB_REPOSITORY}" \
+            --tag "${RELEASE_TAG}" \
+            --expected-commit "${EXPECTED_COMMIT}"
 
       - name: Create and publish GitHub Release
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
@@ -669,6 +703,19 @@ jobs:
             echo "error: CARGO_REGISTRY_TOKEN is not configured in the protected release environment" >&2
             exit 1
           fi
+
+      - name: Recheck remote release tag immediately before crates.io publication
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.package-release.outputs.tag }}
+          EXPECTED_COMMIT: ${{ needs.package-release.outputs.commit }}
+        run: |
+          set -euo pipefail
+          python3 scripts/verify_remote_tag.py \
+            --repository "${GITHUB_REPOSITORY}" \
+            --tag "${RELEASE_TAG}" \
+            --expected-commit "${EXPECTED_COMMIT}"
 
       - name: Publish Gateway to crates.io
         env:

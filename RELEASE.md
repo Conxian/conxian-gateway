@@ -32,7 +32,7 @@ Before creating a release tag:
    cargo test --workspace --features mock-integrations
    cargo audit # cargo-audit 0.22.2
    ./scripts/lightning_coverage_gate.sh 90 # cargo-llvm-cov 0.8.7
-   python3 -m unittest discover -s tests -p 'test_verify_release_artifacts.py'
+   python3 -m unittest discover -s tests -p 'test_*.py'
    pnpm install
    pnpm build
    pnpm test
@@ -145,10 +145,13 @@ conxian-gateway-X.Y.Z.provenance.json
 ```
 
 The publication job checks the exact commit and reruns the artifact verifier
-before invoking the release action. The release action refuses unmatched files
-and does not overwrite existing assets. A baseline, validation, attestation, or
-environment failure therefore prevents release publication rather than allowing
-an ad hoc rebuild.
+before invoking the release action. Immediately before the release action, a
+reviewed REST-API helper re-queries the remote tag and peels lightweight or
+annotated tags to a commit; publication fails if it no longer resolves to the
+immutable commit emitted by `release-identity`. The release action refuses
+unmatched files and does not overwrite existing assets. A baseline, validation,
+attestation, tag-recheck, or environment failure therefore prevents release
+publication rather than allowing an ad hoc rebuild.
 
 ## 4. Verify a published release
 
@@ -165,11 +168,13 @@ mkdir -p "verify-v${VERSION}"
   sha256sum -c "conxian-gateway-${VERSION}.sha256")
 
 EXPECTED_COMMIT="$(git rev-list -n 1 "v${VERSION}")"
+cargo metadata --locked --format-version 1 --no-deps > "/tmp/conxian-gateway-${VERSION}-cargo-metadata.json"
 python3 scripts/verify_release_artifacts.py \
   --directory "verify-v${VERSION}" \
   --version "${VERSION}" \
   --target "${TARGET}" \
-  --expected-commit "${EXPECTED_COMMIT}"
+  --expected-commit "${EXPECTED_COMMIT}" \
+  --cargo-metadata "/tmp/conxian-gateway-${VERSION}-cargo-metadata.json"
 
 jq -e \
   --arg version "${VERSION}" \
@@ -196,7 +201,8 @@ dispatch the workflow on the same tag with `publish_to_crates_io=true`.
 
 The `publish-crates-io` job waits for the verified GitHub Release, runs the
 Cargo dry-run before reading any secret, requires the protected `release`
-environment, checks `CARGO_REGISTRY_TOKEN`, and only then runs:
+environment, checks `CARGO_REGISTRY_TOKEN`, re-queries and peels the remote tag
+immediately before publication, and only then runs:
 
 ```bash
 cargo publish --locked --package gateway
@@ -258,7 +264,8 @@ This repository change does not claim to have configured:
 
 - required status checks or branch protection/rulesets for `main`;
 - required reviewers, tag restrictions, or other protection on the `release`
-  environment;
+  environment; tag force-update protection is an important defense in depth,
+  while the workflow's last-moment remote-tag rechecks remain the owned control;
 - the crates.io package publication order, path-dependency version metadata, or
   `CARGO_REGISTRY_TOKEN`; or
 - a successful live release run with assets and an attestation.

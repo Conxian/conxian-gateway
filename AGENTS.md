@@ -34,7 +34,7 @@ python3 scripts/verify_contamination_guard.py
 ### Sprint & Org-Wide Protocol
 For complete organizational protocol, see:
 - `docs/SPRINT_SESSION_PROTOCOL.md` — Org-wide sprint & session standards
-- `docs/CROSS_REPO_STATUS.md` — Live dashboard of all Conxian-Labs repos
+- `docs/CROSS_REPO_STATUS.md` — Timestamped snapshot of all Conxian-Labs repos; refresh before relying on it
 - `docs/SPRINT_REVIEW_*.md` — Sprint boundary documentation
 
 ### If Previous Session Work is Missing or Broken
@@ -57,7 +57,7 @@ For complete organizational protocol, see:
   - [x] #216 Babylon: BTC header-chain retrieval and bounded SPV-style verification merged in PR #253; EOTS/finality extensions remain separate
 - **Sprint Protocol (2026-07-14)**: Session Continuity Protocol implemented. All agent sessions now verify prior work before proceeding. See:
   - `docs/SPRINT_SESSION_PROTOCOL.md` — Org-wide standards
-  - `docs/CROSS_REPO_STATUS.md` — Live cross-repo dashboard
+  - `docs/CROSS_REPO_STATUS.md` — Timestamped cross-repo snapshot; refresh before relying on it
   - `docs/SPRINT_REVIEW_2026-W28.md` — Sprint W28 documentation
 - **CI status**: All workflows green on main. `cargo-audit.yml` augmented with `.cargo/audit.toml` ignore list for transitive `rustls-webpki` CVEs.
 - **P3 Sprint Review (commit `07c9508`)**: All review findings resolved — G-C6 verdict logic, signature verification for all machine providers, SystemTime→now_unix, inline test backend. 29 canton_m2m_tests pass; 158 workspace tests pass.
@@ -118,7 +118,7 @@ Before submitting changes, you MUST:
 - **lightning-coverage.yml**: Lightning scoped coverage gate (тЙе90%).
 - **cargo-audit.yml**: Weekly dependency audit.
 - **secret-scan.yml**: Gitleaks secret scanning.
-- **node-ci.yml**: TypeScript build + vitest (client-sdk only).
+- **node-ci.yml**: TypeScript build + vitest across all Node workspaces.
 - **release.yml**: Tag-triggered, fail-closed GitHub Release with the production Gateway archive, checksum manifest, normalized CycloneDX 1.5 SBOM, SLSA provenance subjects, protected publication job, and optional crates.io environment gate.
 
 ## Known Gaps (2026-07-14 snapshot; current corrections noted)
