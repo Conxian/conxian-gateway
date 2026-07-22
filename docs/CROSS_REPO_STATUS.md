@@ -4,15 +4,40 @@
 **Historical source commit:** `764859fd19c6b4305c0b7b9222c71493b3587177` (`origin/main`)
 **Refresh rule:** Re-query GitHub before treating issue or PR counts as current;
 this timestamped snapshot and its dated history are not live data.
-**Current Phase 4 implementation context (local verification, 2026-07-22):**
+**Historical Phase 4 implementation context before the PR #278 merge (local verification, 2026-07-22):**
 `origin/main` is now at
 [`d7032ab621ad038f247566f820ac664a6c8c071c`](https://github.com/Conxian/conxian-gateway/commit/d7032ab621ad038f247566f820ac664a6c8c071c),
 and the bounded #245 slice is being prepared on
 `charlie/issue-245-tracked-mempool-telemetry`. This branch context is not a
 claim that the slice is merged into `main`.
+**Current merged-main verification:** `origin/main` is at
+[`96de9c0e976caf1dd3592593073d1f53e58bc91b`](https://github.com/Conxian/conxian-gateway/commit/96de9c0e976caf1dd3592593073d1f53e58bc91b),
+the external merge commit for PR #278.
 **Superseded observation:** The preceding pre-merge snapshot recorded PR #274
 as open; it merged into `main` at 2026-07-22T14:25:01Z as commit
 `764859fd19c6b4305c0b7b9222c71493b3587177`.
+**Post-snapshot BitVM Phase 4 note — 2026-07-22:** The continuity checkpoint
+predates the external merge of Gateway [PR #278](https://github.com/Conxian/conxian-gateway/pull/278)
+on `charlie/issue-189-bitvm-fail-closed`. Its implementation commit is
+[`114b857ed9d400beaf474cb68e7ac5f25ef58d78`](https://github.com/Conxian/conxian-gateway/commit/114b857ed9d400beaf474cb68e7ac5f25ef58d78);
+the pre-documentation branch head was
+[`c893cbb39ea9d680b229a89035ab38f29ed51b8b`](https://github.com/Conxian/conxian-gateway/commit/c893cbb39ea9d680b229a89035ab38f29ed51b8b).
+GitHub subsequently reports an external merge at 2026-07-22T19:57:47Z as
+[`96de9c0e976caf1dd3592593073d1f53e58bc91b`](https://github.com/Conxian/conxian-gateway/commit/96de9c0e976caf1dd3592593073d1f53e58bc91b);
+Charlie did not merge PR #278. The Phase 4 documentation commit
+[`e761d3edfa7c7cbe6a4d9aa67e4e34229a7e3005`](https://github.com/Conxian/conxian-gateway/commit/e761d3edfa7c7cbe6a4d9aa67e4e34229a7e3005)
+was pushed after that merge and is not in merged `main`. PR #278 does not
+resolve [Gateway #189](https://github.com/Conxian/conxian-gateway/issues/189),
+which remains research-only. The current open cross-repository acceptance
+issues are [Platform #1187](https://github.com/Conxian/conxius-platform/issues/1187),
+[Nexus #169](https://github.com/Conxian/conxian-nexus/issues/169), and
+[Enclave #202](https://github.com/Conxian/conxius-enclave-sdk/issues/202);
+[Wallet #427](https://github.com/Conxian/conxius-wallet/issues/427),
+[`.github` #41](https://github.com/Conxian/.github/issues/41), and
+[Core #188](https://github.com/Conxian/lib-conxian-core/issues/188) remain
+closed remediation evidence.
+This documentation recovery is carried by a separate follow-up PR; that PR is
+pending review/merge and is not part of `main` until it lands.
 **Sprint:** W29 (2026-07-15 to 2026-07-25)  
 **Maintained By:** Agent sessions
 
@@ -108,6 +133,14 @@ The detailed score and evidence inventory are in
 [`GAP_ANALYSIS_2026-07-22.md`](GAP_ANALYSIS_2026-07-22.md), and the #245 source
 ledger is in
 [`BIP110_FEE_MARKET_AND_ROUTING_2026-07-22.md`](research/BIP110_FEE_MARKET_AND_ROUTING_2026-07-22.md).
+
+**Post-snapshot #189 handoff:** The canonical current report is
+[`BITVM3_BITVMX_EVIDENCE_AND_TRIAGE_2026-07-22.md`](research/BITVM3_BITVMX_EVIDENCE_AND_TRIAGE_2026-07-22.md).
+It records the Gateway BN254 envelope/error contract, the Nexus `Bls12_381`
+compatibility mismatch, simulation success-path risk in Platform, fail-closed
+Enclave proof routes, upstream release/tag/license/network evidence, the
+candidate scorecard, and the remaining ownership decisions. These additions
+do not rewrite the historical 14:42:43Z snapshot above.
 
 ### Gateway ownership boundary for #245
 
