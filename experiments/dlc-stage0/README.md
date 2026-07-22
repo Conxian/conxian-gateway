@@ -89,10 +89,15 @@ for the exact mismatch and unresolved gates.
 
 The `rust-dlc-stage1-fixture` binary is the next isolated milestone. It builds
 one fixed single-oracle, two-outcome enumerated contract and serializes concrete
-`OfferDlc`, `AcceptDlc`, and `SignDlc` messages plus funding, both CETs, refund,
-and locally signed CET/refund artifacts. Its fixture-scoped constants cover
-message hashes, transaction IDs, the final contract ID, output ordering,
-locktimes, collateral conservation, and a canonical artifact digest.
+`OfferDlc`, `AcceptDlc`, and `SignDlc` messages plus funding, fully assembled
+funding witnesses, both CETs, refund, and locally signed CET/refund artifacts.
+The two synthetic funding inputs are coherent native P2WPKH UTXOs: their
+previous-output scripts, empty redeem scripts, BIP143 script codes, values,
+witnesses, and `FundingInput` metadata agree. The fixture independently checks
+funding, CET, and refund signatures, message round trips, binding semantics,
+and typed rejection categories. Its fixture-scoped constants cover message
+hashes, transaction IDs, the final contract ID, output ordering, locktimes,
+collateral conservation, and a canonical artifact digest.
 
 ```bash
 cargo +1.96.0 run --manifest-path experiments/dlc-stage0/Cargo.toml \
@@ -105,10 +110,10 @@ cargo +1.96.0 run --manifest-path experiments/dlc-stage0/Cargo.toml \
   -p rust-dlc-stage0-probe --bin rust-dlc-stage1-fixture -- --emit
 ```
 
-This remains a deterministic local conformance fixture only. It is not Gateway
-runtime, wallet, transport, persistence, custody, numeric, or hyperbola
-support, and it does not close issue #220 by itself. The exact constants and
-boundary decisions are recorded in
+This remains a self-contained deterministic regression vector, not independent
+interoperability evidence. It is not Gateway runtime, wallet, transport,
+persistence, custody, numeric, or hyperbola support, and it does not close
+issue #220 by itself. The exact constants and boundary decisions are recorded in
 [`docs/research/DLC_STAGE1_FIXTURE_2026-07-22.md`](../../docs/research/DLC_STAGE1_FIXTURE_2026-07-22.md).
 
 ## Probe boundaries

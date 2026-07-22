@@ -14,8 +14,10 @@ It is outside the root Gateway Cargo workspace and uses the low-level
 DDK `v1.1.2` is not part of this milestone because its isolated MSRV result is
 outside this slice.
 
-The fixture is one deterministic, single-oracle, two-outcome enumerated
-contract:
+The fixture is one self-contained deterministic regression vector: a
+single-oracle, two-outcome enumerated contract. It is not independent
+interoperability evidence because it constructs both sides locally with the
+pinned low-level APIs.
 
 - event ID: `stage1-fixture-enum-event`;
 - outcomes, in order: `no`, `yes`;
@@ -23,15 +25,22 @@ contract:
 - oracle nonce secret: 32 bytes of `0x08`;
 - offer/accept funding secrets: 32 bytes of `0x01` and `0x02`;
 - alternate rejection-only secret: 32 bytes of `0x09`;
-- synthetic previous-transaction script bytes: `[0x51, 0xa1]` and
-  `[0x51, 0xb2]`;
+- native P2WPKH previous outputs derived from the offer/accept funding keys;
+  the `FundingInput.redeem_script` values are empty, and the BIP143 script code
+  used for signing is the corresponding P2PKH script code derived from each
+  compressed funding key;
+- synthetic previous-transaction locktimes `161` and `178` are used only to
+  keep the two deterministic previous transaction IDs distinct; both
+  referenced outputs carry exactly `100,000,000` satoshis;
 - fixed input outpoints: offer
-  `1f104165c17e18a495b8fb914718d6243c0a57f49a0f52a0c936eb63d385bb37:0`,
+  `3e2b1dad8e66e6cba1e762711786a9ee2d9e96dc890b87251eee22821781e69e:0`,
   accept
-  `56cb847e68bb1d7261e7641614a76a20a2bbc6a0d2958abcae6b45cfbffccab0:0`;
+  `5f420a1f4b9b7e5f9b39c8d1c54a8aa7ba651cd32030792a78bb2417bd0d9de0:0`;
 - payout scripts: `[0x53, 0x01]` and `[0x53, 0x02]`;
 - change scripts: `[0x52, 0x01]` and `[0x52, 0x02]`;
-- empty synthetic redeem scripts for the fixed funding inputs;
+- native P2WPKH witness stacks are checked for exact two-element shape,
+  compressed public-key/address semantics, witness-size bounds, and ECDSA
+  validity against the parsed previous output value and script code;
 - input amount: `100,000,000` satoshis per party;
 - collateral: `50,000,000` satoshis per party;
 - fee rate: `5` satoshis/vbyte;
@@ -55,20 +64,25 @@ serialized message bytes:
 
 | Artifact | Length | SHA-256 / value |
 | --- | ---: | --- |
-| `OfferDlc` message | `460` bytes | `9f0d2968dfd08ba10a0cbc19e2cf781661cf7be22890070221c4ec1d7071e0dd` |
-| `AcceptDlc` message | `577` bytes | `b73821f2f01c874c527cf3efecb250ea167598ba45017b6a51c5c45ea5f54fd6` |
-| `SignDlc` message | `535` bytes | `c1cdd23db825f8adb4955872b55be63697fa971fc3486d1617552f49e570c104` |
-| funding transaction txid | — | `34d0f8da92837a82ce313ef0edbdba6ed7f123f4c045c95555d83b43f6748a88` |
-| CET for `no` txid | — | `3ca9d16d505bc7be6104a0e92a0d4b740e5a1aa7427c5d1427af1a98cd2bec2e` |
-| CET for `yes` txid | — | `f98808178ba0e6ee43c7d7a20529ee132a2ba2534a7ed29ea84cd27d42889361` |
-| refund transaction txid | — | `b18f3b6bf9a2b0652d99028ebd0948ebbc80fc8d4692d706274dd67345bdba44` |
-| final contract ID | — | `25c1e9cb83926b93df202fe1fcacab7fc6e032e5d154d84444c92a52e7659b99` |
+| `OfferDlc` message | `480` bytes | `02429a798cf33c6a15bb8cd738c55ad6d581303fbd2370a2d93c79d1c36b1e4c` |
+| `AcceptDlc` message | `597` bytes | `2ecb9087438980c0dc8749bce7da9b34be644038fbce20af667da92c2d00984a` |
+| `SignDlc` message | `535` bytes | `2d4bfb0d31aafc3aa57693f58830dd008f8637891dbd3ba625067dfbc72d6c91` |
+| funding transaction txid | — | `f4f0d66c02a0491307f545692d7cbeef9aca095b43a63191bddcaebca08a3334` |
+| CET for `no` txid | — | `7f724daedb20461ac379dd0784eaad7acbc11099818b2162a94cbb3b756e2a97` |
+| CET for `yes` txid | — | `6d3042cc2050c7fc91889c1e34efd940c15f04875e56323296242178ef499ff1` |
+| refund transaction txid | — | `43d205a919923fb600c96e777f65e234cfaee8a84b1d48b1d1dc695b82762199` |
+| final contract ID | — | `e5e1c77d13b1580216e454783c6daffe8bdb184a52b72080accdbfadb19b2225` |
 | funding output index | — | `0` |
 | CET count | — | `2` |
-| canonical fixture digest | — | `9f8ae3bf3098d69ef6dbf986df3348acc929b4df8b9f02169a300766f6f3443a` |
+| canonical fixture digest | — | `bf13afe7352577f1cd3e28ca92098cd247e5e607948ed1283b1fd9e66ead1f40` |
+
+The fully assembled funding transaction has the same txid as the unsigned
+funding transaction because Bitcoin txids exclude witness data. Its two
+P2WPKH witness stacks are nevertheless included in the serialized
+`signed-fund` artifact and therefore bound by the canonical digest.
 
 The canonical digest is SHA-256 over the ordered artifact stream
-`offer`, `accept`, `sign`, `fund`, `cet-0`, `cet-1`, `refund`,
+`offer`, `accept`, `sign`, `fund`, `signed-fund`, `cet-0`, `cet-1`, `refund`,
 `signed-cet-offer-0`, `signed-cet-offer-1`, `signed-cet-accept-0`,
 `signed-cet-accept-1`, and `signed-refund`. Each item contributes its UTF-8
 label, an unsigned big-endian 64-bit byte length, and its serialized bytes.
@@ -84,13 +98,24 @@ both parties and both outcomes; signs both CET sets; creates a signed refund;
 and validates the oracle announcement/attestation boundary. It asserts:
 
 - temporary-to-final contract-ID binding using the pinned manager formula;
-- funding input/outpoint order and funding output index;
+- parsed previous-transaction and outpoint/vout reconciliation for both
+  funding inputs;
+- native P2WPKH script/address semantics, empty redeem scripts, exact values,
+  witness stack shape, and independent ECDSA verification for both assembled
+  funding inputs;
+- funding pubkeys, collateral, payout/change scripts and serial IDs, fee rate,
+  chain hash, locktimes, signature cardinality/contents, and funding witness
+  bytes across the messages;
 - payout output ordering from the serial IDs;
 - CET/refund locktimes and two-CET cardinality;
 - payout and refund collateral conservation;
+- independent verification of every signed CET and the signed refund against
+  the exact transaction, input, funding script, value, and public keys;
+- full type-ID-aware serialization round trips for `OfferDlc`, `AcceptDlc`, and
+  `SignDlc`, with equality against the original typed values;
 - stable message hashes, transaction IDs, final ID, and canonical digest;
 - direct constructor equality for the CET and refund artifacts;
-- non-empty signed CET/refund witnesses and valid refund signatures.
+- valid raw refund signatures and exact witness stack shapes.
 
 The fixture has 13 deterministic fail-closed cases:
 
@@ -108,10 +133,11 @@ The fixture has 13 deterministic fail-closed cases:
 12. refund locktime mismatch;
 13. refund collateral/output mismatch.
 
-The malformed/incomplete checks are intentionally local boundary checks: they
-exercise message parsing, cardinality, binding, and artifact invariants. They
-do not pretend to be a substitute for manager/provider validation, wallet
-state, or a full offer/accept/sign session.
+The malformed/incomplete checks assert named fixture validation categories or
+specific pinned DLC/Lightning decode categories. They exercise message
+parsing, cardinality, binding, and artifact invariants; they do not pretend to
+be a substitute for manager/provider validation, wallet state, or a full
+offer/accept/sign session.
 
 ## Reproduction
 
@@ -124,12 +150,19 @@ cargo +1.96.0 test --manifest-path experiments/dlc-stage0/Cargo.toml \
 cargo +1.85.1 test --manifest-path experiments/dlc-stage0/Cargo.toml \
   -p rust-dlc-stage0-probe --bin rust-dlc-stage1-fixture
 
+cargo +1.96.0 clippy --manifest-path experiments/dlc-stage0/Cargo.toml \
+  -p rust-dlc-stage0-probe --bin rust-dlc-stage1-fixture -- -D warnings
+cargo +1.85.1 clippy --manifest-path experiments/dlc-stage0/Cargo.toml \
+  -p rust-dlc-stage0-probe --bin rust-dlc-stage1-fixture -- -D warnings
+
 cargo +1.96.0 run --manifest-path experiments/dlc-stage0/Cargo.toml \
   -p rust-dlc-stage0-probe --bin rust-dlc-stage1-fixture -- --emit
 ```
 
 The normal run asserts the recorded constants and reports
 `stage1_fixture=passed`; `--emit` prints the artifact expectations for review.
+The output is a self-contained deterministic regression vector, not
+independent interoperability evidence.
 
 ## Boundary decisions
 
