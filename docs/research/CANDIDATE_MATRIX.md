@@ -10,7 +10,7 @@ This matrix tracks the maturity of core components and identifies the best candi
 | **BIP-322 Message Signing** | 9 | Urgent | Production | Integrated into Identity API |
 | **ALEX Swap Integration** | 8 | High | Production | Signer Enclave cutover pending |
 | **Identity Resolution (ENS/Web3.bio)** | 8 | High | Production | Integrated live APIs |
-| **DLC Orchestration** | 7 | Medium | Production | Primitives mapped to USI |
+| **DLC Orchestration** | 7 | Medium | Research / Spike | API scaffold only; no cryptographic oracle verification or CET construction. See [`DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md`](DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md) |
 | **MuSig2 Aggregation** | 6 | High | Production | Primitives and Aggregator active |
 | **Mempool Orchestrator** | 7 | High | Production | Industrial Intent integration |
 | **Identity Resolution (BNS)** | 7 | Medium | Production | Full resolver active with RPC fallback |
@@ -65,7 +65,7 @@ This matrix tracks the maturity of core components and identifies the best candi
 
 ### Candidate I: CBTC Non-Custodial Verification (Score: 7.0)
 - **Urgency**: High (G-C1, Q3 2026). CBTC is live on Canton today.
-- **Readiness**: Medium. DLC primitives exist; FROST attestation verification needs research.
+- **Readiness**: Medium-Low. A DLC-shaped API/oracle scaffold exists, but cryptographic oracle verification, CET construction, and vector compatibility remain open; see [`DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md`](DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md).
 - **Impact**: First non-custodial Bitcoin reserve verification for Canton-wrapped BTC.
 
 ### Candidate J: Canton State Translation Adapter (Score: 6.5)

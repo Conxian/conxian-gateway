@@ -49,9 +49,9 @@ For complete organizational protocol, see:
 - **Protocol Drift**: Resolved — Fedimint, Citrea, and Strata adapters implemented and in production paths.
 - **RGB G-1385 (Phase 1)**: StashResolver delivered (commit `124d17e`) with `rgb-std` v0.12.0-rc.3 + `bp-esplora` v0.12.0-rc.3 behind `rgb-native` feature. Phase 2 (ContractVerify, consignment) blocked on rgb-std ecosystem stabilization.
 - **PR #233 (G-1389)**: Tech debt reduction merged (`5e6613e`). Includes Fedimint/Citrea/Strata adapters, Redis coordination module, auth middleware timing stubs, reqwest 0.13 upgrade, dead_code cleanup. Citrea adapter moved from `bitcoin/` to `ntt/`.
-- **Gap Analysis (2026-07-14)**: Full review of 11 open issues vs. codebase complete. Report at `docs/GAP_ANALYSIS_2026-07-14.md`. Key findings:
+- **Gap Analysis (2026-07-14, DLC correction 2026-07-22)**: Full review of 11 open issues vs. codebase complete. Report at `docs/GAP_ANALYSIS_2026-07-14.md`. Key findings:
   - ⚠️ #236 SDK: Version drift (SDK 0.1.0 vs workspace 0.1.4), README claims "Production Ready" (overstated)
-  - ⚠️ #220 DLC: Oracle abstraction done, CET construction missing (no dlc-manager dep)
+  - ⚠️ #220 DLC: HTTP oracle scaffold exists, but cryptographic attestation verification, CET/funding/refund construction, and dependency selection remain open; see `docs/research/DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md`
   - ⚠️ #219 Groth16: a partial trait skeleton exists on `main`; the canonical contract, BitVM handoff, fixture, and rejection tests are implemented on the focused `charlie/issue-219-groth16-boundary` branch and are not merged yet
   - ❌ #216 Babylon: BTC header-chain returns `0`, no SPV implementation
 - **Sprint Protocol (2026-07-14)**: Session Continuity Protocol implemented. All agent sessions now verify prior work before proceeding. See:
@@ -126,7 +126,7 @@ Before submitting changes, you MUST:
 - [x] G-1276: Redis AUTH + token expiry — merged `2ef6df1`
 - [x] G-1380: SBOM and Provenance to release workflow — merged `19181c5`
 - [ ] #236: SDK version drift + README overclaim — see `docs/GAP_ANALYSIS_2026-07-14.md`
-- [ ] #220: DLC CET construction — dlc-manager dependency missing
+- [ ] #220: DLC CET construction — research/API spike required before selecting `rust-dlc` or DDK; see `docs/research/DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md`
 - [ ] #219: Groth16 cryptographic backend — boundary contract and deterministic fixture handoff implemented on `charlie/issue-219-groth16-boundary`; not merged or cryptographic
 - [ ] #216: Babylon BTC header-chain SPV — returns 0, needs implementation
 - [ ] #189: BitVMX GC adapter — pending 2026 garbled circuits release (see research below)
@@ -138,11 +138,11 @@ Full gap analysis: `docs/GAP_ANALYSIS_2026-07-14.md`
 ### Critical P0 Actions (W29 — ALL APPROVED)
 1. **Fix SDK version** — `packages/client-sdk/package.json`: `0.1.0` → `0.1.4`
 2. **Fix SDK README** — Remove "Production Ready" claim → "Developer Preview"
-3. **Add DLC CET** — Add `dlc-manager` dependency for #220
+3. **Align DLC research and API gate** — Compare pinned `rust-dlc` v0.8.0 and DDK v1.1.2 in an isolated spike before any workspace dependency or CET implementation for #220
 4. **Define Groth16 boundary** — Canonical contract and BitVM handoff implemented on the focused #219 branch; merge and add a real backend separately
 5. **Implement Babylon SPV** — BTC header-chain for #216
 
-**Status:** P0 items remain approved; #219's boundary milestone is implemented locally on 2026-07-20, while a production cryptographic backend remains out of scope.
+**Status:** P0 items remain approved; #219's boundary milestone is implemented locally on 2026-07-20, while a production cryptographic backend remains out of scope. DLC remains research/status alignment only until the gates in `docs/research/DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md` pass.
 
 ### New Strategic Gaps (2026-07-06)
 - [x] G-C1: CBTC non-custodial verification — conxian-core types + `POST /api/v1/canton/cbtc/verify` handler with 6-point attestation check (commit pending)

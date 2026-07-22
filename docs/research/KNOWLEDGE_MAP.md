@@ -89,7 +89,7 @@
 | **NWC NIP-47** | `internal/api/src/nwc_backend.rs` | ✅ Integrated |
 | **Musig2** | `internal/api/src/handlers.rs` (`aggregate_musig2_keys`) | ✅ Key aggregation |
 | **x402** | `internal/api/src/x402.rs` | ✅ Payment protocol |
-| **DLC** | `POST /api/v1/dlc/bond` | ✅ Discreet Log Contracts |
+| **DLC** | `POST /api/v1/dlc/bond` | ⚠️ Bond/API scaffold only; no cryptographic oracle verification or CET construction. See [`DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md`](DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md). |
 
 ---
 
@@ -330,7 +330,7 @@ POST   /api/v1/a2p/verify                  → A2P OTP verify
 
 ### Bitcoin Stack (3 endpoints)
 ```
-POST   /api/v1/dlc/bond                    → DLC bond creation
+POST   /api/v1/dlc/bond                    → DLC bond scaffold (mock ID; no CET)
 POST   /api/v1/musig2/aggregate-keys       → Musig2 key aggregation
 POST   /api/v1/chains/{chain}/verify       → Chain state proof verify
 ```

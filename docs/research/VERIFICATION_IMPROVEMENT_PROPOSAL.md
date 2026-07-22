@@ -33,5 +33,5 @@ Implement a `UniversalVerifier` service that utilizes the `ChainAdapter` trait t
 - **Integration Tests**: Added automated API integration tests covering heterogeneous adapter dispatch and the current Babylon rehearsal/metadata and BitVM metadata behaviors.
 
 ### 2026-06-26 Full Protocol Alignment
-- **MuSig2 & DLC**: Integrated BIP-327 and Discreet Log Contract primitives into the universal verification surface.
+- **MuSig2 & DLC status correction (2026-07-22)**: MuSig2 key aggregation is integrated. DLC has only an HTTP/orchestration scaffold; cryptographic oracle verification, canonical vector compatibility, and CET construction are not integrated into the universal verification surface. See [`DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md`](DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md).
 - **BitVM3 / BitVMX boundary**: No production `UniversalVerifier` wiring exists for BitVM3, BitVMX-GC, or recursive proof verification. BitVMX-CPU is limited to the isolated evaluation lane, while the BitVM Groth16 path accepts an injected backend and the checked-in mock is fixture-only and non-cryptographic; no production pairing backend or settlement authorization is wired. See [`BITVM3_BITVMX_RESEARCH_EXPANSION.md`](./BITVM3_BITVMX_RESEARCH_EXPANSION.md) for the evidence matrix and promotion gates.

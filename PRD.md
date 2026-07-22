@@ -7,7 +7,7 @@ Conxian is designed to capture the Total Addressable Market (TAM) of Bitcoin-nat
 
 ### Industry Enhancement Pillars
 - **A. sBTC "Suction" Pattern**: Incentivize native BTC-to-sBTC migrations via the Sovereign Yield Index (SYI).
-- **B. BitVM & DLC Bonds**: Trustless cross-chain state verification and non-custodial Bitcoin debt.
+- **B. BitVM & DLC Bonds (planned/research)**: Target trustless cross-chain state verification and non-custodial Bitcoin debt; DLC implementation and production readiness remain gated by [`docs/research/DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md`](docs/research/DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md).
 - **C. Institutional ISO 20022 Egress**: Banking-standard messaging (pacs.008) for legacy egress.
 - **D. Workload Identity Federation (WIF)**: TEE-based agent authentication without static keys.
 

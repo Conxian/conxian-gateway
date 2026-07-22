@@ -18,6 +18,16 @@ This report provides a systematic gap analysis comparing all 11 open GitHub issu
 > tests. It is not merged in this phase and does not provide a production
 > cryptographic Groth16 backend.
 
+> **DLC research alignment — 2026-07-22:** The focused review in
+> [`docs/research/DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md`](research/DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md)
+> confirms that the gateway has an HTTP oracle scaffold, not a cryptographic
+> DLC implementation. `verify_attestation()` checks event ID, oracle public key,
+> and expected outcome but does not verify the supplied signature; there is no
+> DLC dependency, funding/CET/refund builder, or real bond construction on
+> `main`. The next checkpoint is an isolated API/vector comparison of pinned
+> `rust-dlc v0.8.0` and DDK `v1.1.2`, not an automatic `dlc-manager` dependency
+> addition.
+
 | Status | Count | Issues |
 |--------|-------|--------|
 | ✅ Complete | 2 | #228 (Phase 1), #222 (mostly) |
@@ -104,13 +114,13 @@ This report provides a systematic gap analysis comparing all 11 open GitHub issu
 
 ### #220: [DLC] Build CET construction path with local oracle-fixture verification
 
-**Status:** ⚠️ Partial — Oracle abstraction exists, CET construction NOT done
+**Status:** ⚠️ Partial — HTTP oracle scaffold exists; cryptographic verification and CET construction are NOT done
 
 **Code Verified:**
 - ✅ `dlc_oracle.rs`:
   - `DlcOracleClient` — HTTP client for oracle communication
   - `OracleAnnouncement` / `OracleAttestation` structs
-  - `list_announcements()`, `get_attestation()`, `verify_attestation()`
+  - `list_announcements()`, `get_attestation()`, `verify_attestation()` — field matching only; the supplied signature is not cryptographically verified
   - `ThresholdOracleCoordinator` for multi-oracle support
 - ✅ `POST /api/v1/dlc/bond` in routes.rs
 
@@ -120,7 +130,12 @@ This report provides a systematic gap analysis comparing all 11 open GitHub issu
 3. ❌ **CET construction** — No Contract Execution Transaction building
 4. ❌ **Real bond-ID generation** — Only stubs
 
-**Recommendation:** Issue correctly identifies work needed. Oracle abstraction is foundation; dlc-manager integration is next step.
+**Recommendation:** Issue correctly identifies work needed. Start with the pinned
+[`DLC ecosystem research and readiness gates`](research/DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md),
+then compare `rust-dlc v0.8.0` and DDK `v1.1.2` in an isolated spike before
+selecting a dependency. The first implementation milestone should be a
+deterministic enumerated-outcome offer/accept/sign, funding/CET/refund fixture
+with real announcement and attestation signature verification.
 
 ---
 
@@ -202,10 +217,10 @@ This report provides a systematic gap analysis comparing all 11 open GitHub issu
 
 ### #199: [RESEARCH] DLC oracle integration — rust-dlc for real CET construction & adaptor signatures
 
-**Status:** ⚠️ Partial — Oracle client done, CET construction NOT
+**Status:** ⚠️ Partial — Oracle HTTP client scaffold exists, but cryptographic attestation verification and CET construction are NOT done
 
 **Code Verified:**
-- ✅ `dlc_oracle.rs` — Oracle client with attestation verification
+- ✅ `dlc_oracle.rs` — Oracle HTTP client with event/public-key/outcome matching
 - ✅ Unit tests for oracle verification
 
 **Missing:**
@@ -213,7 +228,10 @@ This report provides a systematic gap analysis comparing all 11 open GitHub issu
 - ❌ Real CET construction
 - ❌ rust-dlc integration
 
-**Recommendation:** Aligns with #220. Oracle abstraction is foundation; dlc-manager is next.
+**Recommendation:** Align with #220 and the pinned
+[`DLC ecosystem research`](research/DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md).
+Do not treat the current adapter as cryptographic attestation verification or
+select `dlc-manager` without the dependency/API and vector checkpoint.
 
 ---
 
@@ -260,7 +278,7 @@ This report provides a systematic gap analysis comparing all 11 open GitHub issu
 #236 (SDK) ─────┬── #222 (CI/CD fixes)
                 └── #228 (RGB v0.12) ←── Phase 2 blocked
 
-#199 (DLC oracle) ←── #220 (CET construction) ←── dlc-manager
+#199 (DLC oracle) ←── #220 (CET construction) ←── pinned SDK/API spike
 
 #193 (Liquid E2E) ←── #218 (Local harness) ←── elementsd
 
@@ -278,7 +296,7 @@ This report provides a systematic gap analysis comparing all 11 open GitHub issu
 2. **#236 README Overclaim** — Remove "Production Ready" claim
 
 ### P1 — High Priority
-3. **#220 DLC CET Construction** — Add `dlc-manager` dependency
+3. **#220 DLC CET Construction** — Compare pinned `rust-dlc v0.8.0` and DDK `v1.1.2` APIs/vectors first; add a dependency only after the spike selects and verifies one path
 4. **#219 Groth16 Verifier** — Review and merge the canonical boundary milestone; keep cryptographic backend work separate
 5. **#216 Babylon BTC Header** — Implement SPV verification
 

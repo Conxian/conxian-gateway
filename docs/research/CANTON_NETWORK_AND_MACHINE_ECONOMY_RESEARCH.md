@@ -4,6 +4,13 @@
 **Status**: Research — Active
 **Scope**: Canton Network state translation, non-custodial capital routing, Machine Economy monetization
 
+> **DLC status boundary — 2026-07-22:** DLC orchestrator, CBTC DLC
+> verification, and Canton-to-Bitcoin DLC references in this document are
+> strategic research and target architecture. They do not describe a live
+> gateway CET engine or cryptographic oracle verifier. The current implementation
+> boundary and promotion gates are recorded in
+> [`DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md`](DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md).
+
 ---
 
 ## Executive Summary

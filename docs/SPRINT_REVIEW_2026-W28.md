@@ -33,6 +33,12 @@
 | #219 | Groth16 verifier boundary | ⚠️ Partial | Review/merge the canonical boundary; add a production cryptographic backend separately |
 | #216 | Babylon BTC header-chain | ❌ Not Started | Keep pending while PR #253 is open; implement and verify SPV separately |
 
+> **DLC planning correction — 2026-07-22:** The historical W29 action below
+> should not be read as approval to add `dlc-manager` without an API and vector
+> comparison. Current `main` has no DLC dependency or CET path. The first
+> checkpoint is the pinned SDK/spec research and isolated compatibility spike
+> in [`docs/research/DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md`](research/DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md).
+
 ---
 
 ## Gap Analysis Summary
@@ -89,10 +95,10 @@
 - [ ] Verify all endpoints documented correctly
 
 #### 2. #220 DLC CET Construction (P0 — High Priority)
-- [ ] Evaluate `dlc-manager` crate compatibility
-- [ ] Add dependency to `internal/engine/Cargo.toml`
+- [ ] Compare pinned `rust-dlc v0.8.0` and DDK `v1.1.2` APIs/vectors in isolation
+- [ ] Record the dependency/MSRV decision before changing `internal/engine/Cargo.toml`
 - [ ] Implement CET construction path replacing mock bond-ID generation
-- [ ] Add oracle fixture-based testing
+- [ ] Add cryptographic oracle announcement/attestation and deterministic fixture-based testing
 
 #### 3. #219 Groth16 Verifier Boundary (P0 — High Priority)
 - [x] Define and harden `Groth16Verifier` trait in `internal/engine/src/`
@@ -113,7 +119,7 @@
 | Risk | Impact | Mitigation |
 |------|--------|------------|
 | SDK version drift | Medium | Schedule immediate fix |
-| DLC ecosystem immature | Medium | Monitor dlc-manager crate |
+| DLC ecosystem/spec and SDK compatibility | High | Pin the spec/vectors; compare `rust-dlc` and DDK in isolation before dependency selection; follow the DLC readiness gates |
 | Babylon EOTS dependency | High | Coordinate with #202 research |
 
 ---
