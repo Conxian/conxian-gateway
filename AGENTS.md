@@ -50,6 +50,7 @@ For complete organizational protocol, see:
 - **RGB G-1385 (Phase 2 hardening)**: StashResolver and the pinned `rgb-persist-fs::StockpileDir`/consignment boundary are merged through PRs #256, #261, and #262. The path remains fail-closed; a production issuer-signature backend, complete signed Bitcoin/RGB regtest fixture, and transactional existing-contract update path remain open.
 - **PR #233 (G-1389)**: Tech debt reduction merged (`5e6613e`). Includes Fedimint/Citrea/Strata adapters, Redis coordination module, auth middleware timing stubs, reqwest 0.13 upgrade, dead_code cleanup. Citrea adapter moved from `bitcoin/` to `ntt/`.
 - **Gap Analysis (2026-07-22)**: Current six-issue inventory, weighted ranking, and evidence-backed acceptance slices are recorded in `docs/GAP_ANALYSIS_2026-07-22.md`; `docs/GAP_ANALYSIS_2026-07-14.md` remains the dated historical snapshot. Key findings and current corrections:
+  - ⚠️ #222 CI/CD: Phase 3 release-governance implementation is prepared on the audit branch — fail-closed tag/version validation, production binary packaging, checksums, normalized CycloneDX SBOM, SLSA subjects, protected release job, and rollback runbook are present; merge, admin ruleset/environment configuration, a live release rehearsal, and Cargo publication prerequisites remain
   - ✅ #236 SDK: Version/documentation alignment is fixed in the tree — `packages/client-sdk/package.json` is `0.1.4` and the README says "Developer Preview"; the dated gap-analysis entry is retained as historical context
   - ⚠️ #220 DLC: HTTP oracle/event/key/outcome scaffold only; cryptographic announcement and attestation verification, any DLC dependency, funding/CET/refund/adaptor-signature construction, and real bond construction remain open. The current scaffold uses UUID/mock bond IDs only; see `docs/research/DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md`
   - ⚠️ #219 Groth16: canonical BN254 contract, BitVM handoff, fixture, and rejection tests merged in PR #255; production cryptographic backend remains open
@@ -118,9 +119,10 @@ Before submitting changes, you MUST:
 - **cargo-audit.yml**: Weekly dependency audit.
 - **secret-scan.yml**: Gitleaks secret scanning.
 - **node-ci.yml**: TypeScript build + vitest (client-sdk only).
-- **release.yml**: Tag-triggered GitHub Release with SBOM (CycloneDX) and SLSA L3 provenance.
+- **release.yml**: Tag-triggered, fail-closed GitHub Release with the production Gateway archive, checksum manifest, normalized CycloneDX 1.5 SBOM, SLSA provenance subjects, protected publication job, and optional crates.io environment gate.
 
 ## Known Gaps (2026-07-14 snapshot; current corrections noted)
+- [ ] #222: strict CI/CD release governance — Phase 3 workflow/runbook implementation is prepared on the audit branch; merge, required-check/ruleset and `release` environment administration, live tagged-release evidence, and publishable Cargo package metadata remain
 - [ ] #228: RGB stash resolver (G-1385) — Phase 1 plus Phase 2 hardening merged in PRs #256, #261, and #262; production issuer-signature backend, signed Bitcoin/RGB regtest fixture, and transactional existing-contract update path remain open
 - [x] #233 (G-1389): Tech debt reduction — merged `5e6613e`
 - [x] G-1276: Redis AUTH + token expiry — merged `2ef6df1`

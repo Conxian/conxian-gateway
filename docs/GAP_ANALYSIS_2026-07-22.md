@@ -38,7 +38,7 @@ change a fee or route.
 
 | Rank | Issue | Current classification | State at checkpoint | Score |
 |---:|---|---|---|---:|
-| 1 | [#222](https://github.com/Conxian/conxian-gateway/issues/222) | Implementation-ready; highest overall score | Open; CI/CD baseline exists, release-governance gaps remain | **88 / 90** |
+| 1 | [#222](https://github.com/Conxian/conxian-gateway/issues/222) | Implementation-ready; highest overall score | Open; Phase 3 release-governance implementation is prepared on the audit branch, while merge/admin/live-release evidence remains | **88 / 90** |
 | 2 | [#245](https://github.com/Conxian/conxian-gateway/issues/245) | Research/observability; narrow preflight-integration candidate | Open; no Gateway BIP-110 integration or fee predictor | **62 / 90** |
 | 3 | [#228](https://github.com/Conxian/conxian-gateway/issues/228) | Bounded implementation slices remain | Open; RGB Phase 1 and Phase 2 hardening are merged | **60 / 90** |
 | 4 | [#220](https://github.com/Conxian/conxian-gateway/issues/220) | Research milestone with production blockers | Open; isolated DLC evidence is merged, runtime integration is not | **58 / 90** |
@@ -103,9 +103,11 @@ Groth16 pairing backend, or SDK production publication is complete.
 
 ### #222 — strict CI/CD baseline
 
-**Classification:** Implementation-ready and highest overall score. The issue
-should remain open until the remaining release-governance controls are
-demonstrated, but a broad workflow rewrite is not justified.
+**Classification:** Implementation-ready and highest overall score. Phase 3 now
+contains the narrow release-governance implementation; the issue should remain
+open until the change is merged, the external controls are configured, and a
+controlled tag release demonstrates the resulting assets and attestation. A
+broad workflow rewrite is not justified.
 
 **Current evidence**
 
@@ -117,23 +119,35 @@ demonstrated, but a broad workflow rewrite is not justified.
   `.github/workflows/lightning-coverage.yml`.
 - The current Gateway release surface includes `v0.1.4`; the SDK package is
   `0.1.4`. The old `v0.1.0`/`0.1.4` drift is historical.
-- `RELEASE.md` has a release checklist but no rollback procedure. The current
-  `release.yml` needs an acceptance review for fail-closed validation,
-  artifact identity, environment gating, and provenance of the shipped binary.
+- The Phase 3 `release.yml` implementation makes tag/version/commit validation,
+  Rust release checks, the production `gateway` binary build, deterministic
+  archive packaging, CycloneDX 1.5 normalization, checksum verification, and
+  immutable artifact handoff explicit. Release publication depends on both
+  validation and SLSA provenance for the archive, checksum manifest, and SBOM.
+- `RELEASE.md` now documents preflight, artifact verification, the protected
+  release environment, the optional crates.io gate, rollback/yank guidance, and
+  partial/draft-release recovery.
+- `scripts/normalize_release_sbom.py` and
+  `scripts/verify_release_artifacts.py` provide deterministic local checks for
+  SBOM identity, archive metadata/ELF target, checksums, and release file shape.
 - GitHub currently exposes one active “Code Quality Copilot review for default
   branch” repository ruleset. That is not evidence that every required CI,
   security, release, and artifact check is merge-required.
 
-**Dependencies:** repository settings/admin ownership, exact release artifact
-publication semantics, environment protection, and the existing workflow
-checks. No new protocol dependency is required.
+**Dependencies:** merging the implementation, repository settings/admin
+ownership for required checks and environment protection, exact release
+artifact publication semantics, a controlled live tag release, and the existing
+workflow checks. The optional crates.io path also depends on publishable Cargo
+package metadata/path-dependency version requirements. No new protocol
+dependency is required.
 
-**Next acceptance slice:** make release validation fail closed; build once and
-publish the verified binary, checksums, SBOM, and attestation for that exact
-artifact; add a production environment gate and rollback runbook; and prove
-that the required checks are enforced by the default-branch ruleset. This is
-the top backlog candidate, but CI/workflow changes are intentionally out of
-scope for this Phase 2 audit branch.
+**Next acceptance slice:** review and merge the Phase 3 patch; configure and
+verify the `main` required-check ruleset and protected `release` environment;
+run one controlled `vX.Y.Z` release and verify its archive, checksum, SBOM, and
+attestation; then resolve the separate Cargo package publication prerequisites
+before enabling crates.io publication. Branch protection/ruleset state and the
+live release rehearsal remain external/admin evidence, not claims made by this
+repository patch.
 
 ### #245 — BIP-110 routing and fee-market impact
 
@@ -326,7 +340,7 @@ Do not label ALEX the primary settlement rail before that slice passes.
   └── ALEX contracts + secure signer + escrow/governance/treasury controls
 ```
 
-## Selection rationale for Phase 2
+## Selection rationale for Phase 2 (historical checkpoint)
 
 The score selects **#222** as the highest overall backlog candidate, but this
 phase is intentionally not changing workflows. The safe, useful #245 slice is
@@ -341,5 +355,32 @@ documentation and observability design:
 4. Keep fee selection based on measured confirmation/mempool evidence; do not
    infer cheaper fees or reduced demand from BIP-110 status.
 
-This preserves the current fail-closed posture, creates a reviewable acceptance
-slice, and avoids duplicating Bitcoin script interpretation in the Gateway.
+This preserved the current fail-closed posture, created a reviewable
+acceptance slice, and avoided duplicating Bitcoin script interpretation in the
+Gateway. Phase 3 subsequently took the highest-ranked #222 slice into the
+release workflow and runbook without changing Gateway runtime behavior.
+
+## Phase 3 implementation checkpoint — #222
+
+The Phase 3 implementation is scoped to `.github/workflows/release.yml`,
+`RELEASE.md`, and deterministic artifact verification scripts. It resolves the
+Gateway-owned workflow gaps identified in the audit:
+
+1. Release jobs require a valid tag, exact tag commit, matching workspace
+   versions, Rust validation, and a successful production build before any
+   release publication step can run.
+2. The shipped artifact is the built `gateway` binary packaged for
+   `x86_64-unknown-linux-gnu`; the workflow does not rebuild a separate binary
+   during release publication.
+3. The release asset set contains the archive, SHA-256 manifest, normalized
+   CycloneDX 1.5 SBOM, and signed provenance bundle. `actions/attest` attests
+   the archive, checksum manifest, and SBOM as the exact subjects.
+4. GitHub Release publication waits for validation and attestation and runs in
+   the `release` environment. The optional crates.io job remains separately
+   environment-gated and fails before reading its token when Cargo packaging is
+   not publishable.
+
+This checkpoint does **not** claim that GitHub branch protection/rulesets,
+environment reviewers, tag restrictions, Cargo registry secrets, or a live
+release rehearsal are configured. Those controls must be verified by repository
+administrators or a controlled release owner after merge.

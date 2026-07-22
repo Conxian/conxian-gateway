@@ -74,7 +74,7 @@ lib-conclave-sdk  ←  shares types with SDK (L3)
 |---|---|---|
 | [#189](https://github.com/Conxian/conxian-gateway/issues/189) | Research-only; no stable BitVM3/BitVMX-GC SDK, production deployment, or production pairing backend verified | Keep the canonical evidence/triage report current; require stable revision, vectors, resource, protocol, security, and cross-repo gates |
 | [#220](https://github.com/Conxian/conxian-gateway/issues/220) | Isolated DLC research/conformance/fixture slices merged; no Gateway runtime dependency or production CET path | Select manager/provider API only after independent offer/accept/sign/funding/CET/refund vectors and wallet/signing boundaries pass |
-| [#222](https://github.com/Conxian/conxian-gateway/issues/222) | Implementation-ready; workflows and release controls exist, but artifact identity, fail-closed release validation, environment gating, rollback, and required-check evidence remain | Implement the narrow release-governance slice; do not broad-rewrite CI |
+| [#222](https://github.com/Conxian/conxian-gateway/issues/222) | Phase 3 release-governance implementation is prepared on `charlie/issue-245-audit-2026-07-22`; tag/version validation, production binary packaging, checksums, CycloneDX SBOM, SLSA subjects, and release ordering are now explicit; issue remains open pending merge, admin controls, and a live release rehearsal | Review/merge the narrow release-governance slice; configure required checks and the protected `release` environment; verify one tagged release |
 | [#228](https://github.com/Conxian/conxian-gateway/issues/228) | RGB Phase 1 plus Phase 2 stockpile/import hardening merged in PRs #256/#261/#262; issue remains open | Add a concrete issuer-signature backend, signed Bitcoin/RGB regtest fixture, and transactional existing-contract update path |
 | [#245](https://github.com/Conxian/conxian-gateway/issues/245) | Research/observability; no current Gateway BIP-110 integration or fee predictor; no fee multiplier/model rewrite justified | Define deployment/status observability, Core preflight passthrough, fee telemetry, route confidence, and acceptance metrics |
 | [#247](https://github.com/Conxian/conxian-gateway/issues/247) | Blocked/high-risk; ALEX quote/prepared-payload surfaces exist, while secure signer, exact contract/escrow semantics, and governance controls remain unresolved | Approve exact signer/contract/governance design, prove testnet controls, and reconcile the rehearsal/API contract |
@@ -219,11 +219,11 @@ Before starting work on any repo, verify:
 - Verify lib-conxian-core alignment
 
 ### P1-P3 Issues (Future Sprints)
-- #222 CI/CD coverage threshold
+- #222 release-governance implementation prepared; merge, admin ruleset/environment configuration, live release rehearsal, and Cargo publication prerequisites remain
 - #218/#193 Liquid harness ✅ host-daemon harness and PR #258 hardening merged; production proof backend unwired
 - #189 BitVM3/BitVMX research monitoring; canonical evidence/triage refresh in `docs/research/BITVM3_BITVMX_EVIDENCE_AND_TRIAGE_2026-07-22.md`; no production GC or cryptographic verifier
 
 ---
 
 *This file is auto-maintained by agent sessions.*
-*Last Major Update: 2026-07-22 (current #245 audit; #216/#219 milestones, #258, #268, and #272 merged; six Gateway issues open)*
+*Last Major Update: 2026-07-22 (current #245 audit; #222 Phase 3 release-governance patch prepared on the audit branch; #216/#219 milestones, #258, #268, and #272 merged; six Gateway issues open)*
