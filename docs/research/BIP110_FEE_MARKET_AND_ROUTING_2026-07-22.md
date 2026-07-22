@@ -2,13 +2,17 @@
 
 **Date:** 2026-07-22
 **Gateway issue:** [#245 — Evaluate impact on routing and fee markets](https://github.com/Conxian/conxian-gateway/issues/245)
-**Gateway snapshot:** [`6838d872513b681cf88f07fc5431f02b856b6d0e`](https://github.com/Conxian/conxian-gateway/commit/6838d872513b681cf88f07fc5431f02b856b6d0e)
+**Gateway base for the Phase 4 slice:** [`d7032ab621ad038f247566f820ac664a6c8c071c`](https://github.com/Conxian/conxian-gateway/commit/d7032ab621ad038f247566f820ac664a6c8c071c) (`origin/main`, verified locally on 2026-07-22)
+**Phase 4 working branch:** `charlie/issue-245-tracked-mempool-telemetry` (based directly on the Gateway base above; the final branch commit is recorded in the dated session summary)
+**Previous audit snapshot:** [`6838d872513b681cf88f07fc5431f02b856b6d0e`](https://github.com/Conxian/conxian-gateway/commit/6838d872513b681cf88f07fc5431f02b856b6d0e) (historical, superseded by the current base)
 **Status:** Research and observability design only; no BIP-110 integration or fee-model change is authorized by this document.
 
 > **Executive finding:** BIP-110 is a completed temporary soft-fork proposal in
 > the BIP registry, not evidence that its rules are active Bitcoin consensus on
 > 2026-07-22. The referenced Bitcoin Core implementation pull requests are
-> closed without a merge, current Core release documentation does not establish
+> closed without a merge, an inspection of stock Bitcoin Core 31.0 at source
+> commit `a2e074d66ac17ca7907909bbbb563e77185a45e5` found no `REDUCED_DATA`
+> deployment, current Core release documentation does not establish
 > deployment, and the proponent monitor is non-authoritative. Any effect on
 > fee levels, inscription demand, or bridge predictability remains an unverified
 > hypothesis. Gateway routing must therefore remain based on observed node,
@@ -25,6 +29,8 @@ It does **not**:
 - claim BIP-110 activation, lock-in, enforcement, or chain-wide adoption;
 - claim that limiting data fields reduces fees or inscription demand;
 - treat relay policy as consensus validation;
+- act as a BIP-110 validator, deployment oracle, network mempool view, or fee
+  predictor;
 - turn `lib-conxian-core` metadata validation into a transaction parser,
   interpreter, deployment detector, or Bitcoin consensus implementation;
 - treat the `conxius-enclave-sdk` package version `2.0.12` as a production
@@ -45,6 +51,7 @@ it must never silently convert proposal status into a fee instruction.
 | [BIP registry](https://github.com/bitcoin/bips/blob/f078d4f5ff70fe2921fd005d799a3d4a8ff7d55c/README.mediawiki) | File inspected at commit `f078d4f5ff70fe2921fd005d799a3d4a8ff7d55c`; BIP 110 is listed `Complete` | Registry terminology separates a completed proposal from a deployed BIP | A completed registry entry is not a deployment observation |
 | [Bitcoin Core PR #34929](https://github.com/bitcoin/bitcoin/pull/34929) | Closed 2026-03-26; no merge | Proposed versionbits extensions were not merged into Bitcoin Core | No statement about other implementations or future work |
 | [Bitcoin Core PR #34930](https://github.com/bitcoin/bitcoin/pull/34930) | Closed 2026-03-26; no merge | Proposed ReducedData Temporary Softfork implementation was not merged | No activation or deployment evidence |
+| [Bitcoin Core 31.0 source](https://github.com/bitcoin/bitcoin/tree/a2e074d66ac17ca7907909bbbb563e77185a45e5) | Source inspected at commit `a2e074d66ac17ca7907909bbbb563e77185a45e5` on 2026-07-22; no `REDUCED_DATA` deployment was found | Stock Core 31.0 source at this revision does not provide evidence of a `REDUCED_DATA` deployment | Absence in this source revision is not a future deployment oracle or a network-wide observation |
 | [Bitcoin-Dev discussion](https://groups.google.com/g/bitcoindev/c/nOZim6FbuF8) | Proposal discussion thread is reachable; discussion is not a deployment oracle | Shows the public technical/governance discussion context | Community discussion, signaling, or a proponent claim cannot establish consensus state |
 | [Bitcoin Core 30.0 release notes](https://bitcoincore.org/en/releases/30.0/) | Current release notes say `-datacarriersize` defaults to `100000` and describe relay/mining policy behavior | Core’s node-local data-carrier policy defaults and their operational scope | A policy default is not a BIP-110 consensus rule |
 | [`estimatesmartfee` RPC docs](https://bitcoincore.org/en/doc/26.0.0/rpc/util/estimatesmartfee/) | Versioned Core RPC documentation inspected | Fee estimates are node-produced, target-based estimates using available historical/mempool data | A universal fee truth, an activation signal, or a guarantee of confirmation |
@@ -82,17 +89,21 @@ network will accept under consensus.
 
 ### 4.1 BIP-110 status
 
-BIP-110 is marked **Complete** in the BIP registry. The proposal is a temporary
-soft fork with a one-year deployment model, not an active consensus rule as of
-2026-07-22. The BIP file describes proposed thresholds, heights, grandfathering,
-and expiry; those fields are proposal parameters, not a live deployment report.
+BIP-110 is marked **Complete** in the BIP registry. **Complete means the BIP
+document is complete; it is not activation, lock-in, or enforcement.** The
+proposal is a temporary soft fork with a one-year deployment model, not an
+active consensus rule as of 2026-07-22. The BIP file describes proposed
+thresholds, heights, grandfathering, and expiry; those fields are proposal
+parameters, not a live deployment report.
 
 ### 4.2 Bitcoin Core implementation status
 
-Bitcoin Core PRs #34929 and #34930 are closed and have no merge commit. The
-current Core release notes and RPC documentation reviewed here do not establish
-that BIP-110 is deployed by Bitcoin Core. The Gateway must not report “active”
-based on the existence of either pull request.
+Bitcoin Core PRs #34929 and #34930 are closed and unmerged; neither has a merge
+commit. An inspection of stock Bitcoin Core 31.0 at source commit
+`a2e074d66ac17ca7907909bbbb563e77185a45e5` found no `REDUCED_DATA` deployment.
+The current Core release notes and RPC documentation reviewed here do not
+establish that BIP-110 is deployed by Bitcoin Core. The Gateway must not report
+“active” based on the existence of either pull request or source-tree absence.
 
 ### 4.3 Scope of the proposed limits
 
@@ -143,6 +154,32 @@ There is no current Gateway BIP-110 preflight route, `estimatesmartfee`
 passthrough, block-quantile fee estimator, deployment detector, or fee predictor
 in production source. The existing RBF/CPFP path must not be retrofitted with a
 BIP-110 fee multiplier without an observed-data validation phase.
+
+### 5.2.1 Phase 4 tracked operational telemetry
+
+The Phase 4 working branch adds a bounded, read-only aggregation over the
+already persisted `PersistentState.mempool_pending_txs` records:
+
+- authenticated `GET /api/v1/bitcoin/mempool/telemetry` under the existing
+  `/api/v1` Bearer-token boundary;
+- response schema version `1`, scope `gateway_tracked_transactions`, and
+  `network_mempool_observation: "not_configured"`;
+- current counts for every `MempoolTxStatus`, replaceable and CPFP-capable
+  tracked totals, the sum of current persisted `bump_attempts`, and counts of
+  current `last_bump_strategy` observations; and
+- nullable `last_updated_at` derived only from persisted `last_evaluated_at` or
+  `last_bump_at` values.
+
+The public `/metrics` output exposes the same bounded aggregates with stable
+names beginning `conxian_gateway_tracked_mempool_`. Status and strategy labels
+are closed enums. The metrics contain no txids, addresses, node IDs, route IDs,
+or free-form errors, and their help text explicitly says they are not
+network-wide observations.
+
+This slice is operational telemetry only. It is **not** a BIP-110 validator,
+deployment oracle, network mempool view, or fee predictor. It does not change
+fee-bump decisions, transaction construction, signing, broadcast, Core
+validation, Wallet fee recommendation, or Nexus observation.
 
 ### 5.2 Core contract boundary
 
@@ -311,7 +348,9 @@ is a design and telemetry contract, not a fee multiplier. The order should be:
    metadata;
 2. implement deployment/status observation with explicit unknown and source
    provenance;
-3. collect fee/mempool/block/RBF/CPFP outcomes;
+3. collect fee/mempool/block/RBF/CPFP outcomes; the Phase 4 tracked telemetry
+   is only the Gateway-owned persisted-record slice and does not satisfy the
+   node/network observation requirement;
 4. evaluate the acceptance metrics over rolling 30-day and 2016-block windows;
 5. only then consider a model change, with a reversible feature flag and
    independent review; and
@@ -330,6 +369,7 @@ custody.
 | https://github.com/bitcoin/bips/blob/master/README.mediawiki | 2026-07-22 | Audited file commit `f078d4f5ff70fe2921fd005d799a3d4a8ff7d55c` | BIP registry status terminology and BIP-110 `Complete` entry |
 | https://github.com/bitcoin/bitcoin/pull/34929 | 2026-07-22 | Closed 2026-03-26; no merge | Core versionbits proposal state |
 | https://github.com/bitcoin/bitcoin/pull/34930 | 2026-07-22 | Closed 2026-03-26; no merge | Core ReducedData implementation proposal state |
+| https://github.com/bitcoin/bitcoin/tree/a2e074d66ac17ca7907909bbbb563e77185a45e5 | 2026-07-22 | Stock Bitcoin Core 31.0 source commit `a2e074d66ac17ca7907909bbbb563e77185a45e5`; no `REDUCED_DATA` deployment found in the inspected source | Qualifies the current Core source evidence; not a future or network-wide deployment oracle |
 | https://groups.google.com/g/bitcoindev/c/nOZim6FbuF8 | 2026-07-22 | Public discussion thread; no deployment authority | Proposal discussion context |
 | https://bitcoincore.org/en/releases/30.0/ | 2026-07-22 | Bitcoin Core 30.0 release notes | `-datacarriersize=100000` default and policy distinction |
 | https://bitcoincore.org/en/doc/26.0.0/rpc/util/estimatesmartfee/ | 2026-07-22 | Bitcoin Core 26.0 RPC documentation | Node fee-estimate semantics and target range |

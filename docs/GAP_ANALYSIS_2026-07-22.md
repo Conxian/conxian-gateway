@@ -4,8 +4,15 @@
 boundaries, and next acceptance slices for the six issues that were open at the
 2026-07-22 Phase 2 audit checkpoint.
 
-**Repository snapshot:** `Conxian/conxian-gateway` `origin/main` at
+**Historical audit snapshot:** `Conxian/conxian-gateway` `origin/main` at
 [`764859fd19c6b4305c0b7b9222c71493b3587177`](https://github.com/Conxian/conxian-gateway/commit/764859fd19c6b4305c0b7b9222c71493b3587177).
+
+**Current Phase 4 implementation context:** local continuity verification on
+2026-07-22 pulled `origin/main` at
+[`d7032ab621ad038f247566f820ac664a6c8c071c`](https://github.com/Conxian/conxian-gateway/commit/d7032ab621ad038f247566f820ac664a6c8c071c)
+and created `charlie/issue-245-tracked-mempool-telemetry` directly from that
+base. The branch is a reviewable implementation context, not a claim that the
+slice is merged into `main`.
 
 **Audit branch:** `charlie/issue-245-audit-2026-07-22`.
 
@@ -170,9 +177,9 @@ repository patch.
 
 ### #245 — BIP-110 routing and fee-market impact
 
-**Classification:** Research/observability, with a narrow future preflight
-integration candidate. No fee multiplier or fee-model rewrite is justified by
-the current evidence.
+**Classification:** Research/observability with a bounded Phase 4 tracked-state
+telemetry slice on the working branch. The issue remains open; no fee
+multiplier or fee-model rewrite is justified by the current evidence.
 
 **Current evidence**
 
@@ -201,18 +208,48 @@ the current evidence.
 - The canonical BIP-110 text is marked `Complete`, not `Deployed`; Bitcoin Core
   implementation PRs [#34929](https://github.com/bitcoin/bitcoin/pull/34929)
   and [#34930](https://github.com/bitcoin/bitcoin/pull/34930) are closed without
-  a merge. Current Core documentation does not establish deployment.
+  a merge. An inspection of stock Bitcoin Core 31.0 at source commit
+  `a2e074d66ac17ca7907909bbbb563e77185a45e5` found no `REDUCED_DATA`
+  deployment. Current Core documentation does not establish deployment.
+
+**Phase 4 bounded implementation slice (working branch):**
+
+- `GET /api/v1/bitcoin/mempool/telemetry` aggregates the existing persisted
+  `PersistentState.mempool_pending_txs` records through the existing Bearer
+  authentication boundary.
+- The response is schema-versioned and explicitly scoped to
+  `gateway_tracked_transactions`; `network_mempool_observation` is
+  `not_configured`, and empty means no Gateway-tracked records, not a network
+  mempool zero.
+- The aggregation reports every current `MempoolTxStatus`, replaceable and
+  CPFP-capable totals, the sum of current persisted `bump_attempts`, current
+  `last_bump_strategy` observations, and a nullable timestamp derived from
+  persisted evaluation/bump fields.
+- `/metrics` exposes the same useful aggregates with bounded names and only
+  closed status/strategy labels. It emits no txids, addresses, node IDs, route
+  IDs, or free-form errors.
+- Pure aggregation tests cover status/empty semantics, attempt and strategy
+  honesty, capability totals, last-updated derivation, deterministic serde, no
+  mutation, bounded metric rendering, and authenticated route behavior.
+
+This slice does **not** provide a Bitcoin Core or network mempool view, BIP-110
+validation or deployment detection, `estimatesmartfee` passthrough, block or
+backlog quantiles, route-confidence calibration, historical RBF/CPFP outcome
+storage, or a fee predictor. It also does not change fee-bump decisions,
+transaction construction, signing, broadcast, Core validation, Wallet fee
+recommendation, or Nexus observation.
 
 **Dependencies:** exact Core contract revision, Bitcoin node RPC telemetry,
 deployment-state provenance, enclave release acceptance, and privacy-safe
 metrics. The proposal/adoption state is external and must remain explicit.
 
-**Next acceptance slice:** add deployment/status observability with explicit
-`unknown`/`not_deployed`/`active`/`expired` states; pass Core preflight
+**Remaining acceptance slices:** add deployment/status observability with
+explicit `unknown`/`not_deployed`/`active`/`expired` states; pass Core preflight
 requests/results through the Gateway without duplicating a script interpreter;
-capture `estimatesmartfee`-style estimates, mempool/backlog, block quantiles,
-and RBF/CPFP outcomes; and expose route confidence with provenance. Never alter
-fees solely because a BIP-110 status value changes.
+capture node-backed `estimatesmartfee`-style estimates, network/node mempool
+and backlog data, block quantiles, and durable RBF/CPFP outcomes; and expose
+route confidence with provenance and calibration. Never alter fees solely
+because a BIP-110 status value changes.
 
 The detailed evidence matrix, limits, risks, and acceptance metrics are in
 [`docs/research/BIP110_FEE_MARKET_AND_ROUTING_2026-07-22.md`](research/BIP110_FEE_MARKET_AND_ROUTING_2026-07-22.md).

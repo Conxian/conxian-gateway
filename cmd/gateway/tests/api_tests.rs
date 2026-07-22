@@ -13,8 +13,9 @@ use conxian_api::{configure_routes, new_lightning_adapter, new_settlement_log, A
 use conxian_compliance::zkc::{ATTESTATION_SIGNING_DOMAIN, TEE_DEVICE_ID_PREFIX};
 use conxian_compliance::{CoreVerifier, IdentityManager, UniversalVerifier, ZkcVerifier};
 use conxian_core::{
-    Attestation, AttestationRequest, BitVmAttestation, ConxianJobCard, GatewayState,
-    JobCardSettlementRequest, SharedState, WorkIntent,
+    Attestation, AttestationRequest, BitVmAttestation, ConxianJobCard, FeeBumpStrategy,
+    GatewayState, JobCardSettlementRequest, MempoolTxStatus, Persistence, PersistentState,
+    SharedState, TrackedMempoolTx, WorkIntent,
 };
 use hmac::KeyInit;
 use hmac::{Hmac, Mac};
@@ -37,11 +38,40 @@ const TEST_X402_PROOF: &str = "proof-test-123";
 
 type HmacSha256 = Hmac<Sha256>;
 
+struct StaticPersistence {
+    state: PersistentState,
+}
+
+impl Persistence for StaticPersistence {
+    fn save(&self, _state: &PersistentState) -> conxian_core::ConxianResult<()> {
+        Ok(())
+    }
+
+    fn load(&self) -> conxian_core::ConxianResult<PersistentState> {
+        Ok(self.state.clone())
+    }
+}
+
 fn setup_app(state: SharedState) -> axum::Router {
-    setup_app_with_lightning(state, new_lightning_adapter())
+    setup_app_with_lightning_and_persistence(state, new_lightning_adapter(), None)
 }
 
 fn setup_app_with_lightning(state: SharedState, lightning: Arc<LightningAdapter>) -> axum::Router {
+    setup_app_with_lightning_and_persistence(state, lightning, None)
+}
+
+fn setup_app_with_persistence(
+    state: SharedState,
+    persistence: Arc<dyn Persistence>,
+) -> axum::Router {
+    setup_app_with_lightning_and_persistence(state, new_lightning_adapter(), Some(persistence))
+}
+
+fn setup_app_with_lightning_and_persistence(
+    state: SharedState,
+    lightning: Arc<LightningAdapter>,
+    persistence: Option<Arc<dyn Persistence>>,
+) -> axum::Router {
     let fiat = Arc::new(FiatRouter::new(
         "ramp-key".to_string(),
         "investec-id".to_string(),
@@ -116,6 +146,7 @@ fn setup_app_with_lightning(state: SharedState, lightning: Arc<LightningAdapter>
     let app_state = AppState {
         coordinator: None,
         shared: state,
+        persistence,
         fiat,
         a2p,
         identity,
@@ -304,6 +335,81 @@ async fn test_get_metrics_authorized() {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn test_mempool_telemetry_requires_authentication() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/bitcoin/mempool/telemetry")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn test_mempool_telemetry_authorized_and_scoped() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let persistence = Arc::new(StaticPersistence {
+        state: PersistentState {
+            bitcoin_height: 0,
+            stacks_height: 0,
+            mempool_pending_txs: vec![TrackedMempoolTx {
+                txid: "tracked-txid-must-not-appear".to_string(),
+                first_seen_at: 10,
+                last_evaluated_at: Some(100),
+                last_bump_at: Some(120),
+                bump_attempts: 2,
+                current_fee_rate_sat_vb: 10,
+                target_fee_rate_sat_vb: Some(14),
+                replaceable: true,
+                cpfp_eligible: true,
+                status: MempoolTxStatus::BumpBroadcasted,
+                last_bump_strategy: Some(FeeBumpStrategy::Rbf),
+                last_error: Some("must-not-appear".to_string()),
+                replacement_txid: Some("replacement-must-not-appear".to_string()),
+            }],
+        },
+    });
+    let app = setup_app_with_persistence(state, persistence);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/bitcoin/mempool/telemetry")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("x-402-payment", TEST_X402_PROOF)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+    assert_eq!(body["schema_version"], 1);
+    assert_eq!(body["scope"], "gateway_tracked_transactions");
+    assert_eq!(body["network_mempool_observation"], "not_configured");
+    assert_eq!(body["availability"], "available");
+    assert_eq!(body["tracked_transaction_count"], 1);
+    assert_eq!(body["status_counts"]["bump_broadcasted"], 1);
+    assert_eq!(body["replaceable_tracked_total"], 1);
+    assert_eq!(body["cpfp_capable_tracked_total"], 1);
+    assert_eq!(body["bump_attempts_current_total"], 2);
+    assert_eq!(body["last_bump_strategy_counts"]["rbf"], 1);
+    assert_eq!(body["last_updated_at"], 120);
+    assert!(!body.to_string().contains("tracked-txid-must-not-appear"));
+    assert!(!body.to_string().contains("must-not-appear"));
 }
 
 #[tokio::test]

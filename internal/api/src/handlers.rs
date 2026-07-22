@@ -1,3 +1,6 @@
+use crate::mempool_telemetry::{
+    aggregate_tracked_mempool_transactions, render_prometheus_metrics, MempoolTelemetryResponse,
+};
 use crate::AppState;
 use axum::{
     body::Body,
@@ -112,9 +115,31 @@ pub async fn get_metrics(State(state): State<AppState>) -> Json<Value> {
     }))
 }
 
+pub async fn get_mempool_telemetry(
+    State(state): State<AppState>,
+) -> Result<Json<MempoolTelemetryResponse>, (StatusCode, Json<Value>)> {
+    let persistence = state.persistence.as_ref().ok_or_else(|| {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "tracked_mempool_state_not_configured" })),
+        )
+    })?;
+
+    let persisted = persistence.load().map_err(|_| {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "tracked_mempool_state_unavailable" })),
+        )
+    })?;
+
+    Ok(Json(aggregate_tracked_mempool_transactions(
+        &persisted.mempool_pending_txs,
+    )))
+}
+
 pub async fn get_prometheus_metrics(State(state): State<AppState>) -> Response<String> {
     let s = state.shared.read().expect("lock poisoned");
-    let body = format!(
+    let mut body = format!(
         "# HELP conxian_requests_total Total API requests processed.\n\
          # TYPE conxian_requests_total counter\n\
          conxian_requests_total {total}\n\
@@ -180,6 +205,25 @@ pub async fn get_prometheus_metrics(State(state): State<AppState>) -> Response<S
         inr = s.metrics.fx_inr_usd,
         aed = s.metrics.fx_aed_usd,
     );
+    let (tracked_mempool, tracked_state_available) = match state.persistence.as_ref() {
+        Some(persistence) => match persistence.load() {
+            Ok(persisted) => (
+                Some(aggregate_tracked_mempool_transactions(
+                    &persisted.mempool_pending_txs,
+                )),
+                true,
+            ),
+            Err(error) => {
+                warn!("Tracked mempool telemetry load failed: {}", error);
+                (None, false)
+            }
+        },
+        None => (None, false),
+    };
+    body.push_str(&render_prometheus_metrics(
+        tracked_mempool.as_ref(),
+        tracked_state_available,
+    ));
     Response::builder()
         .header("Content-Type", "text/plain; version=0.0.4")
         .body(body)

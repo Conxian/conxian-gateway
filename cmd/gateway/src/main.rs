@@ -147,7 +147,7 @@ async fn main() -> anyhow::Result<()> {
     let mut stx_listener = StacksListener::new(
         stx_rpc.clone(),
         state.clone(),
-        persistence,
+        persistence.clone(),
         coordinator.clone(),
         config.stacks_sync_interval,
     );
@@ -301,6 +301,7 @@ async fn main() -> anyhow::Result<()> {
     // Create AppState
     let app_state = AppState {
         shared: state.clone(),
+        persistence: Some(persistence.clone()),
         fiat: fiat_router,
         a2p: a2p_router,
         identity: identity_manager,

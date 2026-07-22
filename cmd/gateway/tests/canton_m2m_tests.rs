@@ -142,6 +142,7 @@ fn make_test_state(lightning: Arc<LightningAdapter>) -> AppState {
     AppState {
         coordinator: None,
         shared: state,
+        persistence: None,
         fiat,
         a2p,
         identity,

@@ -47,6 +47,10 @@ pub fn configure_routes(
 
     let private_routes = Router::new()
         .route("/metrics", get(handlers::get_metrics))
+        .route(
+            "/bitcoin/mempool/telemetry",
+            get(handlers::get_mempool_telemetry),
+        )
         .route("/state", get(handlers::get_state))
         .route("/verify", post(handlers::verify_attestation))
         .route("/identity/exchange", post(handlers::exchange_identity))
