@@ -403,7 +403,7 @@ jobs:
             > "${stage_root}/RELEASE-METADATA.txt"
 
           archive="release-assets/conxian-gateway-${RELEASE_VERSION}-${TARGET_TRIPLE}.tar.gz"
-          tar --format=ustar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner \
+          tar --format=ustar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner --blocking-factor=1 \
             -C "${RUNNER_TEMP}" -cf - "conxian-gateway-${RELEASE_VERSION}-${TARGET_TRIPLE}" \
             | gzip -n > "${archive}"
           test -s "${archive}"

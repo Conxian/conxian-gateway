@@ -7,6 +7,7 @@ import importlib.util
 from pathlib import Path
 import unittest
 from unittest.mock import patch
+import urllib.error
 import urllib.request
 
 
@@ -117,6 +118,130 @@ class VerifyRemoteTagTests(unittest.TestCase):
         self.assertNotIn("secret-token", request.full_url)
         self.assertEqual(request.get_header("Authorization"), "Bearer secret-token")
         self.assertEqual(result["object"]["sha"], COMMIT)
+
+    def test_api_request_rejects_http_failure(self) -> None:
+        error = urllib.error.HTTPError(
+            "https://api.github.com/repos/Conxian/conxian-gateway/git/ref/tags/v0.1.4",
+            404,
+            "not found",
+            {},
+            None,
+        )
+        with patch.object(VERIFY_REMOTE_TAG.urllib.request, "urlopen", side_effect=error):
+            with self.assertRaises(VERIFY_REMOTE_TAG.RemoteTagError) as context:
+                VERIFY_REMOTE_TAG._api_get(
+                    "Conxian/conxian-gateway",
+                    "/repos/Conxian/conxian-gateway/git/ref/tags/v0.1.4",
+                    "test-token",
+                )
+        self.assertIn("status 404", str(context.exception))
+
+    def test_api_request_rejects_malformed_json(self) -> None:
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self):
+                return b"{not-json"
+
+        with patch.object(VERIFY_REMOTE_TAG.urllib.request, "urlopen", return_value=FakeResponse()):
+            with self.assertRaises(VERIFY_REMOTE_TAG.RemoteTagError) as context:
+                VERIFY_REMOTE_TAG._api_get(
+                    "Conxian/conxian-gateway",
+                    "/repos/Conxian/conxian-gateway/git/ref/tags/v0.1.4",
+                    "test-token",
+                )
+        self.assertIn("unreadable response", str(context.exception))
+
+    def test_encodes_tag_name_as_one_path_segment(self) -> None:
+        calls: list[str] = []
+
+        def fetch(path: str) -> dict[str, object]:
+            calls.append(path)
+            return {"object": {"type": "commit", "sha": COMMIT}}
+
+        self.assertEqual(
+            VERIFY_REMOTE_TAG.resolve_remote_tag(
+                "Conxian/conxian-gateway",
+                "release/foo#bar?x=1",
+                "test-token",
+                fetch=fetch,
+            ),
+            COMMIT,
+        )
+        self.assertEqual(
+            calls,
+            [
+                "/repos/Conxian/conxian-gateway/git/ref/tags/"
+                "release%2Ffoo%23bar%3Fx%3D1"
+            ],
+        )
+
+    def test_rejects_annotated_tag_cycle(self) -> None:
+        calls: list[str] = []
+
+        def fetch(path: str) -> dict[str, object]:
+            calls.append(path)
+            if path.endswith("/git/ref/tags/v0.1.4"):
+                return {"object": {"type": "tag", "sha": TAG_OBJECT}}
+            return {"object": {"type": "tag", "sha": TAG_OBJECT}}
+
+        with self.assertRaises(VERIFY_REMOTE_TAG.RemoteTagError) as context:
+            VERIFY_REMOTE_TAG.resolve_remote_tag(
+                "Conxian/conxian-gateway", "v0.1.4", "test-token", fetch=fetch
+            )
+        self.assertIn("contains a cycle", str(context.exception))
+        self.assertEqual(len(calls), 2)
+
+    def test_accepts_maximum_annotated_tag_depth(self) -> None:
+        tag_count = VERIFY_REMOTE_TAG.MAX_TAG_OBJECTS
+        tag_shas = [f"{index + 1:040x}" for index in range(tag_count)]
+        responses: dict[str, dict[str, object]] = {}
+        for index, tag_sha in enumerate(tag_shas):
+            target: dict[str, str]
+            if index + 1 == tag_count:
+                target = {"type": "commit", "sha": COMMIT}
+            else:
+                target = {"type": "tag", "sha": tag_shas[index + 1]}
+            responses[f"/repos/Conxian/conxian-gateway/git/tags/{tag_sha}"] = {"object": target}
+
+        def fetch(path: str) -> dict[str, object]:
+            if path.endswith("/git/ref/tags/v0.1.4"):
+                return {"object": {"type": "tag", "sha": tag_shas[0]}}
+            return responses[path]
+
+        self.assertEqual(
+            VERIFY_REMOTE_TAG.resolve_remote_tag(
+                "Conxian/conxian-gateway", "v0.1.4", "test-token", fetch=fetch
+            ),
+            COMMIT,
+        )
+
+    def test_rejects_annotated_tag_depth_exhaustion(self) -> None:
+        tag_count = VERIFY_REMOTE_TAG.MAX_TAG_OBJECTS + 1
+        tag_shas = [f"{index + 1:040x}" for index in range(tag_count)]
+        responses: dict[str, dict[str, object]] = {}
+        for index, tag_sha in enumerate(tag_shas[:-1]):
+            responses[f"/repos/Conxian/conxian-gateway/git/tags/{tag_sha}"] = {
+                "object": {"type": "tag", "sha": tag_shas[index + 1]}
+            }
+        responses[f"/repos/Conxian/conxian-gateway/git/tags/{tag_shas[-1]}"] = {
+            "object": {"type": "commit", "sha": COMMIT}
+        }
+
+        def fetch(path: str) -> dict[str, object]:
+            if path.endswith("/git/ref/tags/v0.1.4"):
+                return {"object": {"type": "tag", "sha": tag_shas[0]}}
+            return responses[path]
+
+        with self.assertRaises(VERIFY_REMOTE_TAG.RemoteTagError) as context:
+            VERIFY_REMOTE_TAG.resolve_remote_tag(
+                "Conxian/conxian-gateway", "v0.1.4", "test-token", fetch=fetch
+            )
+        self.assertIn("exceeds the 32-object peel limit", str(context.exception))
 
     def test_workflow_places_rechecks_immediately_before_publication(self) -> None:
         source = WORKFLOW.read_text(encoding="utf-8")

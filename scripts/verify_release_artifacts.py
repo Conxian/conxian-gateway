@@ -4,13 +4,14 @@
 from __future__ import annotations
 
 import argparse
-import gzip
 import hashlib
+import io
 import json
 import posixpath
 import re
 import struct
 import tarfile
+import zlib
 from collections import Counter
 from pathlib import Path
 from typing import Any, NoReturn
@@ -74,75 +75,93 @@ def parse_ustar_number(field: bytes, field_name: str) -> int:
     return int(value, 8)
 
 
-def verify_ustar_headers(path: Path) -> list[tuple[bytes, int]]:
-    """Scan raw tar blocks so tarfile cannot hide extension headers."""
+def read_single_gzip_member(path: Path) -> bytes:
+    """Read exactly one reproducible gzip member without concatenation support."""
 
-    headers: list[tuple[bytes, int]] = []
     try:
-        stream = gzip.open(path, mode="rb")
+        compressed = path.read_bytes()
     except OSError as error:
         fail(f"release archive gzip stream could not be opened: {error}")
 
-    with stream:
-        while True:
-            header = stream.read(USTAR_BLOCK_SIZE)
-            if len(header) != USTAR_BLOCK_SIZE:
-                fail("release archive has a truncated USTAR header")
-            if header == USTAR_ZERO_BLOCK:
-                trailer = stream.read(USTAR_BLOCK_SIZE)
-                if trailer != USTAR_ZERO_BLOCK:
-                    fail("release archive does not end with two USTAR zero blocks")
-                while True:
-                    padding = stream.read(USTAR_BLOCK_SIZE)
-                    if not padding:
-                        break
-                    if len(padding) != USTAR_BLOCK_SIZE or padding != USTAR_ZERO_BLOCK:
-                        fail("release archive contains data after the USTAR trailer")
-                break
+    if len(compressed) < 10 or compressed[:2] != b"\x1f\x8b" or compressed[2] != 8:
+        fail("release archive is not gzip-compressed")
+    if int.from_bytes(compressed[4:8], "little") != 0:
+        fail("release archive gzip timestamp is not reproducible")
 
-            if header[257:265] != USTAR_MAGIC:
-                fail("release archive contains a non-USTAR header")
-            if header[148:156] == b"        ":
-                fail("release archive USTAR header has a blank checksum")
-            stored_checksum = parse_ustar_number(header[148:156], "checksum")
-            calculated_checksum = sum(header[:148]) + sum(b" " * 8) + sum(header[156:])
-            if stored_checksum != calculated_checksum:
-                fail("release archive USTAR header checksum is invalid")
+    decompressor = zlib.decompressobj(wbits=16 + zlib.MAX_WBITS)
+    try:
+        payload = decompressor.decompress(compressed)
+        payload += decompressor.flush()
+    except zlib.error as error:
+        fail(f"release archive gzip stream could not be opened: {error}")
+    if not decompressor.eof:
+        fail("release archive gzip stream is truncated")
+    if decompressor.unused_data or decompressor.unconsumed_tail:
+        fail("release archive must contain exactly one gzip member with no trailing data")
+    return payload
 
-            typeflag = header[156:157]
-            if typeflag not in {b"0", b"5"}:
-                fail(
-                    "release archive member has an unsafe type or non-regular "
-                    f"USTAR extension: {typeflag!r}"
-                )
-            if header[157:257] != b"\x00" * 100:
-                fail("release archive regular/directory member contains a link target")
-            if header[265:329] != b"\x00" * 64 or header[329:345] != b"\x00" * 16:
-                fail("release archive member metadata contains non-normalized USTAR fields")
-            if header[345:500] != b"\x00" * 155:
-                fail(
-                    "release archive contains a USTAR prefix, GNU sparse indicator, "
-                    "or other non-USTAR extension"
-                )
-            if header[500:512] != b"\x00" * 12:
-                fail("release archive contains non-USTAR header padding")
 
-            size = parse_ustar_number(header[124:136], "size")
-            if typeflag == b"5" and size != 0:
-                fail("release archive directory member has non-zero data size")
-            headers.append((typeflag, size))
+def verify_ustar_headers(path: Path) -> tuple[list[tuple[bytes, int]], bytes]:
+    """Scan raw tar blocks so tarfile cannot hide extension headers."""
 
-            data_blocks = (size + USTAR_BLOCK_SIZE - 1) // USTAR_BLOCK_SIZE
-            remaining = data_blocks * USTAR_BLOCK_SIZE
-            while remaining:
-                block = stream.read(min(remaining, 1024 * 1024))
-                if not block:
-                    fail("release archive member data is truncated")
-                remaining -= len(block)
+    headers: list[tuple[bytes, int]] = []
+    payload = read_single_gzip_member(path)
+    offset = 0
+    while offset < len(payload):
+        header = payload[offset : offset + USTAR_BLOCK_SIZE]
+        if len(header) != USTAR_BLOCK_SIZE:
+            fail("release archive has a truncated USTAR header")
+        offset += USTAR_BLOCK_SIZE
+        if header == USTAR_ZERO_BLOCK:
+            trailer = payload[offset : offset + USTAR_BLOCK_SIZE]
+            if trailer != USTAR_ZERO_BLOCK:
+                fail("release archive does not end with two USTAR zero blocks")
+            offset += USTAR_BLOCK_SIZE
+            if offset != len(payload):
+                fail("release archive contains data after the USTAR trailer")
+            break
+
+        if header[257:265] != USTAR_MAGIC:
+            fail("release archive contains a non-USTAR header")
+        if header[148:156] == b"        ":
+            fail("release archive USTAR header has a blank checksum")
+        stored_checksum = parse_ustar_number(header[148:156], "checksum")
+        calculated_checksum = sum(header[:148]) + sum(b" " * 8) + sum(header[156:])
+        if stored_checksum != calculated_checksum:
+            fail("release archive USTAR header checksum is invalid")
+
+        typeflag = header[156:157]
+        if typeflag not in {b"0", b"5"}:
+            fail(
+                "release archive member has an unsafe type or non-regular "
+                f"USTAR extension: {typeflag!r}"
+            )
+        if header[157:257] != b"\x00" * 100:
+            fail("release archive regular/directory member contains a link target")
+        if header[265:329] != b"\x00" * 64 or header[329:345] != b"\x00" * 16:
+            fail("release archive member metadata contains non-normalized USTAR fields")
+        if header[345:500] != b"\x00" * 155:
+            fail(
+                "release archive contains a USTAR prefix, GNU sparse indicator, "
+                "or other non-USTAR extension"
+            )
+        if header[500:512] != b"\x00" * 12:
+            fail("release archive contains non-USTAR header padding")
+
+        size = parse_ustar_number(header[124:136], "size")
+        if typeflag == b"5" and size != 0:
+            fail("release archive directory member has non-zero data size")
+        headers.append((typeflag, size))
+
+        data_blocks = (size + USTAR_BLOCK_SIZE - 1) // USTAR_BLOCK_SIZE
+        data_end = offset + data_blocks * USTAR_BLOCK_SIZE
+        if data_end > len(payload):
+            fail("release archive member data is truncated")
+        offset = data_end
 
     if not headers:
         fail("release archive contains no USTAR members")
-    return headers
+    return headers, payload
 
 
 def read_metadata(member: tarfile.TarInfo, archive: tarfile.TarFile) -> dict[str, str]:
@@ -170,21 +189,14 @@ def read_metadata(member: tarfile.TarInfo, archive: tarfile.TarFile) -> dict[str
 def verify_archive(path: Path, version: str, target: str, expected_commit: str) -> None:
     if target != EXPECTED_TARGET:
         fail(f"unsupported release target {target!r}")
-    with path.open("rb") as stream:
-        raw_header = stream.read(10)
-    if len(raw_header) < 10 or raw_header[:2] != b"\x1f\x8b" or raw_header[2] != 8:
-        fail("release archive is not gzip-compressed")
-    if int.from_bytes(raw_header[4:8], "little") != 0:
-        fail("release archive gzip timestamp is not reproducible")
-
     root = f"conxian-gateway-{version}-{target}"
     expected_members = {
         root,
         f"{root}/RELEASE-METADATA.txt",
         f"{root}/gateway",
     }
-    raw_headers = verify_ustar_headers(path)
-    with tarfile.open(path, mode="r:gz") as archive:
+    raw_headers, tar_payload = verify_ustar_headers(path)
+    with tarfile.open(fileobj=io.BytesIO(tar_payload), mode="r:") as archive:
         members = archive.getmembers()
         if len(members) != len(raw_headers):
             fail("release archive tar parser member count differs from raw USTAR headers")
@@ -488,6 +500,19 @@ def verify_sbom(path: Path, version: str, target: str, cargo_metadata_path: Path
                 fail(f"SBOM dependency target does not resolve to a component: {target_ref!r}")
     if not set(expected_workspace).issubset(dependency_refs):
         fail("SBOM dependency inventory is missing a locked workspace package")
+    # cargo-cyclonedx emits target descriptors nested under the metadata root;
+    # the dependency graph consists of that root plus document-level components.
+    graph_component_refs = {
+        component["bom-ref"],
+        *(dependency_component["bom-ref"] for dependency_component in components),
+    }
+    if dependency_refs != graph_component_refs:
+        missing_refs = sorted(graph_component_refs - dependency_refs)
+        orphan_refs = sorted(dependency_refs - graph_component_refs)
+        fail(
+            "SBOM dependency graph does not exactly represent top-level components: "
+            f"missing={missing_refs!r}, orphan={orphan_refs!r}"
+        )
 
 
 def verify_checksums(path: Path, expected: set[str], directory: Path) -> None:

@@ -86,14 +86,20 @@ def resolve_remote_tag(
     if not isinstance(current, dict):
         raise RemoteTagError("GitHub tag ref response has no object")
 
-    for _ in range(MAX_TAG_OBJECTS):
+    seen_tag_objects: set[str] = set()
+    for depth in range(MAX_TAG_OBJECTS + 1):
         object_type = current.get("type")
         object_sha = current.get("sha")
         if object_type == "commit":
             return validate_sha(object_sha, "remote tag commit")
         if object_type != "tag":
             raise RemoteTagError(f"remote tag resolved to unsupported object type {object_type!r}")
+        if depth == MAX_TAG_OBJECTS:
+            raise RemoteTagError(f"remote tag exceeds the {MAX_TAG_OBJECTS}-object peel limit")
         tag_sha = validate_sha(object_sha, "annotated tag object")
+        if tag_sha in seen_tag_objects:
+            raise RemoteTagError(f"remote tag contains a cycle at annotated tag object {tag_sha}")
+        seen_tag_objects.add(tag_sha)
         tag_object = fetch(f"/repos/{repository}/git/tags/{tag_sha}")
         current = tag_object.get("object")
         if not isinstance(current, dict):

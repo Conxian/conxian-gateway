@@ -27,6 +27,8 @@ SBOM_NAME = f"conxian-gateway-{VERSION}.cdx.json"
 CHECKSUMS_NAME = f"conxian-gateway-{VERSION}.sha256"
 CARGO_METADATA_NAME = "cargo-metadata.json"
 WORKSPACE_ROOT = "/fixture/conxian-gateway"
+USTAR_BLOCK_SIZE = 512
+USTAR_ZERO_BLOCK = b"\x00" * USTAR_BLOCK_SIZE
 WORKSPACE_PACKAGES = [
     ("gateway", "cmd/gateway", "path+file:///fixture/conxian-gateway/cmd/gateway#0.1.4"),
     ("conxian_api", "internal/api", "path+file:///fixture/conxian-gateway/internal/api#conxian_api@0.1.4"),
@@ -168,6 +170,16 @@ def write_archive(
                     archive.addfile(info)
                 else:
                     raise AssertionError(f"unknown fixture member kind: {kind}")
+    payload = gzip.decompress(compressed.getvalue())
+    while payload.endswith(USTAR_ZERO_BLOCK):
+        payload = payload[:-USTAR_BLOCK_SIZE]
+    write_gzip_payload(path, payload + USTAR_ZERO_BLOCK * 2)
+
+
+def write_gzip_payload(path: Path, payload: bytes) -> None:
+    compressed = io.BytesIO()
+    with gzip.GzipFile(fileobj=compressed, mode="wb", mtime=0) as gzip_stream:
+        gzip_stream.write(payload)
     path.write_bytes(compressed.getvalue())
 
 
@@ -179,31 +191,17 @@ def mutate_ustar_header(path: Path, offset: int, value: int) -> None:
     checksum = sum(header)
     header[148:156] = f"{checksum:06o}\x00 ".encode("ascii")
     raw[:512] = header
-    compressed = io.BytesIO()
-    with gzip.GzipFile(fileobj=compressed, mode="wb", mtime=0) as gzip_stream:
-        gzip_stream.write(raw)
-    path.write_bytes(compressed.getvalue())
+    write_gzip_payload(path, raw)
 
 
-def write_fixture(
+def write_sidecars(
     directory: Path,
     *,
-    archive_commit: str = COMMIT,
     sbom: dict[str, object] | None = None,
-    archive_members: list[tuple[str, str, bytes | str | None, int]] | None = None,
-    archive_format: int = tarfile.USTAR_FORMAT,
-    add_pax_header: bool = False,
     cargo_metadata: dict[str, object] | None = None,
 ) -> None:
     archive = directory / ARCHIVE_NAME
     sbom_path = directory / SBOM_NAME
-    write_archive(
-        archive,
-        commit=archive_commit,
-        members=archive_members,
-        archive_format=archive_format,
-        add_pax_header=add_pax_header,
-    )
     sbom_path.write_text(
         json.dumps(valid_sbom() if sbom is None else sbom, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -217,6 +215,68 @@ def write_fixture(
     metadata_path.write_text(
         json.dumps(valid_cargo_metadata() if cargo_metadata is None else cargo_metadata, sort_keys=True) + "\n",
         encoding="utf-8",
+    )
+
+
+def write_workflow_archive(path: Path, directory: Path, commit: str = COMMIT) -> None:
+    stage_directory = directory.parent / f"{directory.name}-stage"
+    stage_directory.mkdir()
+    stage_root = stage_directory / ROOT
+    stage_root.mkdir()
+    gateway = b"\x7fELF" + bytes([2]) + b"\0" * 13 + (62).to_bytes(2, "little") + b"gateway"
+    (stage_root / "gateway").write_bytes(gateway)
+    (stage_root / "gateway").chmod(0o755)
+    (stage_root / "RELEASE-METADATA.txt").write_text(metadata_text(commit), encoding="utf-8")
+    tar_result = subprocess.run(
+        [
+            "tar",
+            "--format=ustar",
+            "--sort=name",
+            "--mtime=UTC 1970-01-01",
+            "--owner=0",
+            "--group=0",
+            "--numeric-owner",
+            "--blocking-factor=1",
+            "-C",
+            str(stage_directory),
+            "-cf",
+            "-",
+            ROOT,
+        ],
+        check=True,
+        capture_output=True,
+    )
+    gzip_result = subprocess.run(
+        ["gzip", "-n"],
+        input=tar_result.stdout,
+        check=True,
+        capture_output=True,
+    )
+    path.write_bytes(gzip_result.stdout)
+
+
+def write_fixture(
+    directory: Path,
+    *,
+    archive_commit: str = COMMIT,
+    sbom: dict[str, object] | None = None,
+    archive_members: list[tuple[str, str, bytes | str | None, int]] | None = None,
+    archive_format: int = tarfile.USTAR_FORMAT,
+    add_pax_header: bool = False,
+    cargo_metadata: dict[str, object] | None = None,
+) -> None:
+    archive = directory / ARCHIVE_NAME
+    write_archive(
+        archive,
+        commit=archive_commit,
+        members=archive_members,
+        archive_format=archive_format,
+        add_pax_header=add_pax_header,
+    )
+    write_sidecars(
+        directory,
+        sbom=sbom,
+        cargo_metadata=cargo_metadata,
     )
 
 
@@ -255,6 +315,67 @@ class VerifyReleaseArtifactsTests(unittest.TestCase):
             write_fixture(directory)
             result = self.run_verifier(directory)
             self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_exact_workflow_archive_command_passes(self) -> None:
+        with self.fixture() as raw_directory:
+            directory = Path(raw_directory)
+            write_workflow_archive(directory / ARCHIVE_NAME, directory)
+            write_sidecars(directory)
+            payload = gzip.decompress((directory / ARCHIVE_NAME).read_bytes())
+            self.assertEqual(payload[-2 * USTAR_BLOCK_SIZE :], USTAR_ZERO_BLOCK * 2)
+            self.assertNotEqual(payload[-3 * USTAR_BLOCK_SIZE : -2 * USTAR_BLOCK_SIZE], USTAR_ZERO_BLOCK)
+            workflow = (Path(__file__).resolve().parents[1] / ".github" / "workflows" / "release.yml").read_text(
+                encoding="utf-8"
+            )
+            self.assertIn("--blocking-factor=1", workflow)
+            result = self.run_verifier(directory)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_rejects_raw_zero_bytes_after_gzip(self) -> None:
+        with self.fixture() as raw_directory:
+            directory = Path(raw_directory)
+            write_fixture(directory)
+            archive = directory / ARCHIVE_NAME
+            archive.write_bytes(archive.read_bytes() + b"\x00")
+            result = self.run_verifier(directory)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("exactly one gzip member", result.stderr)
+
+    def test_rejects_additional_empty_gzip_member(self) -> None:
+        with self.fixture() as raw_directory:
+            directory = Path(raw_directory)
+            write_fixture(directory)
+            archive = directory / ARCHIVE_NAME
+            archive.write_bytes(archive.read_bytes() + gzip.compress(b"", mtime=0))
+            result = self.run_verifier(directory)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("exactly one gzip member", result.stderr)
+
+    def test_rejects_concatenated_nonempty_gzip_member(self) -> None:
+        with self.fixture() as raw_directory:
+            directory = Path(raw_directory)
+            write_fixture(directory)
+            archive = directory / ARCHIVE_NAME
+            archive.write_bytes(archive.read_bytes() + gzip.compress(b"not-a-tar", mtime=0))
+            result = self.run_verifier(directory)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("exactly one gzip member", result.stderr)
+
+    def test_rejects_additional_tar_zero_blocks(self) -> None:
+        with self.fixture() as raw_directory:
+            directory = Path(raw_directory)
+            write_fixture(directory)
+            archive = directory / ARCHIVE_NAME
+            payload = gzip.decompress(archive.read_bytes())
+            write_gzip_payload(
+                archive,
+                payload[:-2 * USTAR_BLOCK_SIZE]
+                + USTAR_ZERO_BLOCK
+                + payload[-2 * USTAR_BLOCK_SIZE :],
+            )
+            result = self.run_verifier(directory)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("data after the USTAR trailer", result.stderr)
 
     def test_rejects_unexpected_directory(self) -> None:
         with self.fixture() as raw_directory:
@@ -496,6 +617,23 @@ class VerifyReleaseArtifactsTests(unittest.TestCase):
             result = self.run_verifier(directory)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("duplicate component bom-ref", result.stderr)
+
+    def test_rejects_orphan_component_not_in_dependency_graph(self) -> None:
+        with self.fixture() as raw_directory:
+            directory = Path(raw_directory)
+            sbom = valid_sbom()
+            sbom["components"].append(
+                {
+                    "type": "library",
+                    "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#orphan@1.0.0",
+                    "name": "orphan",
+                    "version": "1.0.0",
+                }
+            )
+            write_fixture(directory, sbom=sbom)
+            result = self.run_verifier(directory)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("dependency graph", result.stderr)
 
     def test_rejects_malformed_component_bom_ref(self) -> None:
         with self.fixture() as raw_directory:
