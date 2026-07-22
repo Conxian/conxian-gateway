@@ -347,7 +347,7 @@ fresh audit search and an explicit security review of the exact pinned build.
 | Stage | Deliverable | Exit criteria | Status |
 | --- | --- | --- | --- |
 | 0. API/dependency spike | Compare exact `rust-dlc v0.8.0` and DDK `v1.1.2` APIs without changing gateway manifests. | Both compile at the dependency level; selected API, Bitcoin version, feature flags, vector pin, and MSRV result recorded. | Research checkpoint. |
-| 1. Enumerated local fixture | Build a tiny single-oracle enumerated contract from a pinned vector. | Deterministic offer/accept/sign produces funding, every CET, and refund bytes; vector hashes and negative cases are checked. | Not started. |
+| 1. Enumerated local fixture | Build a tiny single-oracle enumerated contract from a pinned vector. | Deterministic offer/accept/sign produces funding, every CET, and refund bytes; vector hashes and negative cases are checked. | Isolated conformance checkpoint: compatibility parse and rejection coverage recorded; full fixture gate remains open. |
 | 2. Oracle cryptography | Replace field-only matching with announcement and attestation signature verification. | Wrong key, event, outcome, nonce, signature, and serialization all fail closed; valid vectors pass. | Not started. |
 | 3. Gateway state boundary | Add typed contract state and atomic persistence only after the protocol core is stable. | Restart, idempotency, duplicate messages, funding disconnect, CET disconnect, and refund recovery are deterministic. | Not started. |
 | 4. Public testnet / Mutinynet | Fund and execute a public testnet contract, including refund path. | Public txids, exact source/vector pin, logs, recovery procedure, and reproducible replay are archived. | Not started. |
@@ -355,6 +355,28 @@ fresh audit search and an explicit security review of the exact pinned build.
 
 No stage authorizes custody, production bond issuance, institutional marketing,
 or mainnet funds by itself.
+
+### 8.1 Stage 1 isolated checkpoint — 2026-07-22
+
+The focused [`DLC_STAGE1_CONFORMANCE_2026-07-22.md`](DLC_STAGE1_CONFORMANCE_2026-07-22.md)
+checkpoint keeps all work under `experiments/dlc-stage0/`. It adds an explicit,
+in-memory `localPayout` → `offerPayout` compatibility path for the seven
+enumerated/mixed official vectors, without rewriting fixtures, and records
+`14` parsed vectors with `13` complete offer/accept/sign byte matches. The
+remaining hyperbola offer mismatch is deterministic: first difference at byte
+offset `104` (`0x01` expected by the pinned spec, `0x40` emitted by
+`rust-dlc`), with the spec's fixed-point sign/`u64`/`u16` encoding differing
+from the library's IEEE-754 `f64` encoding.
+
+The same isolated checkpoint has `8` deterministic tests passing: one valid
+oracle boundary, wrong event/key rejection, signed-outcome mutation rejection,
+correctly signed unannounced-outcome/domain rejection, invalid announcement and
+attestation signature rejection, and mutated-CET transaction-binding rejection.
+The pinned upstream attestation validator does not compare event IDs or
+enumerated outcome membership, so the experiment wrapper enforces both bindings
+explicitly. None of this changes the Gateway's HTTP oracle/UUID scaffold or
+authorizes a dependency, custody, CET, funding, refund, or production
+integration.
 
 ## 9. Readiness and security gates
 

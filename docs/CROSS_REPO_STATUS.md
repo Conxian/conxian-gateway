@@ -74,7 +74,7 @@ lib-conclave-sdk  ←  shares types with SDK (L3)
 | # | Issue | Status |
 |---|-------|--------|
 | #236 SDK | Version drift + README | ✅ Fixed (0.1.4, Developer Preview) |
-| #220 DLC CET | Research/API gate before CET implementation | ⚠️ HTTP oracle/event/key/outcome scaffold only; no cryptographic announcement/attestation verification, DLC dependency, funding/CET/refund/adaptor-signature construction, or real bond construction. UUID/mock bond IDs only. See [`DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md`](research/DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md). |
+| #220 DLC CET | Research/API gate before CET implementation | ⚠️ HTTP oracle/event/key/outcome scaffold only; isolated Stage 1 vector normalization and rejection evidence is recorded, but there is still no cryptographic Gateway verification, DLC dependency, funding/CET/refund/adaptor-signature construction, or real bond construction. UUID/mock bond IDs only. See [`DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md`](research/DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md) and [`DLC_STAGE1_CONFORMANCE_2026-07-22.md`](research/DLC_STAGE1_CONFORMANCE_2026-07-22.md). |
 | #219 Groth16 | Verifier boundary | ✅ Canonical contract, commitment binding, fixture, and BitVM handoff merged in PR #255; no production cryptographic backend |
 | #216 Babylon | BTC header SPV | ✅ Header-chain retrieval and bounded verification merged in PR #253; EOTS/finality extensions remain separate |
 
@@ -102,11 +102,12 @@ lib-conclave-sdk  ←  shares types with SDK (L3)
 - `cc10886` recorded the superseded completion claim; see `docs/SESSION_SUMMARY_2026-07-20.md` for the correction.
 
 **DLC research alignment (2026-07-22):** The canonical source ledger,
-mainnet-evidence policy, SDK comparison, and readiness gates are recorded in
-[`docs/research/DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md`](research/DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md).
-The next checkpoint compares pinned upstream `rust-dlc v0.8.0` and DDK
-`v1.1.2` in isolation; it does not authorize a dependency addition or a
-mainnet claim.
+mainnet-evidence policy, SDK comparison, readiness gates, and the isolated
+Stage 1 conformance checkpoint are recorded in
+[`docs/research/DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md`](research/DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md)
+and [`docs/research/DLC_STAGE1_CONFORMANCE_2026-07-22.md`](research/DLC_STAGE1_CONFORMANCE_2026-07-22.md).
+The checkpoint does not authorize a dependency addition, custody, CET/runtime
+integration, or a mainnet claim.
 
 **Babylon #216 status (2026-07-22; supersedes the pending note below):** PR #253
 merged the BTC header-chain query and bounded verification implementation. The

@@ -50,6 +50,41 @@ blocks (`localPayout` versus required `offerPayout`) and seven numerical direct
 parses; six numerical vectors match offer/accept/sign bytes and the hyperbola
 offer does not.
 
+## Stage 1 isolated conformance checkpoint
+
+The Stage 1 checkpoint adds an in-memory compatibility mode and deterministic
+rejection coverage without changing the Gateway workspace or the pinned
+fixtures. The compatibility mode is intentionally explicit; it does not make
+the hyperbola mismatch pass.
+
+```bash
+cargo +1.96.0 test --manifest-path experiments/dlc-stage0/Cargo.toml \
+  -p rust-dlc-stage0-probe --bin rust-dlc-stage0-vector-probe
+cargo +1.85.1 test --manifest-path experiments/dlc-stage0/Cargo.toml \
+  -p rust-dlc-stage0-probe --bin rust-dlc-stage0-vector-probe
+
+cargo +1.96.0 test --manifest-path experiments/dlc-stage0/Cargo.toml \
+  -p rust-dlc-stage0-probe --bin rust-dlc-stage1-conformance
+cargo +1.85.1 test --manifest-path experiments/dlc-stage0/Cargo.toml \
+  -p rust-dlc-stage0-probe --bin rust-dlc-stage1-conformance
+
+cargo +1.96.0 run --manifest-path experiments/dlc-stage0/Cargo.toml \
+  -p rust-dlc-stage0-probe --bin rust-dlc-stage0-vector-probe -- \
+  --compatibility --vectors "$DLC_SPECS_CHECKOUT/test/test_vectors"
+
+cargo +1.96.0 run --manifest-path experiments/dlc-stage0/Cargo.toml \
+  -p rust-dlc-stage0-probe --bin rust-dlc-stage1-conformance
+```
+
+The compatibility run currently reports `parsed:14 blocked:0`, `13` complete
+offer/accept/sign byte matches, and `28` normalized payout fields. The Stage 1
+binary reports eight passing checks: one valid oracle boundary, six oracle
+rejections (including signed-outcome mutation and a correctly signed but
+unannounced enum outcome), and one mutated-CET transaction-binding rejection.
+See
+[`docs/research/DLC_STAGE1_CONFORMANCE_2026-07-22.md`](../../docs/research/DLC_STAGE1_CONFORMANCE_2026-07-22.md)
+for the exact mismatch and unresolved gates.
+
 ## Probe boundaries
 
 - `rust-dlc-stage0-probe` validates a deterministic enum oracle boundary and
