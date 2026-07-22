@@ -63,7 +63,7 @@ For complete organizational protocol, see:
 - **Strategic Research (2026-07-06)**: Canton Network & Machine Economy deep-dive complete. Key finding: "route without touch" — Conxian as sovereign routing layer between Canton's $6T+ institutional capital and Bitcoin's permissionless settlement. Machine Economy: $1.1B/month Lightning M2M volume, peaq 60+ DePINs, DIMO vehicle identity. See `docs/research/CANTON_NETWORK_AND_MACHINE_ECONOMY_RESEARCH.md` and `docs/research/KNOWLEDGE_MAP.md`.
 - **Issue #219 boundary update (2026-07-20)**: `internal/engine/src/bitcoin/groth16_verifier.rs` now defines the BN254 canonical statement/hash contract, witness-commitment public-input binding, circuit/key association, witness-privacy boundary, and deterministic test verifier. `bitvm_adapter.rs` parses and validates the envelope before delegating to an injected verifier. This remains a boundary milestone, not cryptographic Groth16 verification.
 
-### Protocol Implementations (2026-07-05)
+### Protocol Implementations (2026-07-22)
 | Protocol | Status | File |
 |---|---|---|
 | NWC NIP-47 | тЬЕ Integrated | `internal/api/src/nwc_backend.rs` |
@@ -129,7 +129,7 @@ Before submitting changes, you MUST:
 - [ ] #220: DLC CET construction — dlc-manager dependency missing
 - [ ] #219: Groth16 cryptographic backend — boundary contract and deterministic fixture handoff merged in PR #255; production pairing backend remains open
 - [x] #216: Babylon BTC header-chain SPV — bounded header-chain retrieval/verification merged in PR #253; EOTS/finality extensions remain separate
-- [ ] #189: BitVM3/BitVMX-GC adapter — research-only; evaluator PR #259 and evidence refresh PR #267 are merged, but no stable GC SDK or production deployment is verified
+- [ ] #189: BitVM3/BitVMX-GC adapter — research-only; PR #259 (evaluation harness) and PR #267 (initial research expansion) are merged; PR #268 is the current comprehensive SDK/paper/network-proof/cross-repo triage and remains open until merged; no stable GC SDK or production deployment is verified
 - [x] #231: BRICS Pay — DCMS settlement rail (closed — research complete, no adapter needed)
 - [x] #232: mBridge — BIS multi-CBDC DLT (closed — research complete, observation only)
 
