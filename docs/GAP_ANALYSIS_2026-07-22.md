@@ -7,12 +7,16 @@ boundaries, and next acceptance slices for the six issues that were open at the
 **Historical audit snapshot:** `Conxian/conxian-gateway` `origin/main` at
 [`764859fd19c6b4305c0b7b9222c71493b3587177`](https://github.com/Conxian/conxian-gateway/commit/764859fd19c6b4305c0b7b9222c71493b3587177).
 
-**Current Phase 4 implementation context:** local continuity verification on
+**Historical Phase 4 implementation context before PR #278:** local continuity verification on
 2026-07-22 pulled `origin/main` at
 [`d7032ab621ad038f247566f820ac664a6c8c071c`](https://github.com/Conxian/conxian-gateway/commit/d7032ab621ad038f247566f820ac664a6c8c071c)
 and created `charlie/issue-245-tracked-mempool-telemetry` directly from that
 base. The branch is a reviewable implementation context, not a claim that the
 slice is merged into `main`.
+
+**Current merged-main verification:** `origin/main` is at
+[`96de9c0e976caf1dd3592593073d1f53e58bc91b`](https://github.com/Conxian/conxian-gateway/commit/96de9c0e976caf1dd3592593073d1f53e58bc91b),
+the external merge commit for PR #278.
 
 **Audit branch:** `charlie/issue-245-audit-2026-07-22`.
 
@@ -26,6 +30,30 @@ controls only; it does not change BIP-110 enforcement, fee-model behavior,
 cryptographic backends, or production settlement integrations. Earlier dated
 gap analyses and sprint reviews remain historical records; they are not silently
 rewritten by this document.
+
+**Post-snapshot BitVM Phase 4 note — 2026-07-22:** After the historical audit
+snapshot, [PR #278](https://github.com/Conxian/conxian-gateway/pull/278) continued
+on `charlie/issue-189-bitvm-fail-closed`. Its fail-closed implementation is
+[`114b857ed9d400beaf474cb68e7ac5f25ef58d78`](https://github.com/Conxian/conxian-gateway/commit/114b857ed9d400beaf474cb68e7ac5f25ef58d78);
+the branch was at
+[`c893cbb39ea9d680b229a89035ab38f29ed51b8b`](https://github.com/Conxian/conxian-gateway/commit/c893cbb39ea9d680b229a89035ab38f29ed51b8b)
+before this documentation consolidation. The continuity checkpoint predates
+GitHub's subsequent external merge at
+2026-07-22T19:57:47Z as
+[`96de9c0e976caf1dd3592593073d1f53e58bc91b`](https://github.com/Conxian/conxian-gateway/commit/96de9c0e976caf1dd3592593073d1f53e58bc91b).
+Charlie did not merge it. The Phase 4 documentation commit
+[`e761d3edfa7c7cbe6a4d9aa67e4e34229a7e3005`](https://github.com/Conxian/conxian-gateway/commit/e761d3edfa7c7cbe6a4d9aa67e4e34229a7e3005)
+was pushed after that merge and is not part of merged `main`. [Gateway #189](https://github.com/Conxian/conxian-gateway/issues/189)
+remains open and research-only. The current open cross-repository acceptance
+issues are [Platform #1187](https://github.com/Conxian/conxius-platform/issues/1187),
+[Nexus #169](https://github.com/Conxian/conxian-nexus/issues/169), and
+[Enclave #202](https://github.com/Conxian/conxius-enclave-sdk/issues/202);
+[Wallet #427](https://github.com/Conxian/conxius-wallet/issues/427),
+[`.github` #41](https://github.com/Conxian/.github/issues/41), and
+[Core #188](https://github.com/Conxian/lib-conxian-core/issues/188) are retained
+as closed remediation evidence.
+This documentation recovery is carried by a separate follow-up PR; that PR is
+pending review/merge and is not part of `main` until it lands.
 
 ## Executive outcome
 
@@ -325,6 +353,10 @@ verified.
   and [PR #268](https://github.com/Conxian/conxian-gateway/pull/268) merged the
   research expansion and canonical SDK/paper/network-proof/cross-repository
   triage.
+- [PR #278](https://github.com/Conxian/conxian-gateway/pull/278) carries the
+  fail-closed generic BitVM verification change; its implementation was merged
+  externally, while the Phase 4 documentation commit is a post-merge branch
+  update. It does not resolve #189 and does not add a cryptographic backend.
 - Current Gateway boundaries are `tools/bitvmx-eval/`,
   `internal/engine/src/bitcoin/groth16_verifier.rs`,
   `internal/engine/src/bitcoin/bitvm_adapter.rs`, and

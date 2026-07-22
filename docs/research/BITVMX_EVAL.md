@@ -6,6 +6,11 @@ This document records the deliberately narrow implementation for GitHub issue
 #189. It is an evaluation harness, not a production BitVM3, BitVMX-GC, Groth16,
 garbled-circuit, settlement, compliance, or gateway integration.
 
+Current release, tag, license, network, upstream-blocker, and readiness status
+is maintained in the canonical
+[`BITVM3_BITVMX_EVIDENCE_AND_TRIAGE_2026-07-22.md`](./BITVM3_BITVMX_EVIDENCE_AND_TRIAGE_2026-07-22.md)
+report. This file remains the local runner contract and test-provenance record.
+
 ## Decision and exact pin
 
 Evaluate FairgateLabs/BitVMX-CPU only, at the exact source revision:
@@ -13,6 +18,11 @@ Evaluate FairgateLabs/BitVMX-CPU only, at the exact source revision:
 ```text
 d390832c8e0f2a01453e8ef4bf65dbe715fb9236
 ```
+
+This pin is intentional: it is the evaluator's exact source revision and is
+not a claim that the newer `v0.8.0` tag or the GitHub `v0.5.11` release is
+compatible. The upstream default-branch/tag/release divergence and the
+repository-metadata/README license contradiction remain unresolved.
 
 GOATNetwork/bitvm2-gc, garbled circuits, Groth16, recursive proofs, and BitVM3
 remain follow-up research, not dependencies of this spike. Upstream source and

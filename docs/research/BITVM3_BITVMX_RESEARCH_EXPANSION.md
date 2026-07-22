@@ -1,10 +1,18 @@
 # BitVM3 and BitVMX Research Expansion
 
-> **Research / Evaluation Only** — access date: 2026-07-21
+> **Research / Evaluation Only** — historical access date: 2026-07-21
 >
-> Canonical refresh: [`BITVM3_BITVMX_EVIDENCE_AND_TRIAGE_2026-07-22.md`](./BITVM3_BITVMX_EVIDENCE_AND_TRIAGE_2026-07-22.md). This document retains the historical 2026-07-21 evidence record; the dated refresh adds official SDK, paper, network-proof, upstream-issue, and cross-repository triage.
+> Current source of truth: [`BITVM3_BITVMX_EVIDENCE_AND_TRIAGE_2026-07-22.md`](./BITVM3_BITVMX_EVIDENCE_AND_TRIAGE_2026-07-22.md). This document retains the historical 2026-07-21 evidence record; the dated refresh adds the current official SDK, paper, network-proof, upstream-issue, release/tag/license, scorecard, and cross-repository handoff.
 
 This document is the dated evidence record for GitHub issue [#189](https://github.com/Conxian/conxian-gateway/issues/189). It does not authorize production integration, settlement, compliance, custody, or routing decisions. It records upstream claims separately from facts verified in this repository.
+
+**Current-source correction (2026-07-22):** use the canonical report for
+release/tag divergence, BitVMX-CPU `v0.5.11`/`v0.8.0` metadata, the
+Apache-2.0/README-MIT contradiction, garbled-verifier package/tag/license facts,
+the ARM64 and upstream blocker links, Bitcoin transaction block metadata, the
+cross-repository contract table, and the Phase 4 readiness scorecard. This file
+is retained for historical continuity and should not be read as a separate
+production-readiness decision.
 
 ## 1. Decision summary
 
@@ -66,7 +74,7 @@ The matrix records what the sources say. It is not an endorsement, compatibility
 | Artifact | Verified current role | Explicit non-claim |
 |---|---|---|
 | [`tools/bitvmx-eval/`](../../tools/bitvmx-eval/) and [`BITVMX_EVAL.md`](./BITVMX_EVAL.md) | Feature-gated, standalone subprocess evaluation of the pinned BitVMX-CPU CLI with bounded reports, exact revision sidecars, artifact limits, and fail-closed parsing. | Synthetic tests are harness-contract tests. The lane does not execute a production BitVMX protocol and never turns an evaluator result into `verified: true`. |
-| [`bitvm_adapter.rs`](../../internal/engine/src/bitcoin/bitvm_adapter.rs) | Parses and validates a BitVM Groth16 envelope, checks network and statement constraints, validates circuit/key association through the injected trait, and delegates to an injected backend. | The legacy `ChainAdapter::verify_state_proof` path is explicitly metadata-only. The adapter does not contain a pairing-based Groth16 backend. |
+| [`bitvm_adapter.rs`](../../internal/engine/src/bitcoin/bitvm_adapter.rs) | Parses and validates a BitVM Groth16 envelope, checks network and statement constraints, validates circuit/key association through the injected trait, and delegates to an injected backend. | The legacy `ChainAdapter::verify_state_proof` path is explicitly fail-closed with `VerifierUnavailable`. The adapter does not contain a pairing-based Groth16 backend. |
 | [`groth16_verifier.rs`](../../internal/engine/src/bitcoin/groth16_verifier.rs) | Defines the BN254 statement/hash contract, public-input/witness-commitment binding, circuit/key association, proof-envelope validation, and backend-neutral `Groth16Verifier`. | `MockGroth16Verifier` records deterministic fixture digests and performs no Groth16 pairings. The boundary is not cryptographic verification. |
 | [`UniversalVerifier`](../../internal/compliance/src/verifier.rs) | Delegates generic `verify_state_proof` calls to a chain-keyed `ChainAdapter` map and separately delegates compliance attestations to `CoreVerifier`. | It is not specially wired to a production Groth16 backend, BitVM3, BitVMX-GC, or a recursive SNARK implementation. |
 | Current lockfiles and manifests | `Cargo.lock` contains `ark-groth16` `0.5.0`, `risc0-groth16` `5.0.0-rc.1`, and `risc0-zkvm` `5.0.0-rc.1`; `internal/compliance/Cargo.toml` requests `risc0-zkvm = 5.0.0-rc.1`. | These are current repository dependency facts, not claims about upstream latest versions and not a recommendation to upgrade or wire them into #189. |
