@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use conxian_core::ConxianError;
+use conxian_core::{ChainAdapter, ConxianError};
 use conxian_engine::bitcoin::{
     compute_witness_commitment, parse_bitvm_groth16_envelope, witness_commitment_public_inputs,
     BitcoinBlockContext, BitcoinNetwork, FieldElement, Groth16Curve, Groth16Proof,
@@ -218,6 +218,25 @@ impl Groth16Verifier for InvalidResultVerifier {
     ) -> Result<(), VerificationError> {
         Ok(())
     }
+}
+
+#[tokio::test]
+async fn generic_bitvm_state_proof_is_unavailable_without_backend() {
+    let verifier = Arc::new(CountingVerifier::default());
+    let adapter = BitVmAdapter::with_verifier("regtest".to_owned(), Arc::clone(&verifier));
+
+    for metadata in [
+        json!({"root_hash": "0xabc123"}),
+        json!({"proof": {"a": "looks-like-a-proof"}, "verified": true}),
+        json!({}),
+    ] {
+        assert!(matches!(
+            adapter.verify_state_proof(metadata).await,
+            Err(ConxianError::VerifierUnavailable)
+        ));
+    }
+
+    assert_eq!(verifier.verify_calls.load(Ordering::SeqCst), 0);
 }
 
 #[tokio::test]
