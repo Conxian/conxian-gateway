@@ -256,9 +256,19 @@ multiplier or fee-model rewrite is justified by the current evidence.
 - `/metrics` exposes the same useful aggregates with bounded names and only
   closed status/strategy labels. It emits no txids, addresses, node IDs, route
   IDs, or free-form errors.
+- `FilePersistence` now serializes same-process reads and writes through the
+  shared backend, uses durable temporary-file plus atomic-rename replacement,
+  and cleans up failed temporary writes. The async telemetry handlers offload
+  blocking loads with `spawn_blocking`; route tests cover stable 503 failures
+  and unavailable metrics without fabricated aggregate zeros.
 - Pure aggregation tests cover status/empty semantics, attempt and strategy
   honesty, capability totals, last-updated derivation, deterministic serde, no
   mutation, bounded metric rendering, and authenticated route behavior.
+
+This persistence boundary is deliberately limited to same-process calls on a
+shared `FilePersistence` instance (with atomic replacement on the supported
+Unix deployment). It is not a multi-process transaction layer and does not
+make separate load-modify-save sequences transactional.
 
 This slice does **not** provide a Bitcoin Core or network mempool view, BIP-110
 validation or deployment detection, `estimatesmartfee` passthrough, block or

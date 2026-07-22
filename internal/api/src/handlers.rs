@@ -12,11 +12,12 @@ use axum::{
 use conxian_compliance::SovereignCommit;
 use conxian_core::{
     evaluate_trust_metadata_json, AttestationRequest, ConxianError, JobCardSettlementRequest,
-    SettlementEnvelope, SettlementProposal, TrustPolicyDecision,
+    Persistence, PersistentState, SettlementEnvelope, SettlementProposal, TrustPolicyDecision,
 };
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{info, warn};
 use uuid;
@@ -50,6 +51,13 @@ fn now_unix() -> u64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs()
+}
+
+async fn load_persisted_state(persistence: Arc<dyn Persistence>) -> Result<PersistentState, ()> {
+    tokio::task::spawn_blocking(move || persistence.load())
+        .await
+        .map_err(|_| ())?
+        .map_err(|_| ())
 }
 
 pub async fn get_health(State(state): State<AppState>) -> Json<Value> {
@@ -118,14 +126,14 @@ pub async fn get_metrics(State(state): State<AppState>) -> Json<Value> {
 pub async fn get_mempool_telemetry(
     State(state): State<AppState>,
 ) -> Result<Json<MempoolTelemetryResponse>, (StatusCode, Json<Value>)> {
-    let persistence = state.persistence.as_ref().ok_or_else(|| {
+    let persistence = state.persistence.clone().ok_or_else(|| {
         (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(json!({ "error": "tracked_mempool_state_not_configured" })),
         )
     })?;
 
-    let persisted = persistence.load().map_err(|_| {
+    let persisted = load_persisted_state(persistence).await.map_err(|_| {
         (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(json!({ "error": "tracked_mempool_state_unavailable" })),
@@ -138,9 +146,10 @@ pub async fn get_mempool_telemetry(
 }
 
 pub async fn get_prometheus_metrics(State(state): State<AppState>) -> Response<String> {
-    let s = state.shared.read().expect("lock poisoned");
-    let mut body = format!(
-        "# HELP conxian_requests_total Total API requests processed.\n\
+    let mut body = {
+        let s = state.shared.read().expect("lock poisoned");
+        format!(
+            "# HELP conxian_requests_total Total API requests processed.\n\
          # TYPE conxian_requests_total counter\n\
          conxian_requests_total {total}\n\
          # HELP conxian_health_requests_total Health check requests.\n\
@@ -188,33 +197,34 @@ pub async fn get_prometheus_metrics(State(state): State<AppState>) -> Response<S
          # HELP conxian_fx_aed_usd AED/USD exchange rate gauge.\n\
          # TYPE conxian_fx_aed_usd gauge\n\
          conxian_fx_aed_usd {aed}\n",
-        total = s.metrics.total_requests,
-        health = s.metrics.health_requests,
-        verify = s.metrics.verification_requests,
-        verify_ok = s.metrics.verification_success,
-        verify_fail = s.metrics.verification_failure,
-        trust_allow = s.metrics.trust_policy_allow,
-        trust_block = s.metrics.trust_policy_block,
-        stx = s.metrics.treasury_balance_stx,
-        btc = s.metrics.treasury_balance_btc,
-        btc_height = s.bitcoin.height,
-        stx_height = s.stacks.height,
-        syi = s.metrics.syi_index,
-        rmb = s.metrics.fx_rmb_usd,
-        rub = s.metrics.fx_rub_usd,
-        inr = s.metrics.fx_inr_usd,
-        aed = s.metrics.fx_aed_usd,
-    );
-    let (tracked_mempool, tracked_state_available) = match state.persistence.as_ref() {
-        Some(persistence) => match persistence.load() {
+            total = s.metrics.total_requests,
+            health = s.metrics.health_requests,
+            verify = s.metrics.verification_requests,
+            verify_ok = s.metrics.verification_success,
+            verify_fail = s.metrics.verification_failure,
+            trust_allow = s.metrics.trust_policy_allow,
+            trust_block = s.metrics.trust_policy_block,
+            stx = s.metrics.treasury_balance_stx,
+            btc = s.metrics.treasury_balance_btc,
+            btc_height = s.bitcoin.height,
+            stx_height = s.stacks.height,
+            syi = s.metrics.syi_index,
+            rmb = s.metrics.fx_rmb_usd,
+            rub = s.metrics.fx_rub_usd,
+            inr = s.metrics.fx_inr_usd,
+            aed = s.metrics.fx_aed_usd,
+        )
+    };
+    let (tracked_mempool, tracked_state_available) = match state.persistence.clone() {
+        Some(persistence) => match load_persisted_state(persistence).await {
             Ok(persisted) => (
                 Some(aggregate_tracked_mempool_transactions(
                     &persisted.mempool_pending_txs,
                 )),
                 true,
             ),
-            Err(error) => {
-                warn!("Tracked mempool telemetry load failed: {}", error);
+            Err(()) => {
+                warn!("Tracked mempool telemetry load failed");
                 (None, false)
             }
         },

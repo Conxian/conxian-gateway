@@ -52,6 +52,22 @@ impl Persistence for StaticPersistence {
     }
 }
 
+struct FailingPersistence;
+
+impl Persistence for FailingPersistence {
+    fn save(&self, _state: &PersistentState) -> conxian_core::ConxianResult<()> {
+        Err(conxian_core::ConxianError::Internal(
+            "backend-error-must-not-appear".to_string(),
+        ))
+    }
+
+    fn load(&self) -> conxian_core::ConxianResult<PersistentState> {
+        Err(conxian_core::ConxianError::Internal(
+            "backend-error-must-not-appear".to_string(),
+        ))
+    }
+}
+
 fn setup_app(state: SharedState) -> axum::Router {
     setup_app_with_lightning_and_persistence(state, new_lightning_adapter(), None)
 }
@@ -410,6 +426,156 @@ async fn test_mempool_telemetry_authorized_and_scoped() {
     assert_eq!(body["last_updated_at"], 120);
     assert!(!body.to_string().contains("tracked-txid-must-not-appear"));
     assert!(!body.to_string().contains("must-not-appear"));
+}
+
+#[tokio::test]
+async fn test_mempool_telemetry_missing_persistence_returns_stable_503() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/bitcoin/mempool/telemetry")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("x-402-payment", TEST_X402_PROOF)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(body["error"], "tracked_mempool_state_not_configured");
+}
+
+#[tokio::test]
+async fn test_mempool_telemetry_failing_persistence_returns_stable_503() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app_with_persistence(state, Arc::new(FailingPersistence));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/bitcoin/mempool/telemetry")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("x-402-payment", TEST_X402_PROOF)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body = String::from_utf8(body_bytes.to_vec()).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(parsed["error"], "tracked_mempool_state_unavailable");
+    assert!(!body.contains("backend-error-must-not-appear"));
+}
+
+#[tokio::test]
+async fn test_prometheus_metrics_persisted_telemetry_is_bounded_and_scoped() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let persistence = Arc::new(StaticPersistence {
+        state: PersistentState {
+            bitcoin_height: 0,
+            stacks_height: 0,
+            mempool_pending_txs: vec![
+                TrackedMempoolTx {
+                    txid: "metrics-txid-must-not-appear".to_string(),
+                    status: MempoolTxStatus::Pending,
+                    last_bump_strategy: Some(FeeBumpStrategy::Rbf),
+                    last_error: Some("metrics-error-must-not-appear".to_string()),
+                    replacement_txid: Some("replacement-must-not-appear".to_string()),
+                    ..TrackedMempoolTx::default()
+                },
+                TrackedMempoolTx {
+                    txid: "metrics-txid-two-must-not-appear".to_string(),
+                    status: MempoolTxStatus::Stuck,
+                    last_bump_strategy: Some(FeeBumpStrategy::Cpfp),
+                    ..TrackedMempoolTx::default()
+                },
+            ],
+        },
+    });
+    let app = setup_app_with_persistence(state, persistence);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/metrics")
+                .method("GET")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response
+            .headers()
+            .get("content-type")
+            .and_then(|value| value.to_str().ok()),
+        Some("text/plain; version=0.0.4")
+    );
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body = String::from_utf8(body_bytes.to_vec()).unwrap();
+
+    assert!(body.contains("conxian_gateway_tracked_mempool_state_available 1"));
+    assert!(body.contains("conxian_gateway_tracked_mempool_transactions 2"));
+    assert!(
+        body.contains("conxian_gateway_tracked_mempool_transactions_status{status=\"PENDING\"} 1")
+    );
+    assert!(
+        body.contains("conxian_gateway_tracked_mempool_transactions_status{status=\"STUCK\"} 1")
+    );
+    assert!(body.contains(
+        "conxian_gateway_tracked_mempool_last_bump_strategy_records{strategy=\"RBF\"} 1"
+    ));
+    assert!(body.contains(
+        "conxian_gateway_tracked_mempool_last_bump_strategy_records{strategy=\"CPFP\"} 1"
+    ));
+    assert!(!body.contains("metrics-txid-must-not-appear"));
+    assert!(!body.contains("metrics-txid-two-must-not-appear"));
+    assert!(!body.contains("metrics-error-must-not-appear"));
+    assert!(!body.contains("replacement-must-not-appear"));
+}
+
+#[tokio::test]
+async fn test_prometheus_metrics_unavailable_omits_aggregate_samples() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app_with_persistence(state, Arc::new(FailingPersistence));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/metrics")
+                .method("GET")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body = String::from_utf8(body_bytes.to_vec()).unwrap();
+
+    assert!(body.contains("conxian_gateway_tracked_mempool_state_available 0"));
+    assert!(!body
+        .lines()
+        .any(|line| line.starts_with("conxian_gateway_tracked_mempool_transactions ")));
+    assert!(!body
+        .lines()
+        .any(|line| { line.starts_with("conxian_gateway_tracked_mempool_transactions_status{") }));
+    assert!(!body.lines().any(|line| {
+        line.starts_with("conxian_gateway_tracked_mempool_last_bump_strategy_records{")
+    }));
+    assert!(!body.contains("backend-error-must-not-appear"));
 }
 
 #[tokio::test]
