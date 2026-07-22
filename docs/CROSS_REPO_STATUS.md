@@ -1,6 +1,6 @@
 # Cross-Repository Status Dashboard
 
-**Last Updated:** 2026-07-21
+**Last Updated:** 2026-07-22
 **Sprint:** W29 (2026-07-15 to 2026-07-25)  
 **Maintained By:** Agent sessions
 
@@ -12,7 +12,7 @@
 | Repository | Production Path | Last Session | W29 Status |
 |------------|-----------------|--------------|------------|
 | **conxian-nexus** | main (Mainnet) | ⏳ Not reviewed | - |
-| **conxian-gateway** | main (Mainnet) | 2026-07-21 ⚠️ | ⚠️ #189 evaluator merged; BitVM3/GC research only; #219 boundary on main, cryptographic backend open |
+| **conxian-gateway** | main (Mainnet) | 2026-07-22 | #189 remains research-only; BitVM3/GC are not integrated; #216/#219 implementation boundaries are merged, while cryptographic BitVM/Groth16 backends remain open |
 
 ### Layer 2: User & Application Surface
 | Repository | Production Path | Last Session | W29 Status |
@@ -74,16 +74,26 @@ lib-conclave-sdk  ←  shares types with SDK (L3)
 | # | Issue | Status |
 |---|-------|--------|
 | #236 SDK | Version drift + README | ✅ Fixed (0.1.4, Developer Preview) |
-| #220 DLC CET | Research/API gate before CET implementation | ⚠️ HTTP oracle scaffold only; no cryptographic attestation verification, DLC dependency, funding/CET/refund builder, or real bond construction. See [`DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md`](research/DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md). |
-| #219 Groth16 | Verifier boundary | 🟡 Canonical contract, commitment binding, fixture, and BitVM handoff are on `main`; no production cryptographic backend |
-| #216 Babylon | BTC header SPV | 🟡 Implemented on PR #253 (`feat/216-babylon-header-chain`); pending review/merge |
+| #220 DLC CET | Research/API gate before CET implementation | ⚠️ HTTP oracle/event/key/outcome scaffold only; no cryptographic announcement/attestation verification, DLC dependency, funding/CET/refund/adaptor-signature construction, or real bond construction. UUID/mock bond IDs only. See [`DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md`](research/DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md). |
+| #219 Groth16 | Verifier boundary | ✅ Canonical contract, commitment binding, fixture, and BitVM handoff merged in PR #255; no production cryptographic backend |
+| #216 Babylon | BTC header SPV | ✅ Header-chain retrieval and bounded verification merged in PR #253; EOTS/finality extensions remain separate |
 
-**#189 / #219 current status (2026-07-21):**
+**#189 / #216 / #219 current status (2026-07-22):**
 
 - ✅ PR #259 merged the isolated, feature-gated BitVMX-CPU evaluator and its research-only contract tests.
-- 📄 The current evidence record is [`docs/research/BITVM3_BITVMX_RESEARCH_EXPANSION.md`](research/BITVM3_BITVMX_RESEARCH_EXPANSION.md).
+- The canonical evidence and cross-repository triage record is [`docs/research/BITVM3_BITVMX_EVIDENCE_AND_TRIAGE_2026-07-22.md`](research/BITVM3_BITVMX_EVIDENCE_AND_TRIAGE_2026-07-22.md); the prior expansion remains the historical evidence record.
 - 🔬 BitVM3, BitVMX-GC, and GOATNetwork/`bitvm2-gc` remain research/reference topics; no production BitVM3 or garbled-circuit adapter is present.
 - 🟡 The Groth16 boundary is backend-neutral. The injected verifier/mock is not cryptographic Groth16 verification, and no production cryptographic verifier or settlement adapter is wired.
+- PR #253 closed the #216 implementation gap and PR #255 closed the #219 boundary milestone; neither is a BitVM3/GC backend or production pairing implementation.
+
+**#189 cross-repository triage (2026-07-22):**
+
+- [conxius-platform #1187](https://github.com/Conxian/conxius-platform/issues/1187) — open P0: simulation defaults must be replaced or quarantined.
+- [conxian-nexus #169](https://github.com/Conxian/conxian-nexus/issues/169) — open P1: bind real Arkworks verification to canonical BitVM state-transition semantics.
+- [conxius-wallet #427](https://github.com/Conxian/conxius-wallet/issues/427) — open P1: quarantine simulation success paths.
+- [Conxian/.github #41](https://github.com/Conxian/.github/issues/41) — open P2: qualify mixed readiness claims with implementation evidence.
+- [lib-conxian-core #188](https://github.com/Conxian/lib-conxian-core/issues/188) — open: preserve fail-closed structural/protocol boundaries.
+- [conxius-enclave-sdk #202](https://github.com/Conxian/conxius-enclave-sdk/issues/202) — open P0: complete independent security/release acceptance evidence.
 
 **Historical DLC commits:**
 - `453a15a` attempted the W29 P0 implementation, including `dlc_cet.rs` and `dlc-manager`.
@@ -98,11 +108,11 @@ The next checkpoint compares pinned upstream `rust-dlc v0.8.0` and DDK
 `v1.1.2` in isolation; it does not authorize a dependency addition or a
 mainnet claim.
 
-**Babylon #216 status (2026-07-20):** PR #253 carries the BTC header-chain
-query and verification implementation. Until that PR is merged, the
-main-branch `babylon_adapter.rs` remains the stub that returned `0` without a
-Bitcoin RPC and did not verify raw header hashes or parent links. Issue #216 is
-not claimed merged or closed by this status entry.
+**Babylon #216 status (2026-07-22; supersedes the pending note below):** PR #253
+merged the BTC header-chain query and bounded verification implementation. The
+current `babylon_adapter.rs` has Bitcoin RPC-backed tip/mainchain queries,
+header parsing, parent-link and cumulative-work checks, and bounded traversal.
+EOTS, full Babylon finality, and other non-goals remain separate.
 
 **Liquid #218/#193 status (2026-07-20):**
 
@@ -122,6 +132,10 @@ not claimed merged or closed by this status entry.
 ---
 
 ## Session History
+
+> **Supersession note (2026-07-22):** The historical rows below preserve the
+> state recorded before PRs #253, #255, and #267 merged. The current status
+> sections above are authoritative for #216, #219, and #189.
 
 | Date | Repository | Session Summary |
 |------|------------|-----------------|
@@ -157,9 +171,9 @@ Before starting work on any repo, verify:
 ### P1-P3 Issues (Future Sprints)
 - #222 CI/CD coverage threshold
 - #218/#193 Liquid harness ✅ host-daemon harness merged; PR #258 hardening follow-up open; production proof backend unwired
-- #189 BitVM3/BitVMX research monitoring; evaluator merged in PR #259, no production GC or cryptographic verifier
+- #189 BitVM3/BitVMX research monitoring; canonical evidence/triage refresh in `docs/research/BITVM3_BITVMX_EVIDENCE_AND_TRIAGE_2026-07-22.md`; no production GC or cryptographic verifier
 
 ---
 
 *This file is auto-maintained by agent sessions.*
-*Last Major Update: 2026-07-21 (W29 #189 evaluator status and Groth16 boundary updated; #216 PR #253 pending merge)*
+*Last Major Update: 2026-07-22 (W29 #189 evidence/triage refresh; #216 PR #253 and #219 PR #255 merged)*
