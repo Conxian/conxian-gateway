@@ -10,25 +10,35 @@ on:
 permissions:
   contents: read
 
+env:
+  RUST_TOOLCHAIN: 1.96.0
+  CARGO_LLVM_COV_VERSION: 0.8.7
+
 jobs:
   lightning-coverage:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
         with:
-          toolchain: 1.96.0
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
           components: rustfmt, clippy
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.7.7
 
       - name: Install cargo-llvm-cov
-        run: cargo install cargo-llvm-cov
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v cargo-llvm-cov >/dev/null 2>&1 || ! cargo llvm-cov --version | grep -Eq "^cargo-llvm-cov ${CARGO_LLVM_COV_VERSION}( |$)"; then
+            cargo install cargo-llvm-cov --version "${CARGO_LLVM_COV_VERSION}" --locked --force
+          fi
+          cargo llvm-cov --version | grep -Eq "^cargo-llvm-cov ${CARGO_LLVM_COV_VERSION}( |$)"
 
       - name: Install llvm-tools-preview
         run: rustup component add llvm-tools-preview
@@ -53,7 +63,7 @@ jobs:
 
       - name: Upload Lightning coverage artifact
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4.6.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: lightning-coverage-reports
           path: target/lightning-coverage

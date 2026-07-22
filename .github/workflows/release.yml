@@ -7,181 +7,717 @@ on:
   workflow_dispatch:
     inputs:
       release_version:
-        description: 'Release version (X.Y.Z or vX.Y.Z)'
+        description: 'Confirm the tag version (X.Y.Z or vX.Y.Z)'
         required: true
         type: string
       publish_to_crates_io:
-        description: 'Publish to crates.io after validation (manual only)'
+        description: 'Publish gateway to crates.io after the GitHub release (manual gate)'
         required: true
         default: false
         type: boolean
 
 permissions:
-  contents: write
-  id-token: write
-  attestations: write
+  contents: read
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
+env:
+  TARGET_TRIPLE: x86_64-unknown-linux-gnu
+  RUST_TOOLCHAIN: 1.96.0
+  NODE_VERSION: '24'
+  PNPM_VERSION: 10.28.1
+  CARGO_AUDIT_VERSION: 0.22.2
+  CARGO_LLVM_COV_VERSION: 0.8.7
+  GITLEAKS_VERSION: 8.30.1
+  GITLEAKS_CHECKSUMS_SHA256: 061476c21adaf5441516f96f185c1a4706a83cd6329b9b38762271b3d4a52fae
+  GITLEAKS_ARCHIVE_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+
 jobs:
-  create-release:
-    name: Create GitHub Release
+  release-identity:
+    name: Validate release tag and main ancestry
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.value }}
+      tag: ${{ steps.version.outputs.tag }}
+      commit: ${{ steps.identity.outputs.commit }}
+      main-commit: ${{ steps.identity.outputs.main-commit }}
     steps:
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@c95fe1489396fe8a2187f5ba5127f311e0e29080 # v2.0.6
+      - name: Checkout release tag with full history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          generate_release_notes: true
-          body: |
-            Automated release for `${{ github.ref_name }}`.
+          fetch-depth: 0
+          ref: ${{ github.ref }}
+          # This job needs the read-only checkout token for the explicit main
+          # history fetch below; all later jobs disable credential persistence.
+          persist-credentials: true
 
-            See [CHANGELOG.md](${{ github.server_url }}/${{ github.repository }}/blob/${{ github.ref_name }}/CHANGELOG.md) for full release notes.
+      - name: Determine and validate release tag
+        id: version
+        shell: bash
+        env:
+          RELEASE_VERSION_INPUT: ${{ inputs.release_version }}
+        run: |
+          set -euo pipefail
 
-  validate-release:
-    name: Validate release metadata and package
+          if [[ "${GITHUB_REF_TYPE}" != "tag" ]]; then
+            echo "error: release workflows must run from a tag; selected ref is ${GITHUB_REF}" >&2
+            exit 1
+          fi
+          if [[ ! "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "error: release tag must match vMAJOR.MINOR.PATCH; got ${GITHUB_REF_NAME}" >&2
+            exit 1
+          fi
+
+          tag_version="${GITHUB_REF_NAME#v}"
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            input_version="${RELEASE_VERSION_INPUT#v}"
+            if [[ "${input_version}" != "${tag_version}" ]]; then
+              echo "error: release_version input ${RELEASE_VERSION_INPUT} does not match tag ${GITHUB_REF_NAME}" >&2
+              exit 1
+            fi
+          fi
+
+          printf 'value=%s\n' "${tag_version}" >> "${GITHUB_OUTPUT}"
+          printf 'tag=%s\n' "${GITHUB_REF_NAME}" >> "${GITHUB_OUTPUT}"
+
+      - name: Verify exact tag commit and reviewed main ancestry
+        id: identity
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git fetch --force --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
+          tag_commit="$(git rev-parse "${GITHUB_REF_NAME}^{commit}")"
+          main_commit="$(git rev-parse 'refs/remotes/origin/main^{commit}')"
+
+          if [[ "${tag_commit}" != "${GITHUB_SHA}" ]]; then
+            echo "error: tag ${GITHUB_REF_NAME} resolves to ${tag_commit}, expected ${GITHUB_SHA}" >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "${tag_commit}" "${main_commit}"; then
+            echo "error: release tag ${GITHUB_REF_NAME} points to ${tag_commit}, which is not in origin/main history at ${main_commit}" >&2
+            echo "Create release tags only from reviewed commits reachable from main; arbitrary tag commits are rejected." >&2
+            exit 1
+          fi
+          test -f CHANGELOG.md
+
+          printf 'commit=%s\n' "${tag_commit}" >> "${GITHUB_OUTPUT}"
+          printf 'main-commit=%s\n' "${main_commit}" >> "${GITHUB_OUTPUT}"
+
+  baseline-rust:
+    name: Baseline Rust, contamination, and verifier tests
+    needs: release-identity
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
-      - name: Checkout
+      - name: Checkout exact release commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
+          fetch-depth: 1
+          ref: ${{ needs.release-identity.outputs.commit }}
+          persist-credentials: false
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # stable
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
         with:
-          toolchain: stable
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: rustfmt, clippy
 
-      - name: Determine version
-        id: version
+      - name: Run Rust release baseline
         shell: bash
         run: |
-          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
-            echo "value=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
-          else
-            echo "value=${{ inputs.release_version }}" >> "$GITHUB_OUTPUT"
-          fi
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+          cargo test --workspace --locked
+          cargo test --workspace --features mock-integrations --locked
+          python3 scripts/verify_contamination_guard.py
+          python3 -m unittest discover -s tests -p 'test_*.py'
 
-      - name: Validate version matches Cargo.toml
-        shell: bash
-        run: |
-          version="${{ steps.version.outputs.value }}"
-          version="${version#v}"
-          cargo_version=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
-          if [[ "${version}" != "${cargo_version}" ]]; then
-            echo "error: tag version ${version} != Cargo.toml version ${cargo_version}" >&2
-            exit 1
-          fi
-          echo "Version ${version} matches Cargo.toml"
-
-      - name: Run tests
-        run: cargo test --locked
-
-      - name: Verify crates.io package (dry-run)
-        run: cargo publish --dry-run
-
-  sbom-and-provenance:
-    name: SBOM Generation & Build Provenance
-    needs: validate-release
+  baseline-node:
+    name: Baseline Node build and tests
+    needs: release-identity
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      id-token: write
-      attestations: write
+      contents: read
     steps:
-      - name: Checkout
+      - name: Checkout exact release commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          ref: ${{ needs.release-identity.outputs.commit }}
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Run Node release baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile
+          test "$(pnpm exec tsc --version)" = "Version 7.0.2"
+          test "$(pnpm --filter control-plane exec tsc --version)" = "Version 7.0.2"
+          test "$(pnpm --filter @conxian/client-sdk exec tsc --version)" = "Version 7.0.2"
+          test "$(pnpm --filter @conxian/schemas exec tsc --version)" = "Version 7.0.2"
+          test "$(pnpm --filter @conxian/developer-sandbox exec tsc --version)" = "Version 7.0.2"
+          test "$(pnpm --filter control-plane exec node -p 'require("@typescript/native/package.json").name')" = "typescript"
+          test "$(pnpm --filter control-plane exec node -p 'require("@typescript/native/package.json").version')" = "7.0.2"
+          test "$(pnpm --filter control-plane exec node -p 'require("typescript/package.json").name')" = "@typescript/typescript6"
+          test "$(pnpm --filter control-plane exec node -p 'require("typescript/package.json").version')" = "6.0.2"
+          pnpm --filter control-plane exec tsc6 --version | grep -Eq '^Version 6\.'
+          pnpm typecheck
+          pnpm lint
+          pnpm build
+          pnpm --filter control-plane exec playwright install --with-deps
+          pnpm test
+
+  baseline-cargo-audit:
+    name: Baseline Cargo audit
+    needs: release-identity
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          ref: ${{ needs.release-identity.outputs.commit }}
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - name: Cache exact cargo-audit version
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cargo/bin/cargo-audit
+          key: ${{ runner.os }}-cargo-audit-${{ env.CARGO_AUDIT_VERSION }}-${{ env.RUST_TOOLCHAIN }}
+
+      - name: Install and verify cargo-audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v cargo-audit >/dev/null 2>&1 || ! cargo-audit --version | grep -Eq "^cargo-audit ${CARGO_AUDIT_VERSION}( |$)"; then
+            cargo install cargo-audit --version "${CARGO_AUDIT_VERSION}" --locked --force
+          fi
+          cargo-audit --version | grep -Eq "^cargo-audit ${CARGO_AUDIT_VERSION}( |$)"
+
+      - name: Run Cargo audit
+        run: cargo audit
+
+  baseline-secret-scan:
+    name: Baseline secret scan
+    needs: release-identity
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          ref: ${{ needs.release-identity.outputs.commit }}
+          persist-credentials: false
+
+      - name: Download and verify pinned Gitleaks archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          tmpdir="$(mktemp -d)"
+          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          checksums="gitleaks_${GITLEAKS_VERSION}_checksums.txt"
+          base_url="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
+
+          curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location --retry 3 \
+            --output "${tmpdir}/${archive}" "${base_url}/${archive}"
+          curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location --retry 3 \
+            --output "${tmpdir}/${checksums}" "${base_url}/${checksums}"
+
+          printf '%s  %s\n' "${GITLEAKS_CHECKSUMS_SHA256}" "${checksums}" \
+            | (cd "${tmpdir}" && sha256sum --check --strict -)
+          test "$(grep -F -c "  ${archive}" "${tmpdir}/${checksums}")" = 1
+          archive_digest="$(awk -v file="${archive}" '$2 == file { print $1 }' "${tmpdir}/${checksums}")"
+          test "${archive_digest}" = "${GITLEAKS_ARCHIVE_SHA256}"
+          printf '%s  %s\n' "${archive_digest}" "${archive}" \
+            | (cd "${tmpdir}" && sha256sum --check --strict -)
+
+          tar --extract --gzip --file "${tmpdir}/${archive}" --directory "${tmpdir}" \
+            --no-same-owner --no-same-permissions gitleaks
+          "${tmpdir}/gitleaks" version | grep -F "${GITLEAKS_VERSION}"
+          printf 'Gitleaks %s verified from the official checksum manifest\n' "${GITLEAKS_VERSION}"
+
+          printf 'GITLEAKS_BIN=%s/gitleaks\n' "${tmpdir}" >> "${GITHUB_ENV}"
+
+      - name: Run Gitleaks scan
+        run: |
+          set -euo pipefail
+          "${GITLEAKS_BIN}" detect --source . --verbose --redact --no-git --config .gitleaks.toml
+
+  baseline-lightning:
+    name: Baseline Lightning coverage
+    needs: release-identity
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          ref: ${{ needs.release-identity.outputs.commit }}
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: llvm-tools-preview
+
+      - name: Cache exact cargo-llvm-cov version
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cargo/bin/cargo-llvm-cov
+          key: ${{ runner.os }}-cargo-llvm-cov-${{ env.CARGO_LLVM_COV_VERSION }}-${{ env.RUST_TOOLCHAIN }}
+
+      - name: Install and verify cargo-llvm-cov
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v cargo-llvm-cov >/dev/null 2>&1 || ! cargo llvm-cov --version | grep -Eq "^cargo-llvm-cov ${CARGO_LLVM_COV_VERSION}( |$)"; then
+            cargo install cargo-llvm-cov --version "${CARGO_LLVM_COV_VERSION}" --locked --force
+          fi
+          cargo llvm-cov --version | grep -Eq "^cargo-llvm-cov ${CARGO_LLVM_COV_VERSION}( |$)"
+
+      - name: Enforce Lightning scoped coverage gate
+        run: ./scripts/lightning_coverage_gate.sh 90
+
+  package-release:
+    name: Build and package verified release
+    needs:
+      - release-identity
+      - baseline-rust
+      - baseline-node
+      - baseline-cargo-audit
+      - baseline-secret-scan
+      - baseline-lightning
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ needs.release-identity.outputs.version }}
+      tag: ${{ needs.release-identity.outputs.tag }}
+      commit: ${{ needs.release-identity.outputs.commit }}
+      target: ${{ steps.package.outputs.target }}
+    steps:
+      - name: Checkout exact release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          ref: ${{ needs.release-identity.outputs.commit }}
+          persist-credentials: false
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # stable
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
         with:
-          toolchain: stable
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: rustfmt, clippy
 
-      - name: Install cargo-cyclonedx
-        uses: taiki-e/install-action@a10e8e2f7505ee00d2e49d38b5957de6bbb647b1 # v2
+      - name: Validate workspace package versions
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.release-identity.outputs.version }}
+        run: |
+          set -euo pipefail
+          cargo metadata --locked --format-version 1 --no-deps > "${RUNNER_TEMP}/cargo-metadata.json"
+          python3 - "${RUNNER_TEMP}/cargo-metadata.json" "${RELEASE_VERSION}" <<'PY'
+          import json
+          import sys
+
+          metadata_path, release_version = sys.argv[1:]
+          with open(metadata_path, encoding="utf-8") as stream:
+              metadata = json.load(stream)
+          packages = metadata["packages"]
+          gateway = next((package for package in packages if package["name"] == "gateway"), None)
+          if gateway is None:
+              raise SystemExit("error: cargo metadata did not contain the gateway package")
+          if gateway["version"] != release_version:
+              raise SystemExit(
+                  f"error: gateway package is {gateway['version']}, expected {release_version}"
+              )
+          mismatches = [
+              f"{package['name']}={package['version']}"
+              for package in packages
+              if package["version"] != release_version
+          ]
+          if mismatches:
+              raise SystemExit(
+                  "error: workspace package versions do not match the release: "
+                  + ", ".join(mismatches)
+              )
+          print(f"workspace package versions match {release_version}")
+          PY
+
+      - name: Install target
+        run: rustup target add "${TARGET_TRIPLE}"
+
+      - name: Build production Gateway binary
+        id: package
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.release-identity.outputs.version }}
+          RELEASE_COMMIT: ${{ needs.release-identity.outputs.commit }}
+        run: |
+          set -euo pipefail
+
+          cargo build --locked --release --package gateway --bin gateway --target "${TARGET_TRIPLE}"
+          binary="target/${TARGET_TRIPLE}/release/gateway"
+          test -s "${binary}"
+
+          stage_root="${RUNNER_TEMP}/conxian-gateway-${RELEASE_VERSION}-${TARGET_TRIPLE}"
+          rm -rf release-assets "${stage_root}"
+          mkdir -p "${stage_root}" release-assets
+          install -m 0755 "${binary}" "${stage_root}/gateway"
+          printf '%s\n' \
+            "artifact=conxian-gateway" \
+            "version=${RELEASE_VERSION}" \
+            "target=${TARGET_TRIPLE}" \
+            "commit=${RELEASE_COMMIT}" \
+            "toolchain=${RUST_TOOLCHAIN}" \
+            'source-date-epoch=0' \
+            > "${stage_root}/RELEASE-METADATA.txt"
+
+          archive="release-assets/conxian-gateway-${RELEASE_VERSION}-${TARGET_TRIPLE}.tar.gz"
+          tar --format=ustar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner --blocking-factor=1 \
+            -C "${RUNNER_TEMP}" -cf - "conxian-gateway-${RELEASE_VERSION}-${TARGET_TRIPLE}" \
+            | gzip -n > "${archive}"
+          test -s "${archive}"
+          printf 'target=%s\n' "${TARGET_TRIPLE}" >> "${GITHUB_OUTPUT}"
+
+      - name: Install pinned CycloneDX generator
+        uses: taiki-e/install-action@c44f6b046f1c29ae5918b1e0bfdbb2f1813836fd # v2.84.1
         with:
-          tool: cargo-cyclonedx
+          tool: cargo-cyclonedx@0.5.9
+          fallback: none
 
-      - name: Generate SBOM (CycloneDX)
+      - name: Generate and normalize CycloneDX SBOM
         shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.release-identity.outputs.version }}
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          cargo cyclonedx --all --spec-version 1.5 \
-            --output-format json \
-            --override-name conxian-gateway \
-            --override-version "${VERSION}" \
-            -f sbom.cdx.json || true
-          if [ -f sbom.cdx.json ]; then
-            echo "SBOM generated: $(wc -c < sbom.cdx.json) bytes"
-          else
-            echo "::warning::SBOM generation skipped (cargo-cyclonedx may not support workspace)"
-            echo '{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}' > sbom.cdx.json
-          fi
+          set -euo pipefail
 
-      - name: Generate dependency graph (SBOM alternate)
+          find cmd internal pkg -type f -name "conxian-gateway-${RELEASE_VERSION}.json" -delete
+          SOURCE_DATE_EPOCH=0 cargo cyclonedx \
+            --manifest-path cmd/gateway/Cargo.toml \
+            --all \
+            --format json \
+            --spec-version 1.5 \
+            --override-filename "conxian-gateway-${RELEASE_VERSION}" \
+            --target "${TARGET_TRIPLE}" \
+            --quiet
+
+          generated="cmd/gateway/conxian-gateway-${RELEASE_VERSION}.json"
+          test -s "${generated}"
+          python3 scripts/normalize_release_sbom.py \
+            --input "${generated}" \
+            --output "release-assets/conxian-gateway-${RELEASE_VERSION}.cdx.json" \
+            --workspace-root "${GITHUB_WORKSPACE}" \
+            --version "${RELEASE_VERSION}" \
+            --target "${TARGET_TRIPLE}"
+          find cmd internal pkg -type f -name "conxian-gateway-${RELEASE_VERSION}.json" -delete
+
+      - name: Create checksum manifest
         shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.release-identity.outputs.version }}
         run: |
-          cargo metadata --format-version=1 --no-deps > cargo-metadata.json
-          echo "Dependency metadata generated"
+          set -euo pipefail
+          archive="conxian-gateway-${RELEASE_VERSION}-${TARGET_TRIPLE}.tar.gz"
+          sbom="conxian-gateway-${RELEASE_VERSION}.cdx.json"
+          checksums="conxian-gateway-${RELEASE_VERSION}.sha256"
+          (
+            cd release-assets
+            sha256sum "${archive}" "${sbom}" > "${checksums}"
+            LC_ALL=C sort -k2,2 "${checksums}" -o "${checksums}"
+          )
 
-      - name: Attest build provenance (SLSA L3)
-        uses: actions/attest-build-provenance@5d9a45e741f13da0d7ded04c3e32c7e52c7e0d0b # v2.2.3
+      - name: Verify packaged release artifacts
+        env:
+          RELEASE_VERSION: ${{ needs.release-identity.outputs.version }}
+          RELEASE_COMMIT: ${{ needs.release-identity.outputs.commit }}
+        run: |
+          python3 scripts/verify_release_artifacts.py \
+            --directory release-assets \
+            --version "${RELEASE_VERSION}" \
+            --target "${TARGET_TRIPLE}" \
+            --expected-commit "${RELEASE_COMMIT}" \
+            --cargo-metadata "${RUNNER_TEMP}/cargo-metadata.json"
+
+      - name: Upload immutable release artifact set
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-assets
+          path: release-assets
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+  attest-release:
+    name: Attest exact release subjects
+    needs: package-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    outputs:
+      attestation-url: ${{ steps.provenance.outputs.attestation-url }}
+    steps:
+      - name: Checkout exact release commit for verification
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          ref: ${{ needs.package-release.outputs.commit }}
+          persist-credentials: false
+
+      - name: Install Rust toolchain for locked metadata verification
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - name: Capture locked Cargo workspace metadata
+        shell: bash
+        run: cargo metadata --locked --format-version 1 --no-deps > "${RUNNER_TEMP}/cargo-metadata.json"
+
+      - name: Prepare clean artifact directories
+        run: rm -rf release-assets release-provenance && mkdir -p release-assets release-provenance
+
+      - name: Download immutable release artifact set
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-assets
+          path: release-assets
+          digest-mismatch: error
+
+      - name: Reverify exact release artifact set before attestation
+        env:
+          RELEASE_VERSION: ${{ needs.package-release.outputs.version }}
+          RELEASE_COMMIT: ${{ needs.package-release.outputs.commit }}
+        run: |
+          python3 scripts/verify_release_artifacts.py \
+            --directory release-assets \
+            --version "${RELEASE_VERSION}" \
+            --target "${TARGET_TRIPLE}" \
+            --expected-commit "${RELEASE_COMMIT}" \
+            --cargo-metadata "${RUNNER_TEMP}/cargo-metadata.json"
+
+      - name: Generate SLSA build provenance for shipped subjects
+        id: provenance
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
         with:
           subject-path: |
-            sbom.cdx.json
-            cargo-metadata.json
+            release-assets/*.tar.gz
+            release-assets/*.sha256
+            release-assets/*.cdx.json
 
-      - name: Upload SBOM to release
+      - name: Require durable attestation record
         shell: bash
-        run: |
-          RELEASE_TAG="${GITHUB_REF_NAME}"
-          gh release upload "${RELEASE_TAG}" sbom.cdx.json cargo-metadata.json \
-            --repo "${GITHUB_REPOSITORY}" \
-            --clobber
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ATTESTATION_URL: ${{ steps.provenance.outputs.attestation-url }}
+        run: |
+          set -euo pipefail
+          test -n "${ATTESTATION_URL}"
+
+      - name: Preserve provenance bundle for release download
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.package-release.outputs.version }}
+          BUNDLE_PATH: ${{ steps.provenance.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+          test -s "${BUNDLE_PATH}"
+          cp "${BUNDLE_PATH}" \
+            "release-provenance/conxian-gateway-${RELEASE_VERSION}.provenance.json"
+
+      - name: Upload provenance bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-provenance
+          path: release-provenance/*.provenance.json
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+  create-release:
+    name: Publish verified GitHub Release
+    needs:
+      - package-release
+      - attest-release
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout exact release commit for publication checks
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          ref: ${{ needs.package-release.outputs.commit }}
+          persist-credentials: false
+
+      - name: Install Rust toolchain for locked metadata verification
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - name: Capture locked Cargo workspace metadata
+        shell: bash
+        run: cargo metadata --locked --format-version 1 --no-deps > "${RUNNER_TEMP}/cargo-metadata.json"
+
+      - name: Prepare clean artifact directories
+        run: rm -rf release-assets release-provenance && mkdir -p release-assets release-provenance
+
+      - name: Download verified release assets
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-assets
+          path: release-assets
+          digest-mismatch: error
+
+      - name: Download verified provenance bundle
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-provenance
+          path: release-provenance
+          digest-mismatch: error
+
+      - name: Recheck exact files before publication
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.package-release.outputs.version }}
+          EXPECTED_COMMIT: ${{ needs.package-release.outputs.commit }}
+        run: |
+          set -euo pipefail
+          test "${GITHUB_SHA}" = "${EXPECTED_COMMIT}"
+          python3 scripts/verify_release_artifacts.py \
+            --directory release-assets \
+            --version "${RELEASE_VERSION}" \
+            --target "${TARGET_TRIPLE}" \
+            --expected-commit "${EXPECTED_COMMIT}" \
+            --cargo-metadata "${RUNNER_TEMP}/cargo-metadata.json"
+          test -s "release-provenance/conxian-gateway-${RELEASE_VERSION}.provenance.json"
+
+      - name: Recheck remote release tag immediately before GitHub Release
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.package-release.outputs.tag }}
+          EXPECTED_COMMIT: ${{ needs.package-release.outputs.commit }}
+        run: |
+          set -euo pipefail
+          python3 scripts/verify_remote_tag.py \
+            --repository "${GITHUB_REPOSITORY}" \
+            --tag "${RELEASE_TAG}" \
+            --expected-commit "${EXPECTED_COMMIT}"
+
+      - name: Create and publish GitHub Release
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        with:
+          tag_name: ${{ needs.package-release.outputs.tag }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          overwrite_files: false
+          files: |
+            release-assets/*.tar.gz
+            release-assets/*.sha256
+            release-assets/*.cdx.json
+            release-provenance/*.provenance.json
+          body: |
+            Automated release for `${{ needs.package-release.outputs.tag }}`.
+
+            This release was built from `${{ needs.package-release.outputs.commit }}` for `${{ needs.package-release.outputs.target }}`.
+
+            Published assets include the production Gateway archive, SHA-256 manifest, CycloneDX 1.5 SBOM, and the signed provenance bundle. The GitHub artifact-attestation summary is available at [the attestation record](${{ needs.attest-release.outputs.attestation-url }}).
+
+            See [CHANGELOG.md](${{ github.server_url }}/${{ github.repository }}/blob/${{ needs.package-release.outputs.tag }}/CHANGELOG.md) for full release notes.
 
   publish-crates-io:
-    name: Publish to crates.io (manual gate)
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_to_crates_io }}
-    needs: validate-release
+    name: Publish Gateway to crates.io (manual environment gate)
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_to_crates_io == true }}
+    needs:
+      - package-release
+      - create-release
     runs-on: ubuntu-latest
     environment: release
     permissions:
       contents: read
     steps:
-      - name: Checkout
+      - name: Checkout exact release commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          ref: ${{ needs.package-release.outputs.commit }}
+          persist-credentials: false
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # stable
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
         with:
-          toolchain: stable
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
 
-      - name: Enforce publish from tag
+      - name: Verify publish identity
         shell: bash
+        env:
+          EXPECTED_COMMIT: ${{ needs.package-release.outputs.commit }}
         run: |
-          if [[ "${GITHUB_REF_TYPE}" != "tag" ]]; then
-            echo "error: publishing allowed only from a release tag" >&2
-            exit 1
-          fi
+          set -euo pipefail
+          test "${GITHUB_REF_TYPE}" = tag
+          test "$(git rev-parse HEAD)" = "${EXPECTED_COMMIT}"
 
-      - name: Verify CARGO_REGISTRY_TOKEN
+      - name: Verify crates.io package before reading secret
+        run: cargo publish --dry-run --locked --package gateway
+
+      - name: Verify CARGO_REGISTRY_TOKEN in release environment
         shell: bash
         env:
           TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
+          set -euo pipefail
           if [[ -z "${TOKEN}" ]]; then
-            echo "error: CARGO_REGISTRY_TOKEN not set in release environment" >&2
+            echo "error: CARGO_REGISTRY_TOKEN is not configured in the protected release environment" >&2
             exit 1
           fi
 
-      - name: Publish to crates.io
+      - name: Recheck remote release tag immediately before crates.io publication
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.package-release.outputs.tag }}
+          EXPECTED_COMMIT: ${{ needs.package-release.outputs.commit }}
+        run: |
+          set -euo pipefail
+          python3 scripts/verify_remote_tag.py \
+            --repository "${GITHUB_REPOSITORY}" \
+            --tag "${RELEASE_TAG}" \
+            --expected-commit "${EXPECTED_COMMIT}"
+
+      - name: Publish Gateway to crates.io
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: cargo publish --token "${CARGO_REGISTRY_TOKEN}"
+        run: cargo publish --locked --package gateway

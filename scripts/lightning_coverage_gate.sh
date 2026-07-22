@@ -8,7 +8,7 @@ JSON_REPORT="$OUTPUT_DIR/llvm-cov.json"
 mkdir -p "$OUTPUT_DIR"
 
 if ! cargo llvm-cov --version >/dev/null 2>&1; then
-  echo "Error: cargo-llvm-cov is required but not installed. To install, run: cargo install cargo-llvm-cov" >&2
+  echo "Error: cargo-llvm-cov is required but not installed. To install, run: cargo install cargo-llvm-cov --version 0.8.7 --locked" >&2
   exit 1
 fi
 
