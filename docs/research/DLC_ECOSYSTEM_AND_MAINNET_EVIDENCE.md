@@ -378,6 +378,25 @@ explicitly. None of this changes the Gateway's HTTP oracle/UUID scaffold or
 authorizes a dependency, custody, CET, funding, refund, or production
 integration.
 
+### 8.2 Deterministic contract fixture milestone — 2026-07-22
+
+As a dated correction and extension to the checkpoint above, the isolated
+experiment now includes a complete deterministic local fixture for one
+single-oracle, two-outcome enumerated contract. The fixture serializes concrete
+`OfferDlc`, `AcceptDlc`, and `SignDlc` messages and constructs funding, both
+CETs, refund, adaptor signatures, and signed artifacts with stable hashes,
+transaction IDs, final contract ID, output ordering, locktimes, collateral
+conservation, and 13 rejection cases. Exact expectations are recorded in
+[`DLC_STAGE1_FIXTURE_2026-07-22.md`](DLC_STAGE1_FIXTURE_2026-07-22.md).
+
+This satisfies the approved **isolated deterministic fixture milestone**, not
+the broader issue. The earlier hyperbola/official-vector compatibility gate,
+manager/provider validation, wallet and persistence state, transport, public
+testnet evidence, runtime integration, custody policy, and production review
+remain open. The historical statement above that the full fixture gate was
+open describes the earlier checkpoint; it is retained for continuity and is
+superseded only within this narrow local-fixture scope.
+
 ## 9. Readiness and security gates
 
 Before a production-facing DLC path can be considered, all of the following
