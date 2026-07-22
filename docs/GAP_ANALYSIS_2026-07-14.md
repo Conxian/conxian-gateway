@@ -3,6 +3,10 @@
 **Review Agent:** OpenHands  
 **Scope:** All 11 open issues vs. actual codebase
 
+> **Historical snapshot:** This report captures the 2026-07-14 review. Dated
+> correction and current-status notes added later supersede stale entries; this
+> document is not a live issue-state tracker.
+
 ---
 
 ## Executive Summary

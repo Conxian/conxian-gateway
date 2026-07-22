@@ -1,5 +1,9 @@
 # Sprint Review — W28 (2026-07-07 to 2026-07-18)
 
+> **Historical snapshot:** This review records W28 close and its original W29
+> plan. Later dated correction and current-status notes supersede stale entries;
+> this document is not a live status tracker.
+
 ## Sprint Goals
 
 - [x] Complete gap analysis of all open issues ✅

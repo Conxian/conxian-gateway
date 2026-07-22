@@ -3,14 +3,18 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tracing::{info, warn};
 
-/// DLC Oracle adapter using DDK v1.1.2 (successor to rust-dlc)
+/// HTTP oracle scaffold for DLC-shaped event and attestation payloads.
+///
+/// The adapter performs event, oracle-key, and expected-outcome consistency
+/// checks only. Cryptographic announcement and attestation verification is a
+/// required follow-up tracked in issue #220.
 pub struct DlcOracleClient {
     pub oracle_url: String,
     pub oracle_pubkey: String,
     client: reqwest::Client,
 }
 
-/// A DLC event announcement from the oracle
+/// A DLC event announcement returned by the HTTP oracle endpoint.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OracleAnnouncement {
     pub event_id: String,
@@ -21,7 +25,10 @@ pub struct OracleAnnouncement {
     pub event_descriptor: String,
 }
 
-/// An oracle attestation (signed outcome)
+/// An oracle attestation payload returned by the HTTP oracle endpoint.
+///
+/// The signature is carried for the future cryptographic verification path;
+/// this scaffold does not verify it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OracleAttestation {
     pub event_id: String,
@@ -81,7 +88,10 @@ impl DlcOracleClient {
         Ok(attestation)
     }
 
-    /// Verify an oracle signature against a known announcement
+    /// Check event, oracle-key, and expected-outcome consistency against an announcement.
+    ///
+    /// This does not verify cryptographic announcement or attestation signatures.
+    /// That follow-up is tracked in issue #220.
     pub fn verify_attestation(
         announcement: &OracleAnnouncement,
         attestation: &OracleAttestation,
@@ -93,8 +103,9 @@ impl DlcOracleClient {
         if announcement.oracle_pubkey != attestation.oracle_pubkey {
             return Ok(false);
         }
-        // DDK/kormir signature verification via secp256k1-zkp adaptor sigs:
-        // ddk::verify_oracle_attestation(&announcement, &attestation, outcome_index)
+        // This scaffold intentionally checks payload consistency only. The
+        // cryptographic announcement/attestation verification follow-up is
+        // tracked in issue #220.
         let outcome_matches = announcement
             .outcomes
             .get(expected_outcome_index)
@@ -105,7 +116,7 @@ impl DlcOracleClient {
     }
 }
 
-/// Multi-oracle threshold DLC coordinator
+/// Multi-oracle outcome-agreement scaffold.
 pub struct ThresholdOracleCoordinator {
     pub oracles: Vec<DlcOracleClient>,
     pub threshold: usize,
@@ -141,7 +152,10 @@ impl ThresholdOracleCoordinator {
         Ok(events)
     }
 
-    /// Check if threshold attestations agree on a specific outcome
+    /// Check whether fetched attestation payloads agree on an outcome.
+    ///
+    /// This counts matching payloads without cryptographic attestation
+    /// verification; the verification follow-up is tracked in issue #220.
     pub async fn check_threshold_outcome(&self, event_id: &str) -> ConxianResult<Option<String>> {
         let mut outcome_votes: HashMap<String, usize> = HashMap::new();
 

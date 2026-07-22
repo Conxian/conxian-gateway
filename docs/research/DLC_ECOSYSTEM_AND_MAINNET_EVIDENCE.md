@@ -229,7 +229,7 @@ for Conxian production use.
 | `cfd-dlc` | [tag v0.0.8](https://github.com/p2pderivatives/cfd-dlc/tree/v0.0.8) | Older C++ reference and bindings family. GitHub metadata did not declare a license in this review; licensing must be verified before reuse. |
 | NDLC | [release branch `releases/1.0.1`](https://github.com/dgarage/NDLC/tree/releases/1.0.1) | Experimental C# implementation; secondary reference only. |
 | Kormir | [repository](https://github.com/bennyhodl/kormir) | Oracle implementation, not a complete contract engine. |
-| Pythia | [DLC Markets article](https://blog.dlcmarkets.com/dlc-markets-open-sources-its-oracle-pythia/) | Oracle-only production/application component; use as an oracle operations reference, not as a CET library. |
+| Pythia | [official repository](https://github.com/dlc-markets/pythia) | Open-source numeric/oracle implementation for DLC-related price announcements and attestations; use as an oracle/application reference, not as a CET library. |
 | Atomic Finance `node-dlc` | [repository](https://github.com/AtomicFinance/node-dlc) | TypeScript reference/application component; secondary evidence only. |
 
 ### 6.3 Isolated compatibility finding
@@ -326,10 +326,9 @@ the semantics to specific transaction IDs:
 - Atomic Finance's [node-dlc repository](https://github.com/AtomicFinance/node-dlc)
   is a TypeScript implementation/reference; it is not used here as independent
   evidence of a specific settlement transaction.
-- DLC Markets' [engineering article](https://blog.dlcmarkets.com/engineering-behind-dlcmarkets/)
-  and [Pythia release article](https://blog.dlcmarkets.com/dlc-markets-open-sources-its-oracle-pythia/)
-  are application/oracle evidence. They do not replace protocol vectors or a
-  security review.
+- DLC Markets' public [Pythia repository](https://github.com/dlc-markets/pythia)
+  is application/oracle evidence only. It does not establish a specific
+  settlement transaction or replace protocol vectors or a security review.
 
 A public Lygos page was not used as proof because its amount, script, and
 transaction description did not align consistently enough to form a reliable
