@@ -636,8 +636,13 @@ pub async fn get_alex_quote(
         min_dy: None,
     };
 
-    match state.alex.get_swap_quote(req).await {
-        Ok(quote) => Ok(Json(json!({ "quote": quote.to_string() }))),
+    match state.alex.get_swap_quote_observation(req).await {
+        Ok(observation) => Ok(Json(json!({
+            "quote": observation.amount_out.to_string(),
+            "source": observation.source,
+            "status": observation.status,
+            "endpoint": observation.endpoint
+        }))),
         Err(e) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),

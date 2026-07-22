@@ -54,6 +54,7 @@ services:
       - FIAT_WEBHOOK_SECRET=${FIAT_WEBHOOK_SECRET}
       - SETTLEMENT_INGRESS_SECRET=${SETTLEMENT_INGRESS_SECRET}
       - ALEX_API_URL=${ALEX_API_URL:-https://api.alexlab.co}
+      - ALEX_HELPER_PRINCIPAL=${ALEX_HELPER_PRINCIPAL:-}
     ports:
       - "3002:3000"
     volumes:
