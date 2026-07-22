@@ -1,8 +1,10 @@
+pub mod alex_settlement;
 pub mod lightning;
 pub mod musig2;
 pub mod persistence;
 pub mod settlement;
 pub mod trust_policy;
+pub use alex_settlement::*;
 use async_trait::async_trait;
 pub use lightning::*;
 use serde::{Deserialize, Serialize};

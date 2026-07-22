@@ -206,6 +206,67 @@ async fn test_health_check() {
 }
 
 #[tokio::test]
+async fn test_alex_quote_marks_simulated_source_explicitly() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/alex/quote?token_x=sBTC&token_y=STX&amount=1")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("x-402-payment", TEST_X402_PROOF)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(body["quote"], "100");
+    assert_eq!(body["source"], "fixture");
+    assert_eq!(body["status"], "FIXTURE");
+    assert_eq!(body["endpoint"], "simulated");
+}
+
+#[tokio::test]
+async fn test_alex_swap_never_prepares_simulated_payload() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+    let payload = json!({
+        "token_x": "sBTC",
+        "token_y": "STX",
+        "factor": 100000000,
+        "amount": 100,
+        "min_dy": 90
+    });
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/alex/swap")
+                .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("x-402-payment", TEST_X402_PROOF)
+                .header("Content-Type", "application/json")
+                .body(Body::from(serde_json::to_string(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert!(body["error"]
+        .as_str()
+        .unwrap()
+        .contains("simulated client cannot produce"));
+}
+
+#[tokio::test]
 async fn test_get_state_authorized() {
     let state = Arc::new(RwLock::new(GatewayState::default()));
     let app = setup_app(state);

@@ -16,3 +16,4 @@ rusqlite = { workspace = true }
 aes-gcm = { workspace = true }
 async-trait = { workspace = true }
 chrono = { workspace = true }
+sha2 = { workspace = true }

@@ -89,6 +89,7 @@ pub struct Config {
     pub rgb_esplora_url: Option<String>,
     pub network: Network,
     pub alex_api_url: String,
+    pub alex_helper_principal: Option<String>,
     pub liquid_rpc_url: String,
     pub rootstock_rpc_url: String,
     pub babylon_api_url: Option<String>,
@@ -232,6 +233,7 @@ impl Config {
                 Some(value)
             }
         });
+        let alex_helper_principal = Self::optional_env("ALEX_HELPER_PRINCIPAL");
 
         let (btc_url, stx_url, alex_url) = match network {
             Network::Mainnet => (
@@ -313,6 +315,7 @@ impl Config {
             rgb_esplora_url,
             network,
             alex_api_url: env::var("ALEX_API_URL").unwrap_or(alex_url),
+            alex_helper_principal,
             liquid_rpc_url,
             rootstock_rpc_url,
             babylon_api_url,
@@ -372,6 +375,7 @@ mod tests {
                 "REDIS_PASSWORD",
                 "TOKEN_TTL_SECONDS",
                 "BABYLON_API_URL",
+                "ALEX_HELPER_PRINCIPAL",
             ];
             let vars = keys.into_iter().map(|k| (k, env::var(k).ok())).collect();
             Self { vars }
@@ -460,6 +464,27 @@ mod tests {
         env::set_var("BABYLON_API_URL", "   ");
         let config = Config::from_env();
         assert_eq!(config.babylon_api_url, None);
+    }
+
+    #[test]
+    fn from_env_reads_optional_alex_helper_principal_without_defaulting_it() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        let _env_restore = FullEnvRestore::new();
+        set_test_envs();
+
+        env::set_var(
+            "ALEX_HELPER_PRINCIPAL",
+            "  SP000000000000000000002Q6VF78.alex-helper  ",
+        );
+        let config = Config::from_env();
+        assert_eq!(
+            config.alex_helper_principal.as_deref(),
+            Some("SP000000000000000000002Q6VF78.alex-helper")
+        );
+
+        env::set_var("ALEX_HELPER_PRINCIPAL", "   ");
+        let config = Config::from_env();
+        assert_eq!(config.alex_helper_principal, None);
     }
 
     #[test]

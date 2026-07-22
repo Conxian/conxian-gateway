@@ -75,16 +75,16 @@ Conxian is designed to capture the Total Addressable Market (TAM) of Bitcoin-nat
     - Enhanced institutional metrics with TAM capture and SYI tracking.
     - Established mandatory TERMS.md and PRIVACY.md institutional documentation.
     - Created canonical portfolio map and repository inventory (CON-468/CON-410).
-    - Implemented ALEX DEX client and exposed quote/swap API endpoints (CON-136).
+    - Added the ALEX read-only/shadow quote and swap surfaces; production settlement remains blocked by the evidence gate in [`docs/research/ALEX_SETTLEMENT_EVIDENCE_AND_GATE_2026-07-22.md`](docs/research/ALEX_SETTLEMENT_EVIDENCE_AND_GATE_2026-07-22.md).
     - Integrated maintainer-controlled bounty payout toggle (CON-230).
     - Implemented Industrial Intent (x402) metadata and structured finance tranches (CON-451/CON-452).
     - Hardened security boundaries and aligned system wallets with mainnet prefixes (CON-208).
 - 2026-04-15: Full Functional Consolidation (Jules):
     - Completed Stacks BNS resolution via `call_read_only` in `IdentityManager`.
-    - Hardened ALEX swap path to return prepared transaction payloads for signer integration.
+    - Hardened the ALEX path to expose unsigned preparation only when an exact helper is explicitly configured; signer, broadcast, receipt, and reconciliation remain disabled.
     - Implemented production-grade Infobip SMS egress in `A2pRouter`.
     - Harmonized `AppState` dependency injection for BNS-capable `IdentityManager`.
-    - Verified all shared services reach full functional state (Identity, ALEX, A2P).
+    - Verified shared service boundaries while retaining ALEX in read-only/shadow mode; ALEX production readiness is not implied.
 
 - 2026-04-24: Full System Review, Repair, and Alignment (Jules):
     - Remediated contamination guard failures by replacing simulated identifiers across the codebase.
@@ -98,7 +98,7 @@ Conxian is designed to capture the Total Addressable Market (TAM) of Bitcoin-nat
 - **WIF Manager**: Handles OIDC-to-GCP token exchange for enclave-signed attestations.
 - **BitVM Verifier**: Implements state-root commitment verification for optimistic fraud proofs.
 - **ISO 20022 Forge**: Generates standardized XML banking messages for institutional egress.
-- **ALEX Client**: Interfaces with ALEX Stacks DEX for sBTC liquidity and swap operations.
+- **ALEX Client**: Read-only/shadow interface for an unverified quote compatibility path plus a typed, fail-closed unsigned-intent/payload boundary. Exact network-qualified identifiers, nonzero `min_dy`, freshness, policy revisions, code hashes, admin state, price impact, and exposure caps are required by the core policy slice. No signer, broadcast, receipt, or reconciliation path is wired; see [`docs/research/ALEX_SETTLEMENT_EVIDENCE_AND_GATE_2026-07-22.md`](docs/research/ALEX_SETTLEMENT_EVIDENCE_AND_GATE_2026-07-22.md).
 - **A2P Router**: Orchestrates global stateless OTP delivery via Infobip with HMAC verification.
 - **NTT Relayer**: Observes and relays Native Token Transfer events for the sovereign bridge.
 

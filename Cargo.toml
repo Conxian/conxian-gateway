@@ -36,6 +36,7 @@ async-trait = { version = "0.1.88" }
 # Serialization
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = { version = "1.0.150", features = ["raw_value"] }
+sha2 = { version = "0.11.0" }
 
 # HTTP & API
 axum = { version = "0.8.4" }

@@ -21,7 +21,7 @@ This document defines the required readiness gates across four control domains f
   - [x] **Treasury**: 144-block institutional timelock active.
   - [x] **Regulatory**: Zero-PII pass-through verified for ZKC logic.
   - [x] **Legal**: Standardized MIT License and Security.md present.
-  - [x] **ALEX Readiness**: `AlexClient` quote and swap paths implemented (CON-136).
+  - [ ] **ALEX Settlement Readiness**: Read-only/shadow and research-gated. The `/v1/quote` compatibility path is unverified; unsigned payload preparation is fail-closed and enabled only with an explicitly configured exact helper principal. No signer, broadcast, receipt, or reconciliation path exists. See [`docs/research/ALEX_SETTLEMENT_EVIDENCE_AND_GATE_2026-07-22.md`](research/ALEX_SETTLEMENT_EVIDENCE_AND_GATE_2026-07-22.md).
   - [x] **API Lifecycle Governance**: Owner, versioning, and deprecation policy documented in `README.md`.
   - [x] **Policy-Engine Boundary**: Gateway transport/verification boundary and compliance decision boundary documented.
   - [x] **Observability Control**: Health/metrics and security-event logging expectations documented.
