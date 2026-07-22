@@ -13,26 +13,36 @@ permissions:
   contents: read
   security-events: write
 
+env:
+  RUST_TOOLCHAIN: 1.96.0
+  CARGO_AUDIT_VERSION: 0.22.2
+
 jobs:
   audit:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
         with:
-          toolchain: 1.96.0
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
 
       - name: Cache cargo-audit
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cargo/bin/cargo-audit
-          key: ${{ runner.os }}-cargo-audit
+          key: ${{ runner.os }}-cargo-audit-${{ env.CARGO_AUDIT_VERSION }}-${{ env.RUST_TOOLCHAIN }}
 
       - name: Install cargo-audit
-        run: which cargo-audit || cargo install cargo-audit --locked
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v cargo-audit >/dev/null 2>&1 || ! cargo-audit --version | grep -Eq "^cargo-audit ${CARGO_AUDIT_VERSION}( |$)"; then
+            cargo install cargo-audit --version "${CARGO_AUDIT_VERSION}" --locked --force
+          fi
+          cargo-audit --version | grep -Eq "^cargo-audit ${CARGO_AUDIT_VERSION}( |$)"
 
       - name: Audit
         run: cargo audit

@@ -147,14 +147,19 @@ These are dependencies and blockers, not endorsements. All listed items were ope
 
 ### Linked Conxian repositories
 
+> **Issue-state refresh — 2026-07-22:** Platform #1187 and Nexus #169 remain
+> open. Wallet #427, `.github` #41, and Core #188 are closed. Enclave #202
+> remains open. These state changes update the durable triage references only;
+> they do not change the research conclusions or readiness gates below.
+
 | Repository | Current source classification | Durable triage issue |
 |---|---|---|
 | [`conxius-platform`](https://github.com/Conxian/conxius-platform) | `services/admin-dashboard/src/lib/support/bitvm3.ts`, `bitvm.ts`, and `zkcp.ts` are simulations/scaffolds; default paths can produce success-shaped results without cryptographic verification. | [Platform #1187](https://github.com/Conxian/conxius-platform/issues/1187) — open P0 |
-| [`lib-conxian-core`](https://github.com/Conxian/lib-conxian-core) | `src/verifier.rs` and verifier architecture docs provide structural/protocol boundaries and fail-closed policy. No current BitVM2 Groth16 verification call is established; Arkworks dependencies alone are not evidence. | [Core #188](https://github.com/Conxian/lib-conxian-core/issues/188) — open |
+| [`lib-conxian-core`](https://github.com/Conxian/lib-conxian-core) | `src/verifier.rs` and verifier architecture docs provide structural/protocol boundaries and fail-closed policy. No current BitVM2 Groth16 verification call is established; Arkworks dependencies alone are not evidence. | [Core #188](https://github.com/Conxian/lib-conxian-core/issues/188) — **closed 2026-07-22**; retain as completed remediation evidence |
 | [`conxian-nexus`](https://github.com/Conxian/conxian-nexus) | `src/executor/bitvm.rs` has a real narrow `ark_groth16::Groth16::<Bls12_381>::verify(...)` call, but state roots are not bound by that path, negative coverage is incomplete, and trial metadata/ownership/revision drift remains. | [Nexus #169](https://github.com/Conxian/conxian-nexus/issues/169) — open P1 |
-| [`conxius-wallet`](https://github.com/Conxian/conxius-wallet) | TypeScript/Android BitVM paths generate simulation segments and success-shaped results; release guards reduce risk but no actual verifier is present. | [Wallet #427](https://github.com/Conxian/conxius-wallet/issues/427) — open P1 |
+| [`conxius-wallet`](https://github.com/Conxian/conxius-wallet) | TypeScript/Android BitVM paths generate simulation segments and success-shaped results; release guards reduce risk but no actual verifier is present. | [Wallet #427](https://github.com/Conxian/conxius-wallet/issues/427) — **closed 2026-07-22**; retain as completed remediation evidence |
 | [`conxius-enclave-sdk`](https://github.com/Conxian/conxius-enclave-sdk) | BitVM2 boundary is typed/fail-closed/unsupported for proof verification; generic MuSig2 signing is not SNARK verification. | [Enclave #202](https://github.com/Conxian/conxius-enclave-sdk/issues/202) — open P0 acceptance gate |
-| [`.github`](https://github.com/Conxian/.github) | Organization documentation contains mixed readiness language, including upstream/reference claims that must not be presented as Conxian production evidence. | [`.github` #41](https://github.com/Conxian/.github/issues/41) — open P2 |
+| [`.github`](https://github.com/Conxian/.github) | Organization documentation contains mixed readiness language, including upstream/reference claims that must not be presented as Conxian production evidence. | [`.github` #41](https://github.com/Conxian/.github/issues/41) — **closed 2026-07-22**; retain as completed documentation evidence |
 
 These classifications intentionally separate a real local Arkworks call in Nexus, structural boundaries in Core/Gateway, simulation paths in Platform/Wallet, and fail-closed unsupported paths in Enclave. None is evidence of a production BitVM3 or BitVMX-GC deployment.
 
@@ -195,7 +200,14 @@ No candidate may move from research to production integration until every gate b
 - Keep `tools/bitvmx-eval/` isolated and evaluation-only.
 - Keep `MockGroth16Verifier` fixture-only and the production Groth16 backend unwired.
 - Do not add BitVM3/GC dependencies, production HTTP routes, settlement authorization, or compliance decisions from any upstream paper/demo/transaction.
-- Track the six durable Conxian remediation issues: [Platform #1187](https://github.com/Conxian/conxius-platform/issues/1187), [Nexus #169](https://github.com/Conxian/conxian-nexus/issues/169), [Wallet #427](https://github.com/Conxian/conxius-wallet/issues/427), [`.github` #41](https://github.com/Conxian/.github/issues/41), [Core #188](https://github.com/Conxian/lib-conxian-core/issues/188), and [Enclave #202](https://github.com/Conxian/conxius-enclave-sdk/issues/202).
+- Track the six durable Conxian remediation references with their current
+  states: [Platform #1187](https://github.com/Conxian/conxius-platform/issues/1187)
+  and [Nexus #169](https://github.com/Conxian/conxian-nexus/issues/169) remain
+  open; [Wallet #427](https://github.com/Conxian/conxius-wallet/issues/427),
+  [`.github` #41](https://github.com/Conxian/.github/issues/41), and
+  [Core #188](https://github.com/Conxian/lib-conxian-core/issues/188) are
+  closed; [Enclave #202](https://github.com/Conxian/conxius-enclave-sdk/issues/202)
+  remains open. Closed issues remain evidence links, not open readiness gates.
 
 ### Next refresh triggers
 
@@ -203,6 +215,6 @@ Re-open implementation scoping only after a public candidate supplies a stable r
 
 ## Review metadata
 
-- Gateway base reviewed: `main` at [`4a0433ad92b83bb59d69cb64f86128c1e0212a8e`](https://github.com/Conxian/conxian-gateway/commit/4a0433ad92b83bb59d69cb64f86128c1e0212a8e).
+- Gateway base reviewed for this current-status refresh: `main` at [`6838d872513b681cf88f07fc5431f02b856b6d0e`](https://github.com/Conxian/conxian-gateway/commit/6838d872513b681cf88f07fc5431f02b856b6d0e). The earlier `4a0433ad92b83bb59d69cb64f86128c1e0212a8e` review base remains part of the historical PR #268 evidence chain.
 - Gateway evidence merged in PRs [#253](https://github.com/Conxian/conxian-gateway/pull/253), [#255](https://github.com/Conxian/conxian-gateway/pull/255), [#259](https://github.com/Conxian/conxian-gateway/pull/259), and [#267](https://github.com/Conxian/conxian-gateway/pull/267).
 - Upstream source and issue metadata were refreshed on 2026-07-22. Upstream-reported claims remain labeled and were not converted into Conxian benchmarks or security conclusions.
