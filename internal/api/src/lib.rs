@@ -7,6 +7,7 @@ pub mod auth;
 pub mod fiat;
 pub mod handlers;
 pub mod lightning;
+pub mod mempool_telemetry;
 pub mod middleware;
 pub mod nostr;
 pub mod routes;
@@ -19,7 +20,7 @@ use crate::a2p::A2pRouter;
 use crate::fiat::FiatRouter;
 use crate::lightning::{LightningAdapter, SimulatedLightningBackend};
 use conxian_compliance::{IdentityManager, UniversalVerifier, ZkcVerifier};
-use conxian_core::{SettlementProposal, SharedState};
+use conxian_core::{Persistence, SettlementProposal, SharedState};
 pub use conxian_engine::stacks::alex::AlexClient;
 pub use conxian_engine::RedisCoordinator;
 use std::{collections::VecDeque, sync::Arc};
@@ -29,6 +30,10 @@ use tokio::sync::RwLock;
 #[derive(Clone)]
 pub struct AppState {
     pub shared: SharedState,
+    /// Persistence backend containing the Gateway-owned tracked mempool state.
+    /// This is optional for lightweight API test harnesses; production wiring
+    /// supplies the same backend used by the listeners and orchestrator.
+    pub persistence: Option<Arc<dyn Persistence>>,
     pub fiat: Arc<FiatRouter>,
     pub a2p: Arc<A2pRouter>,
     pub identity: Arc<IdentityManager>,

@@ -47,6 +47,7 @@ fn setup_app(
     let app_state = AppState {
         coordinator: None,
         shared: state,
+        persistence: None,
         fiat,
         a2p,
         identity,
