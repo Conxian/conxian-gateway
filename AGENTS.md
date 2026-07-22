@@ -44,7 +44,7 @@ For complete organizational protocol, see:
 
 ---
 
-## Current State (2026-07-20, updated)
+## Current State (2026-07-22, updated)
 - **Status Audit**: Holistic review of Nexus/Gateway alignment complete (CON-1353).
 - **Protocol Drift**: Resolved — Fedimint, Citrea, and Strata adapters implemented and in production paths.
 - **RGB G-1385 (Phase 1)**: StashResolver delivered (commit `124d17e`) with `rgb-std` v0.12.0-rc.3 + `bp-esplora` v0.12.0-rc.3 behind `rgb-native` feature. Phase 2 (ContractVerify, consignment) blocked on rgb-std ecosystem stabilization.
@@ -52,8 +52,8 @@ For complete organizational protocol, see:
 - **Gap Analysis (2026-07-14)**: Full review of 11 open issues vs. codebase complete. Report at `docs/GAP_ANALYSIS_2026-07-14.md`. Key findings:
   - ⚠️ #236 SDK: Version drift (SDK 0.1.0 vs workspace 0.1.4), README claims "Production Ready" (overstated)
   - ⚠️ #220 DLC: Oracle abstraction done, CET construction missing (no dlc-manager dep)
-  - ⚠️ #219 Groth16: a partial trait skeleton exists on `main`; the canonical contract, BitVM handoff, fixture, and rejection tests are implemented on the focused `charlie/issue-219-groth16-boundary` branch and are not merged yet
-  - ❌ #216 Babylon: BTC header-chain returns `0`, no SPV implementation
+  - ⚠️ #219 Groth16: canonical BN254 contract, BitVM handoff, fixture, and rejection tests merged in PR #255; production cryptographic backend remains open
+  - [x] #216 Babylon: BTC header-chain retrieval and bounded SPV-style verification merged in PR #253; EOTS/finality extensions remain separate
 - **Sprint Protocol (2026-07-14)**: Session Continuity Protocol implemented. All agent sessions now verify prior work before proceeding. See:
   - `docs/SPRINT_SESSION_PROTOCOL.md` — Org-wide standards
   - `docs/CROSS_REPO_STATUS.md` — Live cross-repo dashboard
@@ -63,20 +63,20 @@ For complete organizational protocol, see:
 - **Strategic Research (2026-07-06)**: Canton Network & Machine Economy deep-dive complete. Key finding: "route without touch" — Conxian as sovereign routing layer between Canton's $6T+ institutional capital and Bitcoin's permissionless settlement. Machine Economy: $1.1B/month Lightning M2M volume, peaq 60+ DePINs, DIMO vehicle identity. See `docs/research/CANTON_NETWORK_AND_MACHINE_ECONOMY_RESEARCH.md` and `docs/research/KNOWLEDGE_MAP.md`.
 - **Issue #219 boundary update (2026-07-20)**: `internal/engine/src/bitcoin/groth16_verifier.rs` now defines the BN254 canonical statement/hash contract, witness-commitment public-input binding, circuit/key association, witness-privacy boundary, and deterministic test verifier. `bitvm_adapter.rs` parses and validates the envelope before delegating to an injected verifier. This remains a boundary milestone, not cryptographic Groth16 verification.
 
-### Protocol Implementations (2026-07-05)
+### Protocol Implementations (2026-07-22)
 | Protocol | Status | File |
 |---|---|---|
 | NWC NIP-47 | тЬЕ Integrated | `internal/api/src/nwc_backend.rs` |
 | Rootstock | тЬЕ Integrated | `internal/engine/src/ntt/rootstock_adapter.rs` |
-| Babylon | Pending — header-chain/SPV remains unimplemented while PR #253 is open | `internal/engine/src/bitcoin/babylon_adapter.rs` |
-| BitVM2 | Partial — metadata adapter plus explicit Groth16 handoff on focused branch | `internal/engine/src/bitcoin/bitvm_adapter.rs` |
+| Babylon | Implemented boundary — PR #253 merged; EOTS/finality extensions remain separate | `internal/engine/src/bitcoin/babylon_adapter.rs` |
+| BitVM2 | Partial — metadata adapter plus validated Groth16 handoff on `main`; cryptographic backend remains open | `internal/engine/src/bitcoin/bitvm_adapter.rs` |
 | RGB | тЬЕ v0.12 + Stash (P1) | `internal/engine/src/bitcoin/rgb_adapter.rs` + `rgb_native.rs` + `rgb_stash.rs` |
 | Liquid | тЬЕ Integrated | `internal/engine/src/bitcoin/liquid_adapter.rs` |
 | Citrea | тЬЕ Integrated | `internal/engine/src/ntt/citrea_adapter.rs` |
 | RISC Zero | ЁЯЯб Unwired | `internal/engine/src/bitcoin/risc0_verifier.rs` |
 | Fedimint | тЬЕ Integrated | `internal/engine/src/bitcoin/fedimint_adapter.rs` |
 | Strata | тЬЕ Testnet | `internal/engine/src/bitcoin/strata_adapter.rs` |
-| BitVMX GC | ЁЯЯб Pending 2026 | N/A |
+| BitVMX GC | Research only — no stable public GC SDK/release or production deployment verified | `docs/research/BITVM3_BITVMX_EVIDENCE_AND_TRIAGE_2026-07-22.md` |
 | BRICS Pay | ЁЯЯб Research only | N/A |
 | mBridge | ЁЯЯб Research only | N/A |
 | Canton Network | 🟡 Research — "route without touch" (G-C7 P3) | `docs/research/CANTON_NETWORK_AND_MACHINE_ECONOMY_RESEARCH.md` |
@@ -127,9 +127,9 @@ Before submitting changes, you MUST:
 - [x] G-1380: SBOM and Provenance to release workflow — merged `19181c5`
 - [ ] #236: SDK version drift + README overclaim — see `docs/GAP_ANALYSIS_2026-07-14.md`
 - [ ] #220: DLC CET construction — dlc-manager dependency missing
-- [ ] #219: Groth16 cryptographic backend — boundary contract and deterministic fixture handoff implemented on `charlie/issue-219-groth16-boundary`; not merged or cryptographic
-- [ ] #216: Babylon BTC header-chain SPV — returns 0, needs implementation
-- [ ] #189: BitVMX GC adapter — pending 2026 garbled circuits release (see research below)
+- [ ] #219: Groth16 cryptographic backend — boundary contract and deterministic fixture handoff merged in PR #255; production pairing backend remains open
+- [x] #216: Babylon BTC header-chain SPV — bounded header-chain retrieval/verification merged in PR #253; EOTS/finality extensions remain separate
+- [ ] #189: BitVM3/BitVMX-GC adapter — research-only; PR #259 (evaluation harness) and PR #267 (initial research expansion) are merged; PR #268 is the current comprehensive SDK/paper/network-proof/cross-repo triage and remains open until merged; no stable GC SDK or production deployment is verified
 - [x] #231: BRICS Pay — DCMS settlement rail (closed — research complete, no adapter needed)
 - [x] #232: mBridge — BIS multi-CBDC DLT (closed — research complete, observation only)
 
@@ -139,10 +139,10 @@ Full gap analysis: `docs/GAP_ANALYSIS_2026-07-14.md`
 1. **Fix SDK version** — `packages/client-sdk/package.json`: `0.1.0` → `0.1.4`
 2. **Fix SDK README** — Remove "Production Ready" claim → "Developer Preview"
 3. **Add DLC CET** — Add `dlc-manager` dependency for #220
-4. **Define Groth16 boundary** — Canonical contract and BitVM handoff implemented on the focused #219 branch; merge and add a real backend separately
-5. **Implement Babylon SPV** — BTC header-chain for #216
+4. **Add Groth16 cryptographic backend** — Canonical contract and BitVM handoff merged in PR #255; add a real backend separately
+5. **Extend Babylon verification** — Header-chain/SPV boundary merged in PR #253; EOTS/finality work remains separate
 
-**Status:** P0 items remain approved; #219's boundary milestone is implemented locally on 2026-07-20, while a production cryptographic backend remains out of scope.
+**Status:** P0 items remain approved; #216 and #219 boundary milestones are merged, while a production Groth16 backend and additional Babylon finality/EOTS work remain separate.
 
 ### New Strategic Gaps (2026-07-06)
 - [x] G-C1: CBTC non-custodial verification — conxian-core types + `POST /api/v1/canton/cbtc/verify` handler with 6-point attestation check (commit pending)
@@ -156,13 +156,13 @@ Full gap analysis: `docs/GAP_ANALYSIS_2026-07-14.md`
 
 ## Gap Research (2026-07-05 Refresh)
 
-### #189: BitVMX GC (Garbled Circuits)
-- **BitVMX-CPU**: Open source (Rust, MIT, FairgateLabs) — RISC-V emulation + Bitcoin script
-- **BitVMX-GC**: Targeting 2026 release, currently closed source (Liam Eagen, Feb 2026)
-- **GOATNetwork/bitvm2-gc**: Open source reference — Groth16 + DV-SNARK via GC, 10B gates
-- **BitVM3 paper** (Robin Linus, Jul 2025): Theoretical foundation
-- **Conxian posture**: Evaluate BitVMX-CPU now; monitor GOATNetwork/bitvm2-gc for POC; wait for BitVMX-GC public SDK
-- **Citrea Groth16 adapter already shipped** (#192, `8d82062`) — same recursive proof pattern expected
+### #189: BitVM3 / BitVMX-GC (Garbled Circuits)
+- **BitVMX-CPU**: Public Rust/RISC-V emulator and isolated Gateway evaluator; README says under development, unaudited, and not production-ready. Repository/`LICENSE` metadata says Apache-2.0 while README says MIT; unresolved.
+- **BitVMX-GC**: Official design/article material exists, but no stable public GC SDK/API, release, reproducible integration target, or production deployment is verified.
+- **GOATNetwork/bitvm2-gc**: Public research/reference source — Groth16 + DV-SNARK via GC, approximately 10.4B gates and 51–374 GB upstream-reported peak memory; no verified release/license artifact.
+- **BitVM3 authority**: IACR ePrint 2026/933, received 2026-05-11 and revised 2026-06-08; paper/prototype evidence only.
+- **BitVMX mainnet evidence**: Upstream SNARK-verifier prototype transaction exists, but it is not BitVM3-GC, a stable SDK, a production bridge, or Conxian verifier evidence.
+- **Conxian posture**: Keep #189 open/research-only; use `docs/research/BITVM3_BITVMX_EVIDENCE_AND_TRIAGE_2026-07-22.md` as the canonical evidence and cross-repo triage record.
 
 ### #231: BRICS Pay (DCMS Settlement)
 - **DCMS spec v1.0**: 20K msgs/sec, distributed consensus, open-source planned
