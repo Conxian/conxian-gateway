@@ -47,9 +47,9 @@ For complete organizational protocol, see:
 ## Current State (2026-07-22, updated)
 - **Status Audit**: Holistic review of Nexus/Gateway alignment complete (CON-1353).
 - **Protocol Drift**: Resolved — Fedimint, Citrea, and Strata adapters implemented and in production paths.
-- **RGB G-1385 (Phase 1)**: StashResolver delivered (commit `124d17e`) with `rgb-std` v0.12.0-rc.3 + `bp-esplora` v0.12.0-rc.3 behind `rgb-native` feature. Phase 2 (ContractVerify, consignment) blocked on rgb-std ecosystem stabilization.
+- **RGB G-1385 (Phase 2 hardening)**: StashResolver and the pinned `rgb-persist-fs::StockpileDir`/consignment boundary are merged through PRs #256, #261, and #262. The path remains fail-closed; a production issuer-signature backend, complete signed Bitcoin/RGB regtest fixture, and transactional existing-contract update path remain open.
 - **PR #233 (G-1389)**: Tech debt reduction merged (`5e6613e`). Includes Fedimint/Citrea/Strata adapters, Redis coordination module, auth middleware timing stubs, reqwest 0.13 upgrade, dead_code cleanup. Citrea adapter moved from `bitcoin/` to `ntt/`.
-- **Gap Analysis (2026-07-14, DLC correction 2026-07-22)**: Full review of 11 open issues vs. codebase complete. Report at `docs/GAP_ANALYSIS_2026-07-14.md`. Key findings and current corrections:
+- **Gap Analysis (2026-07-22)**: Current six-issue inventory, weighted ranking, and evidence-backed acceptance slices are recorded in `docs/GAP_ANALYSIS_2026-07-22.md`; `docs/GAP_ANALYSIS_2026-07-14.md` remains the dated historical snapshot. Key findings and current corrections:
   - ✅ #236 SDK: Version/documentation alignment is fixed in the tree — `packages/client-sdk/package.json` is `0.1.4` and the README says "Developer Preview"; the dated gap-analysis entry is retained as historical context
   - ⚠️ #220 DLC: HTTP oracle/event/key/outcome scaffold only; cryptographic announcement and attestation verification, any DLC dependency, funding/CET/refund/adaptor-signature construction, and real bond construction remain open. The current scaffold uses UUID/mock bond IDs only; see `docs/research/DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md`
   - ⚠️ #219 Groth16: canonical BN254 contract, BitVM handoff, fixture, and rejection tests merged in PR #255; production cryptographic backend remains open
@@ -70,7 +70,7 @@ For complete organizational protocol, see:
 | Rootstock | тЬЕ Integrated | `internal/engine/src/ntt/rootstock_adapter.rs` |
 | Babylon | Implemented boundary — PR #253 merged; EOTS/finality extensions remain separate | `internal/engine/src/bitcoin/babylon_adapter.rs` |
 | BitVM2 | Partial — metadata adapter plus validated Groth16 handoff on `main`; cryptographic backend remains open | `internal/engine/src/bitcoin/bitvm_adapter.rs` |
-| RGB | тЬЕ v0.12 + Stash (P1) | `internal/engine/src/bitcoin/rgb_adapter.rs` + `rgb_native.rs` + `rgb_stash.rs` |
+| RGB | 🟡 v0.12 + Stash/consignment boundary; Phase 2 hardening merged, issuer backend and signed regtest fixture remain open | `internal/engine/src/bitcoin/rgb_adapter.rs` + `rgb_native.rs` + `rgb_stash.rs` |
 | Liquid | тЬЕ Integrated | `internal/engine/src/bitcoin/liquid_adapter.rs` |
 | Citrea | тЬЕ Integrated | `internal/engine/src/ntt/citrea_adapter.rs` |
 | RISC Zero | ЁЯЯб Unwired | `internal/engine/src/bitcoin/risc0_verifier.rs` |
@@ -121,7 +121,7 @@ Before submitting changes, you MUST:
 - **release.yml**: Tag-triggered GitHub Release with SBOM (CycloneDX) and SLSA L3 provenance.
 
 ## Known Gaps (2026-07-14 snapshot; current corrections noted)
-- [x] #228: RGB stash resolver (G-1385 P1) — merged `124d17e`
+- [ ] #228: RGB stash resolver (G-1385) — Phase 1 plus Phase 2 hardening merged in PRs #256, #261, and #262; production issuer-signature backend, signed Bitcoin/RGB regtest fixture, and transactional existing-contract update path remain open
 - [x] #233 (G-1389): Tech debt reduction — merged `5e6613e`
 - [x] G-1276: Redis AUTH + token expiry — merged `2ef6df1`
 - [x] G-1380: SBOM and Provenance to release workflow — merged `19181c5`
@@ -129,11 +129,12 @@ Before submitting changes, you MUST:
 - [ ] #220: DLC CET construction — HTTP oracle/event/key/outcome scaffold only; research/API spike required before selecting `rust-dlc` or DDK. No cryptographic announcement/attestation verification, DLC dependency, funding/CET/refund/adaptor-signature construction, or real bond construction is present; UUID/mock bond IDs only. See `docs/research/DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md`
 - [ ] #219: Groth16 cryptographic backend — boundary contract and deterministic fixture handoff merged in PR #255; production pairing backend remains open
 - [x] #216: Babylon BTC header-chain SPV — bounded header-chain retrieval/verification merged in PR #253; EOTS/finality extensions remain separate
-- [ ] #189: BitVM3/BitVMX-GC adapter — research-only; PR #259 (evaluation harness) and PR #267 (initial research expansion) are merged; PR #268 is the current comprehensive SDK/paper/network-proof/cross-repo triage and remains open until merged; no stable GC SDK or production deployment is verified
+- [ ] #189: BitVM3/BitVMX-GC adapter — research-only; PRs #259, #267, and #268 (the comprehensive SDK/paper/network-proof/cross-repo triage) are merged; no stable GC SDK or production deployment is verified
 - [x] #231: BRICS Pay — DCMS settlement rail (closed — research complete, no adapter needed)
 - [x] #232: mBridge — BIS multi-CBDC DLT (closed — research complete, observation only)
 
-Full gap analysis: `docs/GAP_ANALYSIS_2026-07-14.md`
+Current gap analysis: `docs/GAP_ANALYSIS_2026-07-22.md`
+Historical snapshot: `docs/GAP_ANALYSIS_2026-07-14.md`
 
 ### Critical P0 Actions (W29 — historical approval list)
 The #236 version and README corrections listed below are complete in the current

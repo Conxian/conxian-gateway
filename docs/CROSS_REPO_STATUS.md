@@ -1,6 +1,6 @@
 # Cross-Repository Status Dashboard
 
-**Last Updated:** 2026-07-22
+**Last Updated:** 2026-07-22 (current/live refresh for issue #245; dated history preserved)
 **Sprint:** W29 (2026-07-15 to 2026-07-25)  
 **Maintained By:** Agent sessions
 
@@ -12,7 +12,7 @@
 | Repository | Production Path | Last Session | W29 Status |
 |------------|-----------------|--------------|------------|
 | **conxian-nexus** | main (Mainnet) | ⏳ Not reviewed | - |
-| **conxian-gateway** | main (Mainnet) | 2026-07-22 | #189 remains research-only; BitVM3/GC are not integrated; #216/#219 implementation boundaries are merged, while cryptographic BitVM/Groth16 backends remain open |
+| **conxian-gateway** | main (Mainnet) | 2026-07-22 | Six Gateway issues remain open (#189, #220, #222, #228, #245, #247); no Gateway PR is open; #216/#219/#236 are closed milestones and #189 remains research-only |
 
 ### Layer 2: User & Application Surface
 | Repository | Production Path | Last Session | W29 Status |
@@ -54,6 +54,48 @@ lib-conclave-sdk  ←  shares types with SDK (L3)
 
 ---
 
+## Current/live Gateway status — 2026-07-22
+
+**Verified base:** `main` at [`6838d872513b681cf88f07fc5431f02b856b6d0e`](https://github.com/Conxian/conxian-gateway/commit/6838d872513b681cf88f07fc5431f02b856b6d0e).
+
+- `gh issue list --state open` returns exactly six open Gateway issues:
+  [#189](https://github.com/Conxian/conxian-gateway/issues/189),
+  [#220](https://github.com/Conxian/conxian-gateway/issues/220),
+  [#222](https://github.com/Conxian/conxian-gateway/issues/222),
+  [#228](https://github.com/Conxian/conxian-gateway/issues/228),
+  [#245](https://github.com/Conxian/conxian-gateway/issues/245), and
+  [#247](https://github.com/Conxian/conxian-gateway/issues/247).
+- `gh pr list --state open` returns zero open Gateway pull requests. PRs #268,
+  #269, #270, #271, and #272 are merged; the latest base includes PR #272.
+
+### Open Gateway issues
+
+| Issue | Current status | Next evidence/acceptance slice |
+|---|---|---|
+| [#189](https://github.com/Conxian/conxian-gateway/issues/189) | Research-only; no stable BitVM3/BitVMX-GC SDK, production deployment, or production pairing backend verified | Keep the canonical evidence/triage report current; require stable revision, vectors, resource, protocol, security, and cross-repo gates |
+| [#220](https://github.com/Conxian/conxian-gateway/issues/220) | Isolated DLC research/conformance/fixture slices merged; no Gateway runtime dependency or production CET path | Select manager/provider API only after independent offer/accept/sign/funding/CET/refund vectors and wallet/signing boundaries pass |
+| [#222](https://github.com/Conxian/conxian-gateway/issues/222) | Implementation-ready; workflows and release controls exist, but artifact identity, fail-closed release validation, environment gating, rollback, and required-check evidence remain | Implement the narrow release-governance slice; do not broad-rewrite CI |
+| [#228](https://github.com/Conxian/conxian-gateway/issues/228) | RGB Phase 1 plus Phase 2 stockpile/import hardening merged in PRs #256/#261/#262; issue remains open | Add a concrete issuer-signature backend, signed Bitcoin/RGB regtest fixture, and transactional existing-contract update path |
+| [#245](https://github.com/Conxian/conxian-gateway/issues/245) | Research/observability; no current Gateway BIP-110 integration or fee predictor; no fee multiplier/model rewrite justified | Define deployment/status observability, Core preflight passthrough, fee telemetry, route confidence, and acceptance metrics |
+| [#247](https://github.com/Conxian/conxian-gateway/issues/247) | Blocked/high-risk; ALEX quote/prepared-payload surfaces exist, while secure signer, exact contract/escrow semantics, and governance controls remain unresolved | Approve exact signer/contract/governance design, prove testnet controls, and reconcile the rehearsal/API contract |
+
+### Closed/merged milestones that must not be listed as open
+
+| Item | Verified current state |
+|---|---|
+| [Gateway #216](https://github.com/Conxian/conxian-gateway/issues/216) / [PR #253](https://github.com/Conxian/conxian-gateway/pull/253) | Issue closed; Babylon header-chain retrieval and bounded verification merged; EOTS/finality remain separate |
+| [Gateway #219](https://github.com/Conxian/conxian-gateway/issues/219) / [PR #255](https://github.com/Conxian/conxian-gateway/pull/255) | Issue closed; backend-neutral Groth16 boundary and BitVM handoff merged; production pairing backend remains separate |
+| [Gateway #236](https://github.com/Conxian/conxian-gateway/issues/236) | Issue closed; SDK package is `0.1.4` and README status is Developer Preview |
+| [Gateway PR #258](https://github.com/Conxian/conxian-gateway/pull/258) | Merged 2026-07-20; Liquid harness hardening follow-up is not open |
+| [Gateway PR #268](https://github.com/Conxian/conxian-gateway/pull/268) | Merged 2026-07-22; BitVM evidence/triage report is current and research-only |
+
+The detailed score and evidence inventory are in
+[`GAP_ANALYSIS_2026-07-22.md`](GAP_ANALYSIS_2026-07-22.md), and the #245 source
+ledger is in
+[`BIP110_FEE_MARKET_AND_ROUTING_2026-07-22.md`](research/BIP110_FEE_MARKET_AND_ROUTING_2026-07-22.md).
+
+---
+
 ## W29 Sprint Status (2026-07-15)
 
 ### conxian-gateway (W29 status corrected — 2026-07-20)
@@ -73,10 +115,12 @@ lib-conclave-sdk  ←  shares types with SDK (L3)
 **P0 Implementation Status — continuity correction (2026-07-20):**
 | # | Issue | Status |
 |---|-------|--------|
-| #236 SDK | Version drift + README | ✅ Fixed (0.1.4, Developer Preview) |
+| #236 SDK | Version drift + README | ✅ Closed; fixed (0.1.4, Developer Preview) |
 | #220 DLC CET | Research/API gate before CET implementation | ⚠️ HTTP oracle/event/key/outcome scaffold only; isolated Stage 1 vector normalization and rejection evidence is recorded, but there is still no cryptographic Gateway verification, DLC dependency, funding/CET/refund/adaptor-signature construction, or real bond construction. UUID/mock bond IDs only. See [`DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md`](research/DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md) and [`DLC_STAGE1_CONFORMANCE_2026-07-22.md`](research/DLC_STAGE1_CONFORMANCE_2026-07-22.md). |
 | #219 Groth16 | Verifier boundary | ✅ Canonical contract, commitment binding, fixture, and BitVM handoff merged in PR #255; no production cryptographic backend |
 | #216 Babylon | BTC header SPV | ✅ Header-chain retrieval and bounded verification merged in PR #253; EOTS/finality extensions remain separate |
+| #245 BIP-110 | Routing and fee-market impact | 🔬 Research/observability only; use the current BIP-110 evidence ledger; no fee multiplier, model rewrite, or active-consensus claim |
+| #247 ALEX | Settlement rail integration | 🔴 Blocked/high-risk pending secure signer, exact contract/escrow semantics, treasury controls, and governance/security acceptance |
 
 **#189 / #216 / #219 current status (2026-07-22):**
 
@@ -90,10 +134,14 @@ lib-conclave-sdk  ←  shares types with SDK (L3)
 
 - [conxius-platform #1187](https://github.com/Conxian/conxius-platform/issues/1187) — open P0: simulation defaults must be replaced or quarantined.
 - [conxian-nexus #169](https://github.com/Conxian/conxian-nexus/issues/169) — open P1: bind real Arkworks verification to canonical BitVM state-transition semantics.
-- [conxius-wallet #427](https://github.com/Conxian/conxius-wallet/issues/427) — open P1: quarantine simulation success paths.
-- [Conxian/.github #41](https://github.com/Conxian/.github/issues/41) — open P2: qualify mixed readiness claims with implementation evidence.
-- [lib-conxian-core #188](https://github.com/Conxian/lib-conxian-core/issues/188) — open: preserve fail-closed structural/protocol boundaries.
+- [conxius-wallet #427](https://github.com/Conxian/conxius-wallet/issues/427) — **closed 2026-07-22**; retain the merged issue as historical remediation evidence.
+- [Conxian/.github #41](https://github.com/Conxian/.github/issues/41) — **closed 2026-07-22**; retain the merged issue as historical documentation evidence.
+- [lib-conxian-core #188](https://github.com/Conxian/lib-conxian-core/issues/188) — **closed 2026-07-22**; fail-closed boundary work is recorded in the current Core tree.
 - [conxius-enclave-sdk #202](https://github.com/Conxian/conxius-enclave-sdk/issues/202) — open P0: complete independent security/release acceptance evidence.
+
+The Platform #1187 and Nexus #169 issues remain open. The Wallet #427,
+`.github` #41, and Core #188 rows above replace the older open-state snapshot;
+the BitVM research conclusions themselves are unchanged.
 
 **Historical DLC commits:**
 - `453a15a` attempted the W29 P0 implementation, including `dlc_cet.rs` and `dlc-manager`.
@@ -121,10 +169,10 @@ EOTS, full Babylon finality, and other non-goals remain separate.
   `tests/liquid/`, including pinned daemon archives, checksum verification,
   real `claimpegin`/confidential-transfer/`sendtomainchain` coverage, and
   artifact upload.
-- 🟡 PR #258 is the narrow follow-up for workflow/path hardening, configurable
-  peg-in depth, verifier delegation coverage, and gateway API coverage.  It
-  removes the duplicate Compose harness and keeps the merged host-daemon
-  workflow as the CI entry point.
+- ✅ PR #258 merged the narrow follow-up for workflow/path hardening,
+  configurable peg-in depth, verifier delegation coverage, and gateway API
+  coverage. It removed the duplicate Compose harness and kept the merged
+  host-daemon workflow as the CI entry point.
 - ⚠️ The merged harness is not a production proof backend.  The
   `LiquidAdapter::verify_state_proof` boundary remains unwired and
   fail-closed; caller-supplied metadata is rejected rather than treated as a
@@ -135,8 +183,9 @@ EOTS, full Babylon finality, and other non-goals remain separate.
 ## Session History
 
 > **Supersession note (2026-07-22):** The historical rows below preserve the
-> state recorded before PRs #253, #255, and #267 merged. The current status
-> sections above are authoritative for #216, #219, and #189.
+> state recorded before PRs #253, #255, #258, #267, and #268 merged. The current
+> status sections above are authoritative for #216, #219, #189, #245, #247, and
+> the cross-repository issue states.
 
 | Date | Repository | Session Summary |
 |------|------------|-----------------|
@@ -171,10 +220,10 @@ Before starting work on any repo, verify:
 
 ### P1-P3 Issues (Future Sprints)
 - #222 CI/CD coverage threshold
-- #218/#193 Liquid harness ✅ host-daemon harness merged; PR #258 hardening follow-up open; production proof backend unwired
+- #218/#193 Liquid harness ✅ host-daemon harness and PR #258 hardening merged; production proof backend unwired
 - #189 BitVM3/BitVMX research monitoring; canonical evidence/triage refresh in `docs/research/BITVM3_BITVMX_EVIDENCE_AND_TRIAGE_2026-07-22.md`; no production GC or cryptographic verifier
 
 ---
 
 *This file is auto-maintained by agent sessions.*
-*Last Major Update: 2026-07-22 (W29 #189 evidence/triage refresh; #216 PR #253 and #219 PR #255 merged)*
+*Last Major Update: 2026-07-22 (current #245 audit; #216/#219 milestones, #258, #268, and #272 merged; six Gateway issues open)*
