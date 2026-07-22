@@ -4,18 +4,21 @@
 **Historical source commit:** `764859fd19c6b4305c0b7b9222c71493b3587177` (`origin/main`)
 **Refresh rule:** Re-query GitHub before treating issue or PR counts as current;
 this timestamped snapshot and its dated history are not live data.
-**Current Phase 4 implementation context (local verification, 2026-07-22):**
+**Historical Phase 4 implementation context before the PR #278 merge (local verification, 2026-07-22):**
 `origin/main` is now at
 [`d7032ab621ad038f247566f820ac664a6c8c071c`](https://github.com/Conxian/conxian-gateway/commit/d7032ab621ad038f247566f820ac664a6c8c071c),
 and the bounded #245 slice is being prepared on
 `charlie/issue-245-tracked-mempool-telemetry`. This branch context is not a
 claim that the slice is merged into `main`.
+**Current merged-main verification:** `origin/main` is at
+[`96de9c0e976caf1dd3592593073d1f53e58bc91b`](https://github.com/Conxian/conxian-gateway/commit/96de9c0e976caf1dd3592593073d1f53e58bc91b),
+the external merge commit for PR #278.
 **Superseded observation:** The preceding pre-merge snapshot recorded PR #274
 as open; it merged into `main` at 2026-07-22T14:25:01Z as commit
 `764859fd19c6b4305c0b7b9222c71493b3587177`.
-**Post-snapshot BitVM Phase 4 note — 2026-07-22:** Gateway [PR #278](https://github.com/Conxian/conxian-gateway/pull/278)
-was pending on `charlie/issue-189-bitvm-fail-closed` at the continuity
-checkpoint. Its implementation commit is
+**Post-snapshot BitVM Phase 4 note — 2026-07-22:** The continuity checkpoint
+predates the external merge of Gateway [PR #278](https://github.com/Conxian/conxian-gateway/pull/278)
+on `charlie/issue-189-bitvm-fail-closed`. Its implementation commit is
 [`114b857ed9d400beaf474cb68e7ac5f25ef58d78`](https://github.com/Conxian/conxian-gateway/commit/114b857ed9d400beaf474cb68e7ac5f25ef58d78);
 the pre-documentation branch head was
 [`c893cbb39ea9d680b229a89035ab38f29ed51b8b`](https://github.com/Conxian/conxian-gateway/commit/c893cbb39ea9d680b229a89035ab38f29ed51b8b).
@@ -33,6 +36,8 @@ issues are [Platform #1187](https://github.com/Conxian/conxius-platform/issues/1
 [`.github` #41](https://github.com/Conxian/.github/issues/41), and
 [Core #188](https://github.com/Conxian/lib-conxian-core/issues/188) remain
 closed remediation evidence.
+This documentation recovery is carried by a separate follow-up PR; that PR is
+pending review/merge and is not part of `main` until it lands.
 **Sprint:** W29 (2026-07-15 to 2026-07-25)  
 **Maintained By:** Agent sessions
 

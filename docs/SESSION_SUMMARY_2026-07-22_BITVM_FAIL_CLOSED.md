@@ -7,10 +7,11 @@
 - **Trigger:** [issue comment](https://github.com/Conxian/conxian-gateway/issues/189#issuecomment-5050390033)
 - **Approval:** [issue comment](https://github.com/Conxian/conxian-gateway/issues/189#issuecomment-5050635950)
 
-> **Status:** Research / evaluation only. PR #278 was pending at the Phase 4
-> continuity checkpoint and was subsequently merged externally; the Phase 4
-> documentation commit was pushed afterward and is not in merged `main`. The
-> implementation and docs must not be treated as resolving issue #189.
+> **Status:** Research / evaluation only. PR #278 was merged externally at
+> [`96de9c0e976caf1dd3592593073d1f53e58bc91b`](https://github.com/Conxian/conxian-gateway/commit/96de9c0e976caf1dd3592593073d1f53e58bc91b).
+> The Phase 4 documentation commit was pushed afterward and is being recovered
+> through a separate follow-up PR that remains pending review/merge. Neither
+> the implementation nor these docs resolve issue #189.
 
 ## Continuity verification
 
@@ -42,9 +43,8 @@
   [`e761d3edfa7c7cbe6a4d9aa67e4e34229a7e3005`](https://github.com/Conxian/conxian-gateway/commit/e761d3edfa7c7cbe6a4d9aa67e4e34229a7e3005)
   was created at 2026-07-22T20:07:46Z and pushed after the merge, so it is on
   the branch but not in merged `main`.
-- Issue #189 remains open and research-only. If these docs must land in `main`,
-  they need a separate reviewed follow-up path; no new PR or merge was created
-  in this session.
+- Issue #189 remains open and research-only. These docs require a separate
+  reviewed follow-up path and remain outside `main` until that PR is merged.
 
 ## Phase 1 — cross-repository contract findings
 
@@ -147,8 +147,10 @@ security rating or approval:
 | Union Bridge | **3** | Rootstock Testnet/experimental, not production evidence |
 
 **Decision:** keep #189 open and research-only. No external candidate satisfies
-the promotion gates. PR #278's implementation was merged externally, but the
-post-merge documentation commit is not in merged `main`; neither resolves #189.
+the promotion gates. PR #278's implementation was merged externally at
+[`96de9c0e976caf1dd3592593073d1f53e58bc91b`](https://github.com/Conxian/conxian-gateway/commit/96de9c0e976caf1dd3592593073d1f53e58bc91b),
+but the post-merge documentation commit is carried by a separate follow-up PR
+that remains pending review/merge; neither resolves #189.
 
 ## Verification
 

@@ -7,12 +7,16 @@ boundaries, and next acceptance slices for the six issues that were open at the
 **Historical audit snapshot:** `Conxian/conxian-gateway` `origin/main` at
 [`764859fd19c6b4305c0b7b9222c71493b3587177`](https://github.com/Conxian/conxian-gateway/commit/764859fd19c6b4305c0b7b9222c71493b3587177).
 
-**Current Phase 4 implementation context:** local continuity verification on
+**Historical Phase 4 implementation context before PR #278:** local continuity verification on
 2026-07-22 pulled `origin/main` at
 [`d7032ab621ad038f247566f820ac664a6c8c071c`](https://github.com/Conxian/conxian-gateway/commit/d7032ab621ad038f247566f820ac664a6c8c071c)
 and created `charlie/issue-245-tracked-mempool-telemetry` directly from that
 base. The branch is a reviewable implementation context, not a claim that the
 slice is merged into `main`.
+
+**Current merged-main verification:** `origin/main` is at
+[`96de9c0e976caf1dd3592593073d1f53e58bc91b`](https://github.com/Conxian/conxian-gateway/commit/96de9c0e976caf1dd3592593073d1f53e58bc91b),
+the external merge commit for PR #278.
 
 **Audit branch:** `charlie/issue-245-audit-2026-07-22`.
 
@@ -33,8 +37,8 @@ on `charlie/issue-189-bitvm-fail-closed`. Its fail-closed implementation is
 [`114b857ed9d400beaf474cb68e7ac5f25ef58d78`](https://github.com/Conxian/conxian-gateway/commit/114b857ed9d400beaf474cb68e7ac5f25ef58d78);
 the branch was at
 [`c893cbb39ea9d680b229a89035ab38f29ed51b8b`](https://github.com/Conxian/conxian-gateway/commit/c893cbb39ea9d680b229a89035ab38f29ed51b8b)
-before this documentation consolidation. At the continuity checkpoint, the PR
-was pending; GitHub subsequently reports an external merge at
+before this documentation consolidation. The continuity checkpoint predates
+GitHub's subsequent external merge at
 2026-07-22T19:57:47Z as
 [`96de9c0e976caf1dd3592593073d1f53e58bc91b`](https://github.com/Conxian/conxian-gateway/commit/96de9c0e976caf1dd3592593073d1f53e58bc91b).
 Charlie did not merge it. The Phase 4 documentation commit
@@ -48,6 +52,8 @@ issues are [Platform #1187](https://github.com/Conxian/conxius-platform/issues/1
 [`.github` #41](https://github.com/Conxian/.github/issues/41), and
 [Core #188](https://github.com/Conxian/lib-conxian-core/issues/188) are retained
 as closed remediation evidence.
+This documentation recovery is carried by a separate follow-up PR; that PR is
+pending review/merge and is not part of `main` until it lands.
 
 ## Executive outcome
 
