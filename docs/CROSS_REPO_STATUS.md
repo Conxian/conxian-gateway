@@ -74,7 +74,7 @@ lib-conclave-sdk  ←  shares types with SDK (L3)
 | # | Issue | Status |
 |---|-------|--------|
 | #236 SDK | Version drift + README | ✅ Fixed (0.1.4, Developer Preview) |
-| #220 DLC CET | dlc-manager integration | ⚠️ Attempted in `453a15a`/`8ef9d05`, then reverted in `cb8b680` after API incompatibility/CI failures; remains open |
+| #220 DLC CET | Research/API gate before CET implementation | ⚠️ HTTP oracle/event/key/outcome scaffold only; no cryptographic announcement/attestation verification, DLC dependency, funding/CET/refund/adaptor-signature construction, or real bond construction. UUID/mock bond IDs only. See [`DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md`](research/DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md). |
 | #219 Groth16 | Verifier boundary | ✅ Canonical contract, commitment binding, fixture, and BitVM handoff merged in PR #255; no production cryptographic backend |
 | #216 Babylon | BTC header SPV | ✅ Header-chain retrieval and bounded verification merged in PR #253; EOTS/finality extensions remain separate |
 
@@ -100,6 +100,13 @@ lib-conclave-sdk  ←  shares types with SDK (L3)
 - `8ef9d05` adjusted the attempted `dlc-manager` version.
 - `cb8b680` removed `dlc_cet`, `dlc-manager`, and related wiring after API incompatibility/CI failures.
 - `cc10886` recorded the superseded completion claim; see `docs/SESSION_SUMMARY_2026-07-20.md` for the correction.
+
+**DLC research alignment (2026-07-22):** The canonical source ledger,
+mainnet-evidence policy, SDK comparison, and readiness gates are recorded in
+[`docs/research/DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md`](research/DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md).
+The next checkpoint compares pinned upstream `rust-dlc v0.8.0` and DDK
+`v1.1.2` in isolation; it does not authorize a dependency addition or a
+mainnet claim.
 
 **Babylon #216 status (2026-07-22; supersedes the pending note below):** PR #253
 merged the BTC header-chain query and bounded verification implementation. The
@@ -136,6 +143,7 @@ EOTS, full Babylon finality, and other non-goals remain separate.
 | 2026-07-20 | conxian-gateway | #216 continuity correction and Babylon header-chain implementation delivered in PR #253; pending merge. |
 | 2026-07-20 | conxian-gateway | #219 boundary milestone: canonical contract, commitment binding, circuit/key association, BitVM handoff, deterministic fixture, and rejection tests completed locally; production backend remains open. |
 | 2026-07-15 | conxian-gateway | W29 P0 implementation attempt recorded; later verification found the DLC CET attempt reverted in `cb8b680`, so #220 remains open. |
+| 2026-07-22 | conxian-gateway | DLC ecosystem, SDK, paper, and mainnet-evidence research aligned; CET implementation and dependency selection remain gated by the canonical readiness document. |
 | 2026-07-15 | conxian-gateway | W29 sprint start. Full verification complete. |
 | 2026-07-14 | conxian-gateway | W28 sprint close. Gap analysis of 11 issues. Session Continuity Protocol implemented. |
 | 2026-07-14 | conxian-gateway | Initial gap analysis. AGENTS.md updated. 11 GitHub issues commented. |

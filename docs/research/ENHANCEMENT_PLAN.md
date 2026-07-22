@@ -12,6 +12,7 @@ This document outlines the discrepancies identified during the Systemic Alignmen
 ### DLC Orchestration (CON-62 / CON-72)
 - **Gap**: Functional logic for DLC Bond lifecycle was missing from the gateway core.
 - **Enhancement**: Defined `DlcOrchestrator` trait in `conxian-core` to formalize the lifecycle of Bitcoin-native DLC bonds and coupon distribution.
+- **Current boundary (2026-07-22)**: The trait and bond DTOs are application-level scaffolding; they do not implement the DLC wire protocol, oracle signature verification, funding/CET/refund construction, or production persistence. See [`DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md`](DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md).
 
 ### Universal Chain Verification (UCV-1)
 - **Gap**: Verification logic was fragmented across multiple handlers and specific methods (BitVM, ZKC, TEE).
@@ -69,6 +70,6 @@ This document outlines the discrepancies identified during the Systemic Alignmen
 
 ### 2026-06-24 Protocol Expansion & API Integration
 - **BIP-322 API Integration**: Integrated message verification into `resolve_identity_v1` API handler to enforce proof-of-possession.
-- **DLC Primitives**: Implemented DLC bond primitives and USI mapping logic in `conxian-core` and `ZkcVerifier`.
+- **DLC status correction (2026-07-22)**: Application-level DLC bond DTOs and USI mapping scaffolds exist in `conxian-core`; full DLC protocol primitives and CET construction are not implemented. The dependency/API choice is gated by [`DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md`](DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md).
 - **MuSig2 Aggregation**: Successfully implemented MuSig2 (BIP-327) key and signature aggregation primitives in the compliance layer.
 - **State Hardening**: Expanded `SettlementSource` to support DLC-backed Bitcoin bonds.

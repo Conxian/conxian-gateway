@@ -49,9 +49,9 @@ For complete organizational protocol, see:
 - **Protocol Drift**: Resolved — Fedimint, Citrea, and Strata adapters implemented and in production paths.
 - **RGB G-1385 (Phase 1)**: StashResolver delivered (commit `124d17e`) with `rgb-std` v0.12.0-rc.3 + `bp-esplora` v0.12.0-rc.3 behind `rgb-native` feature. Phase 2 (ContractVerify, consignment) blocked on rgb-std ecosystem stabilization.
 - **PR #233 (G-1389)**: Tech debt reduction merged (`5e6613e`). Includes Fedimint/Citrea/Strata adapters, Redis coordination module, auth middleware timing stubs, reqwest 0.13 upgrade, dead_code cleanup. Citrea adapter moved from `bitcoin/` to `ntt/`.
-- **Gap Analysis (2026-07-14)**: Full review of 11 open issues vs. codebase complete. Report at `docs/GAP_ANALYSIS_2026-07-14.md`. Key findings:
-  - ⚠️ #236 SDK: Version drift (SDK 0.1.0 vs workspace 0.1.4), README claims "Production Ready" (overstated)
-  - ⚠️ #220 DLC: Oracle abstraction done, CET construction missing (no dlc-manager dep)
+- **Gap Analysis (2026-07-14, DLC correction 2026-07-22)**: Full review of 11 open issues vs. codebase complete. Report at `docs/GAP_ANALYSIS_2026-07-14.md`. Key findings and current corrections:
+  - ✅ #236 SDK: Version/documentation alignment is fixed in the tree — `packages/client-sdk/package.json` is `0.1.4` and the README says "Developer Preview"; the dated gap-analysis entry is retained as historical context
+  - ⚠️ #220 DLC: HTTP oracle/event/key/outcome scaffold only; cryptographic announcement and attestation verification, any DLC dependency, funding/CET/refund/adaptor-signature construction, and real bond construction remain open. The current scaffold uses UUID/mock bond IDs only; see `docs/research/DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md`
   - ⚠️ #219 Groth16: canonical BN254 contract, BitVM handoff, fixture, and rejection tests merged in PR #255; production cryptographic backend remains open
   - [x] #216 Babylon: BTC header-chain retrieval and bounded SPV-style verification merged in PR #253; EOTS/finality extensions remain separate
 - **Sprint Protocol (2026-07-14)**: Session Continuity Protocol implemented. All agent sessions now verify prior work before proceeding. See:
@@ -120,13 +120,13 @@ Before submitting changes, you MUST:
 - **node-ci.yml**: TypeScript build + vitest (client-sdk only).
 - **release.yml**: Tag-triggered GitHub Release with SBOM (CycloneDX) and SLSA L3 provenance.
 
-## Known Gaps (2026-07-14 Update)
+## Known Gaps (2026-07-14 snapshot; current corrections noted)
 - [x] #228: RGB stash resolver (G-1385 P1) — merged `124d17e`
 - [x] #233 (G-1389): Tech debt reduction — merged `5e6613e`
 - [x] G-1276: Redis AUTH + token expiry — merged `2ef6df1`
 - [x] G-1380: SBOM and Provenance to release workflow — merged `19181c5`
-- [ ] #236: SDK version drift + README overclaim — see `docs/GAP_ANALYSIS_2026-07-14.md`
-- [ ] #220: DLC CET construction — dlc-manager dependency missing
+- [x] #236: SDK version drift + README overclaim — fixed in tree (`packages/client-sdk/package.json` is `0.1.4`; README says "Developer Preview"); issue state is tracked separately
+- [ ] #220: DLC CET construction — HTTP oracle/event/key/outcome scaffold only; research/API spike required before selecting `rust-dlc` or DDK. No cryptographic announcement/attestation verification, DLC dependency, funding/CET/refund/adaptor-signature construction, or real bond construction is present; UUID/mock bond IDs only. See `docs/research/DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md`
 - [ ] #219: Groth16 cryptographic backend — boundary contract and deterministic fixture handoff merged in PR #255; production pairing backend remains open
 - [x] #216: Babylon BTC header-chain SPV — bounded header-chain retrieval/verification merged in PR #253; EOTS/finality extensions remain separate
 - [ ] #189: BitVM3/BitVMX-GC adapter — research-only; PR #259 (evaluation harness) and PR #267 (initial research expansion) are merged; PR #268 is the current comprehensive SDK/paper/network-proof/cross-repo triage and remains open until merged; no stable GC SDK or production deployment is verified
@@ -135,14 +135,17 @@ Before submitting changes, you MUST:
 
 Full gap analysis: `docs/GAP_ANALYSIS_2026-07-14.md`
 
-### Critical P0 Actions (W29 — ALL APPROVED)
-1. **Fix SDK version** — `packages/client-sdk/package.json`: `0.1.0` → `0.1.4`
-2. **Fix SDK README** — Remove "Production Ready" claim → "Developer Preview"
-3. **Add DLC CET** — Add `dlc-manager` dependency for #220
-4. **Add Groth16 cryptographic backend** — Canonical contract and BitVM handoff merged in PR #255; add a real backend separately
-5. **Extend Babylon verification** — Header-chain/SPV boundary merged in PR #253; EOTS/finality work remains separate
+### Critical P0 Actions (W29 — historical approval list)
+The #236 version and README corrections listed below are complete in the current
+tree. This historical list is retained for continuity and does not imply that
+those two fixes remain open.
+1. **#236 SDK version** — ✅ Applied: `packages/client-sdk/package.json` is `0.1.4`
+2. **#236 SDK README** — ✅ Applied: the status is "Developer Preview", not "Production Ready"
+3. **Align DLC research and API gate** — Compare pinned `rust-dlc` v0.8.0 and DDK v1.1.2 in an isolated spike before any workspace dependency or CET implementation for #220
+4. **Define Groth16 boundary** — Canonical contract and BitVM handoff merged in PR #255; add a real backend separately
+5. **Implement Babylon SPV** — BTC header-chain retrieval and bounded verification merged in PR #253; EOTS/finality remains separate
 
-**Status:** P0 items remain approved; #216 and #219 boundary milestones are merged, while a production Groth16 backend and additional Babylon finality/EOTS work remain separate.
+**Status:** P0 items remain approved; #216's header-chain/SPV boundary and #219's Groth16 boundary milestone are merged, while a production Groth16 backend and additional Babylon finality/EOTS work remain separate. DLC remains research/status alignment only until the gates in `docs/research/DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md` pass.
 
 ### New Strategic Gaps (2026-07-06)
 - [x] G-C1: CBTC non-custodial verification — conxian-core types + `POST /api/v1/canton/cbtc/verify` handler with 6-point attestation check (commit pending)
