@@ -1,9 +1,15 @@
 # Cross-Repository Status Snapshot
 
-**Status snapshot:** 2026-07-22T14:42:43Z (observed via GitHub CLI; not live)
-**Source commit:** `764859fd19c6b4305c0b7b9222c71493b3587177` (`origin/main`)
+**Historical status snapshot:** 2026-07-22T14:42:43Z (observed via GitHub CLI; not live)
+**Historical source commit:** `764859fd19c6b4305c0b7b9222c71493b3587177` (`origin/main`)
 **Refresh rule:** Re-query GitHub before treating issue or PR counts as current;
 this timestamped snapshot and its dated history are not live data.
+**Current Phase 4 implementation context (local verification, 2026-07-22):**
+`origin/main` is now at
+[`d7032ab621ad038f247566f820ac664a6c8c071c`](https://github.com/Conxian/conxian-gateway/commit/d7032ab621ad038f247566f820ac664a6c8c071c),
+and the bounded #245 slice is being prepared on
+`charlie/issue-245-tracked-mempool-telemetry`. This branch context is not a
+claim that the slice is merged into `main`.
 **Superseded observation:** The preceding pre-merge snapshot recorded PR #274
 as open; it merged into `main` at 2026-07-22T14:25:01Z as commit
 `764859fd19c6b4305c0b7b9222c71493b3587177`.
@@ -85,7 +91,7 @@ lib-conclave-sdk  ←  shares types with SDK (L3)
 | [#220](https://github.com/Conxian/conxian-gateway/issues/220) | Isolated DLC research/conformance/fixture slices merged; no Gateway runtime dependency or production CET path | Select manager/provider API only after independent offer/accept/sign/funding/CET/refund vectors and wallet/signing boundaries pass |
 | [#222](https://github.com/Conxian/conxian-gateway/issues/222) | The audit follow-up adds an exact-tag-commit baseline for Rust, Node, Cargo audit, Gitleaks, Lightning coverage, deterministic artifact verification, and SLSA subjects; issue remains open pending merge, admin controls, and a live release rehearsal | Review/merge the narrow release-governance slice; configure required checks and the protected `release` environment; verify one tagged release |
 | [#228](https://github.com/Conxian/conxian-gateway/issues/228) | RGB Phase 1 plus Phase 2 stockpile/import hardening merged in PRs #256/#261/#262; issue remains open | Add a concrete issuer-signature backend, signed Bitcoin/RGB regtest fixture, and transactional existing-contract update path |
-| [#245](https://github.com/Conxian/conxian-gateway/issues/245) | Research/observability; this snapshot records no Gateway BIP-110 integration or fee predictor; no fee multiplier/model rewrite justified | Define deployment/status observability, Core preflight passthrough, fee telemetry, route confidence, and acceptance metrics |
+| [#245](https://github.com/Conxian/conxian-gateway/issues/245) | Research/observability; the Phase 4 working branch adds read-only Gateway-tracked mempool/fee-bump telemetry, but no BIP-110 integration or fee predictor; no fee multiplier/model rewrite justified | Add node/Core deployment and preflight provenance, network/node mempool and fee telemetry, durable RBF/CPFP outcome history, route-confidence calibration, and fee-model acceptance evidence |
 | [#247](https://github.com/Conxian/conxian-gateway/issues/247) | Blocked/high-risk; ALEX quote/prepared-payload surfaces exist, while secure signer, exact contract/escrow semantics, and governance controls remain unresolved | Approve exact signer/contract/governance design, prove testnet controls, and reconcile the rehearsal/API contract |
 
 ### Closed/merged milestones that must not be listed as open
@@ -102,6 +108,15 @@ The detailed score and evidence inventory are in
 [`GAP_ANALYSIS_2026-07-22.md`](GAP_ANALYSIS_2026-07-22.md), and the #245 source
 ledger is in
 [`BIP110_FEE_MARKET_AND_ROUTING_2026-07-22.md`](research/BIP110_FEE_MARKET_AND_ROUTING_2026-07-22.md).
+
+### Gateway ownership boundary for #245
+
+| Surface | Owner | Current responsibility |
+|---|---|---|
+| Core preflight | `lib-conxian-core` | Versioned, fail-closed BIP-110 size/preflight contract; no script interpretation or deployment verdict |
+| Fee recommendation | `conxius-wallet` | Wallet-owned fee recommendation and transaction-construction/signing context; not inferred by Gateway telemetry |
+| Network observation | `conxian-nexus` | Node/network observation and upstream chain/mempool evidence; not synthesized by Gateway tracked-state aggregates |
+| Tracked operational telemetry | `conxian-gateway` | Read-only aggregation of persisted `TrackedMempoolTx` records, authenticated `/api/v1/bitcoin/mempool/telemetry`, and bounded `/metrics` gauges |
 
 ---
 

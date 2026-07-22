@@ -296,7 +296,7 @@ Charging, Data, Compute, Storage, Delivery, Other
 
 ---
 
-## Complete API Surface (16 endpoints)
+## API Surface Index (25 documented endpoints)
 
 ### Core (6 endpoints)
 ```
@@ -308,7 +308,7 @@ POST   /api/v1/identity/exchange           → Identity exchange
 POST   /api/v1/identity/resolve            → Human identity resolution
 ```
 
-### Canton Network (4 endpoints) ← NEW P1/P2
+### Canton Network (3 endpoints) ← NEW P1/P2
 ```
 POST   /api/v1/canton/cbtc/verify          → G-C1: CBTC non-custodial verify
 POST   /api/v1/canton/state/translate      → G-C4: Daml ACS → UniversalRef
@@ -322,7 +322,7 @@ POST   /api/v1/m2m/settle                  → G-C3: M2M settlement routing
 POST   /api/v1/rwa/machine/verify-revenue  → G-C6: Machine RWA revenue verify
 ```
 
-### Financial (3 endpoints)
+### Financial (4 endpoints)
 ```
 POST   /api/v1/fiat/session                → Fiat ramp session
 POST   /api/v1/fiat/webhook                → Fiat webhook verify
@@ -330,14 +330,15 @@ POST   /api/v1/a2p/otp                     → A2P OTP send
 POST   /api/v1/a2p/verify                  → A2P OTP verify
 ```
 
-### Bitcoin Stack (3 endpoints)
+### Bitcoin Stack (4 endpoints)
 ```
+GET    /api/v1/bitcoin/mempool/telemetry → Gateway-tracked mempool/fee-bump telemetry (auth)
 POST   /api/v1/dlc/bond                    → DLC bond scaffold (mock ID; no CET)
 POST   /api/v1/musig2/aggregate-keys       → Musig2 key aggregation
 POST   /api/v1/chains/{chain}/verify       → Chain state proof verify
 ```
 
-### Protocol-Specific (4 endpoints)
+### Protocol-Specific (5 endpoints)
 ```
 GET    /api/v1/chains/list                 → Supported chains
 GET    /api/v1/chains/{chain}/height       → Chain height
