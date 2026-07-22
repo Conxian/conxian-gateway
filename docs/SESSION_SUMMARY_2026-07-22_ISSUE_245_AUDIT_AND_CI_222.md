@@ -2,150 +2,147 @@
 
 **Date:** 2026-07-22
 **Repository:** `Conxian/conxian-gateway`
-**Trigger:** Close the remaining pre-push P1/P2 release-audit findings while
-preserving the factual #245 BIP-110 boundary and the Session Continuity
-Protocol.
+**Trigger:** https://github.com/Conxian/conxian-gateway/issues/245#issuecomment-5046109792
+**Selected candidate:** https://github.com/Conxian/conxian-gateway/issues/222
 
-## Phased approach
+This handoff records the final archive-boundary correction, the current
+post-rebase lineage, and the evidence for the release-governance slice. It does
+not claim that the remaining #222 administrative or rehearsal prerequisites are
+complete.
 
-1. **Continuity and lineage:** attempted the required `git pull origin main`,
-   then inspected the graph, merge-base, and reflog because the branch had
-   diverged from `origin/main`. The active lineage is preserved; no rebase or
-   force update was performed.
-2. **Release identity:** added last-moment remote-tag rechecks immediately
-   before GitHub Release creation and crates.io publication. The check uses the
-   GitHub REST API, peels annotated tags, and compares the result with the
-   immutable commit emitted by `release-identity`.
-3. **Artifact proof:** hardened the raw USTAR scanner and added semantic
-   CycloneDX 1.5 validation against locked Cargo workspace metadata. Added
-   deterministic and adversarial regression tests without extracting archives.
-4. **Snapshot alignment:** corrected the root instructions, Node CI scope, and
-   cross-repository wording so dated status documents are not presented as
-   live dashboards. #222 and #245 remain accurately open/research-bound.
-5. **Verification and handoff:** ran the repository-required checks, a fresh
-   cargo-cyclonedx/locked-metadata release verification, and the Lightning gate.
-   The final changes and this summary are intended for one signed-off commit;
-   the post-commit SHA must be recorded from `git rev-parse HEAD`, not guessed
-   in this file.
+## Phase 1/2 audit and selection
 
-## Verified branch state before the final commit
+The current six-issue audit retains the following evidence-backed scores:
+
+| Rank | Issue | Score | Current conclusion |
+|---:|---:|---:|---|
+| 1 | #222 CI/CD release governance | 88/90 | Selected; implementation is present, but administrative and live-release gates remain |
+| 2 | #245 BIP-110 routing/fees | 62/90 | Observability/preflight slice only; no justified runtime fee rewrite |
+| 3 | #228 RGB stash resolver | 60/90 | Phase 2 hardening merged; issuer backend and signed regtest evidence remain |
+| 4 | #220 DLC CET | 58/90 | Research and conformance gates precede any runtime dependency |
+| 5 | #189 BitVM3/BitVMX-GC | 55/90 | Research-only; no stable production integration target verified |
+| 6 | #247 ALEX | 42/90 | Signer, contract, escrow, treasury, and governance prerequisites remain |
+
+#222 remains **open/pending**. The outstanding prerequisites are merge and
+required-check administration, protected release environment/reviewer rules,
+protected-tag rules, a live tagged-release and attestation rehearsal, and
+publishable Cargo package/path-dependency metadata. No live administration or
+release rehearsal is claimed by this summary.
+
+## Issue #245 factual boundary
+
+The Gateway contains no production BIP-110 integration, BIP-110 fee predictor,
+or evidence supporting a fee multiplier or fee-model rewrite. Proposal, policy,
+signaling, and active-consensus status remain separate facts. The proposed
+follow-on slice is versioned deployment/status observability, Bitcoin Core
+preflight or `getblocktemplate` passthrough, fee telemetry, route-confidence
+measurements, and acceptance metrics. BIP-110 status alone must not be used to
+claim active deployment or reduced fees.
+
+## Final archive and verifier corrections
+
+- `scripts/verify_release_artifacts.py` now parses gzip with a zlib stream and
+  rejects missing end-of-stream, unused data, trailing bytes, and any second
+  gzip member. The decompressed tar must contain exactly two terminal USTAR zero
+  blocks followed immediately by EOF.
+- `.github/workflows/release.yml` uses GNU tar `--blocking-factor=1` together
+  with `--format=ustar`, sorted entries, normalized metadata, and `gzip -n`, so
+  the intended archive satisfies the verifier rather than relying on GNU tar's
+  default record padding.
+- The full verifier tests cover raw bytes after gzip, an additional empty gzip
+  member, a concatenated nonempty gzip member, and additional tar zero blocks.
+  The exact workflow archive command is also exercised.
+- Remote-tag tests cover HTTP/JSON failure, URL-encoded tag names, cycles,
+  exactly-maximum annotated-tag depth, and depth exhaustion.
+- CycloneDX verification requires the dependency graph to represent the
+  metadata root and every top-level component bom-ref. Fresh
+  `cargo-cyclonedx 0.5.9` output was accepted without imposing a requirement
+  on nested target descriptors that are not graph nodes.
+
+## Rebase and lineage
+
+The required pull was attempted before rebasing; the branch had diverged, so no
+merge commit was created. After fetching again, the branch was rebased onto the
+current `origin/main`:
 
 - Branch: `charlie/issue-245-audit-2026-07-22`
-- Current pre-commit `HEAD`: `570db329c7144c456c074f1226b8d1022490496f`
-- Original local base: `6838d872513b681cf88f07fc5431f02b856b6d0e`
 - `origin/main`: `764859fd19c6b4305c0b7b9222c71493b3587177`
-- Merge-base with `origin/main`: `0dc6390ddbfbb4d74c472da3a86e90aa2397524f`
-- Ahead/behind before the final commit: `3/1`
-- Active branch-only lineage: `8945ec4957f63bfe74fd8120889d57cc3154aeec` →
-  `f2d6a6f4ff907a04321d5073604215166d1bbb57` →
-  `570db329c7144c456c074f1226b8d1022490496f`
-- Previously reported `f2ef5d2eeb762f2c255d2dec3ef62dc18afd2512` and
-  `c622ea3f9f8ff75edf10125b89a03814fb8959b6` are not ancestors; the active
-  equivalent commits above are the lineage to preserve.
+- Latest substantive parent before this summary was finalized:
+  `31b271dfa08b9e7dba41b37124d0c8b623b245cc`
+- Merge-base before the summary commit:
+  `764859fd19c6b4305c0b7b9222c71493b3587177`
+- Ahead/behind before the summary commit: `5/0`
+- Branch-only commits, oldest to newest after rebase:
+  `37c7bbc` → `1579273` → `f6cb1a2` → `6ae55c7` → `31b271d`
+- The rebase used evidence-supported conflict resolution only and introduced
+  no merge commit.
 
-The branch is not demonstrably based on the latest `origin/main`; the entry
-agent must decide the later rebase/merge and push.
+This file intentionally does not contain a guessed self-referential commit
+hash. After the summary commit is finalized, resolve its containing commit with
+`git log -1 --format=%H -- docs/SESSION_SUMMARY_2026-07-22_ISSUE_245_AUDIT_AND_CI_222.md`.
+The lineage, merge-base, and ahead/behind values above describe the verified
+parent state immediately before that summary commit; re-check them after the
+commit and again after pushing.
 
-## Six-issue scoring and selection
+## Files and artifacts
 
-The dated gap analysis ranks the open Gateway inventory as follows:
+The audit branch includes the release workflow/tooling and dated continuity
+updates, including:
 
-| Rank | Issue | Score | Selection rationale |
-|---:|---:|---:|---|
-| 1 | #222 CI/CD release governance | 88/90 | Implementation-ready, highest risk reduction, and directly controls release/proof claims |
-| 2 | #245 BIP-110 routing/fees | 62/90 | Narrow research/observability slice; no justified runtime rewrite |
-| 3 | #228 RGB stash resolver | 60/90 | Hardening is merged, but issuer backend and signed regtest evidence remain |
-| 4 | #220 DLC CET | 58/90 | Research and conformance gates still precede a runtime dependency |
-| 5 | #189 BitVM3/BitVMX-GC | 55/90 | Evidence remains research-only; no stable production target |
-| 6 | #247 ALEX | 42/90 | Blocked by signer, contract, escrow, treasury, and governance prerequisites |
+- `.github/workflows/release.yml`, the other CI workflow pin/scope updates,
+  `AGENTS.md`, `RELEASE.md`, and `docs/CI_TOOLING_PINS.md`;
+- `scripts/verify_release_artifacts.py`, `scripts/verify_remote_tag.py`,
+  `scripts/normalize_release_sbom.py`, and the Lightning coverage gate;
+- `tests/test_verify_release_artifacts.py`, `tests/test_verify_remote_tag.py`,
+  and `tests/test_normalize_release_sbom.py`;
+- `docs/GAP_ANALYSIS_2026-07-22.md`, `docs/CROSS_REPO_STATUS.md`, the BIP-110
+  and BitVMX research records, and this continuity summary.
 
-This session selected #222 because its remaining slice is concrete and
-release-critical. It remains **open/pending** merge, required-check and
-protected-environment administration, a live tagged-release rehearsal, and
-publishable Cargo metadata. No live administrative control or release rehearsal
-is claimed here.
-
-## Issue #245 factual conclusion
-
-The Gateway tree contains no production BIP-110 integration, no BIP-110-driven
-fee predictor, and no evidence supporting a fee multiplier or fee-model rewrite.
-BIP-110 proposal, policy, signaling, and active-consensus status must remain
-distinct; a status change cannot be used to claim active deployment or reduced
-fees. The next slice should be operational and versioned:
-
-- deployment/status observability;
-- Bitcoin Core preflight or `getblocktemplate` passthrough with an explicit
-  versioned contract;
-- fee telemetry and route-confidence measurements; and
-- acceptance metrics for routing decisions.
-
-Do not replace the existing fee model or infer fee reductions from BIP-110
-status alone.
-
-## Files and artifacts produced
-
-- `.github/workflows/release.yml` — locked metadata propagation, complete test
-  discovery, and immediate remote-tag checks before both publication paths.
-- `scripts/verify_remote_tag.py` — token-safe GitHub REST tag resolver with
-  annotated-tag peeling and immutable-commit comparison.
-- `scripts/verify_release_artifacts.py` — exact USTAR validation and locked
-  Cargo/CycloneDX semantic checks.
-- `scripts/normalize_release_sbom.py` — fail-closed input and property-shape
-  validation.
-- `tests/test_verify_remote_tag.py`, `tests/test_verify_release_artifacts.py`,
-  and `tests/test_normalize_release_sbom.py` — deterministic tag, archive,
-  SBOM, metadata, and adversarial regression coverage.
-- `AGENTS.md`, `RELEASE.md`, and `docs/CROSS_REPO_STATUS.md` — dated snapshot
-  language, all-workspace Node scope, and accurate #222/#245 wording.
-- This session summary; no GitHub issues/comments were modified and nothing was
-  pushed.
+This worker did not modify GitHub issue comments. The branch push and focused PR
+creation occur after this summary commit and are recorded in the final task
+handoff.
 
 ## Verification outcomes
 
 - `actionlint .github/workflows/*.yml` — pass.
-- `python3 -m unittest discover -s tests -p 'test_*.py'` — **36 passed**.
-- `python3 -m py_compile ...` and `git diff --check` — pass.
-- Fresh `cargo cyclonedx 0.5.9` output plus `cargo metadata --locked
-  --format-version 1 --no-deps` — normalized and verified successfully: 326
-  CycloneDX components, exact workspace inventory, and resolved dependency
-  references.
+- `python3 -m unittest discover -s tests -p 'test_*.py'` — **48 passed**;
+  normalizer, release-artifact, and remote-tag suites included.
+- Python compilation, `git diff --check`, and commit checks — pass.
+- Exact workflow archive fixture plus fresh `cargo-cyclonedx 0.5.9` and locked
+  Cargo metadata — pass: 3,584 decompressed tar bytes, exactly two terminal
+  zero blocks, 326 SBOM components, 327 dependency entries.
 - `cargo fmt --all -- --check` — pass.
-- `cargo clippy --workspace --all-targets --all-features -- -D warnings` — pass.
-- `cargo test --workspace` — pass.
-- `cargo test --workspace --features mock-integrations` — pass.
-- `pnpm install --frozen-lockfile && pnpm build && pnpm test` — pass; the
-  release baseline's workspace typecheck/lint/build/test command set also
-  passed.
+- `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`
+  — pass.
+- `cargo test --workspace --locked` — pass.
+- `cargo test --workspace --features mock-integrations --locked` — pass.
+- `pnpm install --frozen-lockfile`, the release baseline typecheck/lint/build,
+  Playwright dependency setup, and `pnpm test` — pass.
 - Pinned `cargo-audit 0.22.2` and `cargo audit` — pass.
 - `./scripts/lightning_coverage_gate.sh 90` — pass at **94.20%**.
 - `python3 scripts/verify_contamination_guard.py` — pass; 60 production files
   scanned.
-- Local health probe — HTTP 200 with `status=ok`.
+- Local health probe — HTTP 200 with JSON `status=ok`.
 
 ## Environment limitations and remaining prerequisites
 
-- The devbox could not complete the production cross-target build because the
-  `x86_64-linux-gnu-gcc` cross compiler was unavailable/permission-blocked.
-  Fresh SBOM verification and archive checks therefore used the actual fresh
-  SBOM/locked metadata plus a minimal synthetic x86_64 ELF fixture; the
-  production build still requires the release runner/toolchain.
-- The devbox Node runtime is 22.23.1 while the workflow pins Node 24; the
-  release command set passed locally, but the pinned runner remains authoritative.
-- Required external work remains: rebase/merge onto current `origin/main`,
-  push, configure branch/ruleset required checks, configure protected `release`
-  reviewers/environment, enforce tag force-update restrictions as defense in
-  depth, run one live tagged-release/attestation rehearsal, and resolve
-  crates.io path-dependency/package metadata and token prerequisites.
+- The devbox is ARM64 (`aarch64`). The production
+  `x86_64-unknown-linux-gnu` build could not complete because
+  `x86_64-linux-gnu-gcc` was unavailable/permission-blocked while building
+  `aws-lc-sys`. The verifier was exercised with the fresh actual SBOM and
+  locked metadata plus a minimal synthetic x86_64 ELF fixture; this is not a
+  claim that the production cross-target build passed.
+- The devbox has Node `22.23.1`; the workflow pins Node 24. The release command
+  set passed locally, but the pinned runner remains authoritative.
+- #222 still needs ruleset/required-check administration, protected `release`
+  environment and tags, a live tagged-release/attestation rehearsal, and
+  crates.io package/path-dependency metadata and token prerequisites.
 
-## Next-session start instructions
+## Next-session continuity checks
 
-1. Fetch/pull current `main` and re-check the branch graph, exact `HEAD`,
-   merge-base, and ahead/behind counts before rebasing or pushing.
-2. Refresh GitHub open issue and pull-request states and the source commit for
-   `docs/CROSS_REPO_STATUS.md`; treat all snapshot and gap-analysis documents
-   as dated evidence, not live state.
-3. Read this summary and the latest `docs/GAP_ANALYSIS_*.md`, then verify prior
-   artifacts and any release/admin changes before selecting new scope.
-4. Keep #222 open until merge, administrative controls, and a live release
-   rehearsal are evidenced. Keep #245 at the observability/preflight boundary;
-   do not claim active BIP-110 deployment or fee reductions.
+1. Fetch `main` and re-check exact `HEAD`, merge-base, ahead/behind, and clean
+   worktree before relying on this handoff.
+2. Refresh GitHub issue/PR state and the source commit for dated cross-repo
+   status documents; do not treat snapshots as live dashboards.
+3. Keep #222 open until administration and a live release rehearsal are
+   evidenced. Keep #245 at the observability/preflight boundary.
