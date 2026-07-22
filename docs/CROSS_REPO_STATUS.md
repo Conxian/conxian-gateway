@@ -14,11 +14,17 @@ claim that the slice is merged into `main`.
 as open; it merged into `main` at 2026-07-22T14:25:01Z as commit
 `764859fd19c6b4305c0b7b9222c71493b3587177`.
 **Post-snapshot BitVM Phase 4 note — 2026-07-22:** Gateway [PR #278](https://github.com/Conxian/conxian-gateway/pull/278)
-is pending on `charlie/issue-189-bitvm-fail-closed`. Its implementation commit
-is [`114b857ed9d400beaf474cb68e7ac5f25ef58d78`](https://github.com/Conxian/conxian-gateway/commit/114b857ed9d400beaf474cb68e7ac5f25ef58d78);
+was pending on `charlie/issue-189-bitvm-fail-closed` at the continuity
+checkpoint. Its implementation commit is
+[`114b857ed9d400beaf474cb68e7ac5f25ef58d78`](https://github.com/Conxian/conxian-gateway/commit/114b857ed9d400beaf474cb68e7ac5f25ef58d78);
 the pre-documentation branch head was
 [`c893cbb39ea9d680b229a89035ab38f29ed51b8b`](https://github.com/Conxian/conxian-gateway/commit/c893cbb39ea9d680b229a89035ab38f29ed51b8b).
-PR #278 is not merged and does not resolve [Gateway #189](https://github.com/Conxian/conxian-gateway/issues/189),
+GitHub subsequently reports an external merge at 2026-07-22T19:57:47Z as
+[`96de9c0e976caf1dd3592593073d1f53e58bc91b`](https://github.com/Conxian/conxian-gateway/commit/96de9c0e976caf1dd3592593073d1f53e58bc91b);
+Charlie did not merge PR #278. The Phase 4 documentation commit
+[`e761d3edfa7c7cbe6a4d9aa67e4e34229a7e3005`](https://github.com/Conxian/conxian-gateway/commit/e761d3edfa7c7cbe6a4d9aa67e4e34229a7e3005)
+was pushed after that merge and is not in merged `main`. PR #278 does not
+resolve [Gateway #189](https://github.com/Conxian/conxian-gateway/issues/189),
 which remains research-only. The current open cross-repository acceptance
 issues are [Platform #1187](https://github.com/Conxian/conxius-platform/issues/1187),
 [Nexus #169](https://github.com/Conxian/conxian-nexus/issues/169), and

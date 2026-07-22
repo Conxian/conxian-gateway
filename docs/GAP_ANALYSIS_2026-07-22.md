@@ -33,8 +33,13 @@ on `charlie/issue-189-bitvm-fail-closed`. Its fail-closed implementation is
 [`114b857ed9d400beaf474cb68e7ac5f25ef58d78`](https://github.com/Conxian/conxian-gateway/commit/114b857ed9d400beaf474cb68e7ac5f25ef58d78);
 the branch was at
 [`c893cbb39ea9d680b229a89035ab38f29ed51b8b`](https://github.com/Conxian/conxian-gateway/commit/c893cbb39ea9d680b229a89035ab38f29ed51b8b)
-before this documentation consolidation. The PR remains **pending and
-unmerged**, and [Gateway #189](https://github.com/Conxian/conxian-gateway/issues/189)
+before this documentation consolidation. At the continuity checkpoint, the PR
+was pending; GitHub subsequently reports an external merge at
+2026-07-22T19:57:47Z as
+[`96de9c0e976caf1dd3592593073d1f53e58bc91b`](https://github.com/Conxian/conxian-gateway/commit/96de9c0e976caf1dd3592593073d1f53e58bc91b).
+Charlie did not merge it. The Phase 4 documentation commit
+[`e761d3edfa7c7cbe6a4d9aa67e4e34229a7e3005`](https://github.com/Conxian/conxian-gateway/commit/e761d3edfa7c7cbe6a4d9aa67e4e34229a7e3005)
+was pushed after that merge and is not part of merged `main`. [Gateway #189](https://github.com/Conxian/conxian-gateway/issues/189)
 remains open and research-only. The current open cross-repository acceptance
 issues are [Platform #1187](https://github.com/Conxian/conxius-platform/issues/1187),
 [Nexus #169](https://github.com/Conxian/conxian-nexus/issues/169), and
@@ -343,9 +348,9 @@ verified.
   research expansion and canonical SDK/paper/network-proof/cross-repository
   triage.
 - [PR #278](https://github.com/Conxian/conxian-gateway/pull/278) carries the
-  fail-closed generic BitVM verification change and this Phase 4 documentation
-  consolidation. It is pending, does not resolve #189, and does not add a
-  cryptographic backend.
+  fail-closed generic BitVM verification change; its implementation was merged
+  externally, while the Phase 4 documentation commit is a post-merge branch
+  update. It does not resolve #189 and does not add a cryptographic backend.
 - Current Gateway boundaries are `tools/bitvmx-eval/`,
   `internal/engine/src/bitcoin/groth16_verifier.rs`,
   `internal/engine/src/bitcoin/bitvm_adapter.rs`, and

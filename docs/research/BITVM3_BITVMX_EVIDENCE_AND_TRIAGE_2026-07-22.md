@@ -33,8 +33,17 @@ for [Gateway PR #278](https://github.com/Conxian/conxian-gateway/pull/278).
   [`c893cbb39ea9d680b229a89035ab38f29ed51b8b`](https://github.com/Conxian/conxian-gateway/commit/c893cbb39ea9d680b229a89035ab38f29ed51b8b),
   including the `main` merge at
   [`81d175540922b25192b683e95c9b48230c009454`](https://github.com/Conxian/conxian-gateway/commit/81d175540922b25192b683e95c9b48230c009454).
-- PR #278 is **pending and not merged**. This report is a research and
-  implementation handoff; it does not resolve [issue #189](https://github.com/Conxian/conxian-gateway/issues/189)
+- At the Phase 4 continuity checkpoint, PR #278 was **pending and not merged**.
+  GitHub subsequently reports that it was merged externally on
+  2026-07-22T19:57:47Z by `botshelomokoka` as merge commit
+  [`96de9c0e976caf1dd3592593073d1f53e58bc91b`](https://github.com/Conxian/conxian-gateway/commit/96de9c0e976caf1dd3592593073d1f53e58bc91b).
+  Charlie did not merge PR #278.
+- The Phase 4 documentation commit
+  [`e761d3edfa7c7cbe6a4d9aa67e4e34229a7e3005`](https://github.com/Conxian/conxian-gateway/commit/e761d3edfa7c7cbe6a4d9aa67e4e34229a7e3005)
+  was created at 2026-07-22T20:07:46Z and pushed after that merge, so these
+  docs are on the post-merge branch head and are not part of merged `main`.
+  This report remains a research and implementation handoff; it does not
+  resolve [issue #189](https://github.com/Conxian/conxian-gateway/issues/189)
   or authorize a cryptographic backend, settlement, custody, compliance, or
   production deployment.
 
@@ -160,7 +169,7 @@ These are dependencies and blockers, not endorsements. All listed items were ope
 | Area | Current verified classification | Durable reference |
 |---|---|---|
 | Gateway main | `internal/engine/src/bitcoin/groth16_verifier.rs` defines a versioned, backend-neutral BN254 envelope whose circuit, verification-key, public-input, witness-commitment, and block-context fields are bound by the canonical contract. `MockGroth16Verifier` performs no pairings. | [PR #255](https://github.com/Conxian/conxian-gateway/pull/255) merged; [Groth16 contract](https://github.com/Conxian/conxian-gateway/blob/main/docs/GROTH16_VERIFIER_CONTRACT.md) |
-| Gateway PR #278 (pending) | The generic BitVM route now propagates typed `VerifierUnavailable` and returns HTTP `501` with an unsupported/non-authoritative response instead of treating metadata as cryptographic verification. The documentation consolidation is pending on the branch. | [PR #278](https://github.com/Conxian/conxian-gateway/pull/278), implementation commit [`114b857ed9d400beaf474cb68e7ac5f25ef58d78`](https://github.com/Conxian/conxian-gateway/commit/114b857ed9d400beaf474cb68e7ac5f25ef58d78) |
+| Gateway PR #278 | The generic BitVM route now propagates typed `VerifierUnavailable` and returns HTTP `501` with an unsupported/non-authoritative response instead of treating metadata as cryptographic verification. The implementation was merged externally; the Phase 4 documentation commit is a post-merge branch update and is not in merged `main`. | [PR #278](https://github.com/Conxian/conxian-gateway/pull/278), implementation commit [`114b857ed9d400beaf474cb68e7ac5f25ef58d78`](https://github.com/Conxian/conxian-gateway/commit/114b857ed9d400beaf474cb68e7ac5f25ef58d78), docs commit [`e761d3edfa7c7cbe6a4d9aa67e4e34229a7e3005`](https://github.com/Conxian/conxian-gateway/commit/e761d3edfa7c7cbe6a4d9aa67e4e34229a7e3005) |
 | BitVM adapter | `internal/engine/src/bitcoin/bitvm_adapter.rs` parses/validates the envelope and delegates to an injected verifier. The legacy state-proof path remains metadata-only. | [PR #255](https://github.com/Conxian/conxian-gateway/pull/255) |
 | BitVMX evaluator | `tools/bitvmx-eval/` is a feature-gated, isolated BitVMX-CPU subprocess evaluator with research-only contract tests. | [PR #259](https://github.com/Conxian/conxian-gateway/pull/259) |
 | Universal verifier | `internal/compliance/src/verifier.rs` performs generic adapter dispatch; no production BitVM3, BitVMX-GC, recursive-SNARK, or pairing backend is wired. | [PR #267](https://github.com/Conxian/conxian-gateway/pull/267) |
@@ -242,11 +251,12 @@ The local boundary row is a guardrail baseline, not a cryptographic backend.
 No external candidate satisfies the full promotion gate set. The local
 boundary's `16/20` score describes contract clarity and fail-closed behavior,
 not cryptographic readiness. PR #278 is therefore a compatibility and safety
-hardening/documentation change only; it remains pending and does not resolve
-#189. The next implementation proposal must first settle the six ownership
-surfaces above, then provide a pinned backend, registry, vectors, resource
-report, protocol/finality evidence, enclave policy, independent review, and
-client presentation contract.
+hardening change only; its implementation was merged externally, while the
+Phase 4 documentation commit is a post-merge branch update. It does not
+resolve #189. The next implementation proposal must first settle the six
+ownership surfaces above, then provide a pinned backend, registry, vectors,
+resource report, protocol/finality evidence, enclave policy, independent
+review, and client presentation contract.
 
 No candidate may move from research to production integration until every gate below is satisfied for the exact revision and deployment role:
 
@@ -270,9 +280,12 @@ No candidate may move from research to production integration until every gate b
 - Keep `tools/bitvmx-eval/` isolated and evaluation-only.
 - Keep `MockGroth16Verifier` fixture-only and the production Groth16 backend unwired.
 - Do not add BitVM3/GC dependencies, production HTTP routes, settlement authorization, or compliance decisions from any upstream paper/demo/transaction.
-- Keep [PR #278](https://github.com/Conxian/conxian-gateway/pull/278) explicitly
-  pending; its fail-closed generic route and documentation handoff do not
-  resolve [Gateway #189](https://github.com/Conxian/conxian-gateway/issues/189).
+- [PR #278](https://github.com/Conxian/conxian-gateway/pull/278)'s fail-closed
+  implementation was merged externally at
+  [`96de9c0e976caf1dd3592593073d1f53e58bc91b`](https://github.com/Conxian/conxian-gateway/commit/96de9c0e976caf1dd3592593073d1f53e58bc91b).
+  The Phase 4 documentation commit is the post-merge branch update
+  [`e761d3edfa7c7cbe6a4d9aa67e4e34229a7e3005`](https://github.com/Conxian/conxian-gateway/commit/e761d3edfa7c7cbe6a4d9aa67e4e34229a7e3005),
+  not part of merged `main`; neither resolves [Gateway #189](https://github.com/Conxian/conxian-gateway/issues/189).
 - Track the six durable Conxian remediation references with their current
   states: [Platform #1187](https://github.com/Conxian/conxius-platform/issues/1187)
   and [Nexus #169](https://github.com/Conxian/conxian-nexus/issues/169) remain
@@ -290,6 +303,7 @@ Re-open implementation scoping only after a public candidate supplies a stable r
 
 - Phase 1/2 research base verified before PR #278: Gateway `main` at [`d7032ab621ad038f247566f820ac664a6c8c071c`](https://github.com/Conxian/conxian-gateway/commit/d7032ab621ad038f247566f820ac664a6c8c071c).
 - The earlier [`6838d872513b681cf88f07fc5431f02b856b6d0e`](https://github.com/Conxian/conxian-gateway/commit/6838d872513b681cf88f07fc5431f02b856b6d0e) and [`4a0433ad92b83bb59d69cb64f86128c1e0212a8e`](https://github.com/Conxian/conxian-gateway/commit/4a0433ad92b83bb59d69cb64f86128c1e0212a8e) bases remain historical PR #268 evidence-chain metadata, not the Phase 4 implementation base.
-- PR #278 implementation commit: [`114b857ed9d400beaf474cb68e7ac5f25ef58d78`](https://github.com/Conxian/conxian-gateway/commit/114b857ed9d400beaf474cb68e7ac5f25ef58d78); pre-documentation branch head: [`c893cbb39ea9d680b229a89035ab38f29ed51b8b`](https://github.com/Conxian/conxian-gateway/commit/c893cbb39ea9d680b229a89035ab38f29ed51b8b). PR #278 remains pending and unmerged.
+- PR #278 implementation commit: [`114b857ed9d400beaf474cb68e7ac5f25ef58d78`](https://github.com/Conxian/conxian-gateway/commit/114b857ed9d400beaf474cb68e7ac5f25ef58d78); pre-documentation branch head: [`c893cbb39ea9d680b229a89035ab38f29ed51b8b`](https://github.com/Conxian/conxian-gateway/commit/c893cbb39ea9d680b229a89035ab38f29ed51b8b).
+- GitHub reports PR #278 merged externally at 2026-07-22T19:57:47Z as [`96de9c0e976caf1dd3592593073d1f53e58bc91b`](https://github.com/Conxian/conxian-gateway/commit/96de9c0e976caf1dd3592593073d1f53e58bc91b); Charlie did not merge it. The Phase 4 docs commit [`e761d3edfa7c7cbe6a4d9aa67e4e34229a7e3005`](https://github.com/Conxian/conxian-gateway/commit/e761d3edfa7c7cbe6a4d9aa67e4e34229a7e3005) was pushed at 2026-07-22T20:07:46Z and is not in merged `main`.
 - Gateway evidence merged in PRs [#253](https://github.com/Conxian/conxian-gateway/pull/253), [#255](https://github.com/Conxian/conxian-gateway/pull/255), [#259](https://github.com/Conxian/conxian-gateway/pull/259), and [#267](https://github.com/Conxian/conxian-gateway/pull/267).
 - Upstream source and issue metadata were refreshed on 2026-07-22. Upstream-reported claims remain labeled and were not converted into Conxian benchmarks or security conclusions.
