@@ -200,9 +200,11 @@ The boundary has three deliberately separate layers:
    implementation. A successful adapter result is reserved for a backend that
    reports a valid proof; invalid backend results fail closed as
    `InvalidProof`.
-3. **Legacy BitVM chain-state checks** through
-   `ChainAdapter::verify_state_proof` remain metadata-only and are not a
-   substitute for either layer above.
+3. **Legacy generic chain-state routes** are not proof verification. The
+   BitVM `ChainAdapter::verify_state_proof` implementation fails closed with
+   a typed unavailable error, and `POST /api/v1/chains/bitvm/verify` maps that
+   capability gap to HTTP `501 Not Implemented` rather than returning a
+   successful `verified` field.
 
 The repository's existing metrics are shared flat gateway-state counters and
 the engine adapter has no stable metrics sink. This boundary therefore does
@@ -213,9 +215,27 @@ and `outcome={accepted,rejected,unavailable}` plus latency; never use circuit
 identifiers, statement hashes, proof digests, or verification-key IDs as
 labels.
 
-The existing `ChainAdapter::verify_state_proof` method remains a metadata-only
-compatibility path. It must not be interpreted as cryptographic Groth16
-verification; callers requiring the boundary must use the explicit handoff.
+## Generic BitVM API migration note
+
+The generic `POST /api/v1/chains/bitvm/verify` route is **not cryptographic
+evidence**. It now returns HTTP `501 Not Implemented` with this stable shape:
+
+```json
+{
+  "chain": "bitvm",
+  "status": "unsupported",
+  "code": "verifier_unavailable",
+  "authoritative": false,
+  "message": "BitVM verification is unavailable on the generic chain route"
+}
+```
+
+Clients must not treat the historical HTTP 200 response with
+`"verified": true` as proof or use it to authorize settlement. That behavior
+was metadata-based and could not establish cryptographic validity. A future
+canonical BitVM/Groth16 verification flow requires the explicit envelope
+contract above plus a reviewed production backend; the checked-in mock remains
+fixture-only and does not change this API posture.
 
 ## Fixture contract
 

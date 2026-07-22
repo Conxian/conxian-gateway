@@ -1039,13 +1039,34 @@ pub async fn verify_state_proof(
     State(state): State<AppState>,
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    // The generic BitVM route has no production cryptographic verifier. Guard
+    // at the HTTP boundary so no adapter, backend, or downstream authorization
+    // path can turn legacy metadata into a successful verification response.
+    if chain.eq_ignore_ascii_case("bitvm") {
+        return Err(verifier_unavailable_response(&chain));
+    }
+
     match state.verifier.verify_state_proof(&chain, payload).await {
         Ok(verified) => Ok(Json(json!({ "chain": chain, "verified": verified }))),
+        Err(ConxianError::VerifierUnavailable) => Err(verifier_unavailable_response(&chain)),
         Err(e) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
         )),
     }
+}
+
+fn verifier_unavailable_response(chain: &str) -> (StatusCode, Json<Value>) {
+    (
+        StatusCode::NOT_IMPLEMENTED,
+        Json(json!({
+            "chain": chain,
+            "status": "unsupported",
+            "code": "verifier_unavailable",
+            "authoritative": false,
+            "message": "BitVM verification is unavailable on the generic chain route"
+        })),
+    )
 }
 
 fn build_settlement_proposal(

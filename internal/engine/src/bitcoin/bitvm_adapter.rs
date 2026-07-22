@@ -240,14 +240,14 @@ impl ChainAdapter for BitVmAdapter {
         }))
     }
 
-    async fn verify_state_proof(&self, proof_metadata: Value) -> ConxianResult<bool> {
+    async fn verify_state_proof(&self, _proof_metadata: Value) -> ConxianResult<bool> {
         warn!(
             chain = "bitvm",
-            "verify_state_proof remains metadata-only; use verify_groth16_envelope for the canonical verifier handoff"
+            "generic BitVM state-proof verification is unavailable; use the canonical Groth16 envelope handoff with a reviewed backend"
         );
-        // This legacy ChainAdapter method intentionally does not claim
-        // cryptographic proof verification. The concrete Groth16 handoff is
+        // This legacy ChainAdapter method cannot provide cryptographic
+        // verification. The concrete Groth16 handoff is
         // verify_groth16_envelope(_with), above.
-        Ok(proof_metadata["root_hash"].as_str().is_some())
+        Err(ConxianError::VerifierUnavailable)
     }
 }

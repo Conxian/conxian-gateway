@@ -1116,7 +1116,7 @@ async fn test_verify_state_proof_babylon() {
 }
 
 #[tokio::test]
-async fn test_verify_state_proof_bitvm() {
+async fn test_verify_state_proof_bitvm_returns_typed_unavailable() {
     let state = Arc::new(RwLock::new(GatewayState::default()));
     let app = setup_app(state);
 
@@ -1138,11 +1138,74 @@ async fn test_verify_state_proof_bitvm() {
         .await
         .unwrap();
 
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
     let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
     let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
     assert_eq!(body["chain"], "bitvm");
-    assert_eq!(body["verified"], true);
+    assert_eq!(body["status"], "unsupported");
+    assert_eq!(body["code"], "verifier_unavailable");
+    assert_eq!(body["authoritative"], false);
+    assert!(body.get("verified").is_none());
+}
+
+#[tokio::test]
+async fn test_verify_state_proof_bitvm_rejects_legacy_payload_shapes() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let payloads = [
+        json!({"root_hash": "0xabc123"}),
+        json!({
+            "proof": {"a": "looks-like-a-proof", "b": "arbitrary"},
+            "verified": true
+        }),
+        json!({}),
+    ];
+
+    for payload in payloads {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/chains/bitvm/verify")
+                    .method("POST")
+                    .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                    .header("Content-Type", "application/json")
+                    .header("x-402-payment", "proof-test")
+                    .body(Body::from(serde_json::to_string(&payload).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
+        let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+        let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+        assert_eq!(body["chain"], "bitvm");
+        assert_eq!(body["status"], "unsupported");
+        assert_eq!(body["code"], "verifier_unavailable");
+        assert_eq!(body["authoritative"], false);
+        assert!(!body["verified"].as_bool().unwrap_or(false));
+    }
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/chains/bitvm/verify")
+                .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("Content-Type", "application/json")
+                .header("x-402-payment", "proof-test")
+                .body(Body::from("{malformed-json"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body = String::from_utf8_lossy(&body_bytes);
+    assert!(!body.contains("verified"));
 }
 
 #[tokio::test]

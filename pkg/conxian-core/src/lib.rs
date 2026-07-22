@@ -151,6 +151,11 @@ pub enum ConxianError {
     Internal(String),
     #[error("Security/Verification error: {0}")]
     Security(String),
+    /// The requested verification capability is not configured or implemented.
+    /// API layers should map this to an explicit unsupported response without
+    /// exposing internal backend details.
+    #[error("verification backend unavailable")]
+    VerifierUnavailable,
     #[error("IO error: {0}")]
     Io(String),
     #[error("Persistence error: {0}")]
