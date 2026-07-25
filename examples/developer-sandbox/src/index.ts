@@ -1,8 +1,11 @@
 import { ConxianClient, type HealthResponse } from '@conxian/client-sdk';
 
 export const DEFAULT_GATEWAY_URL = 'http://localhost:3000';
-export const PROOF_CHAIN = 'bitvm';
-export const PROOF_METADATA = { root_hash: '0xabc123' } as const;
+export const VERIFICATION_CHAIN = 'babylon';
+export const BABYLON_REHEARSAL_METADATA = {
+  type: 'finality_gadget',
+  evidence: 'sandbox-rehearsal',
+} as const;
 
 export interface DeveloperSandboxClient {
   getHealth(): Promise<HealthResponse>;
@@ -13,7 +16,7 @@ export interface DeveloperSandboxClient {
 export interface ProofPathResult {
   health: HealthResponse;
   supportedChains: unknown;
-  bitvmProofRehearsal: unknown;
+  babylonRehearsalValidation: unknown;
 }
 
 type Logger = (...values: unknown[]) => void;
@@ -47,10 +50,13 @@ export async function runProofPath(
   const supportedChains = await client.getSupportedChains();
   log('supported chains:', JSON.stringify(supportedChains));
 
-  const bitvmProofRehearsal = await client.verifyStateProof(PROOF_CHAIN, PROOF_METADATA);
-  log('bitvm proof rehearsal:', JSON.stringify(bitvmProofRehearsal));
+  const babylonRehearsalValidation = await client.verifyStateProof(
+    VERIFICATION_CHAIN,
+    BABYLON_REHEARSAL_METADATA,
+  );
+  log('Babylon rehearsal validation:', JSON.stringify(babylonRehearsalValidation));
 
-  return { health, supportedChains, bitvmProofRehearsal };
+  return { health, supportedChains, babylonRehearsalValidation };
 }
 
 export async function main(): Promise<void> {
