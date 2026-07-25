@@ -1755,6 +1755,7 @@ dependencies = [
  "hex",
  "hmac",
  "http-body-util",
+ "libc",
  "secp256k1 0.29.1",
  "serde",
  "serde_json",

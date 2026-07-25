@@ -1,7 +1,7 @@
 use crate::bitcoin::BitcoinRpc;
 use crate::coordination::{RedisCoordinator, StateRootPublisher};
 use crate::persistence::AsyncPersistence;
-use conxian_core::{ConxianResult, Persistence, SharedState};
+use conxian_core::{BlockInfo, ConxianError, ConxianResult, Persistence, SharedState};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::time::{sleep, Duration};
@@ -63,6 +63,7 @@ impl<R: BitcoinRpc> BitcoinListener<R> {
                     for h in start_h..=current_height {
                         match self.rpc.get_block_info(h).await {
                             Ok(block) => {
+                                Self::validate_block_height(&block, h)?;
                                 info!(
                                     "New Bitcoin block processed: height={}, hash={}, network={:?}",
                                     block.height, block.hash, self.network
@@ -88,6 +89,25 @@ impl<R: BitcoinRpc> BitcoinListener<R> {
                         }
                     }
                     self.last_height = current_height;
+                } else if current_height < self.last_height {
+                    let block = self.rpc.get_block_info(current_height).await?;
+                    Self::validate_block_height(&block, current_height)?;
+                    info!(
+                        "Bitcoin tip moved backwards: height={} -> {}, hash={}",
+                        self.last_height, current_height, block.hash
+                    );
+
+                    self.persistence
+                        .transactional_update(4, move |state| {
+                            state.bitcoin_height = current_height;
+                            Ok(())
+                        })
+                        .await?;
+                    self.apply_block(&block, now);
+                    self.last_height = current_height;
+                    if let Some(ref coord) = self.coordinator {
+                        let _ = coord.publish_state_root("bitcoin", &block.hash).await;
+                    }
                 } else if current_height == self.last_height {
                     match self.rpc.get_block_info(current_height).await {
                         Ok(block) => {
@@ -129,9 +149,6 @@ impl<R: BitcoinRpc> BitcoinListener<R> {
                             return Err(e);
                         }
                     }
-                } else {
-                    let mut state = self.state.write().expect("lock poisoned");
-                    state.bitcoin.last_sync_time = now;
                 }
                 Ok(())
             }
@@ -158,7 +175,17 @@ impl<R: BitcoinRpc> BitcoinListener<R> {
         }
     }
 
-    fn apply_block(&self, block: &conxian_core::BlockInfo, now: u64) {
+    fn validate_block_height(block: &BlockInfo, requested_height: u64) -> ConxianResult<()> {
+        if block.height != requested_height {
+            return Err(ConxianError::Bitcoin(format!(
+                "Bitcoin RPC returned block metadata height {} for requested height {requested_height}",
+                block.height
+            )));
+        }
+        Ok(())
+    }
+
+    fn apply_block(&self, block: &BlockInfo, now: u64) {
         let mut state = self.state.write().expect("lock poisoned");
         state.bitcoin.height = block.height;
         state.bitcoin.last_updated = block.timestamp;
@@ -196,6 +223,7 @@ mod tests {
 
     struct SimulatedBitcoinRpc {
         height: u64,
+        metadata_height: Option<u64>,
     }
 
     #[async_trait]
@@ -206,7 +234,7 @@ mod tests {
         async fn get_block_info(&self, height: u64) -> ConxianResult<BlockInfo> {
             Ok(BlockInfo {
                 hash: format!("hash-{}", height),
-                height,
+                height: self.metadata_height.unwrap_or(height),
                 timestamp: 123456789,
             })
         }
@@ -277,7 +305,10 @@ mod tests {
     #[tokio::test]
     async fn test_bitcoin_listener_sync_once() {
         let state = Arc::new(RwLock::new(GatewayState::default()));
-        let rpc = SimulatedBitcoinRpc { height: 100 };
+        let rpc = SimulatedBitcoinRpc {
+            height: 100,
+            metadata_height: None,
+        };
         let persistence = Arc::new(SimulatedPersistence::default());
         let mut listener = BitcoinListener::new(rpc, state.clone(), persistence, None, 10)
             .await
@@ -318,7 +349,10 @@ mod tests {
         }));
         persistence.conflict_once.store(true, Ordering::SeqCst);
         let mut listener = BitcoinListener::new(
-            SimulatedBitcoinRpc { height: 100 },
+            SimulatedBitcoinRpc {
+                height: 100,
+                metadata_height: None,
+            },
             state,
             persistence.clone(),
             None,
@@ -341,7 +375,10 @@ mod tests {
         persistence.fail_cas.store(true, Ordering::SeqCst);
         let publisher = Arc::new(RecordingPublisher::default());
         let mut listener = BitcoinListener {
-            rpc: SimulatedBitcoinRpc { height: 100 },
+            rpc: SimulatedBitcoinRpc {
+                height: 100,
+                metadata_height: None,
+            },
             state: state.clone(),
             persistence: AsyncPersistence::new(persistence.clone()),
             coordinator: Some(publisher.clone()),
@@ -355,5 +392,109 @@ mod tests {
         assert_eq!(state.read().unwrap().bitcoin.height, 0);
         assert_eq!(persistence.load().unwrap().bitcoin_height, 0);
         assert_eq!(publisher.0.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn bitcoin_listener_persists_lower_tip_before_updating_memory() {
+        let mut gateway_state = GatewayState::default();
+        gateway_state.bitcoin.height = 100;
+        gateway_state.bitcoin.best_block_hash = "hash-100".to_string();
+        let state = Arc::new(RwLock::new(gateway_state));
+        let persistence = Arc::new(SimulatedPersistence::with_state(PersistentState {
+            bitcoin_height: 100,
+            stacks_height: 42,
+            mempool_pending_txs: vec![conxian_core::TrackedMempoolTx {
+                txid: "preserved-lower-tip".to_string(),
+                ..Default::default()
+            }],
+        }));
+        let mut listener = BitcoinListener::new(
+            SimulatedBitcoinRpc {
+                height: 99,
+                metadata_height: None,
+            },
+            state.clone(),
+            persistence.clone(),
+            None,
+            10,
+        )
+        .await
+        .unwrap();
+
+        listener.sync_once().await.unwrap();
+
+        let persisted = persistence.load().unwrap();
+        assert_eq!(persisted.bitcoin_height, 99);
+        assert_eq!(persisted.stacks_height, 42);
+        assert_eq!(persisted.mempool_pending_txs[0].txid, "preserved-lower-tip");
+        assert_eq!(listener.last_height, 99);
+        let shared = state.read().unwrap();
+        assert_eq!(shared.bitcoin.height, 99);
+        assert_eq!(shared.bitcoin.best_block_hash, "hash-99");
+    }
+
+    #[tokio::test]
+    async fn bitcoin_listener_lower_tip_failure_leaves_all_heights_unchanged() {
+        let mut gateway_state = GatewayState::default();
+        gateway_state.bitcoin.height = 100;
+        gateway_state.bitcoin.best_block_hash = "hash-100".to_string();
+        let state = Arc::new(RwLock::new(gateway_state));
+        let persistence = Arc::new(SimulatedPersistence::with_state(PersistentState {
+            bitcoin_height: 100,
+            stacks_height: 42,
+            ..PersistentState::default()
+        }));
+        persistence.fail_cas.store(true, Ordering::SeqCst);
+        let mut listener = BitcoinListener::new(
+            SimulatedBitcoinRpc {
+                height: 99,
+                metadata_height: None,
+            },
+            state.clone(),
+            persistence.clone(),
+            None,
+            10,
+        )
+        .await
+        .unwrap();
+
+        assert!(listener.sync_once().await.is_err());
+        assert_eq!(listener.last_height, 100);
+        assert_eq!(persistence.load().unwrap().bitcoin_height, 100);
+        let shared = state.read().unwrap();
+        assert_eq!(shared.bitcoin.height, 100);
+        assert_eq!(shared.bitcoin.best_block_hash, "hash-100");
+    }
+
+    #[tokio::test]
+    async fn bitcoin_listener_rejects_mismatched_metadata_before_persistence() {
+        for (persisted_height, rpc_height) in [(100, 101), (100, 99)] {
+            let state = Arc::new(RwLock::new(GatewayState::default()));
+            let persistence = Arc::new(SimulatedPersistence::with_state(PersistentState {
+                bitcoin_height: persisted_height,
+                stacks_height: 42,
+                ..PersistentState::default()
+            }));
+            let mut listener = BitcoinListener::new(
+                SimulatedBitcoinRpc {
+                    height: rpc_height,
+                    metadata_height: Some(rpc_height + 7),
+                },
+                state.clone(),
+                persistence.clone(),
+                None,
+                10,
+            )
+            .await
+            .unwrap();
+
+            let error = listener.sync_once().await.unwrap_err();
+            assert!(error.to_string().contains("metadata height"));
+            assert_eq!(listener.last_height, persisted_height);
+            let persisted = persistence.load().unwrap();
+            assert_eq!(persisted.bitcoin_height, persisted_height);
+            assert_eq!(persisted.stacks_height, 42);
+            assert_eq!(state.read().unwrap().bitcoin.height, 0);
+        }
     }
 }

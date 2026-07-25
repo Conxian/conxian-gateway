@@ -3,6 +3,9 @@
 The production file backend supports **one Gateway process for each configured
 state path**. Configure that path with `GATEWAY_STATE_PATH`; the reference
 Compose topology uses `/usr/app/gateway_state.json` and one replica per volume.
+`GATEWAY_PERSISTENCE_MODE` defaults to and only accepts
+`exclusive-local-writer`. Active-active, shared-writer, and unknown modes fail
+before persistence workers start.
 The canonical implementation and conformance tests live in
 `pkg/conxian-core/src/persistence.rs`; Gateway imports that backend directly.
 
@@ -86,6 +89,18 @@ semantics. It does **not** support NFS, SMB, distributed/shared network volumes,
 or multi-host writers. Advisory locks protect cooperating Gateway processes,
 not arbitrary programs that ignore the lock files. Operators must not scale a
 file-backed state volume above one Gateway owner.
+
+On Linux, startup classifies the actual canonical state-parent filesystem.
+Known shared/network classes, including NFS/NFS4, SMB/CIFS, Ceph, 9P, Coda,
+AFS, NCP, GFS2, Lustre, and GPFS, always fail closed. A conservative allowlist
+of known local filesystems covers ext, XFS, Btrfs, F2FS, tmpfs, overlayfs,
+ramfs, ZFS, JFS, ReiserFS, NILFS, and UBIFS. Unknown classes fail closed unless
+`GATEWAY_ALLOW_UNKNOWN_STATE_FILESYSTEM=true`; that operator override never
+bypasses a known shared/network classification. Filesystem classification is
+currently Linux-specific, so non-Linux startup also requires this explicit
+unknown-filesystem override rather than claiming verified-local semantics.
+This check is additive to, not a replacement for, canonical path identity,
+descriptor validation, process ownership, and transaction locking.
 
 Tests exercise separately constructed backends and true subprocesses for
 ownership exclusion/release and same-revision CAS contention. They do not prove

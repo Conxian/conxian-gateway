@@ -74,6 +74,38 @@ impl<R: StacksRpc> StacksListener<R> {
                             .publish_state_root("stacks", &info.height.to_string())
                             .await;
                     }
+                } else if info.height < self.last_height {
+                    info!(
+                        "Stacks tip moved backwards: height={} -> {}, network={}",
+                        self.last_height, info.height, info.network
+                    );
+
+                    let height = info.height;
+                    self.persistence
+                        .transactional_update(4, move |state| {
+                            state.stacks_height = height;
+                            Ok(())
+                        })
+                        .await?;
+
+                    {
+                        let mut state = self.state.write().expect("lock poisoned");
+                        state.stacks.height = info.height;
+                        state.stacks.status = "synced".to_string();
+                        state.stacks.last_updated = now;
+                        state.stacks.last_sync_time = now;
+                        state.stacks.network = info.network;
+                        state.stacks.mode = Some("nakamoto".to_string());
+                        state.stacks.epoch = Some(info.epoch);
+                        state.stacks.burn_block_height = Some(info.burn_block_height);
+                    }
+
+                    self.last_height = height;
+                    if let Some(ref coord) = self.coordinator {
+                        let _ = coord
+                            .publish_state_root("stacks", &height.to_string())
+                            .await;
+                    }
                 } else {
                     let mut state = self.state.write().expect("lock poisoned");
                     state.stacks.last_sync_time = now;
@@ -295,5 +327,70 @@ mod tests {
         assert_eq!(state.read().unwrap().stacks.height, 0);
         assert_eq!(persistence.load().unwrap().stacks_height, 0);
         assert_eq!(publisher.0.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn stacks_listener_persists_lower_tip_and_preserves_unowned_fields() {
+        let mut gateway_state = GatewayState::default();
+        gateway_state.stacks.height = 555;
+        gateway_state.stacks.network = "mainnet".to_string();
+        let state = Arc::new(RwLock::new(gateway_state));
+        let persistence = Arc::new(SimulatedPersistence::with_state(PersistentState {
+            bitcoin_height: 42,
+            stacks_height: 555,
+            mempool_pending_txs: vec![conxian_core::TrackedMempoolTx {
+                txid: "preserved-lower-tip".to_string(),
+                ..Default::default()
+            }],
+        }));
+        let mut listener = StacksListener::new(
+            SimulatedStacksRpc { height: 554 },
+            state.clone(),
+            persistence.clone(),
+            None,
+            30,
+        )
+        .await
+        .unwrap();
+
+        listener.sync_once().await.unwrap();
+
+        let persisted = persistence.load().unwrap();
+        assert_eq!(persisted.stacks_height, 554);
+        assert_eq!(persisted.bitcoin_height, 42);
+        assert_eq!(persisted.mempool_pending_txs[0].txid, "preserved-lower-tip");
+        assert_eq!(listener.last_height, 554);
+        let shared = state.read().unwrap();
+        assert_eq!(shared.stacks.height, 554);
+        assert_eq!(shared.stacks.burn_block_height, Some(55));
+    }
+
+    #[tokio::test]
+    async fn stacks_listener_lower_tip_failure_leaves_all_heights_unchanged() {
+        let mut gateway_state = GatewayState::default();
+        gateway_state.stacks.height = 555;
+        let state = Arc::new(RwLock::new(gateway_state));
+        let persistence = Arc::new(SimulatedPersistence::with_state(PersistentState {
+            bitcoin_height: 42,
+            stacks_height: 555,
+            ..PersistentState::default()
+        }));
+        persistence.fail_cas.store(true, Ordering::SeqCst);
+        let mut listener = StacksListener::new(
+            SimulatedStacksRpc { height: 554 },
+            state.clone(),
+            persistence.clone(),
+            None,
+            30,
+        )
+        .await
+        .unwrap();
+
+        assert!(listener.sync_once().await.is_err());
+        assert_eq!(listener.last_height, 555);
+        let persisted = persistence.load().unwrap();
+        assert_eq!(persisted.stacks_height, 555);
+        assert_eq!(persisted.bitcoin_height, 42);
+        assert_eq!(state.read().unwrap().stacks.height, 555);
     }
 }

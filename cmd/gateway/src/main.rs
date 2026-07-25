@@ -1,7 +1,9 @@
 use anyhow::Context;
 use conxian_api::{configure_routes, new_lightning_adapter, new_settlement_log, AppState};
 use conxian_compliance::{CoreVerifier, IdentityManager, ZkcVerifier};
-use conxian_core::{persistence::FilePersistence, GatewayState, Persistence, SharedState};
+use conxian_core::{
+    persistence::FilePersistence, ConxianError, GatewayState, Persistence, SharedState,
+};
 #[cfg(feature = "rgb-native")]
 use conxian_engine::StashResolver;
 use conxian_engine::{
@@ -54,8 +56,14 @@ async fn main() -> anyhow::Result<()> {
     // Construct, exclusively lock, and load the synchronous file backend on
     // Tokio's blocking pool so startup never stalls an async runtime worker.
     let persistence_path = config.gateway_state_path.clone();
+    let allow_unknown_filesystem = config.gateway_allow_unknown_state_filesystem;
     let (persistence, _state_ownership_guard, p_state) =
         run_blocking_persistence("initialize Gateway file persistence", move || {
+            config::validate_state_filesystem(
+                std::path::Path::new(&persistence_path),
+                allow_unknown_filesystem,
+            )
+            .map_err(ConxianError::Persistence)?;
             let persistence = Arc::new(FilePersistence::new(&persistence_path)?);
             let ownership_guard = persistence.acquire_ownership()?;
             let state = persistence.load()?;
