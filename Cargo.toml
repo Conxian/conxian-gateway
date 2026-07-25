@@ -55,6 +55,7 @@ chrono = { version = "0.4.45", features = ["serde"] }
 uuid = { version = "1.23.2", features = ["v4", "serde"] }
 tracing = { version = "0.1.41" }
 tracing-subscriber = { version = "0.3.20", features = ["env-filter", "json"] }
+fs2 = "0.4.3"
 
 # Internal crates
 conxian_engine = { path = "internal/engine" }

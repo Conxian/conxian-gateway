@@ -55,6 +55,7 @@ impl Network {
 
 #[derive(Debug, Clone)]
 pub struct Config {
+    pub gateway_state_path: String,
     pub bitcoin_rpc_url: String,
     pub bitcoin_rpc_user: String,
     pub bitcoin_rpc_pass: String,
@@ -257,7 +258,16 @@ impl Config {
             panic!("SETTLEMENT_INGRESS_SECRET must be distinct from FIAT_WEBHOOK_SECRET");
         }
 
+        let gateway_state_path = env::var("GATEWAY_STATE_PATH")
+            .unwrap_or_else(|_| "gateway_state.json".to_string())
+            .trim()
+            .to_string();
+        if gateway_state_path.is_empty() {
+            panic!("GATEWAY_STATE_PATH must be a non-empty file path");
+        }
+
         Self {
+            gateway_state_path,
             bitcoin_rpc_url: env::var("BITCOIN_RPC_URL").unwrap_or(btc_url),
             bitcoin_rpc_user: env::var("BITCOIN_RPC_USER").unwrap_or_default(),
             bitcoin_rpc_pass: env::var("BITCOIN_RPC_PASS").unwrap_or_default(),
@@ -376,6 +386,7 @@ mod tests {
                 "TOKEN_TTL_SECONDS",
                 "BABYLON_API_URL",
                 "ALEX_HELPER_PRINCIPAL",
+                "GATEWAY_STATE_PATH",
             ];
             let vars = keys.into_iter().map(|k| (k, env::var(k).ok())).collect();
             Self { vars }
@@ -485,6 +496,24 @@ mod tests {
         env::set_var("ALEX_HELPER_PRINCIPAL", "   ");
         let config = Config::from_env();
         assert_eq!(config.alex_helper_principal, None);
+    }
+
+    #[test]
+    fn from_env_reads_explicit_gateway_state_path() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        let _env_restore = FullEnvRestore::new();
+        set_test_envs();
+
+        env::set_var(
+            "GATEWAY_STATE_PATH",
+            "  /var/lib/conxian/gateway-state.json  ",
+        );
+        let config = Config::from_env();
+
+        assert_eq!(
+            config.gateway_state_path,
+            "/var/lib/conxian/gateway-state.json"
+        );
     }
 
     #[test]

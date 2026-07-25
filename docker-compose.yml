@@ -14,6 +14,7 @@ services:
       - STACKS_RPC_URL=${STACKS_RPC_URL:-https://api.mainnet.hiro.so}
       - FIAT_WEBHOOK_SECRET=${FIAT_WEBHOOK_SECRET:-sentinel_fiat_secret}
       - SETTLEMENT_INGRESS_SECRET=${SETTLEMENT_INGRESS_SECRET:-sentinel_ingress_secret}
+      - GATEWAY_STATE_PATH=/usr/app/gateway_state.json
     ports:
       - "3000:3000"
     volumes:
@@ -33,6 +34,7 @@ services:
       - STACKS_RPC_URL=${STACKS_RPC_URL}
       - FIAT_WEBHOOK_SECRET=${FIAT_WEBHOOK_SECRET}
       - SETTLEMENT_INGRESS_SECRET=${SETTLEMENT_INGRESS_SECRET}
+      - GATEWAY_STATE_PATH=/usr/app/gateway_state.json
       - RUST_LOG=debug
     ports:
       - "3001:3000"
@@ -55,12 +57,15 @@ services:
       - SETTLEMENT_INGRESS_SECRET=${SETTLEMENT_INGRESS_SECRET}
       - ALEX_API_URL=${ALEX_API_URL:-https://api.alexlab.co}
       - ALEX_HELPER_PRINCIPAL=${ALEX_HELPER_PRINCIPAL:-}
+      - GATEWAY_STATE_PATH=/usr/app/gateway_state.json
     ports:
       - "3002:3000"
     volumes:
       - enterprise_data:/usr/app
     deploy:
-      replicas: 2
+      # File persistence supports one Gateway owner for each state path.
+      # Horizontal replicas require a distributed persistence backend.
+      replicas: 1
     restart: unless-stopped
 
 volumes:

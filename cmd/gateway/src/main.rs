@@ -1,3 +1,4 @@
+use anyhow::Context;
 use conxian_api::{configure_routes, new_lightning_adapter, new_settlement_log, AppState};
 use conxian_compliance::{CoreVerifier, IdentityManager, ZkcVerifier};
 use conxian_core::{GatewayState, Persistence, SharedState};
@@ -53,18 +54,28 @@ async fn main() -> anyhow::Result<()> {
     let server_start = Instant::now();
 
     // Initialize persistence
-    let persistence = Arc::new(FilePersistence::new("gateway_state.json"));
+    let persistence = Arc::new(FilePersistence::new(&config.gateway_state_path));
+    let _state_ownership_guard = persistence.acquire_ownership().with_context(|| {
+        format!(
+            "failed to acquire exclusive Gateway ownership of state path '{}'",
+            config.gateway_state_path
+        )
+    })?;
 
     // Initialize shared state
     let mut initial_state = GatewayState::default();
-    if let Ok(p_state) = persistence.load() {
-        initial_state.bitcoin.height = p_state.bitcoin_height;
-        initial_state.stacks.height = p_state.stacks_height;
-        info!(
-            "Loaded persisted state: Bitcoin height {}, Stacks height {}",
-            p_state.bitcoin_height, p_state.stacks_height
-        );
-    }
+    let p_state = persistence.load().with_context(|| {
+        format!(
+            "failed to load Gateway state from '{}'",
+            config.gateway_state_path
+        )
+    })?;
+    initial_state.bitcoin.height = p_state.bitcoin_height;
+    initial_state.stacks.height = p_state.stacks_height;
+    info!(
+        "Loaded persisted state: Bitcoin height {}, Stacks height {}",
+        p_state.bitcoin_height, p_state.stacks_height
+    );
 
     let state: SharedState = Arc::new(RwLock::new(initial_state));
 

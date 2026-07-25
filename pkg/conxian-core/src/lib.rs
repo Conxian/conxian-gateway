@@ -160,6 +160,8 @@ pub enum ConxianError {
     Io(String),
     #[error("Persistence error: {0}")]
     Persistence(String),
+    #[error("persistence revision conflict: expected {expected}, found {actual}")]
+    PersistenceConflict { expected: u64, actual: u64 },
     #[error("RGB error: {0}")]
     Rgb(String),
     #[error("Machine identity error: {0}")]
@@ -661,10 +663,56 @@ pub struct PersistentState {
     pub mempool_pending_txs: Vec<TrackedMempoolTx>,
 }
 
+/// A persistence snapshot paired with the revision used for compare-and-swap.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct VersionedPersistentState {
+    pub revision: u64,
+    pub state: PersistentState,
+}
+
 /// Trait for persistence of gateway state.
 pub trait Persistence: Send + Sync {
     fn save(&self, state: &PersistentState) -> ConxianResult<()>;
     fn load(&self) -> ConxianResult<PersistentState>;
+
+    /// Load state with its compare-and-swap revision.
+    ///
+    /// This compatibility default treats legacy implementations as revision
+    /// zero. Production backends must override it together with
+    /// `compare_and_swap` to provide atomic transactional semantics.
+    fn load_versioned(&self) -> ConxianResult<VersionedPersistentState> {
+        Ok(VersionedPersistentState {
+            revision: 0,
+            state: self.load()?,
+        })
+    }
+
+    /// Atomically replace state only when the persisted revision matches.
+    ///
+    /// The compatibility default is intentionally non-transactional and only
+    /// exists for test and legacy implementations during the phase-1 API
+    /// transition. Production backends must override this method.
+    fn compare_and_swap(
+        &self,
+        expected_revision: u64,
+        new_state: &PersistentState,
+    ) -> ConxianResult<VersionedPersistentState> {
+        let current = self.load_versioned()?;
+        if current.revision != expected_revision {
+            return Err(ConxianError::PersistenceConflict {
+                expected: expected_revision,
+                actual: current.revision,
+            });
+        }
+        self.save(new_state)?;
+        let revision = expected_revision.checked_add(1).ok_or_else(|| {
+            ConxianError::Persistence("persistence revision overflow".to_string())
+        })?;
+        Ok(VersionedPersistentState {
+            revision,
+            state: new_state.clone(),
+        })
+    }
 }
 
 /// CON-423: SAB-owned system wallets for BOS operations.
