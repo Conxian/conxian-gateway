@@ -13,6 +13,10 @@ import {
 
 export const GATEWAY_API_VERSION = "v1";
 
+export interface HealthResponse {
+    status: "ok";
+}
+
 export class ConxianClient {
     private baseUrl: string;
     private apiToken: string;
@@ -86,7 +90,7 @@ export class ConxianClient {
         });
     }
 
-    async getHealth(): Promise<any> {
-        return this.request("/health");
+    async getHealth(): Promise<HealthResponse> {
+        return this.request<HealthResponse>("/health");
     }
 }

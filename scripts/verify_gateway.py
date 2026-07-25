@@ -86,8 +86,8 @@ class GatewayClient:
 
 
 def check_health(client: GatewayClient) -> CheckResult:
-    status, body, dur = client._request("/health")
-    ok = status == 200 and body.get("status") == "ok"
+    status, body, dur = client._request("/api/v1/health")
+    ok = status == 200 and body == {"status": "ok"}
     return CheckResult("health_endpoint", ok, str(body), dur)
 
 

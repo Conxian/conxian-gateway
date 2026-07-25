@@ -1,4 +1,4 @@
-import { ConxianClient } from '@conxian/client-sdk';
+import { ConxianClient, type HealthResponse } from '@conxian/client-sdk';
 
 export const DEFAULT_GATEWAY_URL = 'http://localhost:3000';
 export const VERIFICATION_CHAIN = 'babylon';
@@ -8,13 +8,13 @@ export const BABYLON_REHEARSAL_METADATA = {
 } as const;
 
 export interface DeveloperSandboxClient {
-  getHealth(): Promise<unknown>;
+  getHealth(): Promise<HealthResponse>;
   getSupportedChains(): Promise<unknown>;
   verifyStateProof(chain: string, metadata: Record<string, unknown>): Promise<unknown>;
 }
 
 export interface ProofPathResult {
-  health: unknown;
+  health: HealthResponse;
   supportedChains: unknown;
   babylonRehearsalValidation: unknown;
 }

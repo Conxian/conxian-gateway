@@ -12,6 +12,27 @@ describe('ConxianClient', () => {
         global.fetch = vi.fn();
     });
 
+    it('should return the exact health response from the liveness endpoint', async () => {
+        const mockResponse = { status: 'ok' } as const;
+        (global.fetch as any).mockResolvedValue({
+            ok: true,
+            json: async () => mockResponse,
+        });
+
+        const result = await client.getHealth();
+
+        expect(global.fetch).toHaveBeenCalledWith(
+            `${baseUrl}/api/v1/health`,
+            expect.objectContaining({
+                headers: expect.objectContaining({
+                    'Authorization': 'Bearer test-token',
+                    'Content-Type': 'application/json',
+                }),
+            })
+        );
+        expect(result).toEqual({ status: 'ok' });
+    });
+
     it('should verify state proof via UCV-1 endpoint', async () => {
         const mockResponse = { chain: 'bitvm', verified: true };
         (global.fetch as any).mockResolvedValue({
