@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  BABYLON_REHEARSAL_METADATA,
   createClient,
   DeveloperSandboxClient,
-  PROOF_METADATA,
   requireApiToken,
   runProofPath,
 } from './index';
@@ -16,7 +16,7 @@ describe('developer sandbox proof path', () => {
     vi.unstubAllGlobals();
   });
 
-  it('runs health, supported chains, and BitVM rehearsal through the live SDK surface', async () => {
+  it('runs health, supported chains, and Babylon rehearsal validation through the SDK', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
 
@@ -27,11 +27,11 @@ describe('developer sandbox proof path', () => {
       })
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ supported_chains: ['bitvm'] }),
+        json: async () => ({ supported_chains: ['babylon', 'bitvm'] }),
       })
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ chain: 'bitvm', verified: true }),
+        json: async () => ({ chain: 'babylon', verified: true }),
       });
 
     const logs: unknown[][] = [];
@@ -41,11 +41,13 @@ describe('developer sandbox proof path', () => {
     );
 
     expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+    const requestedUrls = fetchMock.mock.calls.map(([url]) => url);
+    expect(requestedUrls).toEqual([
       'http://localhost:3000/api/v1/health',
       'http://localhost:3000/api/v1/chains/list',
-      'http://localhost:3000/api/v1/chains/bitvm/verify',
+      'http://localhost:3000/api/v1/chains/babylon/verify',
     ]);
+    expect(requestedUrls).not.toContain('http://localhost:3000/api/v1/chains/bitvm/verify');
 
     for (const [, request] of fetchMock.mock.calls) {
       expect(request.headers).toEqual(
@@ -59,33 +61,39 @@ describe('developer sandbox proof path', () => {
     expect(fetchMock.mock.calls[2][1]).toEqual(
       expect.objectContaining({
         method: 'POST',
-        body: JSON.stringify(PROOF_METADATA),
+        body: JSON.stringify({
+          type: 'finality_gadget',
+          evidence: 'sandbox-rehearsal',
+        }),
       }),
     );
     expect(result).toEqual({
       health: HEALTH_RESPONSE,
-      supportedChains: { supported_chains: ['bitvm'] },
-      bitvmProofRehearsal: { chain: 'bitvm', verified: true },
+      supportedChains: { supported_chains: ['babylon', 'bitvm'] },
+      babylonRehearsalValidation: { chain: 'babylon', verified: true },
     });
     expect(logs.map(([label]) => label)).toEqual([
       'health:',
       'supported chains:',
-      'bitvm proof rehearsal:',
+      'Babylon rehearsal validation:',
     ]);
   });
 
   it('allows the proof path to be injected with a client double', async () => {
     const client: DeveloperSandboxClient = {
       getHealth: vi.fn().mockResolvedValue(HEALTH_RESPONSE),
-      getSupportedChains: vi.fn().mockResolvedValue({ supported_chains: ['bitvm'] }),
-      verifyStateProof: vi.fn().mockResolvedValue({ chain: 'bitvm', verified: true }),
+      getSupportedChains: vi.fn().mockResolvedValue({ supported_chains: ['babylon', 'bitvm'] }),
+      verifyStateProof: vi.fn().mockResolvedValue({ chain: 'babylon', verified: true }),
     };
 
     await runProofPath(client, vi.fn());
 
     expect(client.getHealth).toHaveBeenCalledOnce();
     expect(client.getSupportedChains).toHaveBeenCalledOnce();
-    expect(client.verifyStateProof).toHaveBeenCalledWith('bitvm', PROOF_METADATA);
+    expect(client.verifyStateProof).toHaveBeenCalledWith(
+      'babylon',
+      BABYLON_REHEARSAL_METADATA,
+    );
   });
 
   it('fails clearly when the API token is missing or blank', () => {
