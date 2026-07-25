@@ -61,45 +61,8 @@ async fn load_persisted_state(persistence: Arc<dyn Persistence>) -> Result<Persi
         .map_err(|_| ())
 }
 
-pub async fn get_health(State(state): State<AppState>) -> Json<Value> {
-    let s = state.shared.read().expect("lock poisoned");
-    let bitcoin_status = if s.bitcoin.last_sync_time > 0 {
-        "synced"
-    } else {
-        "syncing"
-    };
-    let stacks_status = if s.stacks.last_sync_time > 0 {
-        "synced"
-    } else {
-        "syncing"
-    };
-
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock moved backwards")
-        .as_secs();
-
-    let mut overall = "ok";
-    if s.bitcoin.last_sync_time > 0 && now - s.bitcoin.last_sync_time > 120 {
-        overall = "degraded";
-    }
-    if s.stacks.last_sync_time > 0 && now - s.stacks.last_sync_time > 300 {
-        overall = "degraded";
-    }
-
-    Json(json!({
-        "status": overall,
-        "version": env!("CARGO_PKG_VERSION"),
-        "bitcoin": {
-            "status": bitcoin_status,
-            "height": s.bitcoin.height,
-        },
-        "stacks": {
-            "status": stacks_status,
-            "height": s.stacks.height,
-            "epoch": s.stacks.epoch.clone(),
-        }
-    }))
+pub async fn get_health() -> Json<Value> {
+    Json(json!({ "status": "ok" }))
 }
 
 pub async fn get_state(State(state): State<AppState>) -> Json<conxian_core::GatewayState> {

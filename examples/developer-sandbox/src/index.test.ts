@@ -9,16 +9,6 @@ import {
 
 const HEALTH_RESPONSE = {
   status: 'ok',
-  version: '0.1.4',
-  bitcoin: {
-    status: 'syncing',
-    height: 0,
-  },
-  stacks: {
-    status: 'syncing',
-    height: 0,
-    epoch: null,
-  },
 } as const;
 
 describe('developer sandbox proof path', () => {
