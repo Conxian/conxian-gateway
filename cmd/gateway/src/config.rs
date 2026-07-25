@@ -58,6 +58,7 @@ pub struct Config {
     pub bitcoin_rpc_url: String,
     pub bitcoin_rpc_user: String,
     pub bitcoin_rpc_pass: String,
+    pub bitcoin_core_shadow_observation_enabled: bool,
     pub bitcoin_sync_interval: u64,
     pub mempool_orchestrator_interval: u64,
     pub mempool_stuck_threshold_secs: u64,
@@ -100,6 +101,13 @@ pub struct Config {
 }
 
 impl Config {
+    fn strict_truthy_env(key: &str) -> bool {
+        env::var(key)
+            .ok()
+            .map(|value| value.trim().to_ascii_lowercase())
+            .is_some_and(|value| matches!(value.as_str(), "1" | "true" | "yes" | "on"))
+    }
+
     fn get_mandatory_env(key: &str, sentinel: &str) -> String {
         let val = env::var(key).unwrap_or_else(|_| panic!("{} must be set", key));
         let val = val.trim().to_string();
@@ -261,6 +269,9 @@ impl Config {
             bitcoin_rpc_url: env::var("BITCOIN_RPC_URL").unwrap_or(btc_url),
             bitcoin_rpc_user: env::var("BITCOIN_RPC_USER").unwrap_or_default(),
             bitcoin_rpc_pass: env::var("BITCOIN_RPC_PASS").unwrap_or_default(),
+            bitcoin_core_shadow_observation_enabled: Self::strict_truthy_env(
+                "BITCOIN_CORE_SHADOW_OBSERVATION_ENABLED",
+            ),
             bitcoin_sync_interval: env::var("BITCOIN_SYNC_INTERVAL")
                 .unwrap_or_else(|_| "10".to_string())
                 .parse()
@@ -376,6 +387,7 @@ mod tests {
                 "TOKEN_TTL_SECONDS",
                 "BABYLON_API_URL",
                 "ALEX_HELPER_PRINCIPAL",
+                "BITCOIN_CORE_SHADOW_OBSERVATION_ENABLED",
             ];
             let vars = keys.into_iter().map(|k| (k, env::var(k).ok())).collect();
             Self { vars }
@@ -485,6 +497,26 @@ mod tests {
         env::set_var("ALEX_HELPER_PRINCIPAL", "   ");
         let config = Config::from_env();
         assert_eq!(config.alex_helper_principal, None);
+    }
+
+    #[test]
+    fn shadow_observation_is_disabled_by_default_and_uses_strict_truthy_values() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        let _env_restore = FullEnvRestore::new();
+        set_test_envs();
+
+        env::remove_var("BITCOIN_CORE_SHADOW_OBSERVATION_ENABLED");
+        assert!(!Config::from_env().bitcoin_core_shadow_observation_enabled);
+
+        for enabled in ["1", "true", "TRUE", " yes ", "On"] {
+            env::set_var("BITCOIN_CORE_SHADOW_OBSERVATION_ENABLED", enabled);
+            assert!(Config::from_env().bitcoin_core_shadow_observation_enabled);
+        }
+
+        for disabled in ["", " ", "0", "false", "enabled", "2", "truthy"] {
+            env::set_var("BITCOIN_CORE_SHADOW_OBSERVATION_ENABLED", disabled);
+            assert!(!Config::from_env().bitcoin_core_shadow_observation_enabled);
+        }
     }
 
     #[test]

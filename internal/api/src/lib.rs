@@ -11,6 +11,7 @@ pub mod mempool_telemetry;
 pub mod middleware;
 pub mod nostr;
 pub mod routes;
+pub mod shadow_observation;
 pub mod world_id;
 pub mod x402;
 
@@ -22,6 +23,7 @@ use crate::lightning::{LightningAdapter, SimulatedLightningBackend};
 use conxian_compliance::{IdentityManager, UniversalVerifier, ZkcVerifier};
 use conxian_core::{Persistence, SettlementProposal, SharedState};
 pub use conxian_engine::stacks::alex::AlexClient;
+use conxian_engine::BitcoinCoreShadowObserver;
 pub use conxian_engine::RedisCoordinator;
 use std::{collections::VecDeque, sync::Arc};
 use tokio::sync::RwLock;
@@ -34,6 +36,9 @@ pub struct AppState {
     /// This is optional for lightweight API test harnesses; production wiring
     /// supplies the same backend used by the listeners and orchestrator.
     pub persistence: Option<Arc<dyn Persistence>>,
+    /// Optional, explicitly enabled read-only observer for the configured
+    /// configured Bitcoin Core endpoint. It is not used by routing or fee decisions.
+    pub bitcoin_core_shadow_observer: Option<Arc<dyn BitcoinCoreShadowObserver>>,
     pub fiat: Arc<FiatRouter>,
     pub a2p: Arc<A2pRouter>,
     pub identity: Arc<IdentityManager>,

@@ -5,8 +5,9 @@ use conxian_core::{GatewayState, Persistence, SharedState};
 use conxian_engine::StashResolver;
 use conxian_engine::{
     stacks::alex::{AlexClient, AlexRpcClient},
-    BitcoinListener, BitcoinRpcClient, FeeBumpPolicyConfig, MempoolOrchestrator, NodeRgbAdapter,
-    NttRelayer, RedisCoordinator, StacksListener, StacksRpcClient, TreasuryMonitor,
+    BitcoinCoreShadowObserver, BitcoinCoreShadowObserverClient, BitcoinListener, BitcoinRpcClient,
+    FeeBumpPolicyConfig, MempoolOrchestrator, NodeRgbAdapter, NttRelayer, RedisCoordinator,
+    StacksListener, StacksRpcClient, TreasuryMonitor,
 };
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -89,6 +90,18 @@ async fn main() -> anyhow::Result<()> {
         &config.bitcoin_rpc_user,
         &config.bitcoin_rpc_pass,
     )?;
+
+    let bitcoin_core_shadow_observer: Option<Arc<dyn BitcoinCoreShadowObserver>> = config
+        .bitcoin_core_shadow_observation_enabled
+        .then(|| {
+            BitcoinCoreShadowObserverClient::new(
+                &config.bitcoin_rpc_url,
+                &config.bitcoin_rpc_user,
+                &config.bitcoin_rpc_pass,
+            )
+            .map(|observer| Arc::new(observer) as Arc<dyn BitcoinCoreShadowObserver>)
+        })
+        .transpose()?;
 
     let mut btc_listener = BitcoinListener::new(
         btc_rpc,
@@ -302,6 +315,7 @@ async fn main() -> anyhow::Result<()> {
     let app_state = AppState {
         shared: state.clone(),
         persistence: Some(persistence.clone()),
+        bitcoin_core_shadow_observer,
         fiat: fiat_router,
         a2p: a2p_router,
         identity: identity_manager,

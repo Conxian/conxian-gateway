@@ -487,3 +487,33 @@ environment reviewers, tag restrictions, required-check administration, Cargo
 registry secrets, external CodeQL/GitGuardian/dependency-review results, or a
 live release rehearsal are configured. Those controls must be verified by
 repository administrators or a controlled release owner after merge.
+
+## Post-snapshot #245 note — 2026-07-25
+
+This note supplements the historical 2026-07-22 analysis above without
+rewriting its issue states, rankings, branch references, or evidence rows.
+
+- Gateway PR #277 and PR #279 are merged. They delivered bounded,
+  authenticated telemetry for Gateway-tracked transactions and hardened its
+  same-process persistence boundary; they did not add a node/network mempool
+  view, fee predictor, or BIP-110 deployment verdict.
+- The next accepted #245 slice is an explicitly opt-in, authenticated,
+  read-only `GET /api/v1/bitcoin/core/shadow-observation` endpoint scoped to
+  the configured Bitcoin Core endpoint. A trusted, authenticated,
+  self-operated endpoint is recommended. Its fixed-target fee estimates,
+  aggregate mempool data, exact-best-block aggregate statistics, numeric Core
+  version, and exact-key deployment exposure are shadow observations only.
+- The observer remains separate from `BitcoinRpc`, fee-bump policy, the mempool
+  orchestrator, routing, construction, signing, and broadcast. Partial RPC
+  failures remain section-scoped; no raw Core errors, credentials, transaction
+  identifiers, addresses, peer details, or Prometheus metrics are exposed.
+- The 2026-07-25 evidence refresh pins BIPs master
+  `b289d016b99c81527623c10e995e0318f744ebf3`, BIP-110 blob
+  `614736198798653006266821127a1f4c3ea1e482`, Core master
+  `b33a7fcd7bd896da7175a28802bac9ca53fa238d`, and Core deployment source blob
+  `551982b23ae775a7bfd5ba3cccb8cebc8710bb06`. Core PRs #34929/#34930 remain
+  closed and unmerged; inspected stock Core source lacks `REDUCED_DATA`.
+- Issue #245 remains open. Historical calibration, version/policy-segmented
+  outcome retention, route-confidence thresholds, and any independently
+  reviewed model change remain future gates. No activation, reduced-inscription,
+  cleaner-block, causal-fee-benefit, or fee-multiplier claim is authorized.
