@@ -79,11 +79,25 @@ pub trait RgbAdapter {
   instead of promoting candidates derived from stale state.
 - Startup scans durable RGB update journals before loading `StockpileDir`.
   Prepared or backed-up transactions restore the prior verified contract;
+  a durably persisted `promoted` phase is the irreversible commit point, so
   promoted transactions retain the verified replacement and finish cleanup.
-  Journal/path inconsistencies or a state where neither live nor backup can be
-  proven fail startup closed. Candidate files and each relevant directory are
-  synced before rename; `StockpileDir` is reloaded only after promotion or
-  recovery cleanup succeeds.
+  Post-commit cleanup failures never enter the old-state rollback path: the
+  live `StockpileDir` is reloaded before returning a clear committed-but-cleanup-
+  incomplete/uncertain error. The promoted journal is retained until backup
+  cleanup is synced and transaction-directory deletion is attempted. If the
+  final stockpile-root sync fails after deletion, the current namespace may no
+  longer contain the journal; the committed live state is still reloaded, and
+  restart is safe whether the promoted journal reappears or remains removed.
+- Recovery accepts only the canonical transaction-directory basename derived
+  from the validated journal contract ID. Transaction, staged, backup, and
+  contract paths used for recovery must be direct non-symlink directories;
+  prefixed non-directory entries, unsupported/corrupt journals, unsafe or
+  mismatched contract directories, and path/file-type inspection failures fail
+  closed before mutation. A promoted journal without its committed live
+  contract also fails closed rather than restoring the pre-commit backup.
+- Candidate files and each relevant directory are synced before rename.
+  Pre-commit failures restore/reload the prior state; successful promotion and
+  all reported post-commit cleanup failures reload the live `StockpileDir`.
 - These boundaries compensate for the pinned `rgb-persist-fs` behavior that
   creates or mutates contract persistence before `evaluate_commit` completes
   and exposes no filesystem rollback transaction. Exact RGB RC pins remain
@@ -159,8 +173,14 @@ pub trait RgbAdapter {
   mismatch, staged cleanup after a semantically invalid unknown-contract
   import, fresh-stash reload after cleanup, the pinned unknown-contract
   resolver boundary, Unix permission hardening, registry replay/overwrite,
-  unknown auth tokens, invalid signature policy, and corrupted persistence. A
-  complete signed RGB/Bitcoin regtest fixture is still required before treating
-  Active consignment import as a production rollout milestone.
+  unknown auth tokens, invalid signature policy, corrupted persistence, and the
+  existing-contract filesystem state machine (including interruption replay,
+  post-commit cleanup faults, and recovery path-identity rejection). The
+  generated/replayed consignment fixture proves those filesystem and pinned API
+  boundaries; it is not a real state-changing signed RGB transition or a
+  Bitcoin/RGB regtest harness. Both a production issuer-signature backend and a
+  complete independently reproducible signed transition/regtest fixture remain
+  required before treating Active consignment import as a production rollout
+  milestone.
 - The JSON cache remains for descriptive lookup compatibility and must not be
   interpreted as consensus evidence.

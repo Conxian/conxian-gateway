@@ -400,13 +400,24 @@ impl StashResolver {
             }
             if let Err(error) = promote_update_transaction(&transaction, contract_id, self.testnet)
             {
-                return recover_failed_update(
-                    error,
-                    &transaction.transaction_dir,
-                    &self.stockpile_dir,
-                    self.testnet,
-                    &mut stockpile,
-                );
+                return match error {
+                    UpdatePromotionError::PreCommit(error) => recover_failed_update(
+                        error,
+                        &transaction.transaction_dir,
+                        &self.stockpile_dir,
+                        self.testnet,
+                        &mut stockpile,
+                    ),
+                    UpdatePromotionError::CommittedCleanupIncomplete(error) => {
+                        finish_committed_update_error(
+                            error,
+                            &transaction.transaction_dir,
+                            &self.stockpile_dir,
+                            self.testnet,
+                            &mut stockpile,
+                        )
+                    }
+                };
             }
 
             *stockpile = load_stockpile(&self.stockpile_dir, self.testnet)?;
@@ -630,6 +641,32 @@ struct UpdateTransaction {
 }
 
 #[cfg(feature = "rgb-native")]
+#[derive(Debug)]
+enum UpdatePromotionError {
+    PreCommit(ConxianError),
+    CommittedCleanupIncomplete(ConxianError),
+}
+
+#[cfg(feature = "rgb-native")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum UpdateCleanupFault {
+    RemoveBackup,
+    SyncBackup,
+    RemoveTransaction,
+    SyncStockpileRoot,
+}
+
+#[cfg(all(test, feature = "rgb-native"))]
+thread_local! {
+    static UPDATE_CLEANUP_FAULT: std::cell::Cell<Option<UpdateCleanupFault>> = const {
+        std::cell::Cell::new(None)
+    };
+    static COMMITTED_UPDATE_RELOADS: std::cell::Cell<u64> = const {
+        std::cell::Cell::new(0)
+    };
+}
+
+#[cfg(feature = "rgb-native")]
 fn create_update_transaction(
     stockpile_dir: &Path,
     contract_id: rgb::ContractId,
@@ -723,10 +760,7 @@ fn create_update_transaction_dir(
     root: &Path,
     contract_id: rgb::ContractId,
 ) -> ConxianResult<PathBuf> {
-    let path = root.join(format!(
-        "{UPDATE_TRANSACTION_PREFIX}{}",
-        hex::encode(contract_id.to_string())
-    ));
+    let path = root.join(canonical_update_transaction_name(contract_id));
     match fs::create_dir(&path) {
         Ok(()) => {
             if let Err(error) = restrict_directory(&path) {
@@ -775,62 +809,156 @@ fn promote_update_transaction(
     transaction: &UpdateTransaction,
     contract_id: rgb::ContractId,
     testnet: bool,
-) -> ConxianResult<()> {
+) -> Result<(), UpdatePromotionError> {
     fs::rename(&transaction.live_contract, &transaction.backup_contract).map_err(|error| {
-        ConxianError::Rgb(format!("failed to back up live RGB contract: {error}"))
+        UpdatePromotionError::PreCommit(ConxianError::Rgb(format!(
+            "failed to back up live RGB contract: {error}"
+        )))
     })?;
     sync_parent_directory(&transaction.backup_dir).map_err(|error| {
-        ConxianError::Rgb(format!(
+        UpdatePromotionError::PreCommit(ConxianError::Rgb(format!(
             "failed to sync RGB contract backup directory: {error}"
-        ))
+        )))
     })?;
     let stockpile_dir = transaction.live_contract.parent().ok_or_else(|| {
-        ConxianError::Rgb("RGB live contract has no stockpile directory".to_string())
+        UpdatePromotionError::PreCommit(ConxianError::Rgb(
+            "RGB live contract has no stockpile directory".to_string(),
+        ))
     })?;
     sync_parent_directory(stockpile_dir).map_err(|error| {
-        ConxianError::Rgb(format!(
+        UpdatePromotionError::PreCommit(ConxianError::Rgb(format!(
             "failed to sync backed-up RGB stockpile state: {error}"
-        ))
+        )))
     })?;
     let mut journal = transaction.journal.clone();
     journal.phase = UpdatePhase::BackedUp;
-    persist_update_journal(&transaction.transaction_dir, &journal)?;
+    persist_update_journal(&transaction.transaction_dir, &journal)
+        .map_err(UpdatePromotionError::PreCommit)?;
 
     fs::rename(&transaction.staged_contract, &transaction.live_contract).map_err(|error| {
-        ConxianError::Rgb(format!(
+        UpdatePromotionError::PreCommit(ConxianError::Rgb(format!(
             "failed to promote verified RGB contract update: {error}"
-        ))
+        )))
     })?;
     sync_parent_directory(&transaction.staged_dir).map_err(|error| {
-        ConxianError::Rgb(format!(
+        UpdatePromotionError::PreCommit(ConxianError::Rgb(format!(
             "failed to sync promoted RGB staging source: {error}"
-        ))
+        )))
     })?;
     sync_parent_directory(stockpile_dir).map_err(|error| {
-        ConxianError::Rgb(format!(
+        UpdatePromotionError::PreCommit(ConxianError::Rgb(format!(
             "failed to sync promoted RGB stockpile state: {error}"
-        ))
+        )))
     })?;
     journal.phase = UpdatePhase::Promoted;
-    persist_update_journal(&transaction.transaction_dir, &journal)?;
-    validate_stockpile_contract(stockpile_dir, contract_id, testnet)?;
+    persist_update_journal(&transaction.transaction_dir, &journal)
+        .map_err(UpdatePromotionError::PreCommit)?;
 
-    fs::remove_dir_all(&transaction.backup_contract).map_err(|error| {
-        ConxianError::Rgb(format!(
+    // A durably persisted Promoted journal is the irreversible commit point.
+    // Every failure below must preserve the committed live contract and must
+    // never be routed through rollback-oriented recovery.
+    validate_stockpile_contract(stockpile_dir, contract_id, testnet).map_err(|error| {
+        UpdatePromotionError::CommittedCleanupIncomplete(ConxianError::Rgb(format!(
+            "committed RGB update failed post-commit validation: {error}"
+        )))
+    })?;
+
+    remove_committed_backup(&transaction.backup_contract).map_err(|error| {
+        UpdatePromotionError::CommittedCleanupIncomplete(ConxianError::Rgb(format!(
             "failed to remove committed RGB contract backup: {error}"
-        ))
+        )))
     })?;
-    sync_parent_directory(&transaction.backup_dir).map_err(|error| {
-        ConxianError::Rgb(format!("failed to sync RGB backup cleanup: {error}"))
+    sync_committed_backup_cleanup(&transaction.backup_dir).map_err(|error| {
+        UpdatePromotionError::CommittedCleanupIncomplete(ConxianError::Rgb(format!(
+            "failed to sync RGB backup cleanup: {error}"
+        )))
     })?;
-    fs::remove_dir_all(&transaction.transaction_dir).map_err(|error| {
-        ConxianError::Rgb(format!(
+    remove_committed_transaction(&transaction.transaction_dir).map_err(|error| {
+        UpdatePromotionError::CommittedCleanupIncomplete(ConxianError::Rgb(format!(
             "failed to clean committed RGB update transaction: {error}"
+        )))
+    })?;
+    sync_committed_stockpile_cleanup(stockpile_dir).map_err(|error| {
+        UpdatePromotionError::CommittedCleanupIncomplete(ConxianError::Rgb(format!(
+            "failed to sync RGB transaction cleanup: {error}"
+        )))
+    })?;
+    Ok(())
+}
+
+#[cfg(feature = "rgb-native")]
+fn finish_committed_update_error(
+    error: ConxianError,
+    transaction_dir: &Path,
+    stockpile_dir: &Path,
+    testnet: bool,
+    stockpile: &mut StockpileDir<bp::seals::TxoSeal>,
+) -> ConxianResult<()> {
+    let cleanup_state = match fs::symlink_metadata(transaction_dir) {
+        Ok(metadata) if metadata.file_type().is_dir() && !metadata.file_type().is_symlink() => {
+            "promoted recovery journal retained; cleanup incomplete"
+        }
+        Ok(_) => "promoted recovery journal path is no longer a safe directory",
+        Err(inspect_error) if inspect_error.kind() == std::io::ErrorKind::NotFound => {
+            "promoted recovery journal is absent; cleanup durability is uncertain"
+        }
+        Err(_) => "promoted recovery journal visibility is uncertain",
+    };
+
+    let reloaded = load_stockpile(stockpile_dir, testnet).map_err(|reload_error| {
+        ConxianError::Rgb(format!(
+            "RGB update committed; {cleanup_state}: {error}; failed to reload committed stockpile: {reload_error}"
         ))
     })?;
-    sync_parent_directory(stockpile_dir).map_err(|error| {
-        ConxianError::Rgb(format!("failed to sync RGB transaction cleanup: {error}"))
-    })?;
+    *stockpile = reloaded;
+    #[cfg(test)]
+    COMMITTED_UPDATE_RELOADS.with(|count| count.set(count.get() + 1));
+
+    Err(ConxianError::Rgb(format!(
+        "RGB update committed; {cleanup_state}: {error}"
+    )))
+}
+
+#[cfg(feature = "rgb-native")]
+fn remove_committed_backup(path: &Path) -> std::io::Result<()> {
+    inject_update_cleanup_fault(UpdateCleanupFault::RemoveBackup)?;
+    fs::remove_dir_all(path)
+}
+
+#[cfg(feature = "rgb-native")]
+fn sync_committed_backup_cleanup(path: &Path) -> std::io::Result<()> {
+    inject_update_cleanup_fault(UpdateCleanupFault::SyncBackup)?;
+    sync_parent_directory(path)
+}
+
+#[cfg(feature = "rgb-native")]
+fn remove_committed_transaction(path: &Path) -> std::io::Result<()> {
+    inject_update_cleanup_fault(UpdateCleanupFault::RemoveTransaction)?;
+    fs::remove_dir_all(path)
+}
+
+#[cfg(feature = "rgb-native")]
+fn sync_committed_stockpile_cleanup(path: &Path) -> std::io::Result<()> {
+    inject_update_cleanup_fault(UpdateCleanupFault::SyncStockpileRoot)?;
+    sync_parent_directory(path)
+}
+
+#[cfg(all(test, feature = "rgb-native"))]
+fn inject_update_cleanup_fault(point: UpdateCleanupFault) -> std::io::Result<()> {
+    UPDATE_CLEANUP_FAULT.with(|fault| {
+        if fault.get() == Some(point) {
+            fault.set(None);
+            Err(std::io::Error::other(format!(
+                "injected RGB update cleanup fault at {point:?}"
+            )))
+        } else {
+            Ok(())
+        }
+    })
+}
+
+#[cfg(all(not(test), feature = "rgb-native"))]
+fn inject_update_cleanup_fault(_point: UpdateCleanupFault) -> std::io::Result<()> {
     Ok(())
 }
 
@@ -871,15 +999,25 @@ fn recover_update_transactions(stockpile_dir: &Path, testnet: bool) -> ConxianRe
         let entry = entry.map_err(|_| {
             ConxianError::Rgb("failed to inspect RGB update transactions".to_string())
         })?;
-        if entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false)
-            && entry
-                .file_name()
-                .to_str()
-                .map(|name| name.starts_with(UPDATE_TRANSACTION_PREFIX))
-                .unwrap_or(false)
-        {
-            transactions.push(entry.path());
+        let file_name = entry.file_name();
+        let name = file_name.to_string_lossy();
+        if !name.starts_with(UPDATE_TRANSACTION_PREFIX) {
+            continue;
         }
+        if file_name.to_str().is_none() {
+            return Err(ConxianError::Rgb(
+                "invalid RGB update transaction directory name".to_string(),
+            ));
+        }
+        let file_type = entry.file_type().map_err(|_| {
+            ConxianError::Rgb("failed to inspect RGB update transaction entry type".to_string())
+        })?;
+        if !file_type.is_dir() || file_type.is_symlink() {
+            return Err(ConxianError::Rgb(
+                "RGB update transaction entry must be a non-symlink directory".to_string(),
+            ));
+        }
+        transactions.push(entry.path());
     }
     transactions.sort();
     for transaction in transactions {
@@ -894,37 +1032,48 @@ fn recover_update_transaction(
     stockpile_dir: &Path,
     testnet: bool,
 ) -> ConxianResult<()> {
+    validate_direct_child_directory(
+        transaction_dir,
+        stockpile_dir,
+        "RGB update transaction directory",
+    )?;
     let journal = load_update_journal(transaction_dir)?;
     let contract_id = rgb::ContractId::from_str(&journal.contract_id)
         .map_err(|_| ConxianError::Rgb("corrupt RGB update journal contract ID".to_string()))?;
     validate_contract_dir_name(&journal.contract_dir, contract_id)?;
+    let actual_transaction_name = transaction_dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| {
+            ConxianError::Rgb("invalid RGB update transaction directory name".to_string())
+        })?;
+    if actual_transaction_name != canonical_update_transaction_name(contract_id) {
+        return Err(ConxianError::Rgb(
+            "RGB update transaction directory does not match its journal contract ID".to_string(),
+        ));
+    }
     let live_contract = stockpile_dir.join(&journal.contract_dir);
     let staged_dir = transaction_dir.join("staged");
     let backup_dir = transaction_dir.join("backup");
+    validate_direct_child_directory(&staged_dir, transaction_dir, "RGB update staging directory")?;
+    validate_direct_child_directory(&backup_dir, transaction_dir, "RGB update backup directory")?;
     let staged_contract = staged_dir.join(&journal.contract_dir);
     let backup_contract = backup_dir.join(&journal.contract_dir);
+    let live_exists = inspect_optional_safe_directory(&live_contract, "RGB live contract")?;
+    inspect_optional_safe_directory(&staged_contract, "RGB staged update contract")?;
+    let backup_exists =
+        inspect_optional_safe_directory(&backup_contract, "RGB backup update contract")?;
 
     match journal.phase {
-        UpdatePhase::Promoted if path_exists(&live_contract) => {
-            validate_stockpile_contract(stockpile_dir, contract_id, testnet)?;
-        }
-        UpdatePhase::Promoted if path_exists(&backup_contract) => {
-            restore_backup(
-                &live_contract,
-                &staged_contract,
-                &backup_contract,
-                &staged_dir,
-                &backup_dir,
-                stockpile_dir,
-            )?;
+        UpdatePhase::Promoted if live_exists => {
             validate_stockpile_contract(stockpile_dir, contract_id, testnet)?;
         }
         UpdatePhase::Promoted => {
             return Err(ConxianError::Rgb(
-                "RGB promoted update has neither live nor backup contract".to_string(),
+                "RGB promoted update is missing its committed live contract".to_string(),
             ));
         }
-        UpdatePhase::Prepared | UpdatePhase::BackedUp if path_exists(&backup_contract) => {
+        UpdatePhase::Prepared | UpdatePhase::BackedUp if backup_exists => {
             restore_backup(
                 &live_contract,
                 &staged_contract,
@@ -935,7 +1084,7 @@ fn recover_update_transaction(
             )?;
             validate_stockpile_contract(stockpile_dir, contract_id, testnet)?;
         }
-        UpdatePhase::Prepared | UpdatePhase::BackedUp if path_exists(&live_contract) => {
+        UpdatePhase::Prepared | UpdatePhase::BackedUp if live_exists => {
             validate_stockpile_contract(stockpile_dir, contract_id, testnet)?;
         }
         UpdatePhase::Prepared | UpdatePhase::BackedUp => {
@@ -956,6 +1105,37 @@ fn recover_update_transaction(
         ))
     })?;
     Ok(())
+}
+
+#[cfg(feature = "rgb-native")]
+fn validate_direct_child_directory(path: &Path, parent: &Path, label: &str) -> ConxianResult<()> {
+    if path.parent() != Some(parent) || path.file_name().is_none() {
+        return Err(ConxianError::Rgb(format!(
+            "{label} is not a direct child of its expected parent"
+        )));
+    }
+    let metadata = fs::symlink_metadata(path)
+        .map_err(|_| ConxianError::Rgb(format!("failed to inspect {label}")))?;
+    if !metadata.file_type().is_dir() || metadata.file_type().is_symlink() {
+        return Err(ConxianError::Rgb(format!(
+            "{label} must be a non-symlink directory"
+        )));
+    }
+    Ok(())
+}
+
+#[cfg(feature = "rgb-native")]
+fn inspect_optional_safe_directory(path: &Path, label: &str) -> ConxianResult<bool> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_dir() && !metadata.file_type().is_symlink() => {
+            Ok(true)
+        }
+        Ok(_) => Err(ConxianError::Rgb(format!(
+            "{label} must be a non-symlink directory"
+        ))),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(_) => Err(ConxianError::Rgb(format!("failed to inspect {label}"))),
+    }
 }
 
 #[cfg(feature = "rgb-native")]
@@ -1014,7 +1194,15 @@ fn persist_update_journal(transaction_dir: &Path, journal: &UpdateJournal) -> Co
 
 #[cfg(feature = "rgb-native")]
 fn load_update_journal(transaction_dir: &Path) -> ConxianResult<UpdateJournal> {
-    let data = fs::read(transaction_dir.join(UPDATE_JOURNAL_FILE))
+    let journal_path = transaction_dir.join(UPDATE_JOURNAL_FILE);
+    let metadata = fs::symlink_metadata(&journal_path)
+        .map_err(|_| ConxianError::Rgb("missing RGB update recovery journal".to_string()))?;
+    if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
+        return Err(ConxianError::Rgb(
+            "RGB update recovery journal must be a non-symlink file".to_string(),
+        ));
+    }
+    let data = fs::read(journal_path)
         .map_err(|_| ConxianError::Rgb("missing RGB update recovery journal".to_string()))?;
     let journal = serde_json::from_slice::<UpdateJournal>(&data)
         .map_err(|_| ConxianError::Rgb("corrupt RGB update recovery journal".to_string()))?;
@@ -1024,6 +1212,14 @@ fn load_update_journal(transaction_dir: &Path) -> ConxianResult<UpdateJournal> {
         ));
     }
     Ok(journal)
+}
+
+#[cfg(feature = "rgb-native")]
+fn canonical_update_transaction_name(contract_id: rgb::ContractId) -> String {
+    format!(
+        "{UPDATE_TRANSACTION_PREFIX}{}",
+        hex::encode(contract_id.to_string())
+    )
 }
 
 #[cfg(feature = "rgb-native")]
@@ -1662,7 +1858,7 @@ mod tests {
     };
 
     #[cfg(unix)]
-    use std::os::unix::fs::PermissionsExt;
+    use std::os::unix::fs::{symlink, PermissionsExt};
 
     const VALID_ID: &str = "contract:n4bQgYhM-fWWaL_q-gxVrQFa-O~TxsrC-4Is0V1s-FbDwCgg";
     static NEXT_PATH: AtomicU64 = AtomicU64::new(0);
@@ -2095,6 +2291,156 @@ mod tests {
     }
 
     #[test]
+    fn transactional_final_cleanup_sync_failure_reloads_committed_state() {
+        let path = temp_path("transactional-final-cleanup-sync");
+        cleanup(&path);
+        let (_, contract_id, stash_path) = import_fixture(&path);
+        let contract_id = rgb::ContractId::from_str(&contract_id).unwrap();
+        let resolver =
+            StashResolver::new_with_network(&stash_path, "http://127.0.0.1:1/api", true).unwrap();
+        let live_contract = find_contract_directory(&stash_path, contract_id).unwrap();
+        fs::write(live_contract.join("generation"), b"old").unwrap();
+        let transaction = create_update_transaction(&stash_path, contract_id, true).unwrap();
+        fs::write(transaction.staged_contract.join("generation"), b"new").unwrap();
+        validate_transaction_candidate(&transaction, contract_id, true).unwrap();
+
+        UPDATE_CLEANUP_FAULT.with(|fault| fault.set(Some(UpdateCleanupFault::SyncStockpileRoot)));
+        let promotion_error = match promote_update_transaction(&transaction, contract_id, true) {
+            Err(UpdatePromotionError::CommittedCleanupIncomplete(error)) => error,
+            other => panic!("expected committed cleanup failure, got {other:?}"),
+        };
+        assert!(!transaction.transaction_dir.exists());
+        assert!(!transaction.backup_contract.exists());
+
+        let reloads_before = COMMITTED_UPDATE_RELOADS.with(std::cell::Cell::get);
+        let result = {
+            let mut stockpile = resolver.stockpile.lock().unwrap();
+            finish_committed_update_error(
+                promotion_error,
+                &transaction.transaction_dir,
+                &stash_path,
+                true,
+                &mut stockpile,
+            )
+        };
+        assert!(matches!(
+            result,
+            Err(ConxianError::Rgb(message))
+                if message.contains("update committed")
+                    && message.contains("journal is absent")
+                    && message.contains("durability is uncertain")
+        ));
+        assert_eq!(
+            COMMITTED_UPDATE_RELOADS.with(std::cell::Cell::get),
+            reloads_before + 1
+        );
+        assert!(resolver
+            .verify_transition(&contract_id.to_string())
+            .unwrap());
+        assert_eq!(
+            fs::read(
+                find_contract_directory(&stash_path, contract_id)
+                    .unwrap()
+                    .join("generation")
+            )
+            .unwrap(),
+            b"new"
+        );
+
+        let restarted =
+            StashResolver::new_with_network(&stash_path, "http://127.0.0.1:1/api", true).unwrap();
+        assert!(restarted
+            .verify_transition(&contract_id.to_string())
+            .unwrap());
+        assert!(transaction_residue(&stash_path).is_empty());
+        cleanup(&path);
+    }
+
+    #[test]
+    fn transactional_import_reports_committed_cleanup_failure_without_rollback() {
+        let path = temp_path("transactional-import-committed-cleanup");
+        cleanup(&path);
+        let (consignment, contract_id, stash_path) = import_fixture(&path);
+        let resolver =
+            StashResolver::new_with_network(&stash_path, "http://127.0.0.1:1/api", true).unwrap();
+        let validator = |_: &[u8], _: &str, _: &[u8]| Ok::<(), String>(());
+
+        UPDATE_CLEANUP_FAULT.with(|fault| fault.set(Some(UpdateCleanupFault::SyncStockpileRoot)));
+        let result = resolver.import_consignment(&consignment, &contract_id, &validator);
+        assert!(matches!(
+            result,
+            Err(ConxianError::Rgb(message))
+                if message.contains("update committed")
+                    && message.contains("journal is absent")
+                    && !message.contains("recovery failed closed")
+        ));
+        assert!(resolver.verify_transition(&contract_id).unwrap());
+        assert!(transaction_residue(&stash_path).is_empty());
+
+        let restarted =
+            StashResolver::new_with_network(&stash_path, "http://127.0.0.1:1/api", true).unwrap();
+        assert!(restarted.verify_transition(&contract_id).unwrap());
+        cleanup(&path);
+    }
+
+    #[test]
+    fn transactional_post_commit_cleanup_failures_retain_recoverable_journal() {
+        for fault in [
+            UpdateCleanupFault::RemoveBackup,
+            UpdateCleanupFault::SyncBackup,
+            UpdateCleanupFault::RemoveTransaction,
+        ] {
+            let path = temp_path("transactional-post-commit-cleanup");
+            cleanup(&path);
+            let (_, contract_id, stash_path) = import_fixture(&path);
+            let contract_id = rgb::ContractId::from_str(&contract_id).unwrap();
+            let resolver =
+                StashResolver::new_with_network(&stash_path, "http://127.0.0.1:1/api", true)
+                    .unwrap();
+            let transaction = create_update_transaction(&stash_path, contract_id, true).unwrap();
+            fs::write(transaction.staged_contract.join("generation"), b"new").unwrap();
+            validate_transaction_candidate(&transaction, contract_id, true).unwrap();
+
+            UPDATE_CLEANUP_FAULT.with(|slot| slot.set(Some(fault)));
+            let promotion_error = match promote_update_transaction(&transaction, contract_id, true)
+            {
+                Err(UpdatePromotionError::CommittedCleanupIncomplete(error)) => error,
+                other => panic!("expected committed cleanup failure, got {other:?}"),
+            };
+            let result = {
+                let mut stockpile = resolver.stockpile.lock().unwrap();
+                finish_committed_update_error(
+                    promotion_error,
+                    &transaction.transaction_dir,
+                    &stash_path,
+                    true,
+                    &mut stockpile,
+                )
+            };
+            assert!(matches!(
+                result,
+                Err(ConxianError::Rgb(message))
+                    if message.contains("update committed")
+                        && message.contains("journal retained")
+            ));
+            assert!(transaction.transaction_dir.is_dir());
+            assert!(resolver
+                .verify_transition(&contract_id.to_string())
+                .unwrap());
+            drop(resolver);
+
+            let restarted =
+                StashResolver::new_with_network(&stash_path, "http://127.0.0.1:1/api", true)
+                    .unwrap();
+            assert!(restarted
+                .verify_transition(&contract_id.to_string())
+                .unwrap());
+            assert!(transaction_residue(&stash_path).is_empty());
+            cleanup(&path);
+        }
+    }
+
+    #[test]
     fn invalid_existing_contract_update_preserves_prior_state() {
         let path = temp_path("transactional-invalid-update");
         cleanup(&path);
@@ -2350,6 +2696,174 @@ mod tests {
         );
         assert!(transaction_residue(&stash_path).is_empty());
         cleanup(&path);
+    }
+
+    #[test]
+    fn transactional_recovery_rejects_mismatched_directory_identity() {
+        let path = temp_path("transactional-directory-identity");
+        cleanup(&path);
+        let (_, contract_id, stash_path) = import_fixture(&path);
+        let contract_id = rgb::ContractId::from_str(&contract_id).unwrap();
+        let transaction = create_update_transaction(&stash_path, contract_id, true).unwrap();
+        let mismatched = stash_path.join(format!("{UPDATE_TRANSACTION_PREFIX}mismatched"));
+        fs::rename(&transaction.transaction_dir, &mismatched).unwrap();
+
+        let result = StashResolver::new_with_network(&stash_path, "http://127.0.0.1:1/api", true);
+        assert!(matches!(
+            result,
+            Err(ConxianError::Rgb(message)) if message.contains("does not match its journal")
+        ));
+        cleanup(&path);
+    }
+
+    #[test]
+    fn transactional_recovery_rejects_malformed_or_unsupported_journals() {
+        enum Corruption {
+            InvalidJson,
+            UnsupportedVersion,
+            UnknownPhase,
+            TraversalContractDir,
+            MismatchedContractDir,
+        }
+
+        for corruption in [
+            Corruption::InvalidJson,
+            Corruption::UnsupportedVersion,
+            Corruption::UnknownPhase,
+            Corruption::TraversalContractDir,
+            Corruption::MismatchedContractDir,
+        ] {
+            let path = temp_path("transactional-journal-validation");
+            cleanup(&path);
+            let (_, contract_id, stash_path) = import_fixture(&path);
+            let contract_id = rgb::ContractId::from_str(&contract_id).unwrap();
+            let transaction = create_update_transaction(&stash_path, contract_id, true).unwrap();
+            let journal_path = transaction.transaction_dir.join(UPDATE_JOURNAL_FILE);
+
+            match corruption {
+                Corruption::InvalidJson => fs::write(&journal_path, b"not-json").unwrap(),
+                corruption => {
+                    let mut value = serde_json::to_value(&transaction.journal).unwrap();
+                    match corruption {
+                        Corruption::UnsupportedVersion => value["version"] = 2.into(),
+                        Corruption::UnknownPhase => value["phase"] = "unknown".into(),
+                        Corruption::TraversalContractDir => {
+                            value["contract_dir"] = "../escape.contract".into();
+                        }
+                        Corruption::MismatchedContractDir => {
+                            value["contract_dir"] = format!(
+                                "Test.{}.contract",
+                                rgb::ContractId::from_str(VALID_ID).unwrap()
+                            )
+                            .into();
+                        }
+                        Corruption::InvalidJson => unreachable!(),
+                    }
+                    fs::write(&journal_path, serde_json::to_vec_pretty(&value).unwrap()).unwrap();
+                }
+            }
+
+            let result =
+                StashResolver::new_with_network(&stash_path, "http://127.0.0.1:1/api", true);
+            assert!(matches!(result, Err(ConxianError::Rgb(_))));
+            assert!(transaction.transaction_dir.exists());
+            cleanup(&path);
+        }
+    }
+
+    #[test]
+    fn transactional_recovery_rejects_prefixed_regular_file() {
+        let path = temp_path("transactional-prefixed-file");
+        cleanup(&path);
+        let resolver = StashResolver::new(&path, "https://blockstream.info/api").unwrap();
+        drop(resolver);
+        fs::write(
+            path.join(format!("{UPDATE_TRANSACTION_PREFIX}file")),
+            b"unsafe",
+        )
+        .unwrap();
+
+        let result = StashResolver::new(&path, "https://blockstream.info/api");
+        assert!(matches!(
+            result,
+            Err(ConxianError::Rgb(message)) if message.contains("non-symlink directory")
+        ));
+        cleanup(&path);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn transactional_recovery_rejects_symlinked_transaction_entry() {
+        let path = temp_path("transactional-transaction-symlink");
+        cleanup(&path);
+        let resolver = StashResolver::new(&path, "https://blockstream.info/api").unwrap();
+        drop(resolver);
+        let target = path.join("safe-target");
+        fs::create_dir(&target).unwrap();
+        symlink(
+            &target,
+            path.join(format!("{UPDATE_TRANSACTION_PREFIX}symlink")),
+        )
+        .unwrap();
+
+        let result = StashResolver::new(&path, "https://blockstream.info/api");
+        assert!(matches!(
+            result,
+            Err(ConxianError::Rgb(message)) if message.contains("non-symlink directory")
+        ));
+        cleanup(&path);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn transactional_recovery_rejects_symlinked_staged_and_backup_paths() {
+        enum SymlinkPath {
+            StagedDir,
+            BackupDir,
+            StagedContract,
+            BackupContract,
+        }
+
+        for symlink_path in [
+            SymlinkPath::StagedDir,
+            SymlinkPath::BackupDir,
+            SymlinkPath::StagedContract,
+            SymlinkPath::BackupContract,
+        ] {
+            let path = temp_path("transactional-child-symlink");
+            cleanup(&path);
+            let (_, contract_id, stash_path) = import_fixture(&path);
+            let contract_id = rgb::ContractId::from_str(&contract_id).unwrap();
+            let transaction = create_update_transaction(&stash_path, contract_id, true).unwrap();
+            let target = stash_path.join("symlink-target");
+            fs::create_dir(&target).unwrap();
+
+            match symlink_path {
+                SymlinkPath::StagedDir => {
+                    fs::remove_dir_all(&transaction.staged_dir).unwrap();
+                    symlink(&target, &transaction.staged_dir).unwrap();
+                }
+                SymlinkPath::BackupDir => {
+                    fs::remove_dir_all(&transaction.backup_dir).unwrap();
+                    symlink(&target, &transaction.backup_dir).unwrap();
+                }
+                SymlinkPath::StagedContract => {
+                    fs::remove_dir_all(&transaction.staged_contract).unwrap();
+                    symlink(&target, &transaction.staged_contract).unwrap();
+                }
+                SymlinkPath::BackupContract => {
+                    symlink(&target, &transaction.backup_contract).unwrap();
+                }
+            }
+
+            let result =
+                StashResolver::new_with_network(&stash_path, "http://127.0.0.1:1/api", true);
+            assert!(matches!(
+                result,
+                Err(ConxianError::Rgb(message)) if message.contains("non-symlink directory")
+            ));
+            cleanup(&path);
+        }
     }
 
     #[test]

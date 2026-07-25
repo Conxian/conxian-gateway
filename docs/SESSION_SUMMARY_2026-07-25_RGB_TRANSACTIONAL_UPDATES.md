@@ -14,14 +14,24 @@
   `rgb::Contracts::consume_from_file` consensus path.
 - A durable phase journal plus old-contract backup makes promotion recoverable.
   Startup deterministically restores the verified old contract for incomplete
-  transactions or retains the verified new contract after a committed
-  promotion. Unprovable states fail closed.
+  pre-commit transactions. A durably persisted `promoted` journal is the
+  irreversible commit point: recovery retains the verified new contract, and a
+  missing committed live contract fails closed rather than rolling back.
 - Candidate data and relevant directories are synced before promotion.
-  `StockpileDir` is reloaded only after successful promotion or completed
-  recovery cleanup.
+  Post-commit cleanup errors never enter pre-commit rollback. The live
+  `StockpileDir` is reloaded before returning a committed-but-cleanup-incomplete
+  or cleanup-durability-uncertain error, including the case where transaction
+  directory deletion succeeded but the final stockpile-root sync failed.
+- Recovery derives the only accepted transaction-directory basename from the
+  validated journal contract ID. Prefixed files, mismatched transaction names,
+  corrupt/unsupported journals, unsafe or mismatched contract directories, and
+  symlinked transaction/staged/backup/contract paths fail closed before
+  mutation.
 - Focused tests cover successful update/restart, invalid and signature-rejected
   updates, prepared/backed-up/promoted interruption recovery, residue cleanup,
-  fail-closed corrupt state, and byte-preservation of unrelated root files.
+  fail-closed corrupt state, byte-preservation of unrelated root files, exact
+  post-commit cleanup fault sequences, resolver reload, restart safety, and
+  recovery identity/path rejection.
 
 ## Security boundaries preserved
 
@@ -35,5 +45,7 @@
 
 - A production issuer-signature verification backend.
 - A complete signed Bitcoin/RGB regtest fixture and end-to-end harness. The
-  pinned fixture can exercise a consensus-accepted existing-contract replay,
-  but it does not replace the required real signed transition/regtest proof.
+  current generated fixture and existing-contract replay exercise the pinned
+  consignment API plus filesystem state machine; they do not perform a real
+  state-changing signed RGB transition and do not replace the required signed
+  Bitcoin/RGB transition/regtest proof.
