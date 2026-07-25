@@ -34,6 +34,7 @@ impl CriticalTask {
 struct NamedTaskExit {
     name: &'static str,
     result: anyhow::Result<()>,
+    cancellation_observed: bool,
 }
 
 enum ShutdownTrigger {
@@ -79,10 +80,13 @@ where
     for task in tasks {
         running_names.insert(task.name);
         let future = (task.start)(shutdown_rx.clone());
+        let cancellation_observer = shutdown_rx.clone();
         let abort_handle = join_set.spawn(async move {
+            let result = future.await;
             NamedTaskExit {
                 name: task.name,
-                result: future.await,
+                result,
+                cancellation_observed: *cancellation_observer.borrow(),
             }
         });
         task_names.insert(abort_handle.id(), task.name);
@@ -91,6 +95,7 @@ where
 
     tokio::pin!(shutdown_signal);
     let trigger = tokio::select! {
+        biased;
         signal = &mut shutdown_signal => {
             match signal {
                 Ok(()) => ShutdownTrigger::Signal,
@@ -102,7 +107,10 @@ where
             match joined {
                 Ok(exit) => {
                     running_names.remove(exit.name);
-                    ShutdownTrigger::Fatal(unexpected_exit_message(&exit))
+                    ShutdownTrigger::Fatal(
+                        exit_failure_message(&exit)
+                            .expect("an exit before supervisor cancellation must be fatal"),
+                    )
                 }
                 Err(error) => {
                     let name = task_names.get(&error.id()).copied().unwrap_or("unknown");
@@ -131,12 +139,11 @@ where
                 match joined.expect("join set reported non-empty") {
                     Ok(exit) => {
                         running_names.remove(exit.name);
-                        match exit.result {
-                            Ok(()) => {
+                        match exit_failure_message(&exit) {
+                            None => {
                                 info!(task = exit.name, "Critical task stopped");
                             }
-                            Err(error) => {
-                                let message = format!("critical task '{}' failed during shutdown: {error:#}", exit.name);
+                            Some(message) => {
                                 error!(reason = %message);
                                 shutdown_failures.push(message);
                             }
@@ -184,15 +191,14 @@ where
     }
 }
 
-fn unexpected_exit_message(exit: &NamedTaskExit) -> String {
+fn exit_failure_message(exit: &NamedTaskExit) -> Option<String> {
     match &exit.result {
-        Ok(()) => format!(
-            "critical task '{}' returned unexpectedly without a shutdown request",
+        Ok(()) if exit.cancellation_observed => None,
+        Ok(()) => Some(format!(
+            "critical task '{}' returned unexpectedly before observing a shutdown request",
             exit.name
-        ),
-        Err(error) => {
-            format!("critical task '{}' failed: {error:#}", exit.name)
-        }
+        )),
+        Err(error) => Some(format!("critical task '{}' failed: {error:#}", exit.name)),
     }
 }
 
@@ -261,6 +267,7 @@ mod tests {
     struct BlockingPersistence {
         state: Mutex<VersionedPersistentState>,
         started: mpsc::Sender<()>,
+        completed: mpsc::Sender<()>,
         release: Mutex<mpsc::Receiver<()>>,
     }
 
@@ -291,7 +298,11 @@ mod tests {
             }
             current.revision += 1;
             current.state = new_state.clone();
-            Ok(current.clone())
+            let updated = current.clone();
+            self.completed
+                .send(())
+                .expect("persistence completion receiver dropped");
+            Ok(updated)
         }
     }
 
@@ -367,6 +378,7 @@ mod tests {
     #[tokio::test]
     async fn signal_waits_for_in_flight_listener_persistence_before_success() {
         let (started_tx, started_rx) = mpsc::channel();
+        let (completed_tx, _completed_rx) = mpsc::channel();
         let (release_tx, release_rx) = mpsc::channel();
         let mut release = ReleaseOnDrop(Some(release_tx));
         let persistence = Arc::new(BlockingPersistence {
@@ -375,6 +387,7 @@ mod tests {
                 state: PersistentState::default(),
             }),
             started: started_tx,
+            completed: completed_tx,
             release: Mutex::new(release_rx),
         });
         let (listener, http_stopped) = bitcoin_listener_task(persistence).await;
@@ -410,6 +423,7 @@ mod tests {
     #[tokio::test]
     async fn in_flight_persistence_exceeding_grace_is_process_fatal() {
         let (started_tx, started_rx) = mpsc::channel();
+        let (completed_tx, completed_rx) = mpsc::channel();
         let (release_tx, release_rx) = mpsc::channel();
         let mut release = ReleaseOnDrop(Some(release_tx));
         let persistence = Arc::new(BlockingPersistence {
@@ -418,6 +432,7 @@ mod tests {
                 state: PersistentState::default(),
             }),
             started: started_tx,
+            completed: completed_tx,
             release: Mutex::new(release_rx),
         });
         let (listener, http_stopped) = bitcoin_listener_task(persistence).await;
@@ -448,7 +463,13 @@ mod tests {
         assert!(error.to_string().contains("Bitcoin listener"));
         assert!(http_stopped.load(Ordering::SeqCst));
         release.release();
-        tokio::time::sleep(Duration::from_millis(20)).await;
+        tokio::task::spawn_blocking(move || {
+            completed_rx
+                .recv_timeout(Duration::from_secs(1))
+                .expect("blocking persistence closure did not finish after release")
+        })
+        .await
+        .unwrap();
     }
 
     #[tokio::test]
@@ -465,6 +486,47 @@ mod tests {
             .expect_err("panic must be process-fatal");
         assert!(error.to_string().contains("panicking writer"));
         assert!(error.to_string().contains("writer panic evidence"));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn pre_cancellation_normal_return_is_fatal_when_signal_is_also_ready() {
+        let returned = Arc::new(AtomicBool::new(false));
+        let signal_ready = Arc::new(tokio::sync::Notify::new());
+        let task_returned = Arc::clone(&returned);
+        let task_signal_ready = Arc::clone(&signal_ready);
+        let tasks = vec![CriticalTask::new("early return", |_shutdown| async move {
+            task_returned.store(true, Ordering::SeqCst);
+            task_signal_ready.notify_one();
+            Ok(())
+        })];
+
+        let error = supervise(
+            tasks,
+            async move {
+                signal_ready.notified().await;
+                assert!(returned.load(Ordering::SeqCst));
+                Ok(())
+            },
+            TEST_GRACE,
+        )
+        .await
+        .expect_err("return before cancellation publication must remain fatal");
+
+        assert!(error.to_string().contains("early return"));
+        assert!(error
+            .to_string()
+            .contains("before observing a shutdown request"));
+    }
+
+    #[tokio::test]
+    async fn normal_return_after_observing_signal_cancellation_is_clean() {
+        let stopped = Arc::new(AtomicBool::new(false));
+        let tasks = vec![stopping_task("worker", Arc::clone(&stopped))];
+
+        supervise(tasks, async { Ok(()) }, TEST_GRACE)
+            .await
+            .expect("post-cancellation normal return should be clean");
+        assert!(stopped.load(Ordering::SeqCst));
     }
 
     #[tokio::test]

@@ -455,6 +455,9 @@ mod tests {
 
     static TEST_DIRECTORY_COUNTER: AtomicU64 = AtomicU64::new(0);
     const SUBPROCESS_TIMEOUT: Duration = Duration::from_secs(5);
+    const SUBPROCESS_REAP_TIMEOUT: Duration = Duration::from_millis(500);
+    const SUBPROCESS_DROP_TIMEOUT: Duration = Duration::from_millis(250);
+    const SUBPROCESS_POLL_INTERVAL: Duration = Duration::from_millis(5);
 
     struct TestDirectory(PathBuf);
 
@@ -487,49 +490,85 @@ mod tests {
 
     struct BoundedChild {
         child: Option<Child>,
+        status: Option<ExitStatus>,
         label: String,
+        timeout: Duration,
+        cleanup_attempted: bool,
     }
 
     impl BoundedChild {
         fn new(child: Child, label: impl Into<String>) -> Self {
+            Self::with_timeout(child, label, SUBPROCESS_TIMEOUT)
+        }
+
+        fn with_timeout(child: Child, label: impl Into<String>, timeout: Duration) -> Self {
             Self {
                 child: Some(child),
+                status: None,
                 label: label.into(),
+                timeout,
+                cleanup_attempted: false,
             }
         }
 
-        fn wait(mut self) -> ExitStatus {
-            let deadline = Instant::now() + SUBPROCESS_TIMEOUT;
+        fn record_reaped(&mut self, status: ExitStatus) -> ExitStatus {
+            self.child.take();
+            self.status = Some(status);
+            status
+        }
+
+        fn poll_until(&mut self, deadline: Instant) -> std::io::Result<Option<ExitStatus>> {
             loop {
-                let child = self.child.as_mut().expect("child already reaped");
-                match child.try_wait() {
-                    Ok(Some(status)) => {
-                        self.child.take();
-                        return status;
-                    }
-                    Ok(None) if Instant::now() < deadline => {
-                        thread::sleep(Duration::from_millis(5));
-                    }
-                    Ok(None) => {
-                        let pid = child.id();
-                        let kill_error = child.kill().err();
-                        let reap_error = child.wait().err();
-                        self.child.take();
-                        panic!(
-                            "subprocess '{}' (pid {pid}) exceeded {:?}; kill_error={kill_error:?}, reap_error={reap_error:?}",
-                            self.label, SUBPROCESS_TIMEOUT
-                        );
-                    }
-                    Err(error) => {
-                        let pid = child.id();
-                        let _ = child.kill();
-                        let _ = child.wait();
-                        self.child.take();
-                        panic!(
-                            "failed polling subprocess '{}' (pid {pid}): {error}",
-                            self.label
-                        );
-                    }
+                if let Some(status) = self.status {
+                    return Ok(Some(status));
+                }
+                let Some(child) = self.child.as_mut() else {
+                    return Ok(None);
+                };
+                if let Some(status) = child.try_wait()? {
+                    return Ok(Some(self.record_reaped(status)));
+                }
+                if Instant::now() >= deadline {
+                    return Ok(None);
+                }
+                thread::sleep(SUBPROCESS_POLL_INTERVAL);
+            }
+        }
+
+        fn kill_and_reap_until(&mut self, deadline: Instant) -> (Option<std::io::Error>, String) {
+            self.cleanup_attempted = true;
+            let kill_error = self.child.as_mut().and_then(|child| child.kill().err());
+            let reap_result = match self.poll_until(deadline) {
+                Ok(Some(status)) => format!("reaped with status {status}"),
+                Ok(None) => "OS did not report child exit before cleanup deadline".to_string(),
+                Err(error) => format!("cleanup polling failed: {error}"),
+            };
+            (kill_error, reap_result)
+        }
+
+        fn wait(mut self) -> Result<ExitStatus, String> {
+            let pid =
+                self.child.as_ref().map(Child::id).ok_or_else(|| {
+                    format!("subprocess '{}' has no live child handle", self.label)
+                })?;
+            let deadline = Instant::now() + self.timeout;
+            match self.poll_until(deadline) {
+                Ok(Some(status)) => Ok(status),
+                Ok(None) => {
+                    let (kill_error, reap_result) =
+                        self.kill_and_reap_until(Instant::now() + SUBPROCESS_REAP_TIMEOUT);
+                    Err(format!(
+                        "subprocess '{}' (pid {pid}) exceeded {:?}; kill_error={kill_error:?}; cleanup={reap_result}",
+                        self.label, self.timeout
+                    ))
+                }
+                Err(error) => {
+                    let (kill_error, reap_result) =
+                        self.kill_and_reap_until(Instant::now() + SUBPROCESS_REAP_TIMEOUT);
+                    Err(format!(
+                        "failed polling subprocess '{}' (pid {pid}): {error}; kill_error={kill_error:?}; cleanup={reap_result}",
+                        self.label
+                    ))
                 }
             }
         }
@@ -537,13 +576,76 @@ mod tests {
 
     impl Drop for BoundedChild {
         fn drop(&mut self) {
-            if let Some(mut child) = self.child.take() {
-                if child.try_wait().ok().flatten().is_none() {
-                    let _ = child.kill();
-                }
-                let _ = child.wait();
+            if self.child.is_none() || self.status.is_some() || self.cleanup_attempted {
+                return;
             }
+            if let Ok(Some(_)) = self.poll_until(Instant::now()) {
+                return;
+            }
+            let _ = self.kill_and_reap_until(Instant::now() + SUBPROCESS_DROP_TIMEOUT);
         }
+    }
+
+    fn spawn_test_subprocess(mode: &str, timeout: Duration) -> BoundedChild {
+        let mut command = Command::new(std::env::current_exe().unwrap());
+        command
+            .arg("--exact")
+            .arg("persistence::tests::subprocess_worker")
+            .arg("--nocapture")
+            .env("CONXIAN_PERSISTENCE_SUBPROCESS_MODE", mode)
+            .env("RUST_TEST_THREADS", "1");
+        BoundedChild::with_timeout(command.spawn().unwrap(), mode, timeout)
+    }
+
+    #[test]
+    fn bounded_child_observes_already_exited_child() {
+        let child = spawn_test_subprocess("exit-success", Duration::from_secs(1));
+        thread::sleep(Duration::from_millis(20));
+        assert!(child
+            .wait()
+            .expect("exited child should be reaped")
+            .success());
+    }
+
+    #[test]
+    fn bounded_child_times_out_then_kills_and_reaps_hung_child() {
+        let started = Instant::now();
+        let error = spawn_test_subprocess("hang", Duration::from_millis(20))
+            .wait()
+            .expect_err("hung child must time out");
+        assert!(started.elapsed() < Duration::from_secs(1));
+        assert!(error.contains("exceeded 20ms"), "{error}");
+        assert!(error.contains("reaped with status"), "{error}");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn dropping_live_bounded_child_is_bounded_and_reaps_process() {
+        let child = spawn_test_subprocess("hang", Duration::from_secs(30));
+        let pid = child.child.as_ref().unwrap().id();
+        let started = Instant::now();
+        drop(child);
+        assert!(started.elapsed() < Duration::from_secs(1));
+
+        let process_path = PathBuf::from(format!("/proc/{pid}"));
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while process_path.exists() && Instant::now() < deadline {
+            thread::sleep(SUBPROCESS_POLL_INTERVAL);
+        }
+        assert!(!process_path.exists(), "dropped child {pid} remained live");
+    }
+
+    #[test]
+    fn dropping_already_reaped_child_has_no_child_handle_to_wait_again() {
+        let mut child = spawn_test_subprocess("exit-success", Duration::from_secs(1));
+        let status = child
+            .poll_until(Instant::now() + Duration::from_secs(1))
+            .unwrap()
+            .expect("child should exit");
+        assert!(status.success());
+        assert!(child.child.is_none());
+        assert_eq!(child.status, Some(status));
+        drop(child);
     }
 
     fn state_with_marker(marker: &str) -> PersistentState {
@@ -835,6 +937,14 @@ mod tests {
         let Ok(mode) = std::env::var("CONXIAN_PERSISTENCE_SUBPROCESS_MODE") else {
             return;
         };
+        if mode == "exit-success" {
+            return;
+        }
+        if mode == "hang" {
+            loop {
+                thread::sleep(Duration::from_secs(1));
+            }
+        }
         let path = PathBuf::from(std::env::var("CONXIAN_PERSISTENCE_STATE_PATH").unwrap());
         let output = PathBuf::from(std::env::var("CONXIAN_PERSISTENCE_OUTPUT_PATH").unwrap());
         let persistence = open(&path);
@@ -909,12 +1019,16 @@ mod tests {
         let persistence = open(&state_path);
         let guard = persistence.acquire_ownership().unwrap();
 
-        let status = spawn_worker("ownership", &state_path, &first_output, &[]).wait();
+        let status = spawn_worker("ownership", &state_path, &first_output, &[])
+            .wait()
+            .expect("ownership subprocess should exit");
         assert!(status.success());
         assert_eq!(fs::read_to_string(&first_output).unwrap(), "blocked");
 
         drop(guard);
-        let status = spawn_worker("ownership", &state_path, &second_output, &[]).wait();
+        let status = spawn_worker("ownership", &state_path, &second_output, &[])
+            .wait()
+            .expect("ownership subprocess should exit");
         assert!(status.success());
         assert_eq!(fs::read_to_string(&second_output).unwrap(), "acquired");
     }
@@ -963,8 +1077,14 @@ mod tests {
             thread::sleep(Duration::from_millis(5));
         }
         fs::write(&go, b"go").unwrap();
-        assert!(first.wait().success());
-        assert!(second.wait().success());
+        assert!(first
+            .wait()
+            .expect("first CAS subprocess should exit")
+            .success());
+        assert!(second
+            .wait()
+            .expect("second CAS subprocess should exit")
+            .success());
         let outcomes = [
             fs::read_to_string(output_a).unwrap(),
             fs::read_to_string(output_b).unwrap(),
@@ -1010,7 +1130,10 @@ mod tests {
                 ),
             ],
         );
-        assert!(!child.wait().success());
+        assert!(!child
+            .wait()
+            .expect("before-rename crash subprocess should exit")
+            .success());
 
         let restarted = open(&before_path);
         let loaded = restarted.load_versioned().unwrap();
@@ -1058,7 +1181,10 @@ mod tests {
                 ("CONXIAN_PERSISTENCE_MARKER", "new-after-rename".to_string()),
             ],
         );
-        assert!(!child.wait().success());
+        assert!(!child
+            .wait()
+            .expect("after-rename crash subprocess should exit")
+            .success());
 
         let restarted = open(&after_path).load_versioned().unwrap();
         assert_eq!(restarted.revision, 2);

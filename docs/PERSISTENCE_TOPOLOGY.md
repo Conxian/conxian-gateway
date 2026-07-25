@@ -169,16 +169,23 @@ through graceful shutdown, and waits up to 30 seconds for every task handle.
 Workers observe cancellation only between complete polling passes. If a
 listener or orchestrator is awaiting `AsyncPersistence` filesystem work on the
 blocking executor, that operation is joined before the worker returns; its
-future is not dropped at cancellation. A task which returns normally after
-cancellation is accepted, while the original fatal error or panic remains the
-reported process failure.
+future is not dropped at cancellation. Each task records whether cancellation
+was already visible at the instant it returned. A normal return before that
+publication is process-fatal even when SIGINT/SIGTERM becomes ready in the same
+supervisor turn; only a normal return after cancellation was visible is
+accepted during drain. The original worker error or panic remains the primary
+reported process failure instead of being replaced by secondary shutdown
+noise.
 
 The 30-second bound is a hard-stop failure path, not a successful drain. At the
 deadline, remaining async task handles are aborted and the supervisor returns
 a process-fatal timeout. Operators and service managers must ensure that the
 process/runtime fully terminates before restart, because already-running
 blocking filesystem work cannot be safely reported as cleanly drained after a
-hard timeout.
+hard timeout. Tests release an intentionally blocked persistence closure after
+the supervisor reports that failure and require a separate bounded completion
+signal from the closure; the hard-timeout result itself never claims the
+blocking operation was stopped.
 
 ## Backup and restore
 
@@ -207,6 +214,10 @@ types are currently server-side only; `packages/client-sdk` and
 
 Tests retain true subprocess ownership exclusion/release and one-winner
 same-revision CAS contention. Additional subprocess crash tests exercise both
-sides of rename. These tests do not establish distributed-filesystem safety,
+sides of rename. Their test-only child wrapper uses bounded `try_wait` polling,
+bounded post-kill reap attempts, and bounded best-effort drop cleanup so a test
+failure cannot introduce an unbounded `Child::wait`. That harness behavior is
+not a production process-lifecycle guarantee and does not alter the persistence
+topology. These tests do not establish distributed-filesystem safety,
 hostile-directory safety, exactly-once Bitcoin broadcast, or automatic
 reconciliation.
