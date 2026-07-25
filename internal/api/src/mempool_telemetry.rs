@@ -398,7 +398,9 @@ mod tests {
             last_error: None,
             replacement_txid: None,
             lease_owner: None,
+            lease_id: None,
             lease_expires_at: None,
+            record_generation: 0,
         }
     }
 

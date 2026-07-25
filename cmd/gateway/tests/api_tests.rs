@@ -407,7 +407,9 @@ async fn test_mempool_telemetry_authorized_and_scoped() {
                 last_error: Some("must-not-appear".to_string()),
                 replacement_txid: Some("replacement-must-not-appear".to_string()),
                 lease_owner: None,
+                lease_id: None,
                 lease_expires_at: None,
+                record_generation: 0,
             }],
         },
     });

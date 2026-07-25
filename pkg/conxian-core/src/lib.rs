@@ -71,8 +71,14 @@ pub struct TrackedMempoolTx {
     /// possibly broadcasts a fee bump. Missing fields preserve legacy state.
     #[serde(default)]
     pub lease_owner: Option<String>,
+    /// Unique fencing token for one claim. Legacy records deserialize as no claim.
+    #[serde(default)]
+    pub lease_id: Option<String>,
     #[serde(default)]
     pub lease_expires_at: Option<u64>,
+    /// Monotonic record generation used to reject stale completion snapshots.
+    #[serde(default)]
+    pub record_generation: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -684,17 +690,34 @@ pub struct VersionedPersistentState {
 
 /// Trait for persistence of gateway state.
 pub trait Persistence: Send + Sync {
+    /// Legacy whole-snapshot mutation hook retained for pre-`0.1.5` source
+    /// compatibility. Production callers must use compare-and-swap instead.
+    #[deprecated(note = "use load_versioned plus compare_and_swap")]
+    fn save(&self, _state: &PersistentState) -> ConxianResult<()> {
+        Err(ConxianError::Persistence(
+            "non-transactional save unsupported; use compare_and_swap".to_string(),
+        ))
+    }
+
     /// Load state with its compare-and-swap revision. Implementations must
     /// provide real revision semantics; there is no non-atomic fallback.
-    fn load_versioned(&self) -> ConxianResult<VersionedPersistentState>;
+    fn load_versioned(&self) -> ConxianResult<VersionedPersistentState> {
+        Err(ConxianError::Persistence(
+            "transactions unsupported by this persistence implementation".to_string(),
+        ))
+    }
 
     /// Atomically replace state only when the persisted revision matches.
     ///
     fn compare_and_swap(
         &self,
-        expected_revision: u64,
-        new_state: &PersistentState,
-    ) -> ConxianResult<VersionedPersistentState>;
+        _expected_revision: u64,
+        _new_state: &PersistentState,
+    ) -> ConxianResult<VersionedPersistentState> {
+        Err(ConxianError::Persistence(
+            "transactions unsupported by this persistence implementation".to_string(),
+        ))
+    }
 
     fn load(&self) -> ConxianResult<PersistentState> {
         self.load_versioned().map(|versioned| versioned.state)

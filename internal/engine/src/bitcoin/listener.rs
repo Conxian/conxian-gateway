@@ -1,5 +1,5 @@
 use crate::bitcoin::BitcoinRpc;
-use crate::coordination::RedisCoordinator;
+use crate::coordination::{RedisCoordinator, StateRootPublisher};
 use conxian_core::{transactional_update, ConxianResult, Persistence, SharedState};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -10,7 +10,7 @@ pub struct BitcoinListener<R: BitcoinRpc> {
     rpc: R,
     state: SharedState,
     persistence: Arc<dyn Persistence>,
-    coordinator: Option<Arc<RedisCoordinator>>,
+    coordinator: Option<Arc<dyn StateRootPublisher>>,
     last_height: u64,
     network: Option<String>,
     sync_interval: u64,
@@ -25,6 +25,7 @@ impl<R: BitcoinRpc> BitcoinListener<R> {
         sync_interval: u64,
     ) -> ConxianResult<Self> {
         let last_height = persistence.load()?.bitcoin_height;
+        let coordinator = coordinator.map(|value| value as Arc<dyn StateRootPublisher>);
         Ok(Self {
             rpc,
             state,
@@ -65,17 +66,15 @@ impl<R: BitcoinRpc> BitcoinListener<R> {
                                     block.height, block.hash, self.network
                                 );
 
-                                // Publish to Redis for cross-gateway coordination
-                                if let Some(ref coord) = self.coordinator {
-                                    let _ = coord.publish_state_root("bitcoin", &block.hash).await;
-                                }
-
                                 transactional_update(self.persistence.as_ref(), 4, |state| {
                                     state.bitcoin_height = block.height;
                                     Ok(())
                                 })?;
                                 self.apply_block(&block, now);
                                 self.last_height = block.height;
+                                if let Some(ref coord) = self.coordinator {
+                                    let _ = coord.publish_state_root("bitcoin", &block.hash).await;
+                                }
                             }
                             Err(e) => {
                                 error!("Failed to get block info for height {}: {}", h, e);
@@ -101,16 +100,14 @@ impl<R: BitcoinRpc> BitcoinListener<R> {
                                     block.height, best_hash, block.hash
                                 );
 
-                                // Publish to Redis for cross-gateway coordination
-                                if let Some(ref coord) = self.coordinator {
-                                    let _ = coord.publish_state_root("bitcoin", &block.hash).await;
-                                }
-
                                 transactional_update(self.persistence.as_ref(), 4, |state| {
                                     state.bitcoin_height = block.height;
                                     Ok(())
                                 })?;
                                 self.apply_block(&block, now);
+                                if let Some(ref coord) = self.coordinator {
+                                    let _ = coord.publish_state_root("bitcoin", &block.hash).await;
+                                }
                             } else {
                                 let mut state = self.state.write().expect("lock poisoned");
                                 state.bitcoin.last_sync_time = now;
@@ -174,9 +171,20 @@ mod tests {
         BlockInfo, ConxianError, GatewayState, PersistentState, VersionedPersistentState,
     };
     use std::sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc, Mutex, RwLock,
     };
+
+    #[derive(Default)]
+    struct RecordingPublisher(AtomicUsize);
+
+    #[async_trait]
+    impl StateRootPublisher for RecordingPublisher {
+        async fn publish_state_root(&self, _chain: &str, _root: &str) -> ConxianResult<()> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+    }
 
     struct SimulatedBitcoinRpc {
         height: u64,
@@ -320,18 +328,21 @@ mod tests {
         let state = Arc::new(RwLock::new(GatewayState::default()));
         let persistence = Arc::new(SimulatedPersistence::default());
         persistence.fail_cas.store(true, Ordering::SeqCst);
-        let mut listener = BitcoinListener::new(
-            SimulatedBitcoinRpc { height: 100 },
-            state.clone(),
-            persistence.clone(),
-            None,
-            10,
-        )
-        .unwrap();
+        let publisher = Arc::new(RecordingPublisher::default());
+        let mut listener = BitcoinListener {
+            rpc: SimulatedBitcoinRpc { height: 100 },
+            state: state.clone(),
+            persistence: persistence.clone(),
+            coordinator: Some(publisher.clone()),
+            last_height: 0,
+            network: None,
+            sync_interval: 10,
+        };
 
         assert!(listener.sync_once().await.is_err());
         assert_eq!(listener.last_height, 0);
         assert_eq!(state.read().unwrap().bitcoin.height, 0);
         assert_eq!(persistence.load().unwrap().bitcoin_height, 0);
+        assert_eq!(publisher.0.load(Ordering::SeqCst), 0);
     }
 }

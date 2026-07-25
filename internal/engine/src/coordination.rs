@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use conxian_core::{ConxianError, ConxianResult};
 use redis::{aio::MultiplexedConnection, AsyncCommands, Client};
 use tracing::{info, warn};
@@ -7,6 +8,18 @@ use tracing::{info, warn};
 /// enforces explicit AUTH and connection health check.
 pub struct RedisCoordinator {
     client: Client,
+}
+
+#[async_trait]
+pub trait StateRootPublisher: Send + Sync {
+    async fn publish_state_root(&self, chain: &str, root: &str) -> ConxianResult<()>;
+}
+
+#[async_trait]
+impl StateRootPublisher for RedisCoordinator {
+    async fn publish_state_root(&self, chain: &str, root: &str) -> ConxianResult<()> {
+        RedisCoordinator::publish_state_root(self, chain, root).await
+    }
 }
 
 impl RedisCoordinator {

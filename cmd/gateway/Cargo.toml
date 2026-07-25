@@ -29,7 +29,6 @@ serde_json.workspace = true
 serde.workspace = true
 tower.workspace = true
 url.workspace = true
-fs2.workspace = true
 http-body-util = "0.1.3"
 
 [dev-dependencies]

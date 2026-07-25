@@ -24,11 +24,18 @@ state `load -> modify -> save` writes.
 - Strict envelope parsing rejects incomplete/mixed envelope shapes, reserved
   keys in legacy state, unknown fields, and unsupported versions.
 - File paths use a canonical parent identity and reject symlink, non-regular,
-  and Unix hard-linked state targets.
+  and Unix hard-linked state targets. Unix opens use no-follow flags and verify
+  opened descriptor metadata; the parent remains a trusted local directory.
 - Post-rename parent-sync failure is a distinct unknown commit outcome and is
   never treated as a retryable revision conflict.
 - Tests include true subprocess ownership exclusion/release and same-revision
   CAS contention, plus listener conflict/failure and mempool lease recovery.
+- The canonical backend and tests live in `conxian-core`; Gateway consumes that
+  implementation directly.
+- Bitcoin and Stacks persist before updating in-memory state and publish Redis
+  state roots only after the durable commit.
+- Mempool claims use unique lease fencing tokens and record generations. RPC
+  work has a deadline below the TTL; timeout requires reconciliation.
 
 ## Guarantee boundary
 

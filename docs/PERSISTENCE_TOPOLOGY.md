@@ -3,6 +3,8 @@
 The production file backend supports **one Gateway process for each configured
 state path**. Configure that path with `GATEWAY_STATE_PATH`; the reference
 Compose topology uses `/usr/app/gateway_state.json` and one replica per volume.
+The canonical implementation and conformance tests live in
+`pkg/conxian-core/src/persistence.rs`; Gateway imports that backend directly.
 
 At startup, the Gateway takes a process-lifetime advisory ownership lock in a
 separate sibling file. A second Gateway configured with the same state path
@@ -22,8 +24,11 @@ Stacks checkpoint updates reload and reapply only their owned height field for
 at most four attempts, retrying revision conflicts only. Corruption, lock,
 filesystem, and durability errors stop the update. Listener in-memory height
 and `last_height` advance only after the durable state replacement succeeds.
-The former non-transactional `save` mutation API is not part of the persistence
-trait, so a legacy snapshot writer cannot overwrite a concurrent CAS update.
+Redis state-root publication happens last, so persistence failure or an unknown
+commit outcome cannot publish an uncommitted checkpoint.
+The legacy non-transactional `save` hook is deprecated and fails closed on the
+canonical backend, so production callers cannot use it to overwrite a
+concurrent CAS update.
 
 Writes use a unique temporary file in the normalized state directory, flush
 and sync that file, atomically rename it over the state path, clean up failed
@@ -35,11 +40,14 @@ conflict retry loop.
 ## Mempool fee-bump leases
 
 Each orchestrator has a unique owner ID. Before any RBF or CPFP network call it
-atomically claims the tracked transaction with an owner and expiry timestamp.
-Network work happens outside the file lock. The result is committed only while
-the same owner still holds the lease, and the commit mutates only that tracked
-transaction. Active leases exclude other orchestrators; expired leases can be
-reclaimed after a crashed process.
+atomically claims the tracked transaction with an owner, unique `lease_id`
+fencing token, record generation, and expiry timestamp. Every unexpired lease
+blocks a new claim, including another tick from the same owner. Completion
+requires all three claim values to match, so stale work cannot overwrite a
+concurrently reconciled or terminal record. Network work happens outside the
+file lock and has a deadline below the lease TTL. Deadline or ambiguous RPC
+outcomes become `BUMP_OUTCOME_UNKNOWN` and require reconciliation rather than
+normal replay.
 
 This is an **at-least-once**, not exactly-once, external side-effect boundary.
 A crash after node submission but before the result commit can lead to one
@@ -55,7 +63,14 @@ an explicit reconciliation path changes their status.
 The configured parent directory is canonicalized once; relative and absolute
 aliases therefore derive the same state, ownership-lock, transaction-lock, and
 temporary-file identity. Existing state targets must be regular files. Symlink,
-directory/device, and (on Unix) hard-linked targets are rejected.
+directory/device, and (on Unix) hard-linked targets are rejected. Unix state,
+lock, temporary, and parent-directory opens use no-follow semantics and validate
+the opened descriptor metadata.
+
+The canonicalized parent must be a local directory controlled by the Gateway
+operator and not writable by untrusted users. This does not claim safety against
+an attacker continuously replacing names inside that trusted directory; the
+backend is intentionally not a descriptor-relative filesystem sandbox.
 
 This topology assumes a local Unix filesystem whose advisory locks, atomic
 same-directory rename, file sync, and directory sync have normal local
@@ -68,3 +83,15 @@ Tests exercise separately constructed backends and true subprocesses for
 ownership exclusion/release and same-revision CAS contention. They do not prove
 behavior on unsupported distributed filesystems or provide exactly-once Bitcoin
 transaction broadcast semantics.
+
+## Public API migration (`0.1.5`)
+
+`Persistence::load_versioned` and `compare_and_swap` are the transactional
+mutation boundary. Their defaults fail closed with `transactions unsupported`,
+reducing source breakage for legacy implementers without silently emulating CAS
+through `load`/`save`. The deprecated legacy `save` method remains available for
+source compatibility but defaults to an explicit non-transactional-save error;
+the canonical backend does not override it. Production mutation callers use
+explicit CAS only.
+`TrackedMempoolTx` adds serde-defaulted `lease_id` and `record_generation`
+fields, so existing persisted JSON remains readable.

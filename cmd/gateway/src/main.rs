@@ -1,7 +1,7 @@
 use anyhow::Context;
 use conxian_api::{configure_routes, new_lightning_adapter, new_settlement_log, AppState};
 use conxian_compliance::{CoreVerifier, IdentityManager, ZkcVerifier};
-use conxian_core::{GatewayState, Persistence, SharedState};
+use conxian_core::{persistence::FilePersistence, GatewayState, Persistence, SharedState};
 #[cfg(feature = "rgb-native")]
 use conxian_engine::StashResolver;
 use conxian_engine::{
@@ -18,10 +18,7 @@ use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
 mod config;
-mod persistence;
-
 use config::Config;
-use persistence::FilePersistence;
 
 fn init_tracing() {
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
