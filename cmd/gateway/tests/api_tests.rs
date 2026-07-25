@@ -766,7 +766,7 @@ async fn test_sync_erp_ledger_odata() {
 }
 
 #[tokio::test]
-async fn test_settle_job_card_bitvm2() {
+async fn test_settle_job_card_bitvm2_fails_closed_without_verifier() {
     let state = Arc::new(RwLock::new(GatewayState::default()));
     let app = setup_app(state);
 
@@ -786,7 +786,15 @@ async fn test_settle_job_card_bitvm2() {
         .await
         .unwrap();
 
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(body["chain"], "bitvm");
+    assert_eq!(body["status"], "unsupported");
+    assert_eq!(body["code"], "verifier_unavailable");
+    assert_eq!(body["authoritative"], false);
+    assert!(body.get("txid").is_none());
+    assert!(!body.to_string().contains("success"));
 }
 
 #[tokio::test]

@@ -43,7 +43,7 @@ Conxian is designed to capture the Total Addressable Market (TAM) of Bitcoin-nat
 - [x] R29: Global Stateless OTP Messaging (Status: Complete)
 - [x] R30: Specialized NTT Relayer Deployment (Status: Complete)
 - [x] R31: Conxian Job Card Schema (CJCS) v2.0 Integration (Status: Complete)
-- [x] R32: BitVM2-Backed Job Card Settlement Verification (Status: Complete)
+- [ ] R32: BitVM2-Backed Job Card Settlement Verification (Status: Fail-closed/unavailable pending a reviewed cryptographic verifier; tracked as research-only in #189)
 - [x] R33: Institutional OData v4 ERP Sync (Status: Complete)
 - [x] R34: Advanced Axum Observability & Latency Tracking (Status: Complete)
 - [x] R35: Canonical Portfolio Mapping (Status: Complete)
@@ -69,7 +69,7 @@ Conxian is designed to capture the Total Addressable Market (TAM) of Bitcoin-nat
 - 2026-03-26: Institutional Hardening & CJCS v2.0 (Jules):
     - Refactored API layer to use dependency injection via `AppState`, removing hardcoded mocks.
     - Integrated CJCS v2.0 JSON-LD into core SDK for labor orchestration.
-    - Implemented BitVM2 verification floor for trustless Job Card settlement.
+    - Added the BitVM2 Job Card settlement API boundary; it now fails closed with HTTP 501 and does not persist a Job Card until a reviewed cryptographic verifier is available (#189).
 - 2026-04-10: Mainnet Alignment & Production Readiness (Jules):
     - Implemented SovereignCommit hooks for Tableland migration (CON-329).
     - Enhanced institutional metrics with TAM capture and SYI tracking.
