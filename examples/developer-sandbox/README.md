@@ -6,7 +6,7 @@ This is the smallest workspace-native developer path for the current Conxian Gat
 
 The TypeScript entry point uses `@conxian/client-sdk` and `ConxianClient` to make this sequence:
 
-1. `GET /api/v1/health` — liveness and sync visibility only; a healthy response is **not** settlement readiness.
+1. `GET /api/v1/health` — liveness only; a healthy response is exactly `{"status":"ok"}` and is **not** chain-sync or settlement readiness. Use `/api/v1/state` and `/metrics` for operational detail.
 2. `GET /api/v1/chains/list` — the supported-chain list from the Gateway's runtime registry.
 3. `POST /api/v1/chains/bitvm/verify` with `{ "root_hash": "0xabc123" }` — BitVM adapter input/rehearsal validation.
 
