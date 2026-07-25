@@ -1,17 +1,17 @@
-import { ConxianClient } from '@conxian/client-sdk';
+import { ConxianClient, type HealthResponse } from '@conxian/client-sdk';
 
 export const DEFAULT_GATEWAY_URL = 'http://localhost:3000';
 export const PROOF_CHAIN = 'bitvm';
 export const PROOF_METADATA = { root_hash: '0xabc123' } as const;
 
 export interface DeveloperSandboxClient {
-  getHealth(): Promise<unknown>;
+  getHealth(): Promise<HealthResponse>;
   getSupportedChains(): Promise<unknown>;
   verifyStateProof(chain: string, metadata: Record<string, unknown>): Promise<unknown>;
 }
 
 export interface ProofPathResult {
-  health: unknown;
+  health: HealthResponse;
   supportedChains: unknown;
   bitvmProofRehearsal: unknown;
 }
