@@ -343,6 +343,12 @@ impl FilePersistence {
                     temporary_path.display()
                 ))
             })?;
+            #[cfg(test)]
+            if std::env::var("CONXIAN_PERSISTENCE_TEST_CRASH_POINT").as_deref()
+                == Ok("before-rename")
+            {
+                std::process::abort();
+            }
             drop(file);
             fs::rename(&temporary_path, &self.path).map_err(|error| {
                 ConxianError::Persistence(format!(
@@ -350,6 +356,12 @@ impl FilePersistence {
                     self.path.display()
                 ))
             })?;
+            #[cfg(test)]
+            if std::env::var("CONXIAN_PERSISTENCE_TEST_CRASH_POINT").as_deref()
+                == Ok("after-rename")
+            {
+                std::process::abort();
+            }
             self.sync_parent_directory().map_err(|error| {
                 ConxianError::PersistenceCommitUnknown {
                     revision: envelope.revision,
@@ -793,6 +805,14 @@ mod tests {
                 };
                 fs::write(output, result).unwrap();
             }
+            "crash-write" => {
+                let current = persistence.load_versioned().unwrap();
+                let marker = std::env::var("CONXIAN_PERSISTENCE_MARKER").unwrap();
+                persistence
+                    .compare_and_swap(current.revision, &state_with_marker(&marker))
+                    .expect("configured crash point must terminate before CAS returns");
+                panic!("configured crash point did not terminate the subprocess");
+            }
             other => panic!("unsupported subprocess mode {other}"),
         }
     }
@@ -906,6 +926,88 @@ mod tests {
             1
         );
         assert_eq!(open(&state_path).load_versioned().unwrap().revision, 1);
+    }
+
+    #[test]
+    fn process_crash_restart_observes_complete_old_or_new_envelope() {
+        let directory = TestDirectory::new();
+
+        let before_path = directory.path("before-rename.json");
+        let before_output = directory.path("before-rename.out");
+        let before = open(&before_path);
+        let old = state_with_marker("old-before-rename");
+        before.compare_and_swap(0, &old).unwrap();
+        let mut child = spawn_worker(
+            "crash-write",
+            &before_path,
+            &before_output,
+            &[
+                (
+                    "CONXIAN_PERSISTENCE_TEST_CRASH_POINT",
+                    "before-rename".to_string(),
+                ),
+                (
+                    "CONXIAN_PERSISTENCE_MARKER",
+                    "new-before-rename".to_string(),
+                ),
+            ],
+        );
+        assert!(!child.wait().unwrap().success());
+
+        let restarted = open(&before_path);
+        let loaded = restarted.load_versioned().unwrap();
+        assert_eq!(loaded.revision, 1);
+        assert_eq!(serialized(&loaded.state), serialized(&old));
+        let orphan_temps = fs::read_dir(&directory.0)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| {
+                path.file_name()
+                    .is_some_and(|name| name.to_string_lossy().contains(".before-rename.json.tmp-"))
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(orphan_temps.len(), 1);
+        assert!(fs::symlink_metadata(&orphan_temps[0])
+            .unwrap()
+            .file_type()
+            .is_file());
+
+        let recovered = state_with_marker("recovered-with-orphan-present");
+        restarted
+            .compare_and_swap(loaded.revision, &recovered)
+            .unwrap();
+        assert_eq!(
+            serialized(&restarted.load_versioned().unwrap().state),
+            serialized(&recovered)
+        );
+        assert!(orphan_temps[0].exists());
+
+        let after_path = directory.path("after-rename.json");
+        let after_output = directory.path("after-rename.out");
+        let after = open(&after_path);
+        after
+            .compare_and_swap(0, &state_with_marker("old-after-rename"))
+            .unwrap();
+        let mut child = spawn_worker(
+            "crash-write",
+            &after_path,
+            &after_output,
+            &[
+                (
+                    "CONXIAN_PERSISTENCE_TEST_CRASH_POINT",
+                    "after-rename".to_string(),
+                ),
+                ("CONXIAN_PERSISTENCE_MARKER", "new-after-rename".to_string()),
+            ],
+        );
+        assert!(!child.wait().unwrap().success());
+
+        let restarted = open(&after_path).load_versioned().unwrap();
+        assert_eq!(restarted.revision, 2);
+        assert_eq!(
+            serialized(&restarted.state),
+            serialized(&state_with_marker("new-after-rename"))
+        );
     }
 
     #[test]

@@ -15,13 +15,17 @@ use conxian_engine::{
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tokio::signal;
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
 mod config;
+mod supervisor;
 use config::Config;
+use supervisor::{shutdown_requested, supervise, CriticalTask};
+
+const CRITICAL_TASK_SHUTDOWN_GRACE: Duration = Duration::from_secs(30);
 
 fn init_tracing() {
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
@@ -339,79 +343,6 @@ async fn main() -> anyhow::Result<()> {
         coordinator,
     };
 
-    // Create a cancellation token for graceful shutdown of listeners
-    let (shutdown_tx, _) = tokio::sync::broadcast::channel::<()>(1);
-
-    let mut btc_shutdown_rx = shutdown_tx.subscribe();
-    tokio::spawn(async move {
-        tokio::select! {
-            res = btc_listener.run() => {
-                if let Err(e) = res {
-                    error!("Bitcoin listener failed: {}", e);
-                }
-            }
-            _ = btc_shutdown_rx.recv() => {
-                info!("Bitcoin listener stopping...");
-            }
-        }
-    });
-
-    let mut stx_shutdown_rx = shutdown_tx.subscribe();
-    tokio::spawn(async move {
-        tokio::select! {
-            res = stx_listener.run() => {
-                if let Err(e) = res {
-                    error!("Stacks listener failed: {}", e);
-                }
-            }
-            _ = stx_shutdown_rx.recv() => {
-                info!("Stacks listener stopping...");
-            }
-        }
-    });
-
-    let mut treasury_shutdown_rx = shutdown_tx.subscribe();
-    tokio::spawn(async move {
-        tokio::select! {
-            res = treasury_monitor.run() => {
-                if let Err(e) = res {
-                    error!("Treasury monitor failed: {}", e);
-                }
-            }
-            _ = treasury_shutdown_rx.recv() => {
-                info!("Treasury monitor stopping...");
-            }
-        }
-    });
-
-    let mut ntt_shutdown_rx = shutdown_tx.subscribe();
-    tokio::spawn(async move {
-        tokio::select! {
-            res = ntt_relayer.run() => {
-                if let Err(e) = res {
-                    error!("NTT relayer failed: {}", e);
-                }
-            }
-            _ = ntt_shutdown_rx.recv() => {
-                info!("NTT relayer stopping...");
-            }
-        }
-    });
-
-    let mut mempool_shutdown_rx = shutdown_tx.subscribe();
-    tokio::spawn(async move {
-        tokio::select! {
-            res = mempool_orchestrator.run() => {
-                if let Err(e) = res {
-                    error!("Mempool orchestrator failed: {}", e);
-                }
-            }
-            _ = mempool_shutdown_rx.recv() => {
-                info!("Mempool orchestrator stopping...");
-            }
-        }
-    });
-
     // Configure and start API server
     let app = configure_routes(
         app_state,
@@ -423,39 +354,55 @@ async fn main() -> anyhow::Result<()> {
     info!("API server listening on {}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
+    let tasks = vec![
+        CriticalTask::until_shutdown("Bitcoin listener", async move { btc_listener.run().await }),
+        CriticalTask::until_shutdown("Stacks listener", async move { stx_listener.run().await }),
+        CriticalTask::until_shutdown(
+            "treasury monitor",
+            async move { treasury_monitor.run().await },
+        ),
+        CriticalTask::until_shutdown("NTT relayer", async move { ntt_relayer.run().await }),
+        CriticalTask::until_shutdown("mempool orchestrator", async move {
+            mempool_orchestrator.run().await
+        }),
+        CriticalTask::new("HTTP server", move |mut shutdown| async move {
+            axum::serve(listener, app)
+                .with_graceful_shutdown(async move {
+                    shutdown_requested(&mut shutdown).await;
+                })
+                .await
+                .context("HTTP server failed")
+        }),
+    ];
 
-    // Axum graceful shutdown
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal(shutdown_tx))
-        .await?;
+    supervise(tasks, shutdown_signal(), CRITICAL_TASK_SHUTDOWN_GRACE).await?;
 
     info!("Conxian Gateway shut down successfully.");
     Ok(())
 }
 
-async fn shutdown_signal(shutdown_tx: tokio::sync::broadcast::Sender<()>) {
+async fn shutdown_signal() -> anyhow::Result<()> {
     let ctrl_c = async {
         signal::ctrl_c()
             .await
-            .expect("failed to install Ctrl+C handler");
+            .context("failed to install Ctrl+C handler")
     };
 
     #[cfg(unix)]
     let terminate = async {
         signal::unix::signal(signal::unix::SignalKind::terminate())
-            .expect("failed to install signal handler")
+            .context("failed to install SIGTERM handler")?
             .recv()
             .await;
+        anyhow::Ok(())
     };
 
     #[cfg(not(unix))]
-    let terminate = std::future::pending::<()>();
+    let terminate = std::future::pending::<anyhow::Result<()>>();
 
     tokio::select! {
-        _ = ctrl_c => {},
-        _ = terminate => {},
+        result = ctrl_c => result?,
+        result = terminate => result?,
     }
-
-    info!("Shutdown signal received...");
-    let _ = shutdown_tx.send(());
+    Ok(())
 }
