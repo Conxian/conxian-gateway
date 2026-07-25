@@ -185,6 +185,22 @@ pub enum ConxianError {
     MachineIdentity(String),
 }
 
+impl ConxianError {
+    /// Whether this error means Gateway-owned durable state could not be
+    /// loaded, fenced, or committed safely. Long-running owners of that state
+    /// must return these errors to process supervision instead of retrying an
+    /// upstream polling loop.
+    pub fn is_persistence_failure(&self) -> bool {
+        matches!(
+            self,
+            Self::Persistence(_)
+                | Self::PersistenceConflict { .. }
+                | Self::PersistenceCommitUnknown { .. }
+                | Self::PersistenceLeaseLost { .. }
+        )
+    }
+}
+
 /// Shared global state wrapped for thread-safe access.
 pub type SharedState = Arc<RwLock<GatewayState>>;
 

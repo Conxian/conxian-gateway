@@ -29,22 +29,6 @@ impl CriticalTask {
             start: Box::new(move |shutdown| Box::pin(start(shutdown))),
         }
     }
-
-    /// Wrap a worker which has no native cancellation input. Cancellation
-    /// drops its run future; blocking filesystem work remains isolated on
-    /// Tokio's blocking pool and is not performed while async locks are held.
-    pub fn until_shutdown<Fut, E>(name: &'static str, future: Fut) -> Self
-    where
-        Fut: Future<Output = Result<(), E>> + Send + 'static,
-        E: Into<anyhow::Error> + Send + 'static,
-    {
-        Self::new(name, move |mut shutdown| async move {
-            tokio::select! {
-                result = future => result.map_err(Into::into),
-                _ = shutdown_requested(&mut shutdown) => Ok(()),
-            }
-        })
-    }
 }
 
 struct NamedTaskExit {
@@ -215,15 +199,133 @@ fn unexpected_exit_message(exit: &NamedTaskExit) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_trait::async_trait;
+    use conxian_core::{
+        BlockInfo, ConxianError, ConxianResult, GatewayState, Persistence, PersistentState,
+        VersionedPersistentState,
+    };
+    use conxian_engine::bitcoin::{BitcoinListener, BitcoinRpc};
     use std::sync::{
         atomic::{AtomicBool, Ordering},
-        Arc,
+        mpsc, Arc, Mutex, RwLock,
     };
 
     const TEST_GRACE: Duration = Duration::from_millis(100);
 
     fn pending_signal() -> impl Future<Output = anyhow::Result<()>> + Send {
         std::future::pending()
+    }
+
+    struct TestBitcoinRpc;
+
+    #[async_trait]
+    impl BitcoinRpc for TestBitcoinRpc {
+        async fn get_block_count(&self) -> ConxianResult<u64> {
+            Ok(1)
+        }
+
+        async fn get_block_info(&self, height: u64) -> ConxianResult<BlockInfo> {
+            Ok(BlockInfo {
+                hash: "supervisor-test-block".to_string(),
+                height,
+                timestamp: 1,
+            })
+        }
+
+        async fn get_network_info(&self) -> ConxianResult<String> {
+            Ok("regtest".to_string())
+        }
+    }
+
+    struct FailingPersistence;
+
+    impl Persistence for FailingPersistence {
+        fn load_versioned(&self) -> ConxianResult<VersionedPersistentState> {
+            Ok(VersionedPersistentState {
+                revision: 0,
+                state: PersistentState::default(),
+            })
+        }
+
+        fn compare_and_swap(
+            &self,
+            _expected_revision: u64,
+            _new_state: &PersistentState,
+        ) -> ConxianResult<VersionedPersistentState> {
+            Err(ConxianError::Persistence(
+                "injected durable checkpoint failure".to_string(),
+            ))
+        }
+    }
+
+    struct BlockingPersistence {
+        state: Mutex<VersionedPersistentState>,
+        started: mpsc::Sender<()>,
+        release: Mutex<mpsc::Receiver<()>>,
+    }
+
+    impl Persistence for BlockingPersistence {
+        fn load_versioned(&self) -> ConxianResult<VersionedPersistentState> {
+            Ok(self.state.lock().expect("lock poisoned").clone())
+        }
+
+        fn compare_and_swap(
+            &self,
+            expected_revision: u64,
+            new_state: &PersistentState,
+        ) -> ConxianResult<VersionedPersistentState> {
+            self.started
+                .send(())
+                .expect("persistence start receiver dropped");
+            self.release
+                .lock()
+                .expect("lock poisoned")
+                .recv()
+                .expect("persistence release sender dropped");
+            let mut current = self.state.lock().expect("lock poisoned");
+            if current.revision != expected_revision {
+                return Err(ConxianError::PersistenceConflict {
+                    expected: expected_revision,
+                    actual: current.revision,
+                });
+            }
+            current.revision += 1;
+            current.state = new_state.clone();
+            Ok(current.clone())
+        }
+    }
+
+    struct ReleaseOnDrop(Option<mpsc::Sender<()>>);
+
+    impl ReleaseOnDrop {
+        fn release(&mut self) {
+            if let Some(sender) = self.0.take() {
+                let _ = sender.send(());
+            }
+        }
+    }
+
+    impl Drop for ReleaseOnDrop {
+        fn drop(&mut self) {
+            self.release();
+        }
+    }
+
+    async fn bitcoin_listener_task(
+        persistence: Arc<dyn Persistence>,
+    ) -> (CriticalTask, Arc<AtomicBool>) {
+        let state = Arc::new(RwLock::new(GatewayState::default()));
+        let mut listener = BitcoinListener::new(TestBitcoinRpc, state, persistence, None, 0)
+            .await
+            .unwrap();
+        let peer_stopped = Arc::new(AtomicBool::new(false));
+        let listener_task = CriticalTask::new("Bitcoin listener", move |shutdown| async move {
+            listener
+                .run_until_shutdown(shutdown)
+                .await
+                .map_err(Into::into)
+        });
+        (listener_task, peer_stopped)
     }
 
     #[tokio::test]
@@ -245,6 +347,108 @@ mod tests {
         assert!(error.to_string().contains("disk failed"));
         assert!(peer_stopped.load(Ordering::SeqCst));
         assert!(http_stopped.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn listener_durability_failure_stops_http_equivalent_peer() {
+        let (listener, http_stopped) = bitcoin_listener_task(Arc::new(FailingPersistence)).await;
+        let tasks = vec![listener, stopping_task("http", Arc::clone(&http_stopped))];
+
+        let error = supervise(tasks, pending_signal(), TEST_GRACE)
+            .await
+            .expect_err("listener durability failure must stop the process");
+        assert!(error.to_string().contains("Bitcoin listener"));
+        assert!(error
+            .to_string()
+            .contains("injected durable checkpoint failure"));
+        assert!(http_stopped.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn signal_waits_for_in_flight_listener_persistence_before_success() {
+        let (started_tx, started_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let mut release = ReleaseOnDrop(Some(release_tx));
+        let persistence = Arc::new(BlockingPersistence {
+            state: Mutex::new(VersionedPersistentState {
+                revision: 0,
+                state: PersistentState::default(),
+            }),
+            started: started_tx,
+            release: Mutex::new(release_rx),
+        });
+        let (listener, http_stopped) = bitcoin_listener_task(persistence).await;
+        let tasks = vec![listener, stopping_task("http", Arc::clone(&http_stopped))];
+        let (signal_tx, signal_rx) = tokio::sync::oneshot::channel();
+        let supervision = tokio::spawn(async move {
+            supervise(
+                tasks,
+                async move { signal_rx.await.map_err(Into::into) },
+                Duration::from_secs(1),
+            )
+            .await
+        });
+        tokio::task::spawn_blocking(move || {
+            started_rx
+                .recv_timeout(Duration::from_secs(1))
+                .expect("listener persistence did not start")
+        })
+        .await
+        .unwrap();
+
+        signal_tx.send(()).unwrap();
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        assert!(
+            !supervision.is_finished(),
+            "supervision reported success before persistence drained"
+        );
+        release.release();
+        supervision.await.unwrap().unwrap();
+        assert!(http_stopped.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn in_flight_persistence_exceeding_grace_is_process_fatal() {
+        let (started_tx, started_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let mut release = ReleaseOnDrop(Some(release_tx));
+        let persistence = Arc::new(BlockingPersistence {
+            state: Mutex::new(VersionedPersistentState {
+                revision: 0,
+                state: PersistentState::default(),
+            }),
+            started: started_tx,
+            release: Mutex::new(release_rx),
+        });
+        let (listener, http_stopped) = bitcoin_listener_task(persistence).await;
+        let tasks = vec![listener, stopping_task("http", Arc::clone(&http_stopped))];
+        let (signal_tx, signal_rx) = tokio::sync::oneshot::channel();
+        let supervision = tokio::spawn(async move {
+            supervise(
+                tasks,
+                async move { signal_rx.await.map_err(Into::into) },
+                Duration::from_millis(20),
+            )
+            .await
+        });
+        tokio::task::spawn_blocking(move || {
+            started_rx
+                .recv_timeout(Duration::from_secs(1))
+                .expect("listener persistence did not start")
+        })
+        .await
+        .unwrap();
+
+        signal_tx.send(()).unwrap();
+        let error = supervision
+            .await
+            .unwrap()
+            .expect_err("hard shutdown timeout must never report clean shutdown");
+        assert!(error.to_string().contains("exceeded 20 ms"));
+        assert!(error.to_string().contains("Bitcoin listener"));
+        assert!(http_stopped.load(Ordering::SeqCst));
+        release.release();
+        tokio::time::sleep(Duration::from_millis(20)).await;
     }
 
     #[tokio::test]

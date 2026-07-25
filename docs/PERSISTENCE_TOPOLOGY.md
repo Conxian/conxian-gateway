@@ -155,12 +155,30 @@ critical task is process-fatal and requests the same coordinated shutdown used
 for SIGINT/SIGTERM. Therefore the HTTP server does not remain healthy after a
 durable worker exits.
 
-Shutdown asks every task to stop, lets Axum drain through graceful shutdown,
-and waits up to 30 seconds. A task which returns normally after cancellation is
-not treated as a new failure. Errors and panics remain fatal and visible. At
-the deadline, remaining tasks are aborted and the process returns failure.
-Persistence filesystem work remains on the blocking executor, so cancellation
-does not hold an async lock while waiting on a blocking transaction.
+Bitcoin, Stacks, and mempool loops distinguish errors by typed `ConxianError`
+variants. Persistence, revision-fencing, lease, and unknown-commit failures are
+returned immediately to the supervisor because those workers own Gateway
+durability. Transient Bitcoin/Stacks RPC polling errors remain logged and
+retryable. Ambiguous mempool submission is not treated as a retryable
+broadcast: the lease/record is completed as `BUMP_OUTCOME_UNKNOWN` and requires
+node-backed reconciliation. Treasury and NTT own no persistence checkpoint, so
+their transient upstream errors may continue to retry.
+
+Shutdown sends one shared cooperative cancellation request, lets Axum drain
+through graceful shutdown, and waits up to 30 seconds for every task handle.
+Workers observe cancellation only between complete polling passes. If a
+listener or orchestrator is awaiting `AsyncPersistence` filesystem work on the
+blocking executor, that operation is joined before the worker returns; its
+future is not dropped at cancellation. A task which returns normally after
+cancellation is accepted, while the original fatal error or panic remains the
+reported process failure.
+
+The 30-second bound is a hard-stop failure path, not a successful drain. At the
+deadline, remaining async task handles are aborted and the supervisor returns
+a process-fatal timeout. Operators and service managers must ensure that the
+process/runtime fully terminates before restart, because already-running
+blocking filesystem work cannot be safely reported as cleanly drained after a
+hard timeout.
 
 ## Backup and restore
 

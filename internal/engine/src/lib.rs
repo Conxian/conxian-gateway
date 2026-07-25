@@ -2,6 +2,7 @@ pub mod bitcoin;
 pub mod coordination;
 pub mod ntt;
 pub mod persistence;
+mod shutdown;
 pub mod stacks;
 pub mod treasury;
 

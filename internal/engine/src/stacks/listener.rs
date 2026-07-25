@@ -1,10 +1,12 @@
 use crate::coordination::{RedisCoordinator, StateRootPublisher};
 use crate::persistence::AsyncPersistence;
+use crate::shutdown::sleep_or_shutdown;
 use crate::stacks::rpc::StacksRpc;
 use conxian_core::{ConxianResult, Persistence, SharedState};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tokio::time::{sleep, Duration};
+use tokio::sync::watch;
+use tokio::time::Duration;
 use tracing::{error, info};
 
 pub struct StacksListener<R: StacksRpc> {
@@ -120,7 +122,10 @@ impl<R: StacksRpc> StacksListener<R> {
         }
     }
 
-    pub async fn run(&mut self) -> ConxianResult<()> {
+    pub async fn run_until_shutdown(
+        &mut self,
+        mut shutdown: watch::Receiver<bool>,
+    ) -> ConxianResult<()> {
         info!(
             "Starting Stacks (Nakamoto) listener with sync interval {}s...",
             self.sync_interval
@@ -128,9 +133,14 @@ impl<R: StacksRpc> StacksListener<R> {
 
         loop {
             if let Err(e) = self.sync_once().await {
+                if e.is_persistence_failure() {
+                    return Err(e);
+                }
                 error!("Failed to sync Stacks: {}", e);
             }
-            sleep(Duration::from_secs(self.sync_interval)).await;
+            if sleep_or_shutdown(&mut shutdown, Duration::from_secs(self.sync_interval)).await {
+                return Ok(());
+            }
         }
     }
 }
@@ -161,6 +171,10 @@ mod tests {
         height: u64,
     }
 
+    struct RetryStacksRpc {
+        calls: Arc<AtomicUsize>,
+    }
+
     #[async_trait]
     impl conxian_core::SimulatedStacksRpcTrait for SimulatedStacksRpc {
         async fn call_read_only(
@@ -185,6 +199,40 @@ mod tests {
                 epoch: "3.0".to_string(),
                 burn_block_height: self.height / 10,
             })
+        }
+    }
+
+    #[async_trait]
+    impl conxian_core::SimulatedStacksRpcTrait for RetryStacksRpc {
+        async fn call_read_only(
+            &self,
+            _contract: &str,
+            _function: &str,
+            _args: Vec<serde_json::Value>,
+        ) -> ConxianResult<serde_json::Value> {
+            Ok(serde_json::json!({ "okay": true }))
+        }
+    }
+
+    #[async_trait]
+    impl StacksRpc for RetryStacksRpc {
+        async fn get_block_count(&self) -> ConxianResult<u64> {
+            Ok(9)
+        }
+
+        async fn get_network_info(&self) -> ConxianResult<StacksNetworkInfo> {
+            if self.calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                Err(ConxianError::Stacks(
+                    "injected transient RPC failure".to_string(),
+                ))
+            } else {
+                Ok(StacksNetworkInfo {
+                    height: 9,
+                    network: "regtest".to_string(),
+                    epoch: "3.0".to_string(),
+                    burn_block_height: 1,
+                })
+            }
         }
     }
 
@@ -327,6 +375,57 @@ mod tests {
         assert_eq!(state.read().unwrap().stacks.height, 0);
         assert_eq!(persistence.load().unwrap().stacks_height, 0);
         assert_eq!(publisher.0.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn stacks_run_retries_rpc_error_but_returns_typed_persistence_failure() {
+        let state = Arc::new(RwLock::new(GatewayState::default()));
+        let persistence = Arc::new(SimulatedPersistence::default());
+        let calls = Arc::new(AtomicUsize::new(0));
+        let mut listener = StacksListener::new(
+            RetryStacksRpc {
+                calls: calls.clone(),
+            },
+            state,
+            persistence.clone(),
+            None,
+            0,
+        )
+        .await
+        .unwrap();
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        let task = tokio::spawn(async move { listener.run_until_shutdown(shutdown_rx).await });
+
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while persistence.load().unwrap().stacks_height != 9 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("listener did not retry the transient RPC failure");
+        assert!(calls.load(Ordering::SeqCst) >= 2);
+        shutdown_tx.send(true).unwrap();
+        task.await.unwrap().unwrap();
+
+        let state = Arc::new(RwLock::new(GatewayState::default()));
+        let persistence = Arc::new(SimulatedPersistence::default());
+        persistence.fail_cas.store(true, Ordering::SeqCst);
+        let mut listener = StacksListener::new(
+            SimulatedStacksRpc { height: 10 },
+            state,
+            persistence,
+            None,
+            0,
+        )
+        .await
+        .unwrap();
+        let (_shutdown_tx, shutdown_rx) = watch::channel(false);
+        let error = listener
+            .run_until_shutdown(shutdown_rx)
+            .await
+            .expect_err("persistence failure must exit the actual run loop");
+        assert!(error.is_persistence_failure());
+        assert!(matches!(error, ConxianError::Persistence(_)));
     }
 
     #[tokio::test]

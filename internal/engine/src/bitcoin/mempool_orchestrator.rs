@@ -4,12 +4,14 @@ use crate::bitcoin::fee_bump_policy::{
 };
 use crate::bitcoin::BitcoinRpc;
 use crate::persistence::AsyncPersistence;
+use crate::shutdown::sleep_or_shutdown;
 use conxian_core::{
     ConxianError, ConxianResult, FeeBumpStrategy, MempoolTxStatus, Persistence, TrackedMempoolTx,
 };
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tokio::time::{sleep, timeout, Duration};
+use tokio::sync::watch;
+use tokio::time::{timeout, Duration};
 use tracing::{info, warn};
 use uuid::Uuid;
 
@@ -70,7 +72,10 @@ impl<R: BitcoinRpc> MempoolOrchestrator<R> {
         self
     }
 
-    pub async fn run(&self) -> anyhow::Result<()> {
+    pub async fn run_until_shutdown(
+        &self,
+        mut shutdown: watch::Receiver<bool>,
+    ) -> ConxianResult<()> {
         info!(
             poll_interval_secs = self.poll_interval_secs,
             rgb_adapter_configured = self.rgb_adapter.is_some(),
@@ -79,33 +84,34 @@ impl<R: BitcoinRpc> MempoolOrchestrator<R> {
 
         loop {
             if let Err(err) = self.tick().await {
+                if err.is_persistence_failure() {
+                    return Err(err);
+                }
                 warn!("Mempool orchestrator tick failed: {}", err);
             }
-            sleep(Duration::from_secs(self.poll_interval_secs)).await;
+            if sleep_or_shutdown(&mut shutdown, Duration::from_secs(self.poll_interval_secs)).await
+            {
+                return Ok(());
+            }
         }
     }
 
-    pub async fn tick(&self) -> anyhow::Result<()> {
+    pub async fn tick(&self) -> ConxianResult<()> {
         self.tick_at(unix_now()).await
     }
 
-    async fn tick_at(&self, now: u64) -> anyhow::Result<()> {
+    async fn tick_at(&self, now: u64) -> ConxianResult<()> {
         let txids = self
             .persistence
             .load()
-            .await
-            .map_err(|err| anyhow::anyhow!(err.to_string()))?
+            .await?
             .mempool_pending_txs
             .into_iter()
             .map(|tx| tx.txid)
             .collect::<Vec<_>>();
 
         for txid in txids {
-            let Some(claimed) = self
-                .claim_transaction(&txid, now)
-                .await
-                .map_err(|err| anyhow::anyhow!(err.to_string()))?
-            else {
+            let Some(claimed) = self.claim_transaction(&txid, now).await? else {
                 continue;
             };
             let mut tracked = claimed.snapshot.clone();
@@ -121,9 +127,7 @@ impl<R: BitcoinRpc> MempoolOrchestrator<R> {
                     "fee-bump RPC deadline exceeded; reconcile node state before retry".to_string(),
                 );
             }
-            self.complete_transaction(&txid, &claimed, tracked)
-                .await
-                .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+            self.complete_transaction(&txid, &claimed, tracked).await?;
         }
         Ok(())
     }
@@ -440,6 +444,16 @@ mod tests {
         observed_off_runtime: AtomicBool,
     }
 
+    struct FailingPersistence;
+
+    impl Persistence for FailingPersistence {
+        fn load_versioned(&self) -> ConxianResult<VersionedPersistentState> {
+            Err(ConxianError::Persistence(
+                "injected mempool durability failure".to_string(),
+            ))
+        }
+    }
+
     impl Persistence for ThreadCheckingPersistence {
         fn load_versioned(&self) -> ConxianResult<VersionedPersistentState> {
             self.observed_off_runtime.store(
@@ -672,6 +686,66 @@ mod tests {
         orchestrator.tick_at(100).await.unwrap();
 
         assert!(persistence.observed_off_runtime.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn mempool_run_returns_typed_persistence_failure() {
+        let (rpc, _, _) = simulated_rpc(None, None);
+        let orchestrator =
+            MempoolOrchestrator::new(rpc, Arc::new(FailingPersistence), 0, test_policy(), None);
+        let (_shutdown_tx, shutdown_rx) = watch::channel(false);
+
+        let error = orchestrator
+            .run_until_shutdown(shutdown_rx)
+            .await
+            .expect_err("persistence failure must exit the actual run loop");
+        assert!(error.is_persistence_failure());
+        assert!(matches!(error, ConxianError::Persistence(_)));
+    }
+
+    #[tokio::test]
+    async fn ambiguous_submission_is_persisted_unknown_without_rebroadcast() {
+        let persistence = Arc::new(SimulatedPersistence::new(PersistentState {
+            mempool_pending_txs: vec![tracked_tx()],
+            ..PersistentState::default()
+        }));
+        let calls = Arc::new(AtomicUsize::new(0));
+        let orchestrator = Arc::new(
+            MempoolOrchestrator::new(
+                BlockingBitcoinRpc {
+                    calls: calls.clone(),
+                    started: Arc::new(Notify::new()),
+                    release: Arc::new(Notify::new()),
+                },
+                persistence.clone(),
+                0,
+                test_policy(),
+                None,
+            )
+            .with_rpc_deadline(Duration::from_millis(10)),
+        );
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        let task = tokio::spawn({
+            let orchestrator = orchestrator.clone();
+            async move { orchestrator.run_until_shutdown(shutdown_rx).await }
+        });
+
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                if persistence.load().unwrap().mempool_pending_txs[0].status
+                    == MempoolTxStatus::BumpOutcomeUnknown
+                {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("unknown submission outcome was not durably fenced");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        shutdown_tx.send(true).unwrap();
+        task.await.unwrap().unwrap();
     }
 
     #[tokio::test]

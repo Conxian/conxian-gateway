@@ -448,12 +448,13 @@ impl Persistence for FilePersistence {
 mod tests {
     use super::*;
     use crate::{transactional_update, Persistence, TrackedMempoolTx};
-    use std::process::Command;
+    use std::process::{Child, Command, ExitStatus};
     use std::sync::{atomic::AtomicU64, Arc, Barrier};
     use std::thread;
     use std::time::{Duration, Instant};
 
     static TEST_DIRECTORY_COUNTER: AtomicU64 = AtomicU64::new(0);
+    const SUBPROCESS_TIMEOUT: Duration = Duration::from_secs(5);
 
     struct TestDirectory(PathBuf);
 
@@ -481,6 +482,67 @@ mod tests {
     impl Drop for TestDirectory {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    struct BoundedChild {
+        child: Option<Child>,
+        label: String,
+    }
+
+    impl BoundedChild {
+        fn new(child: Child, label: impl Into<String>) -> Self {
+            Self {
+                child: Some(child),
+                label: label.into(),
+            }
+        }
+
+        fn wait(mut self) -> ExitStatus {
+            let deadline = Instant::now() + SUBPROCESS_TIMEOUT;
+            loop {
+                let child = self.child.as_mut().expect("child already reaped");
+                match child.try_wait() {
+                    Ok(Some(status)) => {
+                        self.child.take();
+                        return status;
+                    }
+                    Ok(None) if Instant::now() < deadline => {
+                        thread::sleep(Duration::from_millis(5));
+                    }
+                    Ok(None) => {
+                        let pid = child.id();
+                        let kill_error = child.kill().err();
+                        let reap_error = child.wait().err();
+                        self.child.take();
+                        panic!(
+                            "subprocess '{}' (pid {pid}) exceeded {:?}; kill_error={kill_error:?}, reap_error={reap_error:?}",
+                            self.label, SUBPROCESS_TIMEOUT
+                        );
+                    }
+                    Err(error) => {
+                        let pid = child.id();
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        self.child.take();
+                        panic!(
+                            "failed polling subprocess '{}' (pid {pid}): {error}",
+                            self.label
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    impl Drop for BoundedChild {
+        fn drop(&mut self) {
+            if let Some(mut child) = self.child.take() {
+                if child.try_wait().ok().flatten().is_none() {
+                    let _ = child.kill();
+                }
+                let _ = child.wait();
+            }
         }
     }
 
@@ -822,7 +884,7 @@ mod tests {
         state_path: &Path,
         output_path: &Path,
         extra_env: &[(&str, String)],
-    ) -> std::process::Child {
+    ) -> BoundedChild {
         let mut command = Command::new(std::env::current_exe().unwrap());
         command
             .arg("--exact")
@@ -835,7 +897,7 @@ mod tests {
         for (key, value) in extra_env {
             command.env(key, value);
         }
-        command.spawn().unwrap()
+        BoundedChild::new(command.spawn().unwrap(), mode)
     }
 
     #[test]
@@ -847,16 +909,12 @@ mod tests {
         let persistence = open(&state_path);
         let guard = persistence.acquire_ownership().unwrap();
 
-        let status = spawn_worker("ownership", &state_path, &first_output, &[])
-            .wait()
-            .unwrap();
+        let status = spawn_worker("ownership", &state_path, &first_output, &[]).wait();
         assert!(status.success());
         assert_eq!(fs::read_to_string(&first_output).unwrap(), "blocked");
 
         drop(guard);
-        let status = spawn_worker("ownership", &state_path, &second_output, &[])
-            .wait()
-            .unwrap();
+        let status = spawn_worker("ownership", &state_path, &second_output, &[]).wait();
         assert!(status.success());
         assert_eq!(fs::read_to_string(&second_output).unwrap(), "acquired");
     }
@@ -870,7 +928,7 @@ mod tests {
         let ready_b = directory.path("ready-b");
         let output_a = directory.path("a.out");
         let output_b = directory.path("b.out");
-        let mut first = spawn_worker(
+        let first = spawn_worker(
             "cas",
             &state_path,
             &output_a,
@@ -883,7 +941,7 @@ mod tests {
                 ("CONXIAN_PERSISTENCE_MARKER", "process-a".to_string()),
             ],
         );
-        let mut second = spawn_worker(
+        let second = spawn_worker(
             "cas",
             &state_path,
             &output_b,
@@ -905,8 +963,8 @@ mod tests {
             thread::sleep(Duration::from_millis(5));
         }
         fs::write(&go, b"go").unwrap();
-        assert!(first.wait().unwrap().success());
-        assert!(second.wait().unwrap().success());
+        assert!(first.wait().success());
+        assert!(second.wait().success());
         let outcomes = [
             fs::read_to_string(output_a).unwrap(),
             fs::read_to_string(output_b).unwrap(),
@@ -937,7 +995,7 @@ mod tests {
         let before = open(&before_path);
         let old = state_with_marker("old-before-rename");
         before.compare_and_swap(0, &old).unwrap();
-        let mut child = spawn_worker(
+        let child = spawn_worker(
             "crash-write",
             &before_path,
             &before_output,
@@ -952,7 +1010,7 @@ mod tests {
                 ),
             ],
         );
-        assert!(!child.wait().unwrap().success());
+        assert!(!child.wait().success());
 
         let restarted = open(&before_path);
         let loaded = restarted.load_versioned().unwrap();
@@ -988,7 +1046,7 @@ mod tests {
         after
             .compare_and_swap(0, &state_with_marker("old-after-rename"))
             .unwrap();
-        let mut child = spawn_worker(
+        let child = spawn_worker(
             "crash-write",
             &after_path,
             &after_output,
@@ -1000,7 +1058,7 @@ mod tests {
                 ("CONXIAN_PERSISTENCE_MARKER", "new-after-rename".to_string()),
             ],
         );
-        assert!(!child.wait().unwrap().success());
+        assert!(!child.wait().success());
 
         let restarted = open(&after_path).load_versioned().unwrap();
         assert_eq!(restarted.revision, 2);

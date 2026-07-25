@@ -355,15 +355,35 @@ async fn main() -> anyhow::Result<()> {
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     let tasks = vec![
-        CriticalTask::until_shutdown("Bitcoin listener", async move { btc_listener.run().await }),
-        CriticalTask::until_shutdown("Stacks listener", async move { stx_listener.run().await }),
-        CriticalTask::until_shutdown(
-            "treasury monitor",
-            async move { treasury_monitor.run().await },
-        ),
-        CriticalTask::until_shutdown("NTT relayer", async move { ntt_relayer.run().await }),
-        CriticalTask::until_shutdown("mempool orchestrator", async move {
-            mempool_orchestrator.run().await
+        CriticalTask::new("Bitcoin listener", move |shutdown| async move {
+            btc_listener
+                .run_until_shutdown(shutdown)
+                .await
+                .map_err(Into::into)
+        }),
+        CriticalTask::new("Stacks listener", move |shutdown| async move {
+            stx_listener
+                .run_until_shutdown(shutdown)
+                .await
+                .map_err(Into::into)
+        }),
+        CriticalTask::new("treasury monitor", move |shutdown| async move {
+            treasury_monitor
+                .run_until_shutdown(shutdown)
+                .await
+                .map_err(Into::into)
+        }),
+        CriticalTask::new("NTT relayer", move |shutdown| async move {
+            ntt_relayer
+                .run_until_shutdown(shutdown)
+                .await
+                .map_err(Into::into)
+        }),
+        CriticalTask::new("mempool orchestrator", move |shutdown| async move {
+            mempool_orchestrator
+                .run_until_shutdown(shutdown)
+                .await
+                .map_err(Into::into)
         }),
         CriticalTask::new("HTTP server", move |mut shutdown| async move {
             axum::serve(listener, app)

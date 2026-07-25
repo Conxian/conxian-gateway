@@ -1,10 +1,12 @@
 use crate::bitcoin::BitcoinRpc;
 use crate::coordination::{RedisCoordinator, StateRootPublisher};
 use crate::persistence::AsyncPersistence;
+use crate::shutdown::sleep_or_shutdown;
 use conxian_core::{BlockInfo, ConxianError, ConxianResult, Persistence, SharedState};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tokio::time::{sleep, Duration};
+use tokio::sync::watch;
+use tokio::time::Duration;
 use tracing::{error, info};
 
 pub struct BitcoinListener<R: BitcoinRpc> {
@@ -161,7 +163,10 @@ impl<R: BitcoinRpc> BitcoinListener<R> {
         }
     }
 
-    pub async fn run(&mut self) -> ConxianResult<()> {
+    pub async fn run_until_shutdown(
+        &mut self,
+        mut shutdown: watch::Receiver<bool>,
+    ) -> ConxianResult<()> {
         info!(
             "Starting Bitcoin listener with sync interval {}s...",
             self.sync_interval
@@ -169,9 +174,14 @@ impl<R: BitcoinRpc> BitcoinListener<R> {
 
         loop {
             if let Err(e) = self.sync_once().await {
+                if e.is_persistence_failure() {
+                    return Err(e);
+                }
                 error!("Failed to sync Bitcoin: {}", e);
             }
-            sleep(Duration::from_secs(self.sync_interval)).await;
+            if sleep_or_shutdown(&mut shutdown, Duration::from_secs(self.sync_interval)).await {
+                return Ok(());
+            }
         }
     }
 
@@ -224,6 +234,35 @@ mod tests {
     struct SimulatedBitcoinRpc {
         height: u64,
         metadata_height: Option<u64>,
+    }
+
+    struct RetryBitcoinRpc {
+        calls: Arc<AtomicUsize>,
+    }
+
+    #[async_trait]
+    impl BitcoinRpc for RetryBitcoinRpc {
+        async fn get_block_count(&self) -> ConxianResult<u64> {
+            if self.calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                Err(ConxianError::Bitcoin(
+                    "injected transient RPC failure".to_string(),
+                ))
+            } else {
+                Ok(7)
+            }
+        }
+
+        async fn get_block_info(&self, height: u64) -> ConxianResult<BlockInfo> {
+            Ok(BlockInfo {
+                hash: format!("hash-{height}"),
+                height,
+                timestamp: 123456789,
+            })
+        }
+
+        async fn get_network_info(&self) -> ConxianResult<String> {
+            Ok("regtest".to_string())
+        }
     }
 
     #[async_trait]
@@ -392,6 +431,60 @@ mod tests {
         assert_eq!(state.read().unwrap().bitcoin.height, 0);
         assert_eq!(persistence.load().unwrap().bitcoin_height, 0);
         assert_eq!(publisher.0.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn bitcoin_run_retries_rpc_error_but_returns_typed_persistence_failure() {
+        let state = Arc::new(RwLock::new(GatewayState::default()));
+        let persistence = Arc::new(SimulatedPersistence::default());
+        let calls = Arc::new(AtomicUsize::new(0));
+        let mut listener = BitcoinListener::new(
+            RetryBitcoinRpc {
+                calls: calls.clone(),
+            },
+            state,
+            persistence.clone(),
+            None,
+            0,
+        )
+        .await
+        .unwrap();
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        let task = tokio::spawn(async move { listener.run_until_shutdown(shutdown_rx).await });
+
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while persistence.load().unwrap().bitcoin_height != 7 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("listener did not retry the transient RPC failure");
+        assert!(calls.load(Ordering::SeqCst) >= 2);
+        shutdown_tx.send(true).unwrap();
+        task.await.unwrap().unwrap();
+
+        let state = Arc::new(RwLock::new(GatewayState::default()));
+        let persistence = Arc::new(SimulatedPersistence::default());
+        persistence.fail_cas.store(true, Ordering::SeqCst);
+        let mut listener = BitcoinListener::new(
+            SimulatedBitcoinRpc {
+                height: 8,
+                metadata_height: None,
+            },
+            state,
+            persistence,
+            None,
+            0,
+        )
+        .await
+        .unwrap();
+        let (_shutdown_tx, shutdown_rx) = watch::channel(false);
+        let error = listener
+            .run_until_shutdown(shutdown_rx)
+            .await
+            .expect_err("persistence failure must exit the actual run loop");
+        assert!(error.is_persistence_failure());
+        assert!(matches!(error, ConxianError::Persistence(_)));
     }
 
     #[tokio::test]
