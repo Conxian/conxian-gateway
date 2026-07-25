@@ -373,7 +373,7 @@ impl ZkcVerifier {
         &self,
         _payload: &JobCardSettlementRequest,
     ) -> ConxianResult<String> {
-        Ok("txid_bitvm_sim".to_string())
+        Err(ConxianError::VerifierUnavailable)
     }
 
     pub fn verify_offline_receipt(&self, _receipt: &OfflineReceipt) -> ConxianResult<bool> {

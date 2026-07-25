@@ -11,8 +11,9 @@ use axum::{
 };
 use conxian_compliance::SovereignCommit;
 use conxian_core::{
-    evaluate_trust_metadata_json, AttestationRequest, ConxianError, JobCardSettlementRequest,
-    Persistence, PersistentState, SettlementEnvelope, SettlementProposal, TrustPolicyDecision,
+    evaluate_trust_metadata_json, AttestationRequest, ConxianError, ConxianResult,
+    JobCardSettlementRequest, Persistence, PersistentState, SettlementEnvelope, SettlementProposal,
+    TrustPolicyDecision,
 };
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
@@ -371,16 +372,28 @@ pub async fn settle_job_card(
     State(state): State<AppState>,
     Json(payload): Json<JobCardSettlementRequest>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    match state.compliance.verify_bitvm2_settlement(&payload) {
-        Ok(txid) => {
-            let _ = state.compliance.commit_job_card(&payload.job_card);
-            Ok(Json(json!({ "status": "success", "txid": txid })))
-        }
+    match finalize_job_card_settlement(state.compliance.verify_bitvm2_settlement(&payload), || {
+        state.compliance.commit_job_card(&payload.job_card)
+    }) {
+        Ok(txid) => Ok(Json(json!({ "status": "success", "txid": txid }))),
+        Err(ConxianError::VerifierUnavailable) => Err(verifier_unavailable_response("bitvm")),
         Err(e) => Err((
             StatusCode::BAD_REQUEST,
             Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
         )),
     }
+}
+
+fn finalize_job_card_settlement<F>(
+    verification: ConxianResult<String>,
+    commit_job_card: F,
+) -> ConxianResult<String>
+where
+    F: FnOnce() -> ConxianResult<()>,
+{
+    let txid = verification?;
+    commit_job_card()?;
+    Ok(txid)
 }
 
 pub async fn generate_iso_payment(
@@ -865,7 +878,7 @@ pub async fn verify_attestation(
                 Json(json!({
                     "status": "action_required",
                     "error": "action_required",
-                    "message": "BitVM attestation requires JobCard context; use /api/v1/settle for full verification"
+                    "message": "BitVM attestation requires JobCard context; /api/v1/settle remains unavailable until a reviewed cryptographic verifier is configured"
                 })),
             ));
         }
@@ -1118,7 +1131,7 @@ fn verifier_unavailable_response(chain: &str) -> (StatusCode, Json<Value>) {
             "status": "unsupported",
             "code": "verifier_unavailable",
             "authoritative": false,
-            "message": "BitVM verification is unavailable on the generic chain route"
+            "message": "BitVM verification is unavailable"
         })),
     )
 }
@@ -1993,5 +2006,25 @@ pub async fn settle_m2m(
                 })),
             ))
         }
+    }
+}
+
+#[cfg(test)]
+mod settlement_tests {
+    use super::finalize_job_card_settlement;
+    use conxian_core::ConxianError;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    #[test]
+    fn unavailable_verifier_never_commits_job_card() {
+        let commit_called = AtomicBool::new(false);
+
+        let result = finalize_job_card_settlement(Err(ConxianError::VerifierUnavailable), || {
+            commit_called.store(true, Ordering::SeqCst);
+            Ok(())
+        });
+
+        assert!(matches!(result, Err(ConxianError::VerifierUnavailable)));
+        assert!(!commit_called.load(Ordering::SeqCst));
     }
 }
