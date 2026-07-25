@@ -3,6 +3,7 @@ use crate::bitcoin::fee_bump_policy::{
     FeeBumpPolicyConfig,
 };
 use crate::bitcoin::BitcoinRpc;
+use crate::persistence::AsyncPersistence;
 use conxian_core::{
     ConxianError, ConxianResult, FeeBumpStrategy, MempoolTxStatus, Persistence, TrackedMempoolTx,
 };
@@ -17,7 +18,7 @@ const DEFAULT_LEASE_TTL_SECS: u64 = 120;
 
 pub struct MempoolOrchestrator<R: BitcoinRpc> {
     rpc: R,
-    persistence: Arc<dyn Persistence>,
+    persistence: AsyncPersistence,
     poll_interval_secs: u64,
     policy_config: FeeBumpPolicyConfig,
     // Kept as runtime wiring for future RGB-aware policy decisions. A Bitcoin
@@ -45,7 +46,7 @@ impl<R: BitcoinRpc> MempoolOrchestrator<R> {
     ) -> Self {
         Self {
             rpc,
-            persistence,
+            persistence: AsyncPersistence::new(persistence),
             poll_interval_secs,
             policy_config,
             rgb_adapter,
@@ -92,6 +93,7 @@ impl<R: BitcoinRpc> MempoolOrchestrator<R> {
         let txids = self
             .persistence
             .load()
+            .await
             .map_err(|err| anyhow::anyhow!(err.to_string()))?
             .mempool_pending_txs
             .into_iter()
@@ -101,6 +103,7 @@ impl<R: BitcoinRpc> MempoolOrchestrator<R> {
         for txid in txids {
             let Some(claimed) = self
                 .claim_transaction(&txid, now)
+                .await
                 .map_err(|err| anyhow::anyhow!(err.to_string()))?
             else {
                 continue;
@@ -119,17 +122,22 @@ impl<R: BitcoinRpc> MempoolOrchestrator<R> {
                 );
             }
             self.complete_transaction(&txid, &claimed, tracked)
+                .await
                 .map_err(|err| anyhow::anyhow!(err.to_string()))?;
         }
         Ok(())
     }
 
-    fn claim_transaction(&self, txid: &str, now: u64) -> ConxianResult<Option<ClaimedTransaction>> {
+    async fn claim_transaction(
+        &self,
+        txid: &str,
+        now: u64,
+    ) -> ConxianResult<Option<ClaimedTransaction>> {
         let lease_expires_at = now.checked_add(self.lease_ttl_secs).ok_or_else(|| {
             ConxianError::Persistence("mempool lease expiry overflow".to_string())
         })?;
         for attempt in 0..PERSISTENCE_ATTEMPTS {
-            let current = self.persistence.load_versioned()?;
+            let current = self.persistence.load_versioned().await?;
             let mut next = current.state.clone();
             let Some(tx) = next
                 .mempool_pending_txs
@@ -160,7 +168,11 @@ impl<R: BitcoinRpc> MempoolOrchestrator<R> {
             tx.lease_id = Some(lease_id.clone());
             tx.lease_expires_at = Some(lease_expires_at);
             let claimed = tx.clone();
-            match self.persistence.compare_and_swap(current.revision, &next) {
+            match self
+                .persistence
+                .compare_and_swap(current.revision, next)
+                .await
+            {
                 Ok(_) => {
                     return Ok(Some(ClaimedTransaction {
                         record_generation: claimed.record_generation,
@@ -178,14 +190,14 @@ impl<R: BitcoinRpc> MempoolOrchestrator<R> {
         ))
     }
 
-    fn complete_transaction(
+    async fn complete_transaction(
         &self,
         txid: &str,
         claimed: &ClaimedTransaction,
         mut completed: TrackedMempoolTx,
     ) -> ConxianResult<()> {
         for attempt in 0..PERSISTENCE_ATTEMPTS {
-            let current = self.persistence.load_versioned()?;
+            let current = self.persistence.load_versioned().await?;
             let mut next = current.state.clone();
             let Some(tx) = next
                 .mempool_pending_txs
@@ -211,7 +223,11 @@ impl<R: BitcoinRpc> MempoolOrchestrator<R> {
             completed.lease_expires_at = None;
             completed.record_generation = claimed.record_generation;
             *tx = completed.clone();
-            match self.persistence.compare_and_swap(current.revision, &next) {
+            match self
+                .persistence
+                .compare_and_swap(current.revision, next)
+                .await
+            {
                 Ok(_) => return Ok(()),
                 Err(ConxianError::PersistenceConflict { .. })
                     if attempt + 1 < PERSISTENCE_ATTEMPTS => {}
@@ -414,10 +430,28 @@ mod tests {
         VersionedPersistentState,
     };
     use std::sync::{
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         Mutex,
     };
     use tokio::sync::Notify;
+
+    struct ThreadCheckingPersistence {
+        runtime_thread: std::thread::ThreadId,
+        observed_off_runtime: AtomicBool,
+    }
+
+    impl Persistence for ThreadCheckingPersistence {
+        fn load_versioned(&self) -> ConxianResult<VersionedPersistentState> {
+            self.observed_off_runtime.store(
+                std::thread::current().id() != self.runtime_thread,
+                Ordering::SeqCst,
+            );
+            Ok(VersionedPersistentState {
+                revision: 0,
+                state: PersistentState::default(),
+            })
+        }
+    }
 
     struct SimulatedPersistence {
         state: Mutex<VersionedPersistentState>,
@@ -625,6 +659,21 @@ mod tests {
         }
     }
 
+    #[tokio::test(flavor = "current_thread")]
+    async fn mempool_tick_loads_persistence_off_runtime_thread() {
+        let persistence = Arc::new(ThreadCheckingPersistence {
+            runtime_thread: std::thread::current().id(),
+            observed_off_runtime: AtomicBool::new(false),
+        });
+        let (rpc, _, _) = simulated_rpc(None, None);
+        let orchestrator =
+            MempoolOrchestrator::new(rpc, persistence.clone(), 30, test_policy(), None);
+
+        orchestrator.tick_at(100).await.unwrap();
+
+        assert!(persistence.observed_off_runtime.load(Ordering::SeqCst));
+    }
+
     #[tokio::test]
     async fn orchestrator_rbf_success_path() {
         let rgb_adapter = Arc::new(NodeRgbAdapter::new(
@@ -774,7 +823,11 @@ mod tests {
         let second = MempoolOrchestrator::new(rpc_b, persistence.clone(), 30, test_policy(), None)
             .with_owner("owner-b", 10);
 
-        assert!(first.claim_transaction("parent-tx", 100).unwrap().is_some());
+        assert!(first
+            .claim_transaction("parent-tx", 100)
+            .await
+            .unwrap()
+            .is_some());
         second.tick_at(101).await.unwrap();
         assert_eq!(rbf_calls.load(Ordering::SeqCst), 0);
         let tx = &persistence.load().unwrap().mempool_pending_txs[0];
@@ -852,8 +905,8 @@ mod tests {
         assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
 
-    #[test]
-    fn stale_completion_cannot_overwrite_concurrent_reconciliation() {
+    #[tokio::test]
+    async fn stale_completion_cannot_overwrite_concurrent_reconciliation() {
         let persistence = Arc::new(SimulatedPersistence::new(PersistentState {
             mempool_pending_txs: vec![tracked_tx()],
             ..PersistentState::default()
@@ -864,6 +917,7 @@ mod tests {
                 .with_owner("owner-a", 10);
         let claimed = orchestrator
             .claim_transaction("parent-tx", 100)
+            .await
             .unwrap()
             .unwrap();
         let current = persistence.load_versioned().unwrap();
@@ -881,7 +935,9 @@ mod tests {
         let mut stale = claimed.snapshot.clone();
         stale.status = MempoolTxStatus::BumpBroadcasted;
         assert!(matches!(
-            orchestrator.complete_transaction("parent-tx", &claimed, stale),
+            orchestrator
+                .complete_transaction("parent-tx", &claimed, stale)
+                .await,
             Err(ConxianError::PersistenceLeaseLost { .. })
         ));
         assert_eq!(
@@ -904,7 +960,11 @@ mod tests {
         let second = MempoolOrchestrator::new(rpc_b, persistence.clone(), 30, test_policy(), None)
             .with_owner("owner-b", 5);
 
-        assert!(first.claim_transaction("parent-tx", 100).unwrap().is_some());
+        assert!(first
+            .claim_transaction("parent-tx", 100)
+            .await
+            .unwrap()
+            .is_some());
         second.tick_at(106).await.unwrap();
         assert_eq!(rbf_calls.load(Ordering::SeqCst), 1);
         let state = persistence.load().unwrap();

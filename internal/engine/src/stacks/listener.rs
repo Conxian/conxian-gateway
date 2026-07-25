@@ -1,6 +1,7 @@
 use crate::coordination::{RedisCoordinator, StateRootPublisher};
+use crate::persistence::AsyncPersistence;
 use crate::stacks::rpc::StacksRpc;
-use conxian_core::{transactional_update, ConxianResult, Persistence, SharedState};
+use conxian_core::{ConxianResult, Persistence, SharedState};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::time::{sleep, Duration};
@@ -9,21 +10,22 @@ use tracing::{error, info};
 pub struct StacksListener<R: StacksRpc> {
     rpc: R,
     state: SharedState,
-    persistence: Arc<dyn Persistence>,
+    persistence: AsyncPersistence,
     coordinator: Option<Arc<dyn StateRootPublisher>>,
     last_height: u64,
     sync_interval: u64,
 }
 
 impl<R: StacksRpc> StacksListener<R> {
-    pub fn new(
+    pub async fn new(
         rpc: R,
         state: SharedState,
         persistence: Arc<dyn Persistence>,
         coordinator: Option<Arc<RedisCoordinator>>,
         sync_interval: u64,
     ) -> ConxianResult<Self> {
-        let last_height = persistence.load()?.stacks_height;
+        let persistence = AsyncPersistence::new(persistence);
+        let last_height = persistence.load().await?.stacks_height;
         let coordinator = coordinator.map(|value| value as Arc<dyn StateRootPublisher>);
         Ok(Self {
             rpc,
@@ -46,10 +48,13 @@ impl<R: StacksRpc> StacksListener<R> {
                 if info.height > self.last_height || self.last_height == 0 {
                     info!("New Stacks block processed: height={}, network={}, epoch={}, burn_height={}", info.height, info.network, info.epoch, info.burn_block_height);
 
-                    transactional_update(self.persistence.as_ref(), 4, |state| {
-                        state.stacks_height = info.height;
-                        Ok(())
-                    })?;
+                    let height = info.height;
+                    self.persistence
+                        .transactional_update(4, move |state| {
+                            state.stacks_height = height;
+                            Ok(())
+                        })
+                        .await?;
 
                     {
                         let mut state = self.state.write().expect("lock poisoned");
@@ -215,7 +220,9 @@ mod tests {
         let state = Arc::new(RwLock::new(GatewayState::default()));
         let rpc = SimulatedStacksRpc { height: 555 };
         let persistence = Arc::new(SimulatedPersistence::default());
-        let mut listener = StacksListener::new(rpc, state.clone(), persistence, None, 30).unwrap();
+        let mut listener = StacksListener::new(rpc, state.clone(), persistence, None, 30)
+            .await
+            .unwrap();
 
         listener.sync_once().await.unwrap();
 
@@ -258,6 +265,7 @@ mod tests {
             None,
             30,
         )
+        .await
         .unwrap();
 
         listener.sync_once().await.unwrap();
@@ -276,7 +284,7 @@ mod tests {
         let mut listener = StacksListener {
             rpc: SimulatedStacksRpc { height: 555 },
             state: state.clone(),
-            persistence: persistence.clone(),
+            persistence: AsyncPersistence::new(persistence.clone()),
             coordinator: Some(publisher.clone()),
             last_height: 0,
             sync_interval: 30,

@@ -1,6 +1,7 @@
 use crate::bitcoin::BitcoinRpc;
 use crate::coordination::{RedisCoordinator, StateRootPublisher};
-use conxian_core::{transactional_update, ConxianResult, Persistence, SharedState};
+use crate::persistence::AsyncPersistence;
+use conxian_core::{ConxianResult, Persistence, SharedState};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::time::{sleep, Duration};
@@ -9,7 +10,7 @@ use tracing::{error, info};
 pub struct BitcoinListener<R: BitcoinRpc> {
     rpc: R,
     state: SharedState,
-    persistence: Arc<dyn Persistence>,
+    persistence: AsyncPersistence,
     coordinator: Option<Arc<dyn StateRootPublisher>>,
     last_height: u64,
     network: Option<String>,
@@ -17,14 +18,15 @@ pub struct BitcoinListener<R: BitcoinRpc> {
 }
 
 impl<R: BitcoinRpc> BitcoinListener<R> {
-    pub fn new(
+    pub async fn new(
         rpc: R,
         state: SharedState,
         persistence: Arc<dyn Persistence>,
         coordinator: Option<Arc<RedisCoordinator>>,
         sync_interval: u64,
     ) -> ConxianResult<Self> {
-        let last_height = persistence.load()?.bitcoin_height;
+        let persistence = AsyncPersistence::new(persistence);
+        let last_height = persistence.load().await?.bitcoin_height;
         let coordinator = coordinator.map(|value| value as Arc<dyn StateRootPublisher>);
         Ok(Self {
             rpc,
@@ -66,10 +68,13 @@ impl<R: BitcoinRpc> BitcoinListener<R> {
                                     block.height, block.hash, self.network
                                 );
 
-                                transactional_update(self.persistence.as_ref(), 4, |state| {
-                                    state.bitcoin_height = block.height;
-                                    Ok(())
-                                })?;
+                                let height = block.height;
+                                self.persistence
+                                    .transactional_update(4, move |state| {
+                                        state.bitcoin_height = height;
+                                        Ok(())
+                                    })
+                                    .await?;
                                 self.apply_block(&block, now);
                                 self.last_height = block.height;
                                 if let Some(ref coord) = self.coordinator {
@@ -100,10 +105,13 @@ impl<R: BitcoinRpc> BitcoinListener<R> {
                                     block.height, best_hash, block.hash
                                 );
 
-                                transactional_update(self.persistence.as_ref(), 4, |state| {
-                                    state.bitcoin_height = block.height;
-                                    Ok(())
-                                })?;
+                                let height = block.height;
+                                self.persistence
+                                    .transactional_update(4, move |state| {
+                                        state.bitcoin_height = height;
+                                        Ok(())
+                                    })
+                                    .await?;
                                 self.apply_block(&block, now);
                                 if let Some(ref coord) = self.coordinator {
                                     let _ = coord.publish_state_root("bitcoin", &block.hash).await;
@@ -271,7 +279,9 @@ mod tests {
         let state = Arc::new(RwLock::new(GatewayState::default()));
         let rpc = SimulatedBitcoinRpc { height: 100 };
         let persistence = Arc::new(SimulatedPersistence::default());
-        let mut listener = BitcoinListener::new(rpc, state.clone(), persistence, None, 10).unwrap();
+        let mut listener = BitcoinListener::new(rpc, state.clone(), persistence, None, 10)
+            .await
+            .unwrap();
 
         listener.sync_once().await.unwrap();
 
@@ -314,6 +324,7 @@ mod tests {
             None,
             10,
         )
+        .await
         .unwrap();
 
         listener.sync_once().await.unwrap();
@@ -332,7 +343,7 @@ mod tests {
         let mut listener = BitcoinListener {
             rpc: SimulatedBitcoinRpc { height: 100 },
             state: state.clone(),
-            persistence: persistence.clone(),
+            persistence: AsyncPersistence::new(persistence.clone()),
             coordinator: Some(publisher.clone()),
             last_height: 0,
             network: None,

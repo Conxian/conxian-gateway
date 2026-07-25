@@ -12,6 +12,14 @@ fails closed. Each compare-and-swap transaction also takes a separate
 cross-process transaction lock, reloads the current revision, checks the
 caller's expected revision, and only then writes the next revision.
 
+The file backend is synchronous by design. Gateway startup runs path
+construction, ownership-lock acquisition, and the initial load in one
+`spawn_blocking` task. Runtime callers use the shared `AsyncPersistence` adapter,
+which moves loads, compare-and-swap writes, and complete bounded transactional
+updates onto Tokio's blocking pool. `JoinError` is converted into a fail-closed
+persistence error. Network RPC remains outside these closures, and callers do
+not hold Tokio mutexes or other async locks across filesystem work.
+
 State is stored as strict format-versioned JSON containing a monotonic revision
 and the `PersistentState` payload. A legacy plain `PersistentState` document
 loads as revision `0` and is migrated on the first successful mutation.

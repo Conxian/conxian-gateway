@@ -5,6 +5,7 @@ use conxian_core::{persistence::FilePersistence, GatewayState, Persistence, Shar
 #[cfg(feature = "rgb-native")]
 use conxian_engine::StashResolver;
 use conxian_engine::{
+    run_blocking_persistence,
     stacks::alex::{AlexClient, AlexRpcClient},
     BitcoinListener, BitcoinRpcClient, FeeBumpPolicyConfig, MempoolOrchestrator, NodeRgbAdapter,
     NttRelayer, RedisCoordinator, StacksListener, StacksRpcClient, TreasuryMonitor,
@@ -50,30 +51,26 @@ async fn main() -> anyhow::Result<()> {
     // Capture server start time for token expiry enforcement (CON-1276)
     let server_start = Instant::now();
 
-    // Initialize persistence
-    let persistence = Arc::new(
-        FilePersistence::new(&config.gateway_state_path).with_context(|| {
+    // Construct, exclusively lock, and load the synchronous file backend on
+    // Tokio's blocking pool so startup never stalls an async runtime worker.
+    let persistence_path = config.gateway_state_path.clone();
+    let (persistence, _state_ownership_guard, p_state) =
+        run_blocking_persistence("initialize Gateway file persistence", move || {
+            let persistence = Arc::new(FilePersistence::new(&persistence_path)?);
+            let ownership_guard = persistence.acquire_ownership()?;
+            let state = persistence.load()?;
+            Ok((persistence, ownership_guard, state))
+        })
+        .await
+        .with_context(|| {
             format!(
-                "failed to initialize Gateway persistence path '{}'",
+                "failed to initialize, lock, or load Gateway persistence path '{}'",
                 config.gateway_state_path
             )
-        })?,
-    );
-    let _state_ownership_guard = persistence.acquire_ownership().with_context(|| {
-        format!(
-            "failed to acquire exclusive Gateway ownership of state path '{}'",
-            config.gateway_state_path
-        )
-    })?;
+        })?;
 
     // Initialize shared state
     let mut initial_state = GatewayState::default();
-    let p_state = persistence.load().with_context(|| {
-        format!(
-            "failed to load Gateway state from '{}'",
-            config.gateway_state_path
-        )
-    })?;
     initial_state.bitcoin.height = p_state.bitcoin_height;
     initial_state.stacks.height = p_state.stacks_height;
     info!(
@@ -111,7 +108,8 @@ async fn main() -> anyhow::Result<()> {
         persistence.clone(),
         coordinator.clone(),
         config.bitcoin_sync_interval,
-    )?;
+    )
+    .await?;
 
     // Initialize mempool orchestrator (CON-718)
     let mempool_rpc = BitcoinRpcClient::new(
@@ -165,7 +163,8 @@ async fn main() -> anyhow::Result<()> {
         persistence.clone(),
         coordinator.clone(),
         config.stacks_sync_interval,
-    )?;
+    )
+    .await?;
 
     // ALEX Client Initialization. The quote path remains read-only and
     // unverified. Unsigned payload preparation is disabled unless an exact,

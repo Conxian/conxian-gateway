@@ -1,6 +1,7 @@
 pub mod bitcoin;
 pub mod coordination;
 pub mod ntt;
+pub mod persistence;
 pub mod stacks;
 pub mod treasury;
 
@@ -12,5 +13,6 @@ pub use bitcoin::{
 };
 pub use coordination::RedisCoordinator;
 pub use ntt::{CitreaAdapter, NttRelayer, RootstockAdapter};
+pub use persistence::{run_blocking_persistence, AsyncPersistence};
 pub use stacks::{SimulatedStacksRpc, StacksListener, StacksRpc, StacksRpcClient};
 pub use treasury::TreasuryMonitor;

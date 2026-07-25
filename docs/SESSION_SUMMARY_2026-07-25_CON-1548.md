@@ -12,9 +12,10 @@ state `load -> modify -> save` writes.
 
 ## Implemented on the branch
 
-- `Persistence` now requires explicit `load_versioned` and
-  `compare_and_swap` implementations; the non-transactional mutation fallback
-  and `save` trait method are removed.
+- Deprecated `Persistence::save` remains for source compatibility but fails
+  closed with an explicit non-transactional-save error. Transactional method
+  defaults also fail closed as unsupported instead of emulating CAS through an
+  unsafe `load -> save` fallback.
 - Production checkpoint writers use bounded conflict-only CAS retries and
   mutate only their owned height field. Persistence failures do not advance
   listener in-memory checkpoints.
@@ -36,6 +37,10 @@ state `load -> modify -> save` writes.
   state roots only after the durable commit.
 - Mempool claims use unique lease fencing tokens and record generations. RPC
   work has a deadline below the TTL; timeout requires reconciliation.
+- Startup construction/ownership/load and all listener/orchestrator persistence
+  operations cross a shared Tokio blocking-executor boundary. Join failures are
+  explicit persistence errors; network RPC and async locks remain outside the
+  blocking closures.
 
 ## Guarantee boundary
 
