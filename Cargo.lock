@@ -1135,6 +1135,7 @@ dependencies = [
  "aes-gcm",
  "async-trait",
  "chrono",
+ "fs2",
  "hex",
  "rusqlite",
  "serde",
@@ -1172,6 +1173,7 @@ dependencies = [
  "tokio",
  "tracing",
  "url",
+ "uuid",
 ]
 
 [[package]]

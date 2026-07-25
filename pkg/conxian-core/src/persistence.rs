@@ -1,46 +1,154 @@
-use crate::{ConxianError, ConxianResult, Persistence, PersistentState};
-use std::fs;
+use crate::{ConxianError, ConxianResult, Persistence, PersistentState, VersionedPersistentState};
+use fs2::FileExt;
+use serde::{Deserialize, Serialize};
+use std::fs::{self, File, OpenOptions};
+use std::io::Write;
 use std::path::PathBuf;
+
+const STATE_FORMAT_VERSION: u32 = 1;
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StateEnvelope {
+    format_version: u32,
+    revision: u64,
+    state: PersistentState,
+}
 
 pub struct FilePersistence {
     path: PathBuf,
+    lock_path: PathBuf,
 }
 
 impl FilePersistence {
     pub fn new(path: &str) -> Self {
+        let path = PathBuf::from(path);
         Self {
-            path: PathBuf::from(path),
+            lock_path: path.with_extension("transaction.lock"),
+            path,
+        }
+    }
+
+    fn with_lock<T>(&self, operation: impl FnOnce() -> ConxianResult<T>) -> ConxianResult<T> {
+        let lock = OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(&self.lock_path)
+            .map_err(|error| ConxianError::Persistence(error.to_string()))?;
+        lock.lock_exclusive()
+            .map_err(|error| ConxianError::Persistence(error.to_string()))?;
+        let result = operation();
+        let unlock =
+            FileExt::unlock(&lock).map_err(|error| ConxianError::Persistence(error.to_string()));
+        match (result, unlock) {
+            (Err(error), _) | (Ok(_), Err(error)) => Err(error),
+            (Ok(value), Ok(())) => Ok(value),
+        }
+    }
+
+    fn read_unlocked(&self) -> ConxianResult<VersionedPersistentState> {
+        let bytes = match fs::read(&self.path) {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(VersionedPersistentState {
+                    revision: 0,
+                    state: PersistentState::default(),
+                });
+            }
+            Err(error) => return Err(ConxianError::Persistence(error.to_string())),
+        };
+        let value: serde_json::Value = serde_json::from_slice(&bytes)
+            .map_err(|error| ConxianError::Persistence(error.to_string()))?;
+        if value.get("format_version").is_some()
+            || value.get("revision").is_some()
+            || value.get("state").is_some()
+        {
+            let envelope: StateEnvelope = serde_json::from_value(value)
+                .map_err(|error| ConxianError::Persistence(error.to_string()))?;
+            if envelope.format_version != STATE_FORMAT_VERSION {
+                return Err(ConxianError::Persistence(format!(
+                    "unsupported persistence format version {}",
+                    envelope.format_version
+                )));
+            }
+            Ok(VersionedPersistentState {
+                revision: envelope.revision,
+                state: envelope.state,
+            })
+        } else {
+            let state = serde_json::from_value(value)
+                .map_err(|error| ConxianError::Persistence(error.to_string()))?;
+            Ok(VersionedPersistentState { revision: 0, state })
         }
     }
 }
 
 impl Persistence for FilePersistence {
-    fn save(&self, state: &PersistentState) -> ConxianResult<()> {
-        let json = serde_json::to_string(state)
-            .map_err(|e| ConxianError::Io(format!("Serialization failed: {}", e)))?;
-
-        let tmp_path = self.path.with_extension("tmp");
-        fs::write(&tmp_path, json)
-            .map_err(|e| ConxianError::Io(format!("Write to temporary file failed: {}", e)))?;
-
-        fs::rename(&tmp_path, &self.path)
-            .map_err(|e| ConxianError::Io(format!("Atomic rename failed: {}", e)))?;
-
-        Ok(())
+    fn load_versioned(&self) -> ConxianResult<VersionedPersistentState> {
+        self.with_lock(|| self.read_unlocked())
     }
 
-    fn load(&self) -> ConxianResult<PersistentState> {
-        if !self.path.exists() {
-            return Ok(PersistentState::default());
-        }
-
-        let content = fs::read_to_string(&self.path)
-            .map_err(|e| ConxianError::Io(format!("Read failed: {}", e)))?;
-
-        let state: PersistentState = serde_json::from_str(&content)
-            .map_err(|e| ConxianError::Io(format!("Deserialization failed: {}", e)))?;
-
-        Ok(state)
+    fn compare_and_swap(
+        &self,
+        expected_revision: u64,
+        new_state: &PersistentState,
+    ) -> ConxianResult<VersionedPersistentState> {
+        self.with_lock(|| {
+            let current = self.read_unlocked()?;
+            if current.revision != expected_revision {
+                return Err(ConxianError::PersistenceConflict {
+                    expected: expected_revision,
+                    actual: current.revision,
+                });
+            }
+            let revision = current
+                .revision
+                .checked_add(1)
+                .ok_or_else(|| ConxianError::Persistence("revision overflow".to_string()))?;
+            let envelope = StateEnvelope {
+                format_version: STATE_FORMAT_VERSION,
+                revision,
+                state: new_state.clone(),
+            };
+            let bytes = serde_json::to_vec_pretty(&envelope)
+                .map_err(|error| ConxianError::Persistence(error.to_string()))?;
+            let temporary = self
+                .path
+                .with_extension(format!("tmp-{}", std::process::id()));
+            let mut file = OpenOptions::new()
+                .create_new(true)
+                .write(true)
+                .open(&temporary)
+                .map_err(|error| ConxianError::Persistence(error.to_string()))?;
+            let write_result = (|| {
+                file.write_all(&bytes)
+                    .map_err(|error| ConxianError::Persistence(error.to_string()))?;
+                file.sync_all()
+                    .map_err(|error| ConxianError::Persistence(error.to_string()))?;
+                drop(file);
+                fs::rename(&temporary, &self.path)
+                    .map_err(|error| ConxianError::Persistence(error.to_string()))?;
+                if let Some(parent) = self.path.parent() {
+                    File::open(parent)
+                        .and_then(|directory| directory.sync_all())
+                        .map_err(|error| ConxianError::PersistenceCommitUnknown {
+                            revision,
+                            message: error.to_string(),
+                        })?;
+                }
+                Ok(())
+            })();
+            if write_result.is_err() {
+                let _ = fs::remove_file(&temporary);
+            }
+            write_result?;
+            Ok(VersionedPersistentState {
+                revision,
+                state: new_state.clone(),
+            })
+        })
     }
 }
 

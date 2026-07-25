@@ -15,7 +15,7 @@ use conxian_compliance::{CoreVerifier, IdentityManager, UniversalVerifier, ZkcVe
 use conxian_core::{
     Attestation, AttestationRequest, BitVmAttestation, ConxianJobCard, FeeBumpStrategy,
     GatewayState, JobCardSettlementRequest, MempoolTxStatus, Persistence, PersistentState,
-    SharedState, TrackedMempoolTx, WorkIntent,
+    SharedState, TrackedMempoolTx, VersionedPersistentState, WorkIntent,
 };
 use hmac::KeyInit;
 use hmac::{Hmac, Mac};
@@ -43,25 +43,39 @@ struct StaticPersistence {
 }
 
 impl Persistence for StaticPersistence {
-    fn save(&self, _state: &PersistentState) -> conxian_core::ConxianResult<()> {
-        Ok(())
+    fn load_versioned(&self) -> conxian_core::ConxianResult<VersionedPersistentState> {
+        Ok(VersionedPersistentState {
+            revision: 0,
+            state: self.state.clone(),
+        })
     }
 
-    fn load(&self) -> conxian_core::ConxianResult<PersistentState> {
-        Ok(self.state.clone())
+    fn compare_and_swap(
+        &self,
+        expected_revision: u64,
+        _new_state: &PersistentState,
+    ) -> conxian_core::ConxianResult<VersionedPersistentState> {
+        Err(conxian_core::ConxianError::PersistenceConflict {
+            expected: expected_revision,
+            actual: 0,
+        })
     }
 }
 
 struct FailingPersistence;
 
 impl Persistence for FailingPersistence {
-    fn save(&self, _state: &PersistentState) -> conxian_core::ConxianResult<()> {
+    fn load_versioned(&self) -> conxian_core::ConxianResult<VersionedPersistentState> {
         Err(conxian_core::ConxianError::Internal(
             "backend-error-must-not-appear".to_string(),
         ))
     }
 
-    fn load(&self) -> conxian_core::ConxianResult<PersistentState> {
+    fn compare_and_swap(
+        &self,
+        _expected_revision: u64,
+        _new_state: &PersistentState,
+    ) -> conxian_core::ConxianResult<VersionedPersistentState> {
         Err(conxian_core::ConxianError::Internal(
             "backend-error-must-not-appear".to_string(),
         ))
@@ -392,6 +406,8 @@ async fn test_mempool_telemetry_authorized_and_scoped() {
                 last_bump_strategy: Some(FeeBumpStrategy::Rbf),
                 last_error: Some("must-not-appear".to_string()),
                 replacement_txid: Some("replacement-must-not-appear".to_string()),
+                lease_owner: None,
+                lease_expires_at: None,
             }],
         },
     });
@@ -413,7 +429,7 @@ async fn test_mempool_telemetry_authorized_and_scoped() {
     let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
     let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
 
-    assert_eq!(body["schema_version"], 1);
+    assert_eq!(body["schema_version"], 2);
     assert_eq!(body["scope"], "gateway_tracked_transactions");
     assert_eq!(body["network_mempool_observation"], "not_configured");
     assert_eq!(body["availability"], "available");

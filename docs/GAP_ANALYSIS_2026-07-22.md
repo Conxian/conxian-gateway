@@ -1,5 +1,13 @@
 # Conxian Gateway Gap Analysis — 2026-07-22
 
+> **2026-07-25 branch update:** CON-1548 / GitHub #281 phase 2 is implemented
+> on `charlie/con-1548-transactional-persistence` but is not yet pushed or
+> merged. The branch removes non-transactional production state writes, adds
+> listener CAS retries and mempool claim leases, hardens envelope/path
+> validation, and adds local subprocess lock/CAS tests. The gap remains open
+> until review and merge; distributed filesystems and exactly-once fee-bump
+> broadcasts remain explicitly unsupported.
+
 **Scope:** Current Gateway issue inventory, implementation evidence, research
 boundaries, and next acceptance slices for the six issues that were open at the
 2026-07-22 Phase 2 audit checkpoint.

@@ -54,7 +54,14 @@ async fn main() -> anyhow::Result<()> {
     let server_start = Instant::now();
 
     // Initialize persistence
-    let persistence = Arc::new(FilePersistence::new(&config.gateway_state_path));
+    let persistence = Arc::new(
+        FilePersistence::new(&config.gateway_state_path).with_context(|| {
+            format!(
+                "failed to initialize Gateway persistence path '{}'",
+                config.gateway_state_path
+            )
+        })?,
+    );
     let _state_ownership_guard = persistence.acquire_ownership().with_context(|| {
         format!(
             "failed to acquire exclusive Gateway ownership of state path '{}'",
@@ -107,7 +114,7 @@ async fn main() -> anyhow::Result<()> {
         persistence.clone(),
         coordinator.clone(),
         config.bitcoin_sync_interval,
-    );
+    )?;
 
     // Initialize mempool orchestrator (CON-718)
     let mempool_rpc = BitcoinRpcClient::new(
@@ -161,7 +168,7 @@ async fn main() -> anyhow::Result<()> {
         persistence.clone(),
         coordinator.clone(),
         config.stacks_sync_interval,
-    );
+    )?;
 
     // ALEX Client Initialization. The quote path remains read-only and
     // unverified. Unsigned payload preparation is disabled unless an exact,

@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use conxian_core::{
-    BlockInfo, ConxianError, ConxianResult, GatewayState, Persistence, PersistentState, SharedState,
+    BlockInfo, ConxianError, ConxianResult, GatewayState, Persistence, PersistentState,
+    SharedState, VersionedPersistentState,
 };
 use conxian_engine::{BitcoinListener, BitcoinRpc};
 use std::sync::{Arc, Mutex, RwLock};
@@ -64,25 +65,40 @@ impl BitcoinRpc for ReorgSimulationRpc {
 }
 
 struct InMemoryPersistence {
-    state: Mutex<PersistentState>,
+    state: Mutex<VersionedPersistentState>,
 }
 
 impl InMemoryPersistence {
     fn new() -> Self {
         Self {
-            state: Mutex::new(PersistentState::default()),
+            state: Mutex::new(VersionedPersistentState {
+                revision: 0,
+                state: PersistentState::default(),
+            }),
         }
     }
 }
 
 impl Persistence for InMemoryPersistence {
-    fn save(&self, state: &PersistentState) -> ConxianResult<()> {
-        *self.state.lock().unwrap() = state.clone();
-        Ok(())
+    fn load_versioned(&self) -> ConxianResult<VersionedPersistentState> {
+        Ok(self.state.lock().unwrap().clone())
     }
 
-    fn load(&self) -> ConxianResult<PersistentState> {
-        Ok(self.state.lock().unwrap().clone())
+    fn compare_and_swap(
+        &self,
+        expected_revision: u64,
+        state: &PersistentState,
+    ) -> ConxianResult<VersionedPersistentState> {
+        let mut current = self.state.lock().unwrap();
+        if current.revision != expected_revision {
+            return Err(ConxianError::PersistenceConflict {
+                expected: expected_revision,
+                actual: current.revision,
+            });
+        }
+        current.revision += 1;
+        current.state = state.clone();
+        Ok(current.clone())
     }
 }
 
@@ -93,7 +109,7 @@ async fn bitcoin_listener_reorg_simulation_updates_tip_hash_at_same_height() {
     let persistence = Arc::new(InMemoryPersistence::new());
 
     let mut listener =
-        BitcoinListener::new(rpc.clone(), state.clone(), persistence.clone(), None, 30);
+        BitcoinListener::new(rpc.clone(), state.clone(), persistence.clone(), None, 30).unwrap();
     listener.sync_once().await.unwrap();
 
     {

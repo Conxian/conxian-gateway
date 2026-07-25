@@ -1,6 +1,6 @@
 use crate::coordination::RedisCoordinator;
 use crate::stacks::rpc::StacksRpc;
-use conxian_core::{ConxianResult, Persistence, SharedState};
+use conxian_core::{transactional_update, ConxianResult, Persistence, SharedState};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::time::{sleep, Duration};
@@ -22,16 +22,16 @@ impl<R: StacksRpc> StacksListener<R> {
         persistence: Arc<dyn Persistence>,
         coordinator: Option<Arc<RedisCoordinator>>,
         sync_interval: u64,
-    ) -> Self {
-        let last_height = persistence.load().map(|s| s.stacks_height).unwrap_or(0);
-        Self {
+    ) -> ConxianResult<Self> {
+        let last_height = persistence.load()?.stacks_height;
+        Ok(Self {
             rpc,
             state,
             persistence,
             coordinator,
             last_height,
             sync_interval,
-        }
+        })
     }
 
     pub async fn sync_once(&mut self) -> ConxianResult<()> {
@@ -52,6 +52,11 @@ impl<R: StacksRpc> StacksListener<R> {
                             .await;
                     }
 
+                    transactional_update(self.persistence.as_ref(), 4, |state| {
+                        state.stacks_height = info.height;
+                        Ok(())
+                    })?;
+
                     {
                         let mut state = self.state.write().expect("lock poisoned");
                         state.stacks.height = info.height;
@@ -63,15 +68,6 @@ impl<R: StacksRpc> StacksListener<R> {
                         state.stacks.epoch = Some(info.epoch);
                         state.stacks.burn_block_height = Some(info.burn_block_height);
                     }
-
-                    // Save persistence
-                    let mut p_state = self.persistence.load().unwrap_or_default();
-                    {
-                        let state = self.state.read().expect("lock poisoned");
-                        p_state.bitcoin_height = state.bitcoin.height;
-                        p_state.stacks_height = info.height;
-                    }
-                    let _ = self.persistence.save(&p_state);
 
                     self.last_height = info.height;
                 } else {
@@ -108,8 +104,11 @@ mod tests {
     use super::*;
     use crate::stacks::rpc::StacksNetworkInfo;
     use async_trait::async_trait;
-    use conxian_core::{GatewayState, PersistentState};
-    use std::sync::{Arc, RwLock};
+    use conxian_core::{ConxianError, GatewayState, PersistentState, VersionedPersistentState};
+    use std::sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex, RwLock,
+    };
 
     struct SimulatedStacksRpc {
         height: u64,
@@ -142,13 +141,62 @@ mod tests {
         }
     }
 
-    struct SimulatedPersistence;
-    impl Persistence for SimulatedPersistence {
-        fn save(&self, _state: &PersistentState) -> ConxianResult<()> {
-            Ok(())
+    struct SimulatedPersistence {
+        state: Mutex<VersionedPersistentState>,
+        conflict_once: AtomicBool,
+        fail_cas: AtomicBool,
+    }
+
+    impl Default for SimulatedPersistence {
+        fn default() -> Self {
+            Self::with_state(PersistentState::default())
         }
-        fn load(&self) -> ConxianResult<PersistentState> {
-            Ok(PersistentState::default())
+    }
+
+    impl SimulatedPersistence {
+        fn with_state(state: PersistentState) -> Self {
+            Self {
+                state: Mutex::new(VersionedPersistentState { revision: 0, state }),
+                conflict_once: AtomicBool::new(false),
+                fail_cas: AtomicBool::new(false),
+            }
+        }
+    }
+
+    impl Persistence for SimulatedPersistence {
+        fn load_versioned(&self) -> ConxianResult<VersionedPersistentState> {
+            Ok(self.state.lock().expect("lock poisoned").clone())
+        }
+
+        fn compare_and_swap(
+            &self,
+            expected_revision: u64,
+            state: &PersistentState,
+        ) -> ConxianResult<VersionedPersistentState> {
+            if self.fail_cas.load(Ordering::SeqCst) {
+                return Err(ConxianError::Persistence(
+                    "injected Stacks checkpoint failure".to_string(),
+                ));
+            }
+            let mut current = self.state.lock().expect("lock poisoned");
+            if self.conflict_once.swap(false, Ordering::SeqCst) {
+                let actual = current.revision + 1;
+                current.revision = actual;
+                current.state.bitcoin_height = 888;
+                return Err(ConxianError::PersistenceConflict {
+                    expected: expected_revision,
+                    actual,
+                });
+            }
+            if current.revision != expected_revision {
+                return Err(ConxianError::PersistenceConflict {
+                    expected: expected_revision,
+                    actual: current.revision,
+                });
+            }
+            current.revision += 1;
+            current.state = state.clone();
+            Ok(current.clone())
         }
     }
 
@@ -156,8 +204,8 @@ mod tests {
     async fn test_stacks_listener_sync_once() {
         let state = Arc::new(RwLock::new(GatewayState::default()));
         let rpc = SimulatedStacksRpc { height: 555 };
-        let persistence = Arc::new(SimulatedPersistence);
-        let mut listener = StacksListener::new(rpc, state.clone(), persistence, None, 30);
+        let persistence = Arc::new(SimulatedPersistence::default());
+        let mut listener = StacksListener::new(rpc, state.clone(), persistence, None, 30).unwrap();
 
         listener.sync_once().await.unwrap();
 
@@ -179,5 +227,53 @@ mod tests {
             assert_eq!(s.stacks.height, 556);
             assert_eq!(s.stacks.burn_block_height, Some(55)); // Simulated int div
         }
+    }
+
+    #[tokio::test]
+    async fn stacks_listener_retries_conflict_and_preserves_unowned_fields() {
+        let state = Arc::new(RwLock::new(GatewayState::default()));
+        let persistence = Arc::new(SimulatedPersistence::with_state(PersistentState {
+            bitcoin_height: 42,
+            stacks_height: 0,
+            mempool_pending_txs: vec![conxian_core::TrackedMempoolTx {
+                txid: "preserved".to_string(),
+                ..Default::default()
+            }],
+        }));
+        persistence.conflict_once.store(true, Ordering::SeqCst);
+        let mut listener = StacksListener::new(
+            SimulatedStacksRpc { height: 555 },
+            state,
+            persistence.clone(),
+            None,
+            30,
+        )
+        .unwrap();
+
+        listener.sync_once().await.unwrap();
+        let persisted = persistence.load().unwrap();
+        assert_eq!(persisted.stacks_height, 555);
+        assert_eq!(persisted.bitcoin_height, 888);
+        assert_eq!(persisted.mempool_pending_txs[0].txid, "preserved");
+    }
+
+    #[tokio::test]
+    async fn stacks_listener_does_not_advance_after_persistence_failure() {
+        let state = Arc::new(RwLock::new(GatewayState::default()));
+        let persistence = Arc::new(SimulatedPersistence::default());
+        persistence.fail_cas.store(true, Ordering::SeqCst);
+        let mut listener = StacksListener::new(
+            SimulatedStacksRpc { height: 555 },
+            state.clone(),
+            persistence.clone(),
+            None,
+            30,
+        )
+        .unwrap();
+
+        assert!(listener.sync_once().await.is_err());
+        assert_eq!(listener.last_height, 0);
+        assert_eq!(state.read().unwrap().stacks.height, 0);
+        assert_eq!(persistence.load().unwrap().stacks_height, 0);
     }
 }

@@ -46,6 +46,7 @@ pub enum MempoolTxStatus {
     Pending,
     Stuck,
     BumpBroadcasted,
+    BumpOutcomeUnknown,
     GuardrailRejected,
     Confirmed,
 }
@@ -66,6 +67,12 @@ pub struct TrackedMempoolTx {
     pub last_bump_strategy: Option<FeeBumpStrategy>,
     pub last_error: Option<String>,
     pub replacement_txid: Option<String>,
+    /// Ephemeral ownership of this record while an orchestrator evaluates and
+    /// possibly broadcasts a fee bump. Missing fields preserve legacy state.
+    #[serde(default)]
+    pub lease_owner: Option<String>,
+    #[serde(default)]
+    pub lease_expires_at: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -162,6 +169,10 @@ pub enum ConxianError {
     Persistence(String),
     #[error("persistence revision conflict: expected {expected}, found {actual}")]
     PersistenceConflict { expected: u64, actual: u64 },
+    #[error("persistence commit outcome is unknown after revision {revision}: {message}")]
+    PersistenceCommitUnknown { revision: u64, message: String },
+    #[error("persistence lease for transaction '{txid}' is not owned by '{owner}'")]
+    PersistenceLeaseLost { txid: String, owner: String },
     #[error("RGB error: {0}")]
     Rgb(String),
     #[error("Machine identity error: {0}")]
@@ -656,6 +667,7 @@ pub struct GcpTokenRequest {
 
 /// Persistent data that needs to be saved across restarts.
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[serde(deny_unknown_fields)]
 pub struct PersistentState {
     pub bitcoin_height: u64,
     pub stacks_height: u64,
@@ -672,47 +684,53 @@ pub struct VersionedPersistentState {
 
 /// Trait for persistence of gateway state.
 pub trait Persistence: Send + Sync {
-    fn save(&self, state: &PersistentState) -> ConxianResult<()>;
-    fn load(&self) -> ConxianResult<PersistentState>;
-
-    /// Load state with its compare-and-swap revision.
-    ///
-    /// This compatibility default treats legacy implementations as revision
-    /// zero. Production backends must override it together with
-    /// `compare_and_swap` to provide atomic transactional semantics.
-    fn load_versioned(&self) -> ConxianResult<VersionedPersistentState> {
-        Ok(VersionedPersistentState {
-            revision: 0,
-            state: self.load()?,
-        })
-    }
+    /// Load state with its compare-and-swap revision. Implementations must
+    /// provide real revision semantics; there is no non-atomic fallback.
+    fn load_versioned(&self) -> ConxianResult<VersionedPersistentState>;
 
     /// Atomically replace state only when the persisted revision matches.
     ///
-    /// The compatibility default is intentionally non-transactional and only
-    /// exists for test and legacy implementations during the phase-1 API
-    /// transition. Production backends must override this method.
     fn compare_and_swap(
         &self,
         expected_revision: u64,
         new_state: &PersistentState,
-    ) -> ConxianResult<VersionedPersistentState> {
-        let current = self.load_versioned()?;
-        if current.revision != expected_revision {
-            return Err(ConxianError::PersistenceConflict {
-                expected: expected_revision,
-                actual: current.revision,
-            });
-        }
-        self.save(new_state)?;
-        let revision = expected_revision.checked_add(1).ok_or_else(|| {
-            ConxianError::Persistence("persistence revision overflow".to_string())
-        })?;
-        Ok(VersionedPersistentState {
-            revision,
-            state: new_state.clone(),
-        })
+    ) -> ConxianResult<VersionedPersistentState>;
+
+    fn load(&self) -> ConxianResult<PersistentState> {
+        self.load_versioned().map(|versioned| versioned.state)
     }
+}
+
+/// Apply a scoped state mutation with bounded optimistic retries.
+///
+/// Only revision conflicts are retried. Corruption, lock/durability failures,
+/// and unknown commit outcomes fail closed so callers cannot replay external
+/// side effects after an ambiguous commit.
+pub fn transactional_update<T>(
+    persistence: &dyn Persistence,
+    max_attempts: usize,
+    mut mutate: impl FnMut(&mut PersistentState) -> ConxianResult<T>,
+) -> ConxianResult<(VersionedPersistentState, T)> {
+    if max_attempts == 0 {
+        return Err(ConxianError::Persistence(
+            "transactional update requires at least one attempt".to_string(),
+        ));
+    }
+
+    for attempt in 0..max_attempts {
+        let current = persistence.load_versioned()?;
+        let mut next = current.state.clone();
+        let value = mutate(&mut next)?;
+        match persistence.compare_and_swap(current.revision, &next) {
+            Ok(committed) => return Ok((committed, value)),
+            Err(ConxianError::PersistenceConflict { .. }) if attempt + 1 < max_attempts => {}
+            Err(error) => return Err(error),
+        }
+    }
+
+    Err(ConxianError::Persistence(
+        "transactional update exhausted conflict retries".to_string(),
+    ))
 }
 
 /// CON-423: SAB-owned system wallets for BOS operations.

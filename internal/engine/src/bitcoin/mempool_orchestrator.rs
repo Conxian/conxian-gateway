@@ -3,11 +3,17 @@ use crate::bitcoin::fee_bump_policy::{
     FeeBumpPolicyConfig,
 };
 use crate::bitcoin::BitcoinRpc;
-use conxian_core::{FeeBumpStrategy, MempoolTxStatus, Persistence, TrackedMempoolTx};
+use conxian_core::{
+    ConxianError, ConxianResult, FeeBumpStrategy, MempoolTxStatus, Persistence, TrackedMempoolTx,
+};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::time::{sleep, Duration};
 use tracing::{info, warn};
+use uuid::Uuid;
+
+const PERSISTENCE_ATTEMPTS: usize = 4;
+const DEFAULT_LEASE_TTL_SECS: u64 = 120;
 
 pub struct MempoolOrchestrator<R: BitcoinRpc> {
     rpc: R,
@@ -18,6 +24,8 @@ pub struct MempoolOrchestrator<R: BitcoinRpc> {
     // txid is not an RGB contract ID, so this orchestrator intentionally does
     // not synthesize `rgb:`/`contract:` identifiers for lookups.
     rgb_adapter: Option<Arc<dyn conxian_core::RgbAdapter>>,
+    owner_id: String,
+    lease_ttl_secs: u64,
 }
 
 impl<R: BitcoinRpc> MempoolOrchestrator<R> {
@@ -34,7 +42,16 @@ impl<R: BitcoinRpc> MempoolOrchestrator<R> {
             poll_interval_secs,
             policy_config,
             rgb_adapter,
+            owner_id: Uuid::new_v4().to_string(),
+            lease_ttl_secs: DEFAULT_LEASE_TTL_SECS,
         }
+    }
+
+    #[cfg(test)]
+    fn with_owner(mut self, owner_id: &str, lease_ttl_secs: u64) -> Self {
+        self.owner_id = owner_id.to_string();
+        self.lease_ttl_secs = lease_ttl_secs;
+        self
     }
 
     pub async fn run(&self) -> anyhow::Result<()> {
@@ -53,23 +70,114 @@ impl<R: BitcoinRpc> MempoolOrchestrator<R> {
     }
 
     pub async fn tick(&self) -> anyhow::Result<()> {
-        let mut persisted = self
+        self.tick_at(unix_now()).await
+    }
+
+    async fn tick_at(&self, now: u64) -> anyhow::Result<()> {
+        let txids = self
             .persistence
             .load()
-            .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+            .map_err(|err| anyhow::anyhow!(err.to_string()))?
+            .mempool_pending_txs
+            .into_iter()
+            .map(|tx| tx.txid)
+            .collect::<Vec<_>>();
 
-        let now = unix_now();
-        for idx in 0..persisted.mempool_pending_txs.len() {
-            let mut tracked = persisted.mempool_pending_txs[idx].clone();
+        for txid in txids {
+            let Some(mut tracked) = self
+                .claim_transaction(&txid, now)
+                .map_err(|err| anyhow::anyhow!(err.to_string()))?
+            else {
+                continue;
+            };
             self.evaluate_pending_tx(&mut tracked, now).await;
-            persisted.mempool_pending_txs[idx] = tracked;
+            self.complete_transaction(&txid, tracked)
+                .map_err(|err| anyhow::anyhow!(err.to_string()))?;
         }
-
-        self.persistence
-            .save(&persisted)
-            .map_err(|err| anyhow::anyhow!(err.to_string()))?;
-
         Ok(())
+    }
+
+    fn claim_transaction(&self, txid: &str, now: u64) -> ConxianResult<Option<TrackedMempoolTx>> {
+        let lease_expires_at = now.checked_add(self.lease_ttl_secs).ok_or_else(|| {
+            ConxianError::Persistence("mempool lease expiry overflow".to_string())
+        })?;
+        for attempt in 0..PERSISTENCE_ATTEMPTS {
+            let current = self.persistence.load_versioned()?;
+            let mut next = current.state.clone();
+            let Some(tx) = next
+                .mempool_pending_txs
+                .iter_mut()
+                .find(|tx| tx.txid == txid)
+            else {
+                return Ok(None);
+            };
+            if matches!(
+                tx.status,
+                MempoolTxStatus::Confirmed
+                    | MempoolTxStatus::BumpBroadcasted
+                    | MempoolTxStatus::BumpOutcomeUnknown
+            ) {
+                return Ok(None);
+            }
+            let active_other_lease = tx.lease_owner.as_deref() != Some(&self.owner_id)
+                && tx
+                    .lease_expires_at
+                    .is_some_and(|expires_at| expires_at > now);
+            if active_other_lease {
+                return Ok(None);
+            }
+            tx.lease_owner = Some(self.owner_id.clone());
+            tx.lease_expires_at = Some(lease_expires_at);
+            let claimed = tx.clone();
+            match self.persistence.compare_and_swap(current.revision, &next) {
+                Ok(_) => return Ok(Some(claimed)),
+                Err(ConxianError::PersistenceConflict { .. })
+                    if attempt + 1 < PERSISTENCE_ATTEMPTS => {}
+                Err(error) => return Err(error),
+            }
+        }
+        Err(ConxianError::Persistence(
+            "mempool claim exhausted conflict retries".to_string(),
+        ))
+    }
+
+    fn complete_transaction(
+        &self,
+        txid: &str,
+        mut completed: TrackedMempoolTx,
+    ) -> ConxianResult<()> {
+        for attempt in 0..PERSISTENCE_ATTEMPTS {
+            let current = self.persistence.load_versioned()?;
+            let mut next = current.state.clone();
+            let Some(tx) = next
+                .mempool_pending_txs
+                .iter_mut()
+                .find(|tx| tx.txid == txid)
+            else {
+                return Err(ConxianError::PersistenceLeaseLost {
+                    txid: txid.to_string(),
+                    owner: self.owner_id.clone(),
+                });
+            };
+            if tx.lease_owner.as_deref() != Some(&self.owner_id) {
+                return Err(ConxianError::PersistenceLeaseLost {
+                    txid: txid.to_string(),
+                    owner: self.owner_id.clone(),
+                });
+            }
+            completed.lease_owner = None;
+            completed.lease_expires_at = None;
+            *tx = completed.clone();
+            match self.persistence.compare_and_swap(current.revision, &next) {
+                Ok(_) => return Ok(()),
+                Err(ConxianError::PersistenceConflict { .. })
+                    if attempt + 1 < PERSISTENCE_ATTEMPTS => {}
+                Err(error) => return Err(error),
+            }
+        }
+        Err(ConxianError::Persistence(
+            "mempool completion exhausted conflict retries".to_string(),
+        ))
     }
 
     async fn evaluate_pending_tx(&self, tx: &mut TrackedMempoolTx, now: u64) {
@@ -128,6 +236,11 @@ impl<R: BitcoinRpc> MempoolOrchestrator<R> {
                         tx.last_bump_strategy = Some(strategy);
                         tx.last_error = Some(reason);
                     }
+                    ExecutionResult::OutcomeUnknown { strategy, reason } => {
+                        tx.status = MempoolTxStatus::BumpOutcomeUnknown;
+                        tx.last_bump_strategy = Some(strategy);
+                        tx.last_error = Some(reason);
+                    }
                 }
             }
         }
@@ -153,14 +266,12 @@ impl<R: BitcoinRpc> MempoolOrchestrator<R> {
                         self.try_cpfp_fallback(tx, action, "RBF replacement not available")
                             .await
                     }
-                    Err(err) => {
-                        self.try_cpfp_fallback(
-                            tx,
-                            action,
-                            &format!("RBF replacement failed: {}", err),
-                        )
-                        .await
-                    }
+                    Err(err) => ExecutionResult::OutcomeUnknown {
+                        strategy: FeeBumpStrategy::Rbf,
+                        reason: format!(
+                            "RBF submission outcome unknown; reconcile node state before retry: {err}"
+                        ),
+                    },
                 }
             }
             FeeBumpStrategy::Cpfp => {
@@ -177,9 +288,11 @@ impl<R: BitcoinRpc> MempoolOrchestrator<R> {
                         strategy: FeeBumpStrategy::Cpfp,
                         reason: "CPFP child broadcast unavailable: adapter cannot construct/sign a child transaction with current context".to_string(),
                     },
-                    Err(err) => ExecutionResult::NotBroadcasted {
+                    Err(err) => ExecutionResult::OutcomeUnknown {
                         strategy: FeeBumpStrategy::Cpfp,
-                        reason: format!("CPFP child submission failed: {}", err),
+                        reason: format!(
+                            "CPFP submission outcome unknown; reconcile node state before retry: {err}"
+                        ),
                     },
                 }
             }
@@ -215,9 +328,12 @@ impl<R: BitcoinRpc> MempoolOrchestrator<R> {
                     reason
                 ),
             },
-            Err(err) => ExecutionResult::NotBroadcasted {
+            Err(err) => ExecutionResult::OutcomeUnknown {
                 strategy: FeeBumpStrategy::Cpfp,
-                reason: format!("{}; CPFP fallback failed: {}", reason, err),
+                reason: format!(
+                    "{}; CPFP fallback outcome unknown; reconcile node state before retry: {}",
+                    reason, err
+                ),
             },
         }
     }
@@ -239,6 +355,10 @@ enum ExecutionResult {
         strategy: FeeBumpStrategy,
         reason: String,
     },
+    OutcomeUnknown {
+        strategy: FeeBumpStrategy,
+        reason: String,
+    },
 }
 
 #[cfg(test)]
@@ -248,35 +368,71 @@ mod tests {
     use async_trait::async_trait;
     use conxian_core::{
         BlockInfo, ConxianError, ConxianResult, MempoolTxStatus, PersistentState, RolloutMode,
+        VersionedPersistentState,
     };
-    use std::sync::Mutex;
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Mutex,
+    };
 
     struct SimulatedPersistence {
-        state: Mutex<PersistentState>,
+        state: Mutex<VersionedPersistentState>,
+        unknown_revision: Mutex<Option<u64>>,
     }
 
     impl SimulatedPersistence {
         fn new(state: PersistentState) -> Self {
             Self {
-                state: Mutex::new(state),
+                state: Mutex::new(VersionedPersistentState { revision: 0, state }),
+                unknown_revision: Mutex::new(None),
+            }
+        }
+
+        fn with_unknown_revision(state: PersistentState, revision: u64) -> Self {
+            Self {
+                state: Mutex::new(VersionedPersistentState { revision: 0, state }),
+                unknown_revision: Mutex::new(Some(revision)),
             }
         }
     }
 
     impl Persistence for SimulatedPersistence {
-        fn save(&self, state: &PersistentState) -> ConxianResult<()> {
-            *self.state.lock().expect("lock poisoned") = state.clone();
-            Ok(())
+        fn load_versioned(&self) -> ConxianResult<VersionedPersistentState> {
+            Ok(self.state.lock().expect("lock poisoned").clone())
         }
 
-        fn load(&self) -> ConxianResult<PersistentState> {
-            Ok(self.state.lock().expect("lock poisoned").clone())
+        fn compare_and_swap(
+            &self,
+            expected_revision: u64,
+            state: &PersistentState,
+        ) -> ConxianResult<VersionedPersistentState> {
+            let mut current = self.state.lock().expect("lock poisoned");
+            if current.revision != expected_revision {
+                return Err(ConxianError::PersistenceConflict {
+                    expected: expected_revision,
+                    actual: current.revision,
+                });
+            }
+            current.revision += 1;
+            current.state = state.clone();
+            let committed = current.clone();
+            let mut unknown_revision = self.unknown_revision.lock().expect("lock poisoned");
+            if *unknown_revision == Some(committed.revision) {
+                *unknown_revision = None;
+                return Err(ConxianError::PersistenceCommitUnknown {
+                    revision: committed.revision,
+                    message: "injected post-rename failure".to_string(),
+                });
+            }
+            Ok(committed)
         }
     }
 
     struct SimulatedBitcoinRpc {
         rbf_txid: Option<String>,
         cpfp_txid: Option<String>,
+        rbf_calls: Arc<AtomicUsize>,
+        cpfp_calls: Arc<AtomicUsize>,
     }
 
     #[async_trait]
@@ -298,6 +454,7 @@ mod tests {
             _txid: &str,
             _target_fee_rate_sat_vb: u64,
         ) -> ConxianResult<Option<String>> {
+            self.rbf_calls.fetch_add(1, Ordering::SeqCst);
             Ok(self.rbf_txid.clone())
         }
 
@@ -306,8 +463,27 @@ mod tests {
             _parent_txid: &str,
             _target_fee_rate_sat_vb: u64,
         ) -> ConxianResult<Option<String>> {
+            self.cpfp_calls.fetch_add(1, Ordering::SeqCst);
             Ok(self.cpfp_txid.clone())
         }
+    }
+
+    fn simulated_rpc(
+        rbf_txid: Option<&str>,
+        cpfp_txid: Option<&str>,
+    ) -> (SimulatedBitcoinRpc, Arc<AtomicUsize>, Arc<AtomicUsize>) {
+        let rbf_calls = Arc::new(AtomicUsize::new(0));
+        let cpfp_calls = Arc::new(AtomicUsize::new(0));
+        (
+            SimulatedBitcoinRpc {
+                rbf_txid: rbf_txid.map(str::to_string),
+                cpfp_txid: cpfp_txid.map(str::to_string),
+                rbf_calls: Arc::clone(&rbf_calls),
+                cpfp_calls: Arc::clone(&cpfp_calls),
+            },
+            rbf_calls,
+            cpfp_calls,
+        )
     }
 
     fn tracked_tx() -> TrackedMempoolTx {
@@ -325,6 +501,8 @@ mod tests {
             last_bump_strategy: None,
             last_error: None,
             replacement_txid: None,
+            lease_owner: None,
+            lease_expires_at: None,
         }
     }
 
@@ -353,6 +531,8 @@ mod tests {
             SimulatedBitcoinRpc {
                 rbf_txid: Some("rbf-tx".to_string()),
                 cpfp_txid: Some("cpfp-tx".to_string()),
+                rbf_calls: Arc::new(AtomicUsize::new(0)),
+                cpfp_calls: Arc::new(AtomicUsize::new(0)),
             },
             persistence.clone(),
             30,
@@ -382,11 +562,9 @@ mod tests {
             mempool_pending_txs: vec![tracked_tx()],
         }));
 
+        let (rpc, _, _) = simulated_rpc(None, Some("cpfp-tx"));
         let orchestrator = MempoolOrchestrator::new(
-            SimulatedBitcoinRpc {
-                rbf_txid: None,
-                cpfp_txid: Some("cpfp-tx".to_string()),
-            },
+            rpc,
             persistence.clone(),
             30,
             test_policy(),
@@ -422,6 +600,8 @@ mod tests {
             SimulatedBitcoinRpc {
                 rbf_txid: Some("rbf-tx".to_string()),
                 cpfp_txid: Some("cpfp-tx".to_string()),
+                rbf_calls: Arc::new(AtomicUsize::new(0)),
+                cpfp_calls: Arc::new(AtomicUsize::new(0)),
             },
             persistence.clone(),
             30,
@@ -453,16 +633,9 @@ mod tests {
             mempool_pending_txs: vec![tx],
         }));
 
-        let orchestrator = MempoolOrchestrator::new(
-            SimulatedBitcoinRpc {
-                rbf_txid: None,
-                cpfp_txid: None,
-            },
-            persistence.clone(),
-            30,
-            test_policy(),
-            None,
-        );
+        let (rpc, _, _) = simulated_rpc(None, None);
+        let orchestrator =
+            MempoolOrchestrator::new(rpc, persistence.clone(), 30, test_policy(), None);
 
         orchestrator.tick().await.unwrap();
 
@@ -475,5 +648,78 @@ mod tests {
             .as_deref()
             .unwrap_or_default()
             .contains("CPFP child broadcast unavailable"));
+    }
+
+    #[tokio::test]
+    async fn active_claim_allows_only_one_orchestrator_to_broadcast() {
+        let persistence = Arc::new(SimulatedPersistence::new(PersistentState {
+            bitcoin_height: 11,
+            stacks_height: 22,
+            mempool_pending_txs: vec![tracked_tx()],
+        }));
+        let (rpc_a, rbf_calls, _) = simulated_rpc(Some("rbf-a"), None);
+        let (rpc_b, _, _) = simulated_rpc(Some("rbf-b"), None);
+        let first = MempoolOrchestrator::new(rpc_a, persistence.clone(), 30, test_policy(), None)
+            .with_owner("owner-a", 10);
+        let second = MempoolOrchestrator::new(rpc_b, persistence.clone(), 30, test_policy(), None)
+            .with_owner("owner-b", 10);
+
+        assert!(first.claim_transaction("parent-tx", 100).unwrap().is_some());
+        second.tick_at(101).await.unwrap();
+        assert_eq!(rbf_calls.load(Ordering::SeqCst), 0);
+        let tx = &persistence.load().unwrap().mempool_pending_txs[0];
+        assert_eq!(tx.lease_owner.as_deref(), Some("owner-a"));
+        assert_eq!(tx.lease_expires_at, Some(110));
+    }
+
+    #[tokio::test]
+    async fn expired_claim_is_recovered_by_another_orchestrator() {
+        let persistence = Arc::new(SimulatedPersistence::new(PersistentState {
+            bitcoin_height: 11,
+            stacks_height: 22,
+            mempool_pending_txs: vec![tracked_tx()],
+        }));
+        let (rpc_a, _, _) = simulated_rpc(Some("rbf-a"), None);
+        let (rpc_b, rbf_calls, _) = simulated_rpc(Some("rbf-b"), None);
+        let first = MempoolOrchestrator::new(rpc_a, persistence.clone(), 30, test_policy(), None)
+            .with_owner("owner-a", 5);
+        let second = MempoolOrchestrator::new(rpc_b, persistence.clone(), 30, test_policy(), None)
+            .with_owner("owner-b", 5);
+
+        assert!(first.claim_transaction("parent-tx", 100).unwrap().is_some());
+        second.tick_at(106).await.unwrap();
+        assert_eq!(rbf_calls.load(Ordering::SeqCst), 1);
+        let state = persistence.load().unwrap();
+        let tx = &state.mempool_pending_txs[0];
+        assert_eq!(tx.status, MempoolTxStatus::BumpBroadcasted);
+        assert_eq!(tx.replacement_txid.as_deref(), Some("rbf-b"));
+        assert_eq!(tx.lease_owner, None);
+        assert_eq!(state.bitcoin_height, 11);
+        assert_eq!(state.stacks_height, 22);
+    }
+
+    #[tokio::test]
+    async fn unknown_completion_commit_is_not_replayed() {
+        let persistence = Arc::new(SimulatedPersistence::with_unknown_revision(
+            PersistentState {
+                bitcoin_height: 0,
+                stacks_height: 0,
+                mempool_pending_txs: vec![tracked_tx()],
+            },
+            2,
+        ));
+        let (rpc, rbf_calls, _) = simulated_rpc(Some("rbf-tx"), None);
+        let orchestrator =
+            MempoolOrchestrator::new(rpc, persistence.clone(), 30, test_policy(), None)
+                .with_owner("owner-a", 5);
+
+        let error = orchestrator.tick_at(100).await.expect_err("commit unknown");
+        assert!(error.to_string().contains("commit outcome is unknown"));
+        assert_eq!(rbf_calls.load(Ordering::SeqCst), 1);
+        let tx = &persistence.load().unwrap().mempool_pending_txs[0];
+        assert_eq!(tx.status, MempoolTxStatus::BumpBroadcasted);
+
+        orchestrator.tick_at(101).await.unwrap();
+        assert_eq!(rbf_calls.load(Ordering::SeqCst), 1);
     }
 }
