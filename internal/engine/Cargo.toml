@@ -43,6 +43,9 @@ rgb-native = [
     "dep:commit_verify",
 ]
 
+[dev-dependencies]
+base64 = "0.22.1"
+
 [[test]]
 name = "groth16_boundary"
 path = "tests/groth16_boundary.rs"
