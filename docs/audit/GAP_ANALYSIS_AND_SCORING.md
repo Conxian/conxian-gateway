@@ -23,7 +23,7 @@ This document tracks identified gaps across the Conxian Gateway portfolio, score
 | **G-12** | Identity integration tests gated | Testing | ✅ Added `--features mock-integrations` to CI |
 | **G-13** | Control-Plane smoke test config mismatch | Testing | ✅ Added `playwright.config.ts` for Playwright test runner |
 | **G-14** | Unmaintained dependencies (derivative, paste) | Security | ✅ Documented ignore in `audit.toml`; upstream fork available |
-| **G-15** | rust-toolchain vs Cargo.toml version mismatch | Hygiene | ✅ Docker now uses `rust:1.96`; MSRV 1.85 maintained |
+| **G-15** | rust-toolchain vs Cargo.toml version mismatch | Hygiene | ✅ Docker was aligned to `rust:1.96`; the former MSRV 1.85 policy was superseded on 2026-07-26 by the declared and CI-tested Rust 1.96 baseline |
 | **G-16** | Skeleton Python verification scripts | Hygiene | ✅ Created `scripts/verify_gateway.py` (7 checks) |
 | **G-17** | audit.toml compatibility with cargo-audit | CI/CD | ✅ Added `stale = false` under `[database]` |
 | **G-18** | Missing Prometheus metrics + structured tracing | Observability | ✅ Added `/metrics` endpoint, `RUST_LOG_FORMAT=json` |

@@ -2,6 +2,7 @@
 name = "conxian_compliance"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 description = "Conxian Gateway Compliance - ZK and attestation verification for institutional compliance"
 license = "MIT"
 
