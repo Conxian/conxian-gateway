@@ -136,10 +136,23 @@ pub trait RgbAdapter {
 - `RGB_STASH_PATH` (a directory, not the old metadata file path) and
   `RGB_ESPLORA_URL` are optional in Disabled/Shadow, but
   must be configured together. Active mode with `rgb-native` requires both.
-- `RGB_STASH_PATH` is process-owned state and must not be shared by multiple
-  running gateway processes. Per-contract atomic transaction acquisition
-  prevents overlapping imports, but startup recovery assumes exclusive process
-  ownership while it resolves durable journals.
+- `RGB_STASH_PATH` is process-owned Unix local-filesystem state. Before journal
+  recovery, `StockpileDir::load`, metadata loading, registry loading, or any
+  stockpile/registry mutation, the resolver takes a non-blocking exclusive OS
+  lock on `<RGB_STASH_PATH>/.conxian-rgb-owner.lock` and retains it for the
+  resolver lifetime. A second gateway using the same stash fails startup
+  closed; dropping the owning resolver releases the lock. The lock file is not
+  silently unlinked and uses owner read/write permissions.
+- Non-Unix builds fail RGB stash resolver startup before creating the stash
+  root. Windows and other non-Unix deployments are unsupported until a reviewed
+  platform-native implementation can open the ownership lock without following
+  symlinks or reparse points and provide equivalent link-safety checks.
+- The ownership lock coordinates processes only where the underlying local
+  filesystem provides reliable advisory file locking. Do not place
+  `RGB_STASH_PATH` on NFS, object-store mounts, or other shared/network
+  filesystems, and do not share one stash between containers or hosts.
+- Per-contract atomic transaction acquisition remains defense in depth for
+  overlapping imports; it does not replace process-lifetime stash ownership.
 - Simulation uses only the `contract:` HRI and is explicitly non-consensus.
 
 ## Boundary Behavior
@@ -172,10 +185,13 @@ pub trait RgbAdapter {
 - Deterministic unit coverage exercises malformed envelopes, contract-ID
   mismatch, staged cleanup after a semantically invalid unknown-contract
   import, fresh-stash reload after cleanup, the pinned unknown-contract
-  resolver boundary, Unix permission hardening, registry replay/overwrite,
-  unknown auth tokens, invalid signature policy, corrupted persistence, and the
-  existing-contract filesystem state machine (including interruption replay,
-  post-commit cleanup faults, and recovery path-identity rejection). The
+  resolver boundary, subprocess and same-process ownership contention/release,
+  preservation of the losing resolver's root mode, independent stash roots,
+  unsafe owner-lock paths, recovery-before-lock rejection, Unix permission
+  hardening, registry replay/overwrite, unknown auth tokens, invalid signature
+  policy, corrupted persistence, and the existing-contract
+  filesystem state machine (including interruption replay, post-commit cleanup
+  faults, and recovery path-identity rejection). The
   generated/replayed consignment fixture proves those filesystem and pinned API
   boundaries; it is not a real state-changing signed RGB transition or a
   Bitcoin/RGB regtest harness. Both a production issuer-signature backend and a
