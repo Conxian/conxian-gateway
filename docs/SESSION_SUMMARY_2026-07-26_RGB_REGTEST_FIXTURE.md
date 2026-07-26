@@ -23,9 +23,20 @@
 - Bitcoin Core uses cookie authentication from the isolated ephemeral datadir.
   The cookie is read only to configure the Rust RPC client, never passed on a
   process command line, and never retained in uploaded artifacts.
-- Before success/cleanup, a fail-closed guard scans every retained artifact for
-  the exact cookie secret and any `.cookie` file. Unsafe diagnostics are removed
-  and the harness fails without printing the credential.
+- Before success/cleanup, a fail-closed guard validates that the artifact tree
+  is owned, readable and contains only regular files/directories; forbids any
+  `.cookie` entry; and scans each regular file for the exact loaded cookie
+  secret. Relative artifact paths are checked with the same protected pattern
+  source, and scanner/traversal errors are failures, not clean no-matches.
+- Credential matches, unreadable entries, symlinks, FIFOs/devices/sockets and
+  other unsafe objects atomically quarantine the complete run outside the
+  workflow upload tree. Only a sanitized failure marker is recreated, and trap
+  cleanup preserves the guard failure without printing the credential.
+- `tests/rgb/test_rgb_artifact_guard.sh` adds executable regressions for a
+  readable binary leak, a credential-bearing filename, a forbidden `.cookie`,
+  a mode-`000` secret-bearing file, symlink and FIFO objects, an injected
+  scanner error, a diagnostic-copy I/O failure, and a normal clean tree. The RGB
+  regtest workflow runs this focused suite before the full Bitcoin Core proof.
 
 ## Boundaries preserved
 
@@ -43,6 +54,7 @@
 Run the opt-in proof with:
 
 ```bash
+bash tests/rgb/test_rgb_artifact_guard.sh
 bash tests/rgb/rgb_regtest_e2e.sh
 ```
 

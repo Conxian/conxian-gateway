@@ -16,6 +16,11 @@ readonly RUN_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/conxian-rgb-regtest.XXXXXX")"
 readonly DATA_DIR="${RUN_ROOT}/bitcoin"
 readonly COOKIE_FILE="${DATA_DIR}/regtest/.cookie"
 readonly ARTIFACT_PARENT="${REPO_ROOT}/target/rgb-regtest-artifacts"
+readonly ARTIFACT_QUARANTINE_PARENT="${REPO_ROOT}/target/.rgb-regtest-quarantine"
+readonly SECRET_PATTERN_FILE="${RUN_ROOT}/artifact-secret.pattern"
+
+# shellcheck source=tests/rgb/rgb_artifact_guard.sh
+source "${SCRIPT_DIR}/rgb_artifact_guard.sh"
 
 BITCOIND_PID=""
 ARTIFACT_DIR=""
@@ -47,55 +52,55 @@ load_cookie_credentials() {
     [[ -n "$RPC_USER" && -n "$RPC_PASSWORD" ]]
 }
 
-guard_retained_artifacts() {
-    local file=""
-    local pattern_file="${RUN_ROOT}/artifact-secret.pattern"
-    local unsafe=0
-
-    if [[ -n "$RPC_PASSWORD" ]]; then
-        (umask 077 && printf '%s\n' "$RPC_PASSWORD" >"$pattern_file")
-        while IFS= read -r -d '' file; do
-            if grep -Fq -f "$pattern_file" "$file"; then
-                rm -f -- "$file"
-                unsafe=1
-            fi
-        done < <(find "$ARTIFACT_DIR" -type f -print0)
-        rm -f -- "$pattern_file"
+contain_artifact_failure() {
+    local reason="$1"
+    if ! rgb_artifact_guard_quarantine "$ARTIFACT_DIR" "$ARTIFACT_QUARANTINE_PARENT" "$reason"; then
+        rm -rf -- "$ARTIFACT_PARENT" || true
     fi
-
-    while IFS= read -r -d '' file; do
-        rm -rf -- "$file"
-        unsafe=1
-    done < <(find "$ARTIFACT_DIR" -name .cookie -print0)
-
-    if (( unsafe != 0 )); then
-        printf '%s\n' 'failed: unsafe credential-bearing artifact removed' \
-            >"${ARTIFACT_DIR}/credential-leak-guard.txt"
-        return 1
-    fi
-
-    printf '%s\n' 'passed: cookie secret and cookie file absent' \
-        >"${ARTIFACT_DIR}/credential-leak-guard.txt"
+    ARTIFACT_GUARD_FAILED=1
 }
 
 finalize_artifacts() {
     local status="$1"
+    local pattern_file=""
     if (( ARTIFACTS_FINALIZED != 0 )); then
         (( ARTIFACT_GUARD_FAILED == 0 ))
         return
     fi
 
-    if [[ -n "$ARTIFACT_DIR" && -f "${DATA_DIR}/regtest/debug.log" ]]; then
-        cp -- "${DATA_DIR}/regtest/debug.log" "${ARTIFACT_DIR}/bitcoin-debug.log"
-    fi
-    if [[ -z "$RPC_PASSWORD" && -f "$COOKIE_FILE" ]]; then
-        load_cookie_credentials || true
-    fi
-    if [[ -n "$ARTIFACT_DIR" ]] && ! guard_retained_artifacts; then
+    if [[ -n "$ARTIFACT_DIR" ]] && ! rgb_copy_guarded_diagnostic \
+        "${DATA_DIR}/regtest/debug.log" "${ARTIFACT_DIR}/bitcoin-debug.log" \
+        "$ARTIFACT_DIR" "$ARTIFACT_QUARANTINE_PARENT"; then
+        if (( RGB_ARTIFACT_GUARD_CONTAINED == 0 )); then
+            rm -rf -- "$ARTIFACT_PARENT" || true
+        fi
         ARTIFACT_GUARD_FAILED=1
         status=1
     fi
-    if [[ -n "$ARTIFACT_DIR" ]]; then
+    if [[ "$ARTIFACT_GUARD_FAILED" -eq 0 && -z "$RPC_PASSWORD" && ( -e "$COOKIE_FILE" || -L "$COOKIE_FILE" ) ]]; then
+        if ! load_cookie_credentials; then
+            contain_artifact_failure "unreadable-cookie-credential"
+            status=1
+        fi
+    fi
+    if [[ -n "$RPC_PASSWORD" && "$ARTIFACT_GUARD_FAILED" -eq 0 ]]; then
+        (umask 077 && printf '%s\n' "$RPC_PASSWORD" >"$SECRET_PATTERN_FILE") || {
+            contain_artifact_failure "secret-pattern-write-error"
+            status=1
+        }
+        pattern_file="$SECRET_PATTERN_FILE"
+    fi
+    if [[ -n "$ARTIFACT_DIR" && "$ARTIFACT_GUARD_FAILED" -eq 0 ]] && \
+        ! rgb_guard_retained_artifacts \
+            "$ARTIFACT_DIR" "$ARTIFACT_QUARANTINE_PARENT" "$pattern_file" "$RUN_ROOT"; then
+        ARTIFACT_GUARD_FAILED=1
+        status=1
+        if (( RGB_ARTIFACT_GUARD_CONTAINED == 0 )); then
+            rm -rf -- "$ARTIFACT_PARENT" || true
+        fi
+    fi
+    rm -f -- "$SECRET_PATTERN_FILE"
+    if [[ -d "$ARTIFACT_DIR" && ! -L "$ARTIFACT_DIR" ]]; then
         printf '%s\n' "$status" >"${ARTIFACT_DIR}/exit-status"
     fi
     ARTIFACTS_FINALIZED=1
@@ -109,7 +114,10 @@ cleanup() {
     stop_bitcoind
     if ! finalize_artifacts "$status"; then
         status=1
-        printf '%s\n' 'RGB regtest failure: retained artifact credential leak detected; unsafe artifact removed' >&2
+        printf '%s\n' 'RGB regtest failure: retained artifacts were unsafe or unscannable and were quarantined' >&2
+    fi
+    if [[ -n "$RGB_ARTIFACT_QUARANTINED_PATH" ]]; then
+        rm -rf -- "$RGB_ARTIFACT_QUARANTINED_PATH"
     fi
     rm -rf -- "$RUN_ROOT"
     if [[ -n "$ARTIFACT_DIR" ]]; then
@@ -120,13 +128,16 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT TERM
 
-for command_name in cargo find grep jq mktemp seq; do
+for command_name in cargo find grep jq mktemp seq stat; do
     command -v "$command_name" >/dev/null 2>&1 || fail "required command not found: ${command_name}"
 done
 [[ ! -L "${REPO_ROOT}/target" ]] || fail "repo target directory must not be a symlink"
 mkdir -p "$ARTIFACT_PARENT"
 [[ -d "$ARTIFACT_PARENT" && ! -L "$ARTIFACT_PARENT" && -O "$ARTIFACT_PARENT" ]] || \
     fail "artifact parent must be an owned, non-symlink directory"
+mkdir -m 700 -p "$ARTIFACT_QUARANTINE_PARENT"
+[[ -d "$ARTIFACT_QUARANTINE_PARENT" && ! -L "$ARTIFACT_QUARANTINE_PARENT" && -O "$ARTIFACT_QUARANTINE_PARENT" ]] || \
+    fail "artifact quarantine parent must be an owned, non-symlink directory"
 ARTIFACT_DIR="$(mktemp -d "${ARTIFACT_PARENT}/run.XXXXXX")"
 readonly ARTIFACT_DIR
 [[ "$RPC_PORT" =~ ^[0-9]+$ && "$P2P_PORT" =~ ^[0-9]+$ ]] || fail "ports must be decimal integers"
@@ -194,4 +205,4 @@ jq -e \
     "${ARTIFACT_DIR}/proof.json" >/dev/null || fail "proof artifact is incomplete"
 
 stop_bitcoind
-finalize_artifacts 0 || fail "retained artifact credential leak detected; unsafe artifact removed"
+finalize_artifacts 0 || fail "retained artifacts were unsafe or unscannable and were quarantined"

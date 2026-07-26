@@ -18,11 +18,18 @@ Bitcoin Core uses cookie authentication in the isolated temporary datadir. The
 harness reads that credential only long enough to configure the Rust RPC client;
 it is not passed on a command line or retained. Artifacts are written to
 `target/rgb-regtest-artifacts/run.*`, including `proof.json`, sanitized daemon
-logs, consignments and the generated stashes. A fail-closed guard scans every
-retained file for the exact cookie secret and rejects/removes unsafe diagnostics
-before workflow upload. The harness also proves that a bad BIP340 signature and
-a transaction with the wrong Bitcoin commitment are rejected without mutating
-receiver state, including after a fresh stash reload.
+logs, consignments and the generated stashes. Before workflow upload, a
+fail-closed guard requires an owned, readable tree containing only regular files
+and directories, rejects cookie files and scans each regular file for the exact
+loaded cookie secret. Artifact path components are checked with the same
+protected pattern source so archive metadata cannot expose the credential.
+Matches, scanner/traversal errors, unreadable entries, symlinks and other
+filesystem objects quarantine the complete run outside the upload tree; only a
+sanitized failure marker is recreated there. Focused guard
+regressions run with `bash tests/rgb/test_rgb_artifact_guard.sh`. The harness
+also proves that a bad BIP340 signature and a transaction with the wrong Bitcoin
+commitment are rejected without mutating receiver state, including after a
+fresh stash reload.
 
 This is a test-only evidence lane. It does not expose a runtime import endpoint,
 configure a production issuer key, load a permissive validator, or change the

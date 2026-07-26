@@ -218,13 +218,20 @@ the cookie is read only to configure the Rust test RPC client and is never
 passed on a process command line or retained in artifacts. Generated wallets
 stay ephemeral, while consignments, stashes, sanitized daemon logs and
 `proof.json` remain under ignored `target/`. Before success or workflow upload,
-a fail-closed guard scans every retained file for the exact cookie secret and
-rejects/removes unsafe diagnostics; `.cookie` files are also forbidden. The
-unreachable loopback Esplora constructor value is deliberate: this proof uses a
-witness-relative receiver seal, which is validated against the included Bitcoin
-transaction and does not trigger an Esplora query. This lane adds no runtime
-import exposure and does not change `RejectIssuerSignatures` as the default
-production policy.
+a fail-closed guard requires an owned, readable tree containing only regular
+files and directories, forbids `.cookie` entries, and distinguishes a clean
+scanner no-match from credential matches and scanner/I/O errors. Any match,
+unreadable entry, traversal failure, symlink, FIFO/device/socket or other
+unexpected object quarantines the complete run outside the upload tree and
+recreates only a sanitized failure marker. The exact secret stays in a protected
+temporary pattern file, is checked against both retained contents and relative
+artifact paths, and is never passed as a process argument or printed.
+`tests/rgb/test_rgb_artifact_guard.sh` covers clean, leak, unreadable,
+unexpected-object and scanner-error paths. The unreachable loopback Esplora
+constructor value is deliberate: this proof uses a witness-relative receiver
+seal, which is validated against the included Bitcoin transaction and does not
+trigger an Esplora query. This lane adds no runtime import exposure and does not
+change `RejectIssuerSignatures` as the default production policy.
 
 ## Boundary Behavior
 - A tracked Bitcoin transaction ID is not an RGB contract ID. The mempool

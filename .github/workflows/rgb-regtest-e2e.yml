@@ -55,6 +55,9 @@ jobs:
           cargo test -p conxian_engine --features rgb-native bitcoin::rgb_issuer_policy::tests -- --nocapture
           cargo test -p conxian_engine --features rgb-native bitcoin::rgb_stash::tests -- --test-threads=1
 
+      - name: Run RGB artifact guard regressions
+        run: bash tests/rgb/test_rgb_artifact_guard.sh
+
       - name: Run pinned Bitcoin Core RGB proof
         run: bash tests/rgb/rgb_regtest_e2e.sh
 
