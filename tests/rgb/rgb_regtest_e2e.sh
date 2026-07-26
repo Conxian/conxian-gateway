@@ -3,41 +3,113 @@ set -euo pipefail
 
 # Opt-in proof lane for a real RGB v0.12 state transition. Bitcoin Core funds,
 # signs, accepts, broadcasts and mines the witness transaction. All mutable
-# state, credentials, wallets, consignments and proof output stay under target/
-# or an ephemeral temporary directory.
+# state, wallets, consignments and proof output stay under target/ or an
+# ephemeral temporary directory. Bitcoin Core's cookie credential never leaves
+# the isolated temporary datadir.
 
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
 readonly RPC_PORT="${RGB_REGTEST_RPC_PORT:-18998}"
 readonly P2P_PORT="${RGB_REGTEST_P2P_PORT:-18999}"
-readonly RPC_USER="rgb_regtest"
-readonly RPC_PASSWORD="$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')"
 readonly WALLET="rgb-regtest"
 readonly RUN_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/conxian-rgb-regtest.XXXXXX")"
 readonly DATA_DIR="${RUN_ROOT}/bitcoin"
+readonly COOKIE_FILE="${DATA_DIR}/regtest/.cookie"
 readonly ARTIFACT_PARENT="${REPO_ROOT}/target/rgb-regtest-artifacts"
 
 BITCOIND_PID=""
 ARTIFACT_DIR=""
+RPC_USER=""
+RPC_PASSWORD=""
+ARTIFACTS_FINALIZED=0
+ARTIFACT_GUARD_FAILED=0
 
 fail() {
     printf 'RGB regtest failure: %s\n' "$*" >&2
     exit 1
 }
 
-cleanup() {
-    local status=$?
-    trap - EXIT INT TERM
-    set +e
+stop_bitcoind() {
     if [[ -n "$BITCOIND_PID" ]] && kill -0 "$BITCOIND_PID" 2>/dev/null; then
         btc stop >/dev/null 2>&1
         wait "$BITCOIND_PID" 2>/dev/null
     fi
+    BITCOIND_PID=""
+}
+
+load_cookie_credentials() {
+    local cookie=""
+    [[ -f "$COOKIE_FILE" && ! -L "$COOKIE_FILE" ]] || return 1
+    IFS= read -r cookie <"$COOKIE_FILE" || [[ -n "$cookie" ]] || return 1
+    [[ "$cookie" == *:* ]] || return 1
+    RPC_USER="${cookie%%:*}"
+    RPC_PASSWORD="${cookie#*:}"
+    [[ -n "$RPC_USER" && -n "$RPC_PASSWORD" ]]
+}
+
+guard_retained_artifacts() {
+    local file=""
+    local pattern_file="${RUN_ROOT}/artifact-secret.pattern"
+    local unsafe=0
+
+    if [[ -n "$RPC_PASSWORD" ]]; then
+        (umask 077 && printf '%s\n' "$RPC_PASSWORD" >"$pattern_file")
+        while IFS= read -r -d '' file; do
+            if grep -Fq -f "$pattern_file" "$file"; then
+                rm -f -- "$file"
+                unsafe=1
+            fi
+        done < <(find "$ARTIFACT_DIR" -type f -print0)
+        rm -f -- "$pattern_file"
+    fi
+
+    while IFS= read -r -d '' file; do
+        rm -rf -- "$file"
+        unsafe=1
+    done < <(find "$ARTIFACT_DIR" -name .cookie -print0)
+
+    if (( unsafe != 0 )); then
+        printf '%s\n' 'failed: unsafe credential-bearing artifact removed' \
+            >"${ARTIFACT_DIR}/credential-leak-guard.txt"
+        return 1
+    fi
+
+    printf '%s\n' 'passed: cookie secret and cookie file absent' \
+        >"${ARTIFACT_DIR}/credential-leak-guard.txt"
+}
+
+finalize_artifacts() {
+    local status="$1"
+    if (( ARTIFACTS_FINALIZED != 0 )); then
+        (( ARTIFACT_GUARD_FAILED == 0 ))
+        return
+    fi
+
     if [[ -n "$ARTIFACT_DIR" && -f "${DATA_DIR}/regtest/debug.log" ]]; then
         cp -- "${DATA_DIR}/regtest/debug.log" "${ARTIFACT_DIR}/bitcoin-debug.log"
     fi
+    if [[ -z "$RPC_PASSWORD" && -f "$COOKIE_FILE" ]]; then
+        load_cookie_credentials || true
+    fi
+    if [[ -n "$ARTIFACT_DIR" ]] && ! guard_retained_artifacts; then
+        ARTIFACT_GUARD_FAILED=1
+        status=1
+    fi
     if [[ -n "$ARTIFACT_DIR" ]]; then
         printf '%s\n' "$status" >"${ARTIFACT_DIR}/exit-status"
+    fi
+    ARTIFACTS_FINALIZED=1
+    (( ARTIFACT_GUARD_FAILED == 0 ))
+}
+
+cleanup() {
+    local status=$?
+    trap - EXIT INT TERM
+    set +e
+    stop_bitcoind
+    if ! finalize_artifacts "$status"; then
+        status=1
+        printf '%s\n' 'RGB regtest failure: retained artifact credential leak detected; unsafe artifact removed' >&2
     fi
     rm -rf -- "$RUN_ROOT"
     if [[ -n "$ARTIFACT_DIR" ]]; then
@@ -48,7 +120,7 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT TERM
 
-for command_name in cargo jq od tr mktemp seq; do
+for command_name in cargo find grep jq mktemp seq; do
     command -v "$command_name" >/dev/null 2>&1 || fail "required command not found: ${command_name}"
 done
 [[ ! -L "${REPO_ROOT}/target" ]] || fail "repo target directory must not be a symlink"
@@ -69,7 +141,7 @@ mkdir -p "$DATA_DIR"
 
 btc() {
     "$BITCOIN_CLI" -regtest -datadir="$DATA_DIR" -rpcconnect=127.0.0.1 \
-        -rpcport="$RPC_PORT" -rpcuser="$RPC_USER" -rpcpassword="$RPC_PASSWORD" "$@"
+        -rpcport="$RPC_PORT" "$@"
 }
 
 wallet() {
@@ -79,7 +151,6 @@ wallet() {
 "$BITCOIND" -regtest -datadir="$DATA_DIR" -server=1 -daemon=0 -listen=0 \
     -discover=0 -dnsseed=0 -txindex=1 -fallbackfee=0.0002 -port="$P2P_PORT" \
     -rpcbind=127.0.0.1 -rpcallowip=127.0.0.1 -rpcport="$RPC_PORT" \
-    -rpcuser="$RPC_USER" -rpcpassword="$RPC_PASSWORD" \
     >"${ARTIFACT_DIR}/bitcoin-stdout.log" 2>&1 &
 BITCOIND_PID=$!
 
@@ -88,6 +159,7 @@ for _ in $(seq 1 120); do
     sleep 0.25
 done
 btc getblockchaininfo >/dev/null 2>&1 || fail "Bitcoin Core RPC did not become ready"
+load_cookie_credentials || fail "Bitcoin Core cookie credential was not available"
 btc createwallet "$WALLET" >/dev/null
 
 MINING_ADDRESS="$(wallet getnewaddress mining bech32)"
@@ -120,3 +192,6 @@ jq -e \
      .negative_bad_signature == "rejected_without_state_mutation" and
      .negative_wrong_bitcoin_commitment == "rejected_without_state_mutation"' \
     "${ARTIFACT_DIR}/proof.json" >/dev/null || fail "proof artifact is incomplete"
+
+stop_bitcoind
+finalize_artifacts 0 || fail "retained artifact credential leak detected; unsafe artifact removed"

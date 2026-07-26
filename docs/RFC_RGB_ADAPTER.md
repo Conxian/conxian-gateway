@@ -213,13 +213,18 @@ imports first the signed genesis and then the state-changing consignment through
 the assertion after reopening the stash. Bad issuer signatures and wrong
 Bitcoin commitments must reject without state mutation across reopen.
 
-The generated wallet, RPC credentials, consignments, stashes, daemon logs and
-`proof.json` remain under ignored `target/` or an ephemeral temporary directory.
-The unreachable loopback Esplora constructor value is deliberate: this proof
-uses a witness-relative receiver seal, which is validated against the included
-Bitcoin transaction and does not trigger an Esplora query. This lane adds no
-runtime import exposure and does not change `RejectIssuerSignatures` as the
-default production policy.
+Bitcoin Core uses cookie authentication from the isolated ephemeral datadir;
+the cookie is read only to configure the Rust test RPC client and is never
+passed on a process command line or retained in artifacts. Generated wallets
+stay ephemeral, while consignments, stashes, sanitized daemon logs and
+`proof.json` remain under ignored `target/`. Before success or workflow upload,
+a fail-closed guard scans every retained file for the exact cookie secret and
+rejects/removes unsafe diagnostics; `.cookie` files are also forbidden. The
+unreachable loopback Esplora constructor value is deliberate: this proof uses a
+witness-relative receiver seal, which is validated against the included Bitcoin
+transaction and does not trigger an Esplora query. This lane adds no runtime
+import exposure and does not change `RejectIssuerSignatures` as the default
+production policy.
 
 ## Boundary Behavior
 - A tracked Bitcoin transaction ID is not an RGB contract ID. The mempool

@@ -20,8 +20,12 @@
   filesystem reload.
 - Bad BIP340 signatures and Bitcoin transactions carrying the wrong commitment
   reject without state mutation, including after resolver drop/reopen.
-- Generated wallets, RPC credentials, stashes, consignments, and proof artifacts
-  remain under ignored `target/` or an ephemeral temporary directory.
+- Bitcoin Core uses cookie authentication from the isolated ephemeral datadir.
+  The cookie is read only to configure the Rust RPC client, never passed on a
+  process command line, and never retained in uploaded artifacts.
+- Before success/cleanup, a fail-closed guard scans every retained artifact for
+  the exact cookie secret and any `.cookie` file. Unsafe diagnostics are removed
+  and the harness fails without printing the credential.
 
 ## Boundaries preserved
 

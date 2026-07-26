@@ -14,11 +14,15 @@ The receiver imports through `Bip340IssuerPolicy` using a deterministic
 test-only key and verifies the exact 32-byte article callback commitment without
 rehashing.
 
-Artifacts are written to `target/rgb-regtest-artifacts/run.*`, including
-`proof.json`, daemon logs, consignments and the generated stashes. The harness
-also proves that a bad BIP340 signature and a transaction with the wrong Bitcoin
-commitment are rejected without mutating receiver state, including after a
-fresh stash reload.
+Bitcoin Core uses cookie authentication in the isolated temporary datadir. The
+harness reads that credential only long enough to configure the Rust RPC client;
+it is not passed on a command line or retained. Artifacts are written to
+`target/rgb-regtest-artifacts/run.*`, including `proof.json`, sanitized daemon
+logs, consignments and the generated stashes. A fail-closed guard scans every
+retained file for the exact cookie secret and rejects/removes unsafe diagnostics
+before workflow upload. The harness also proves that a bad BIP340 signature and
+a transaction with the wrong Bitcoin commitment are rejected without mutating
+receiver state, including after a fresh stash reload.
 
 This is a test-only evidence lane. It does not expose a runtime import endpoint,
 configure a production issuer key, load a permissive validator, or change the
