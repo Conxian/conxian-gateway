@@ -4,6 +4,11 @@
 **Historical source commit:** `764859fd19c6b4305c0b7b9222c71493b3587177` (`origin/main`)
 **Refresh rule:** Re-query GitHub before treating issue or PR counts as current;
 this timestamped snapshot and its dated history are not live data.
+**Current RGB correction — 2026-07-26:** Gateway `main` includes transactional
+existing-contract updates and process-lifetime stash ownership. The current
+#228 branch adds an opt-in BIP340 issuer public-key allowlist backend; controlled
+runtime/import wiring and a state-changing signed Bitcoin/RGB regtest fixture
+remain open. Historical table text below is retained as a dated snapshot.
 **Historical Phase 4 implementation context before the PR #278 merge (local verification, 2026-07-22):**
 `origin/main` is now at
 [`d7032ab621ad038f247566f820ac664a6c8c071c`](https://github.com/Conxian/conxian-gateway/commit/d7032ab621ad038f247566f820ac664a6c8c071c),
@@ -115,7 +120,7 @@ lib-conclave-sdk  ←  shares types with SDK (L3)
 | [#189](https://github.com/Conxian/conxian-gateway/issues/189) | Research-only; no stable BitVM3/BitVMX-GC SDK, production deployment, or production pairing backend verified | Keep the canonical evidence/triage report current; require stable revision, vectors, resource, protocol, security, and cross-repo gates |
 | [#220](https://github.com/Conxian/conxian-gateway/issues/220) | Isolated DLC research/conformance/fixture slices merged; no Gateway runtime dependency or production CET path | Select manager/provider API only after independent offer/accept/sign/funding/CET/refund vectors and wallet/signing boundaries pass |
 | [#222](https://github.com/Conxian/conxian-gateway/issues/222) | The audit follow-up adds an exact-tag-commit baseline for Rust, Node, Cargo audit, Gitleaks, Lightning coverage, deterministic artifact verification, and SLSA subjects; issue remains open pending merge, admin controls, and a live release rehearsal | Review/merge the narrow release-governance slice; configure required checks and the protected `release` environment; verify one tagged release |
-| [#228](https://github.com/Conxian/conxian-gateway/issues/228) | RGB Phase 1 plus Phase 2 stockpile/import hardening merged in PRs #256/#261/#262; issue remains open | Add a concrete issuer-signature backend, signed Bitcoin/RGB regtest fixture, and transactional existing-contract update path |
+| [#228](https://github.com/Conxian/conxian-gateway/issues/228) | Historical 2026-07-22 snapshot: RGB Phase 1 plus Phase 2 stockpile/import hardening merged in PRs #256/#261/#262; current correction above records later transactional/ownership work and the opt-in BIP340 branch | Add controlled issuer-policy wiring and a complete state-changing signed Bitcoin/RGB regtest fixture |
 | [#245](https://github.com/Conxian/conxian-gateway/issues/245) | Research/observability; the Phase 4 working branch adds read-only Gateway-tracked mempool/fee-bump telemetry, but no BIP-110 integration or fee predictor; no fee multiplier/model rewrite justified | Add node/Core deployment and preflight provenance, network/node mempool and fee telemetry, durable RBF/CPFP outcome history, route-confidence calibration, and fee-model acceptance evidence |
 | [#247](https://github.com/Conxian/conxian-gateway/issues/247) | Blocked/high-risk; ALEX quote/prepared-payload surfaces exist, while secure signer, exact contract/escrow semantics, and governance controls remain unresolved | Approve exact signer/contract/governance design, prove testnet controls, and reconcile the rehearsal/API contract |
 

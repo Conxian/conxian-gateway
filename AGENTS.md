@@ -47,7 +47,7 @@ For complete organizational protocol, see:
 ## Current State (2026-07-22, updated)
 - **Status Audit**: Holistic review of Nexus/Gateway alignment complete (CON-1353).
 - **Protocol Drift**: Resolved — Fedimint, Citrea, and Strata adapters implemented and in production paths.
-- **RGB G-1385 (Phase 2 hardening)**: StashResolver and the pinned `rgb-persist-fs::StockpileDir`/consignment boundary are merged through PRs #256, #261, and #262. The path remains fail-closed; a production issuer-signature backend, complete signed Bitcoin/RGB regtest fixture, and transactional existing-contract update path remain open.
+- **RGB G-1385 (current correction, 2026-07-26)**: StashResolver, the pinned `rgb-persist-fs::StockpileDir`/consignment boundary, transactional existing-contract updates, and process-lifetime stash ownership are merged. An opt-in fail-closed BIP340 public-key allowlist backend is implemented on `charlie/issue-228-bip340-issuer-policy`; controlled runtime/import wiring and a complete state-changing signed Bitcoin/RGB regtest fixture remain open. `RejectIssuerSignatures` remains the runtime/default policy.
 - **PR #233 (G-1389)**: Tech debt reduction merged (`5e6613e`). Includes Fedimint/Citrea/Strata adapters, Redis coordination module, auth middleware timing stubs, reqwest 0.13 upgrade, dead_code cleanup. Citrea adapter moved from `bitcoin/` to `ntt/`.
 - **Gap Analysis (2026-07-22)**: Current six-issue inventory, weighted ranking, and evidence-backed acceptance slices are recorded in `docs/GAP_ANALYSIS_2026-07-22.md`; `docs/GAP_ANALYSIS_2026-07-14.md` remains the dated historical snapshot. Key findings and current corrections:
   - ⚠️ #222 CI/CD: Phase 3 release-governance implementation is prepared on the audit branch — fail-closed tag/version validation, production binary packaging, checksums, normalized CycloneDX SBOM, SLSA subjects, protected release job, and rollback runbook are present; merge, admin ruleset/environment configuration, a live release rehearsal, and Cargo publication prerequisites remain
@@ -123,7 +123,7 @@ Before submitting changes, you MUST:
 
 ## Known Gaps (2026-07-14 snapshot; current corrections noted)
 - [ ] #222: strict CI/CD release governance — Phase 3 workflow/runbook implementation is prepared on the audit branch; merge, required-check/ruleset and `release` environment administration, live tagged-release evidence, and publishable Cargo package metadata remain
-- [ ] #228: RGB stash resolver (G-1385) — Phase 1 plus Phase 2 hardening merged in PRs #256, #261, and #262; production issuer-signature backend, signed Bitcoin/RGB regtest fixture, and transactional existing-contract update path remain open
+- [ ] #228: RGB stash resolver (G-1385) — transactional existing-contract updates and process-lifetime stash ownership are merged; an opt-in BIP340 issuer-policy backend is implemented on `charlie/issue-228-bip340-issuer-policy`; controlled runtime/import wiring and a complete state-changing signed Bitcoin/RGB regtest fixture remain open
 - [x] #233 (G-1389): Tech debt reduction — merged `5e6613e`
 - [x] G-1276: Redis AUTH + token expiry — merged `2ef6df1`
 - [x] G-1380: SBOM and Provenance to release workflow — merged `19181c5`

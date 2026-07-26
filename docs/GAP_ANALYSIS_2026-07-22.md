@@ -8,6 +8,13 @@
 > until review and merge; distributed filesystems and exactly-once fee-bump
 > broadcasts remain explicitly unsupported.
 
+> **2026-07-26 RGB correction:** The transactional existing-contract update
+> path and process-lifetime stash ownership are now merged on `main`. The
+> current #228 branch adds an opt-in, fail-closed BIP340 public-key allowlist
+> backend. The dated inventory below is preserved as historical evidence; the
+> remaining RGB blockers are controlled runtime/import wiring and a complete
+> independently reproducible state-changing signed Bitcoin/RGB regtest fixture.
+
 **Scope:** Current Gateway issue inventory, implementation evidence, research
 boundaries, and next acceptance slices for the six issues that were open at the
 2026-07-22 Phase 2 audit checkpoint.
@@ -319,18 +326,18 @@ its recent hardening is not a production-complete issuer-verification claim.
 - Current paths are `internal/engine/src/bitcoin/rgb_stash.rs`,
   `rgb_native.rs`, `rgb_adapter.rs`, and `docs/RFC_RGB_ADAPTER.md`. The JSON
   metadata cache is descriptive; the stockpile is the consensus boundary.
-- Remaining blockers are a concrete issuer-signature backend, a complete
-  signed Bitcoin/RGB regtest fixture and end-to-end harness, and a transactional
-  existing-contract update path. Existing-contract imports are deliberately
-  rejected until copy-on-write/update semantics exist.
+- **Current correction (2026-07-26):** transactional existing-contract updates
+  and process-lifetime stash ownership are implemented on `main`. This branch
+  adds the reviewed opt-in BIP340 issuer-policy library. Controlled runtime
+  wiring and a complete signed Bitcoin/RGB regtest fixture/end-to-end harness
+  remain open.
 
 **Dependencies:** pinned RGB ecosystem APIs, issuer cryptography, Bitcoin/RGB
 regtest fixtures, and transactional persistence semantics.
 
-**Next acceptance slice:** select and review the issuer signature backend;
-produce an independently reproducible signed regtest fixture; then implement
-and test copy-on-write updates for an existing contract without weakening the
-current rollback boundary.
+**Next acceptance slice:** wire the reviewed policy only through an approved
+controlled import surface, with `RejectIssuerSignatures` remaining default, and
+produce an independently reproducible state-changing signed regtest fixture.
 
 ### #220 — DLC CET construction
 

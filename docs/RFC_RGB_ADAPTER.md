@@ -1,9 +1,11 @@
 # RFC: RGB Protocol-Rail Adapter
 
 ## Status
-- **Phase 2 filesystem/consignment and transactional update boundary implemented**
-- Issue #228 remains open until a concrete issuer signature backend and
-  deterministic end-to-end Bitcoin/RGB fixture are accepted.
+- **Phase 2 filesystem/consignment, transactional update, and opt-in issuer
+  policy library boundaries implemented**
+- Issue #228 remains open until the BIP340 policy is wired through an approved
+  controlled import surface and a deterministic end-to-end Bitcoin/RGB fixture
+  is accepted.
 
 ## Context
 As part of the Conxian Gateway evolution, we need to support the RGB protocol as a first-class citizen for smart contract and asset logic on Bitcoin. This adapter provides the bridge between the Conxian engine and the RGB node/state.
@@ -116,6 +118,18 @@ pub trait RgbAdapter {
   unsigned consignments, invokes the caller-owned issuer signature validator,
   and delegates full operation/codex/witness consensus checks to
   `rgb::Contracts::consume_from_file`.
+- `Bip340IssuerPolicy` is an explicit opt-in validator for controlled callers.
+  It maps a case-sensitive exact RGB `Identity` string to one pinned
+  secp256k1 x-only public key. The accepted `SigBlob` is exactly a raw 64-byte
+  BIP340 signature over the exact 32 bytes supplied by the RGB callback for
+  `ArticlesId::commit_id()`. There is no second hash, text encoding, algorithm
+  inference, or fallback validator. Unknown identities, malformed policies,
+  malformed keys/signatures, wrong commitments, and wrong keys reject.
+- The policy parser accepts only JSON schema version `1`, algorithm
+  `bip340-secp256k1`, and a non-empty issuer allowlist. Unknown fields,
+  duplicate identities, non-printable/non-ASCII or empty identities, and
+  non-32-byte x-only keys reject. The policy contains public keys only; private
+  keys are never loaded or stored by this backend.
 - In the pinned `allow_unknown = true` first-contract branch, RGB imports the
   articles and genesis stockpile without invoking the supplied seal resolver.
   Therefore contract genesis/import does not by itself prove wallet-owned seal
@@ -153,6 +167,38 @@ pub trait RgbAdapter {
   filesystems, and do not share one stash between containers or hosts.
 - Per-contract atomic transaction acquisition remains defense in depth for
   overlapping imports; it does not replace process-lifetime stash ownership.
+- Issuer policy loading is a library operation, not an environment variable or
+  public HTTP import endpoint. On Unix, `Bip340IssuerPolicy::load_json_file`
+  reads at most 64 KiB, rejects non-regular files and paths identified as
+  symlinks, and uses no-follow, non-blocking, close-on-exec open semantics
+  before checking the opened descriptor is regular. Non-Unix file loading
+  fails closed as unsupported until an equivalent handle-level no-follow
+  implementation exists. A controlled Unix caller can opt in:
+
+  ```rust
+  let policy = Bip340IssuerPolicy::load_json_file("/etc/conxian/rgb-issuers.json")?;
+  resolver.import_consignment(&consignment_path, &contract_id, &policy)?;
+  ```
+
+  Example policy:
+
+  ```json
+  {
+    "version": 1,
+    "issuers": [
+      {
+        "identity": "did:example:conxian-rgb-issuer",
+        "algorithm": "bip340-secp256k1",
+        "xonly_public_key_hex": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      }
+    ]
+  }
+  ```
+
+  The example key is schema illustration only, not a trusted issuer key.
+  Applications must provision reviewed public keys through their own
+  configuration/change-control process. The Gateway runtime does not currently
+  load this file or expose a state-changing import endpoint.
 - Simulation uses only the `contract:` HRI and is explicitly non-consensus.
 
 ## Boundary Behavior
@@ -179,9 +225,11 @@ pub trait RgbAdapter {
 
 ## Remaining Phase 2 limitations
 - The pinned `rgb-std` API deliberately leaves the signature algorithm to the
-  application. The gateway exposes `IssuerSignatureValidator` and ships a
-  `RejectIssuerSignatures` fail-closed policy; it does not claim Ed25519,
-  secp256k1, or another cryptographic backend.
+  application. The Gateway now provides the exact opt-in BIP340 profile above,
+  but `RejectIssuerSignatures` remains the runtime/default policy. Arbitrary
+  external issuers remain rejected unless an approved caller loads a valid
+  policy that pins their exact identity and public key. No auto-detection or
+  accept-all compatibility path exists.
 - Deterministic unit coverage exercises malformed envelopes, contract-ID
   mismatch, staged cleanup after a semantically invalid unknown-contract
   import, fresh-stash reload after cleanup, the pinned unknown-contract
@@ -194,9 +242,9 @@ pub trait RgbAdapter {
   faults, and recovery path-identity rejection). The
   generated/replayed consignment fixture proves those filesystem and pinned API
   boundaries; it is not a real state-changing signed RGB transition or a
-  Bitcoin/RGB regtest harness. Both a production issuer-signature backend and a
-  complete independently reproducible signed transition/regtest fixture remain
-  required before treating Active consignment import as a production rollout
-  milestone.
+  Bitcoin/RGB regtest harness. A complete independently reproducible,
+  state-changing signed transition/regtest fixture and controlled production
+  wiring for the issuer policy remain required before treating Active
+  consignment import as a production rollout milestone.
 - The JSON cache remains for descriptive lookup compatibility and must not be
   interpreted as consensus evidence.

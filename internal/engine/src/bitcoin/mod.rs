@@ -31,9 +31,15 @@ pub mod fedimint_adapter;
 pub use fedimint_adapter::FedimintAdapter;
 pub mod strata_adapter;
 pub use strata_adapter::StrataAdapter;
+#[cfg(feature = "rgb-native")]
+pub mod rgb_issuer_policy;
 pub mod rgb_native;
 pub mod rgb_stash;
+#[cfg(feature = "rgb-native")]
+pub use rgb_issuer_policy::{Bip340IssuerPolicy, IssuerPolicyError};
 pub use rgb_stash::StashResolver;
+#[cfg(feature = "rgb-native")]
+pub use rgb_stash::{IssuerSignatureValidator, RejectIssuerSignatures};
 pub mod risc0_verifier;
 pub use risc0_verifier::{Risc0Mode, Risc0StfVerifier, Risc0VerificationReceipt};
 pub mod dlc_oracle;
