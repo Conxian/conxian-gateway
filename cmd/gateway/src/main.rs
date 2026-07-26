@@ -8,7 +8,9 @@ use conxian_core::{
 use conxian_engine::StashResolver;
 use conxian_engine::{
     run_blocking_persistence,
-    stacks::alex::{AlexClient, AlexRpcClient},
+    stacks::alex::{
+        load_alex_venue_manifest_for_network, AlexClient, AlexPreparationService, AlexRpcClient,
+    },
     BitcoinCoreShadowObserver, BitcoinCoreShadowObserverClient, BitcoinListener, BitcoinRpcClient,
     FeeBumpPolicyConfig, MempoolOrchestrator, NodeRgbAdapter, NttRelayer, RedisCoordinator,
     StacksListener, StacksRpcClient, TreasuryMonitor,
@@ -16,7 +18,7 @@ use conxian_engine::{
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::signal;
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
@@ -191,52 +193,67 @@ async fn main() -> anyhow::Result<()> {
     )
     .await?;
 
-    // ALEX Client Initialization. The quote path remains read-only and
-    // unverified. Unsigned payload preparation is disabled unless an exact,
-    // network-qualified helper principal is explicitly configured.
+    // ALEX quote compatibility remains read-only and unverified. Preparation
+    // is enabled only when a strict operator-supplied venue manifest verifies.
     let alex_network = match config.network {
         config::Network::Mainnet => Some(conxian_core::AlexNetwork::Mainnet),
         config::Network::Testnet => Some(conxian_core::AlexNetwork::Testnet),
         config::Network::Simulated => None,
     };
-    let alex_client: Arc<dyn AlexClient> = match (
-        alex_network,
-        config.alex_helper_principal.as_deref(),
-    ) {
-        (Some(network), Some(helper_principal)) => Arc::new(AlexRpcClient::with_helper(
-            Box::new(stx_rpc.clone()),
-            &config.alex_api_url,
-            network,
-            helper_principal,
-        )?),
-        (Some(network), None) => {
+    let alex_client: Arc<dyn AlexClient> = Arc::new(AlexRpcClient::new(
+        Box::new(stx_rpc.clone()),
+        &config.alex_api_url,
+    ));
+    let now_epoch_secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let alex_manifest = match config.alex_venue_manifest_path.as_deref() {
+        None => {
             info!(
                 network = %config.network,
-                "ALEX unsigned payload preparation disabled: ALEX_HELPER_PRINCIPAL is not configured"
+                "ALEX prepare disabled: no venue manifest configured"
             );
-            Arc::new(AlexRpcClient::new_for_network(
-                Box::new(stx_rpc.clone()),
-                &config.alex_api_url,
-                Some(network),
-            ))
+            None
         }
-        (None, Some(_)) => {
-            return Err(anyhow::anyhow!(
-                "ALEX_HELPER_PRINCIPAL requires mainnet or testnet; simulated mode remains read-only"
-            ));
-        }
-        (None, None) => {
-            info!(
-                network = %config.network,
-                "ALEX unsigned payload preparation disabled in simulated mode"
-            );
-            Arc::new(AlexRpcClient::new_for_network(
-                Box::new(stx_rpc.clone()),
-                &config.alex_api_url,
-                None,
-            ))
-        }
+        Some(path) => match alex_network {
+            None => {
+                error!(
+                    network = %config.network,
+                    code = "ALEX_MANIFEST_NETWORK_MISMATCH",
+                    "ALEX prepare disabled"
+                );
+                None
+            }
+            Some(network) => match load_alex_venue_manifest_for_network(
+                std::path::Path::new(path),
+                now_epoch_secs,
+                network,
+            ) {
+                Ok(manifest) => {
+                    info!(
+                        network = %config.network,
+                        manifest_id = %manifest.manifest().manifest_id,
+                        manifest_revision = %manifest.manifest().manifest_revision,
+                        "ALEX venue manifest loaded"
+                    );
+                    Some(manifest)
+                }
+                Err(error) => {
+                    error!(
+                        network = %config.network,
+                        code = error.code(),
+                        "ALEX prepare disabled"
+                    );
+                    None
+                }
+            },
+        },
     };
+    let alex_preparer = Arc::new(AlexPreparationService::new(
+        alex_client.clone(),
+        alex_manifest,
+    ));
 
     // Initialize Treasury monitor
     let treasury_monitor = TreasuryMonitor::new(state.clone(), 60, alex_client.clone());
@@ -348,6 +365,7 @@ async fn main() -> anyhow::Result<()> {
         compliance: zkc_verifier,
         verifier,
         alex: alex_client,
+        alex_preparer,
         lightning: new_lightning_adapter(),
         fiat_webhook_secret: config.fiat_webhook_secret.clone(),
         settlement_ingress_secret: config.settlement_ingress_secret.clone(),

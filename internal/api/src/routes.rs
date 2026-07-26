@@ -18,6 +18,7 @@ pub fn configure_routes(
     token_ttl_seconds: Option<u64>,
 ) -> Router {
     let token_for_auth = api_token.clone();
+    let token_for_alex = api_token.clone();
 
     let public_routes = Router::new()
         .route("/health", get(handlers::get_health))
@@ -87,8 +88,6 @@ pub fn configure_routes(
             "/settlements/external",
             get(handlers::get_external_settlements),
         )
-        .route("/alex/quote", get(handlers::get_alex_quote))
-        .route("/alex/swap", post(handlers::execute_alex_swap))
         .route(
             "/bounties/payouts/toggle",
             post(handlers::toggle_bounty_payouts),
@@ -135,6 +134,24 @@ pub fn configure_routes(
         }))
         .with_state(state.clone());
 
+    // ALEX remains private and bearer-authenticated, but its read-only quote,
+    // unsigned preparation, and stably disabled execution surfaces are not a
+    // paid/x402 capability boundary.
+    let alex_routes = Router::new()
+        .route("/alex/quote", get(handlers::get_alex_quote))
+        .route("/alex/prepare", post(handlers::prepare_alex_swap))
+        .route("/alex/swap", post(handlers::execute_alex_swap))
+        .layer(middleware::from_fn(move |req, next| {
+            auth_middleware(
+                req,
+                next,
+                token_for_alex.clone(),
+                server_start,
+                token_ttl_seconds,
+            )
+        }))
+        .with_state(state.clone());
+
     Router::new()
         .route("/api/v1/version", get(|| async { conxian_core::VERSION }))
         .layer(middleware::from_fn_with_state(
@@ -142,7 +159,10 @@ pub fn configure_routes(
             latency_tracker,
         ))
         .route("/metrics", get(handlers::get_prometheus_metrics))
-        .nest("/api/v1", public_routes.merge(private_routes))
+        .nest(
+            "/api/v1",
+            public_routes.merge(private_routes).merge(alex_routes),
+        )
         .nest("/admin/v1", admin_routes)
         .with_state(state.clone())
         .layer(DefaultBodyLimit::max(10 * 1024 * 1024)) // 10MB global body limit

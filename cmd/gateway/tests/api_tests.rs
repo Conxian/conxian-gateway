@@ -214,6 +214,9 @@ fn setup_app_with_lightning_and_persistence(
         identity,
         compliance,
         verifier,
+        alex_preparer: Arc::new(
+            conxian_engine::stacks::alex::AlexPreparationService::disabled(alex.clone()),
+        ),
         alex,
         multi_chain,
         lightning,
@@ -378,7 +381,6 @@ async fn test_alex_quote_marks_simulated_source_explicitly() {
             Request::builder()
                 .uri("/api/v1/alex/quote?token_x=sBTC&token_y=STX&amount=1")
                 .header("Authorization", format!("Bearer {}", TEST_TOKEN))
-                .header("x-402-payment", TEST_X402_PROOF)
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -395,7 +397,7 @@ async fn test_alex_quote_marks_simulated_source_explicitly() {
 }
 
 #[tokio::test]
-async fn test_alex_swap_never_prepares_simulated_payload() {
+async fn test_alex_swap_is_stably_execution_disabled() {
     let state = Arc::new(RwLock::new(GatewayState::default()));
     let app = setup_app(state);
     let payload = json!({
@@ -412,7 +414,6 @@ async fn test_alex_swap_never_prepares_simulated_payload() {
                 .uri("/api/v1/alex/swap")
                 .method("POST")
                 .header("Authorization", format!("Bearer {}", TEST_TOKEN))
-                .header("x-402-payment", TEST_X402_PROOF)
                 .header("Content-Type", "application/json")
                 .body(Body::from(serde_json::to_string(&payload).unwrap()))
                 .unwrap(),
@@ -420,13 +421,144 @@ async fn test_alex_swap_never_prepares_simulated_payload() {
         .await
         .unwrap();
 
-    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(response.status(), StatusCode::CONFLICT);
     let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
     let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
-    assert!(body["error"]
-        .as_str()
-        .unwrap()
-        .contains("simulated client cannot produce"));
+    assert_eq!(body["code"], "ALEX_EXECUTION_DISABLED");
+}
+
+#[tokio::test]
+async fn test_alex_prepare_without_bearer_auth_is_denied() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+    let payload = json!({
+        "token_x": "SP000000000000000000002Q6VF78.usdcx",
+        "token_y": "SP000000000000000000002Q6VF78.sbtc",
+        "factor": 100000000,
+        "amount": 100,
+        "min_dy": 90
+    });
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/alex/prepare")
+                .method("POST")
+                .header("Content-Type", "application/json")
+                .body(Body::from(serde_json::to_string(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn test_alex_prepare_without_manifest_is_service_unavailable() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+    let payload = json!({
+        "token_x": "SP000000000000000000002Q6VF78.usdcx",
+        "token_y": "SP000000000000000000002Q6VF78.sbtc",
+        "factor": 100000000,
+        "amount": 100,
+        "min_dy": 90
+    });
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/alex/prepare")
+                .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("Content-Type", "application/json")
+                .body(Body::from(serde_json::to_string(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(body["code"], "ALEX_MANIFEST_UNAVAILABLE");
+}
+
+#[tokio::test]
+async fn test_alex_prepare_legacy_x402_header_does_not_change_denial() {
+    async fn request(x402: Option<&str>) -> (StatusCode, serde_json::Value) {
+        let state = Arc::new(RwLock::new(GatewayState::default()));
+        let app = setup_app(state);
+        let payload = json!({
+            "token_x": "SP000000000000000000002Q6VF78.usdcx",
+            "token_y": "SP000000000000000000002Q6VF78.sbtc",
+            "factor": 100000000,
+            "amount": 100,
+            "min_dy": 90
+        });
+        let mut request = Request::builder()
+            .uri("/api/v1/alex/prepare")
+            .method("POST")
+            .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+            .header("Content-Type", "application/json");
+        if let Some(value) = x402 {
+            request = request.header("x-402-payment", value);
+        }
+        let response = app
+            .oneshot(
+                request
+                    .body(Body::from(serde_json::to_string(&payload).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = response.status();
+        let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+        (status, serde_json::from_slice(&body_bytes).unwrap())
+    }
+
+    let without_header = request(None).await;
+    let with_header = request(Some("arbitrary-legacy-proof")).await;
+    assert_eq!(without_header, with_header);
+    assert_eq!(without_header.0, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(without_header.1["code"], "ALEX_MANIFEST_UNAVAILABLE");
+}
+
+#[tokio::test]
+async fn test_alex_prepare_rejects_invalid_amount_and_min_dy_before_manifest_lookup() {
+    for (amount, min_dy, expected_code) in [
+        (0, Some(90), "ALEX_INVALID_AMOUNT"),
+        (100, None, "ALEX_INVALID_MIN_DY"),
+        (100, Some(0), "ALEX_INVALID_MIN_DY"),
+    ] {
+        let state = Arc::new(RwLock::new(GatewayState::default()));
+        let app = setup_app(state);
+        let payload = json!({
+            "token_x": "SP000000000000000000002Q6VF78.usdcx",
+            "token_y": "SP000000000000000000002Q6VF78.sbtc",
+            "factor": 100000000,
+            "amount": amount,
+            "min_dy": min_dy
+        });
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/alex/prepare")
+                    .method("POST")
+                    .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(serde_json::to_string(&payload).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+        let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+        assert_eq!(body["code"], expected_code);
+    }
 }
 
 #[tokio::test]

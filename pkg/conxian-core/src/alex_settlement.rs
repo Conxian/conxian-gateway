@@ -58,6 +58,7 @@ impl AlexSourceClass {
 /// Minimal source metadata. References, credentials, and PII are intentionally
 /// not carried by the intent contract.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AlexSourceSnapshot {
     pub classification: AlexSourceClass,
     pub observed_at_epoch_secs: u64,
@@ -69,6 +70,7 @@ pub struct AlexSourceSnapshot {
 /// policy evaluation also compares the value against an exact allowlist. A
 /// ticker such as `sBTC` or `STX` is never accepted as an asset reference.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AlexPrincipal {
     pub network: AlexNetwork,
     pub value: String,
@@ -147,6 +149,7 @@ fn validate_principal(network: AlexNetwork, value: &str) -> Result<(), AlexPolic
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AlexAssetRef {
     pub principal: AlexPrincipal,
 }
@@ -162,6 +165,7 @@ impl AlexAssetRef {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AlexPoolRef {
     pub principal: AlexPrincipal,
 }
@@ -177,6 +181,7 @@ impl AlexPoolRef {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AlexHelperRef {
     pub principal: AlexPrincipal,
 }
@@ -197,6 +202,7 @@ impl AlexHelperRef {
 
 /// One exact asset pair/pool/helper tuple allowed by policy.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AlexVenueAllowlistEntry {
     pub asset_in: AlexAssetRef,
     pub asset_out: AlexAssetRef,
@@ -234,6 +240,7 @@ pub enum AlexAdminState {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AlexVenueSnapshot {
     pub network: AlexNetwork,
     pub asset_in: AlexAssetRef,
@@ -247,6 +254,7 @@ pub struct AlexVenueSnapshot {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AlexQuoteSnapshot {
     pub amount_in: u128,
     pub amount_out: u128,
@@ -257,10 +265,12 @@ pub struct AlexQuoteSnapshot {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AlexExposureSnapshot {
     pub before: u128,
     pub after: u128,
     pub cap: u128,
+    pub source: AlexSourceSnapshot,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -286,6 +296,7 @@ pub struct AlexSettlementRequest {
 pub const ALEX_EXPOSURE_SAFETY_CEILING_BPS: u32 = 2_000;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AlexSettlementPolicy {
     pub policy_id: String,
     pub policy_revision: String,
@@ -294,6 +305,8 @@ pub struct AlexSettlementPolicy {
     pub expected_config_revision: String,
     pub expected_helper_code_hash: String,
     pub max_quote_age_secs: u64,
+    pub max_exposure_age_secs: u64,
+    pub max_config_age_secs: u64,
     pub max_price_impact_bps: u32,
     pub max_exposure_bps: u32,
     #[serde(default = "default_exposure_safety_ceiling_bps")]
@@ -302,6 +315,143 @@ pub struct AlexSettlementPolicy {
 
 const fn default_exposure_safety_ceiling_bps() -> u32 {
     ALEX_EXPOSURE_SAFETY_CEILING_BPS
+}
+
+pub const ALEX_VENUE_MANIFEST_VERSION: &str = "alex-venue-manifest-v1";
+
+/// Operator-supplied, exact venue snapshot and policy. The gateway ships no
+/// candidate manifest and never infers principals from tickers or network
+/// defaults.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AlexVenueManifest {
+    pub manifest_version: String,
+    pub manifest_id: String,
+    pub manifest_revision: String,
+    pub valid_from_epoch_secs: u64,
+    pub expires_at_epoch_secs: u64,
+    pub venue: AlexVenueSnapshot,
+    pub policy: AlexSettlementPolicy,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VerifiedAlexVenueManifest {
+    manifest: AlexVenueManifest,
+}
+
+impl VerifiedAlexVenueManifest {
+    pub fn manifest(&self) -> &AlexVenueManifest {
+        &self.manifest
+    }
+
+    pub fn verify_at(&self, now_epoch_secs: u64) -> Result<(), AlexManifestRejection> {
+        self.manifest.verify_at(now_epoch_secs).map(|_| ())
+    }
+}
+
+impl AlexVenueManifest {
+    pub fn verify_at(
+        &self,
+        now_epoch_secs: u64,
+    ) -> Result<VerifiedAlexVenueManifest, AlexManifestRejection> {
+        if self.manifest_version != ALEX_VENUE_MANIFEST_VERSION {
+            return Err(AlexManifestRejection::UnsupportedVersion);
+        }
+        if self.manifest_id.trim().is_empty() || self.manifest_revision.trim().is_empty() {
+            return Err(AlexManifestRejection::BlankIdentity);
+        }
+        if self.valid_from_epoch_secs >= self.expires_at_epoch_secs {
+            return Err(AlexManifestRejection::InvalidValidityWindow);
+        }
+        if self.venue.source.observed_at_epoch_secs < self.valid_from_epoch_secs
+            || self.venue.source.observed_at_epoch_secs >= self.expires_at_epoch_secs
+        {
+            return Err(AlexManifestRejection::VenueEvidenceOutsideValidityWindow);
+        }
+        if self.valid_from_epoch_secs > now_epoch_secs
+            || self.venue.source.observed_at_epoch_secs > now_epoch_secs
+        {
+            return Err(AlexManifestRejection::FromFuture);
+        }
+        if self.expires_at_epoch_secs <= now_epoch_secs {
+            return Err(AlexManifestRejection::Expired);
+        }
+        if self.venue.source.classification != AlexSourceClass::Observed {
+            return Err(AlexManifestRejection::VenueNotObserved);
+        }
+        if self.policy.policy_revision != self.manifest_revision {
+            return Err(AlexManifestRejection::PolicyRevisionMismatch);
+        }
+        self.policy
+            .validate()
+            .map_err(AlexManifestRejection::InvalidPolicy)?;
+        let venue_age = now_epoch_secs
+            .checked_sub(self.venue.source.observed_at_epoch_secs)
+            .ok_or(AlexManifestRejection::FromFuture)?;
+        if venue_age > self.policy.max_config_age_secs {
+            return Err(AlexManifestRejection::VenueEvidenceStale);
+        }
+        if self.policy.supported_network != self.venue.network {
+            return Err(AlexManifestRejection::NetworkMismatch);
+        }
+
+        let exact_venue = AlexVenueAllowlistEntry {
+            asset_in: self.venue.asset_in.clone(),
+            asset_out: self.venue.asset_out.clone(),
+            pool: self.venue.pool.clone(),
+            helper: self.venue.helper.clone(),
+        };
+        exact_venue
+            .validate(self.venue.network)
+            .map_err(|_| AlexManifestRejection::NetworkMismatch)?;
+
+        if self.policy.expected_config_revision != self.venue.config_revision {
+            return Err(AlexManifestRejection::ConfigRevisionMismatch);
+        }
+        if self.policy.expected_helper_code_hash != self.venue.helper_code_hash {
+            return Err(AlexManifestRejection::HelperCodeHashMismatch);
+        }
+        if !self.policy.allowed_venues.contains(&exact_venue) {
+            return Err(AlexManifestRejection::VenueNotAllowed);
+        }
+
+        Ok(VerifiedAlexVenueManifest {
+            manifest: self.clone(),
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Error, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum AlexManifestRejection {
+    #[error("unsupported manifest version")]
+    UnsupportedVersion,
+    #[error("manifest identity or revision is blank")]
+    BlankIdentity,
+    #[error("manifest validity window is invalid")]
+    InvalidValidityWindow,
+    #[error("venue evidence falls outside the manifest validity window")]
+    VenueEvidenceOutsideValidityWindow,
+    #[error("manifest or venue evidence is from the future")]
+    FromFuture,
+    #[error("manifest is expired")]
+    Expired,
+    #[error("venue evidence is stale")]
+    VenueEvidenceStale,
+    #[error("venue evidence is not observed")]
+    VenueNotObserved,
+    #[error("manifest and policy revisions do not match")]
+    PolicyRevisionMismatch,
+    #[error("manifest policy is invalid: {0}")]
+    InvalidPolicy(AlexPolicyRejection),
+    #[error("manifest venue network does not match policy")]
+    NetworkMismatch,
+    #[error("manifest venue configuration revision does not match policy")]
+    ConfigRevisionMismatch,
+    #[error("manifest helper code hash does not match policy")]
+    HelperCodeHashMismatch,
+    #[error("manifest policy does not allow the exact venue tuple")]
+    VenueNotAllowed,
 }
 
 impl AlexSettlementPolicy {
@@ -343,21 +493,44 @@ impl AlexSettlementPolicy {
         if request.quote.amount_in != request.amount_in {
             return Err(AlexPolicyRejection::QuoteAmountMismatch);
         }
-        if request.quote.quoted_at_epoch_secs > now_epoch_secs
-            || request.quote.source.observed_at_epoch_secs > now_epoch_secs
-            || request.venue.source.observed_at_epoch_secs > now_epoch_secs
-        {
-            return Err(AlexPolicyRejection::QuoteFromFuture);
+        if request.requested_at_epoch_secs > now_epoch_secs {
+            return Err(AlexPolicyRejection::RequestFromFuture);
         }
-        if request.quote.expires_at_epoch_secs <= now_epoch_secs
-            || request.quote.expires_at_epoch_secs <= request.quote.quoted_at_epoch_secs
+        if request.quote.source.observed_at_epoch_secs > request.quote.quoted_at_epoch_secs
+            || request.quote.quoted_at_epoch_secs > request.requested_at_epoch_secs
+            || request.requested_at_epoch_secs > request.quote.expires_at_epoch_secs
         {
+            return Err(AlexPolicyRejection::InvalidQuoteTimestampOrder);
+        }
+        if request.exposure.source.observed_at_epoch_secs > request.requested_at_epoch_secs {
+            return Err(AlexPolicyRejection::InvalidExposureTimestampOrder);
+        }
+        if request.venue.source.observed_at_epoch_secs > request.requested_at_epoch_secs {
+            return Err(AlexPolicyRejection::InvalidVenueTimestampOrder);
+        }
+        if request.quote.expires_at_epoch_secs <= now_epoch_secs {
             return Err(AlexPolicyRejection::QuoteExpired);
         }
-        if now_epoch_secs.saturating_sub(request.quote.quoted_at_epoch_secs)
-            > self.max_quote_age_secs
-        {
+        let quote_age = request
+            .requested_at_epoch_secs
+            .checked_sub(request.quote.source.observed_at_epoch_secs)
+            .ok_or(AlexPolicyRejection::InvalidQuoteTimestampOrder)?;
+        if quote_age > self.max_quote_age_secs {
             return Err(AlexPolicyRejection::QuoteStale);
+        }
+        let exposure_age = request
+            .requested_at_epoch_secs
+            .checked_sub(request.exposure.source.observed_at_epoch_secs)
+            .ok_or(AlexPolicyRejection::InvalidExposureTimestampOrder)?;
+        if exposure_age > self.max_exposure_age_secs {
+            return Err(AlexPolicyRejection::ExposureStale);
+        }
+        let venue_age = request
+            .requested_at_epoch_secs
+            .checked_sub(request.venue.source.observed_at_epoch_secs)
+            .ok_or(AlexPolicyRejection::InvalidVenueTimestampOrder)?;
+        if venue_age > self.max_config_age_secs {
+            return Err(AlexPolicyRejection::VenueEvidenceStale);
         }
         if min_dy > request.quote.amount_out {
             return Err(AlexPolicyRejection::MinimumOutputExceedsQuote);
@@ -398,6 +571,7 @@ impl AlexSettlementPolicy {
         }
 
         let decision = if request.quote.source.classification == AlexSourceClass::Observed
+            && request.exposure.source.classification == AlexSourceClass::Observed
             && request.venue.source.classification == AlexSourceClass::Observed
         {
             AlexPolicyDecision::AllowUnsigned
@@ -443,6 +617,8 @@ impl AlexSettlementPolicy {
             || self.expected_helper_code_hash.trim().is_empty()
             || self.allowed_venues.is_empty()
             || self.max_quote_age_secs == 0
+            || self.max_exposure_age_secs == 0
+            || self.max_config_age_secs == 0
             || self.max_price_impact_bps > 10_000
             || self.exposure_safety_ceiling_bps != ALEX_EXPOSURE_SAFETY_CEILING_BPS
             || self.max_exposure_bps > self.exposure_safety_ceiling_bps
@@ -614,6 +790,7 @@ impl AlexUnsignedSettlementIntent {
         put_u128(&mut bytes, self.exposure.before);
         put_u128(&mut bytes, self.exposure.after);
         put_u128(&mut bytes, self.exposure.cap);
+        put_source(&mut bytes, &self.exposure.source);
         put_u8(
             &mut bytes,
             match self.decision {
@@ -684,10 +861,22 @@ pub enum AlexPolicyRejection {
     QuoteAmountMismatch,
     #[error("ALEX policy rejected: quote timestamp is from the future")]
     QuoteFromFuture,
+    #[error("ALEX policy rejected: request timestamp is from the future")]
+    RequestFromFuture,
+    #[error("ALEX policy rejected: quote evidence timestamps are out of order")]
+    InvalidQuoteTimestampOrder,
+    #[error("ALEX policy rejected: exposure evidence timestamps are out of order")]
+    InvalidExposureTimestampOrder,
+    #[error("ALEX policy rejected: venue evidence timestamps are out of order")]
+    InvalidVenueTimestampOrder,
     #[error("ALEX policy rejected: quote is expired")]
     QuoteExpired,
     #[error("ALEX policy rejected: quote is stale")]
     QuoteStale,
+    #[error("ALEX policy rejected: exposure evidence is stale")]
+    ExposureStale,
+    #[error("ALEX policy rejected: venue evidence is stale")]
+    VenueEvidenceStale,
     #[error("ALEX policy rejected: min-dy exceeds quoted output")]
     MinimumOutputExceedsQuote,
     #[error("ALEX policy rejected: policy revision is stale")]
@@ -777,9 +966,23 @@ mod tests {
             expected_config_revision: "config-r1".to_string(),
             expected_helper_code_hash: "code-hash-r1".to_string(),
             max_quote_age_secs: 60,
+            max_exposure_age_secs: 60,
+            max_config_age_secs: 60,
             max_price_impact_bps: 500,
             max_exposure_bps: 2_000,
             exposure_safety_ceiling_bps: ALEX_EXPOSURE_SAFETY_CEILING_BPS,
+        }
+    }
+
+    fn manifest(network: AlexNetwork) -> AlexVenueManifest {
+        AlexVenueManifest {
+            manifest_version: ALEX_VENUE_MANIFEST_VERSION.to_string(),
+            manifest_id: "alex-test-venue".to_string(),
+            manifest_revision: "policy-r1".to_string(),
+            valid_from_epoch_secs: 900,
+            expires_at_epoch_secs: 2_000,
+            venue: snapshot(network, AlexSourceClass::Observed),
+            policy: policy(network),
         }
     }
 
@@ -811,6 +1014,10 @@ mod tests {
                 before: 0,
                 after: 10,
                 cap: 100,
+                source: AlexSourceSnapshot {
+                    classification: AlexSourceClass::Observed,
+                    observed_at_epoch_secs: 1_000,
+                },
             },
         }
     }
@@ -916,6 +1123,98 @@ mod tests {
     }
 
     #[test]
+    fn rejects_incoherent_quote_timestamp_ordering() {
+        let mut observed_after_quote = request(AlexNetwork::Mainnet);
+        observed_after_quote.quote.source.observed_at_epoch_secs = 1_001;
+        assert_eq!(
+            evaluate(&observed_after_quote),
+            Err(AlexPolicyRejection::InvalidQuoteTimestampOrder)
+        );
+
+        let mut quoted_after_request = request(AlexNetwork::Mainnet);
+        quoted_after_request.quote.quoted_at_epoch_secs = 1_006;
+        assert_eq!(
+            evaluate(&quoted_after_request),
+            Err(AlexPolicyRejection::InvalidQuoteTimestampOrder)
+        );
+
+        let mut requested_after_expiry = request(AlexNetwork::Mainnet);
+        requested_after_expiry.quote.expires_at_epoch_secs = 1_004;
+        assert_eq!(
+            evaluate(&requested_after_expiry),
+            Err(AlexPolicyRejection::InvalidQuoteTimestampOrder)
+        );
+    }
+
+    #[test]
+    fn rejects_future_request_and_incoherent_evidence_ordering() {
+        let mut future_request = request(AlexNetwork::Mainnet);
+        future_request.requested_at_epoch_secs = 1_011;
+        assert_eq!(
+            evaluate(&future_request),
+            Err(AlexPolicyRejection::RequestFromFuture)
+        );
+
+        let mut future_exposure = request(AlexNetwork::Mainnet);
+        future_exposure.exposure.source.observed_at_epoch_secs = 1_006;
+        assert_eq!(
+            evaluate(&future_exposure),
+            Err(AlexPolicyRejection::InvalidExposureTimestampOrder)
+        );
+
+        let mut future_venue = request(AlexNetwork::Mainnet);
+        future_venue.venue.source.observed_at_epoch_secs = 1_006;
+        assert_eq!(
+            evaluate(&future_venue),
+            Err(AlexPolicyRejection::InvalidVenueTimestampOrder)
+        );
+    }
+
+    #[test]
+    fn enforces_quote_exposure_and_config_freshness_boundaries() {
+        let mut quote_at_limit = request(AlexNetwork::Mainnet);
+        quote_at_limit.quote.source.observed_at_epoch_secs = 945;
+        quote_at_limit.quote.quoted_at_epoch_secs = 945;
+        assert!(evaluate(&quote_at_limit).is_ok());
+        quote_at_limit.quote.source.observed_at_epoch_secs = 944;
+        quote_at_limit.quote.quoted_at_epoch_secs = 944;
+        assert_eq!(
+            evaluate(&quote_at_limit),
+            Err(AlexPolicyRejection::QuoteStale)
+        );
+
+        let mut exposure_at_limit = request(AlexNetwork::Mainnet);
+        exposure_at_limit.exposure.source.observed_at_epoch_secs = 945;
+        assert!(evaluate(&exposure_at_limit).is_ok());
+        exposure_at_limit.exposure.source.observed_at_epoch_secs = 944;
+        assert_eq!(
+            evaluate(&exposure_at_limit),
+            Err(AlexPolicyRejection::ExposureStale)
+        );
+
+        let mut venue_at_limit = request(AlexNetwork::Mainnet);
+        venue_at_limit.venue.source.observed_at_epoch_secs = 945;
+        assert!(evaluate(&venue_at_limit).is_ok());
+        venue_at_limit.venue.source.observed_at_epoch_secs = 944;
+        assert_eq!(
+            evaluate(&venue_at_limit),
+            Err(AlexPolicyRejection::VenueEvidenceStale)
+        );
+    }
+
+    #[test]
+    fn allows_equal_quote_observation_and_issue_time() {
+        let mut boundary = request(AlexNetwork::Mainnet);
+        boundary.quote.source.observed_at_epoch_secs = 1_000;
+        boundary.quote.quoted_at_epoch_secs = 1_000;
+        boundary.requested_at_epoch_secs = 1_000;
+        boundary.quote.expires_at_epoch_secs = 1_011;
+        assert!(policy(AlexNetwork::Mainnet)
+            .evaluate(&boundary, 1_010)
+            .is_ok());
+    }
+
+    #[test]
     fn rejects_stale_policy_config_and_wrong_code_hash() {
         let mut stale_policy = request(AlexNetwork::Mainnet);
         stale_policy.policy_revision = "policy-old".to_string();
@@ -1007,6 +1306,128 @@ mod tests {
         assert_eq!(
             invalid.evaluate(&request(AlexNetwork::Mainnet), 1_010),
             Err(AlexPolicyRejection::InvalidPolicyConfig)
+        );
+    }
+
+    #[test]
+    fn venue_manifest_verifies_exact_observed_tuple() {
+        let verified = manifest(AlexNetwork::Mainnet).verify_at(1_010).unwrap();
+        assert_eq!(verified.manifest().manifest_id, "alex-test-venue");
+        verified.verify_at(1_010).unwrap();
+    }
+
+    #[test]
+    fn venue_manifest_rejects_unknown_fields_and_unsupported_version() {
+        let mut value = serde_json::to_value(manifest(AlexNetwork::Mainnet)).unwrap();
+        value["unknown"] = serde_json::json!(true);
+        assert!(serde_json::from_value::<AlexVenueManifest>(value).is_err());
+
+        let mut unsupported = manifest(AlexNetwork::Mainnet);
+        unsupported.manifest_version = "alex-venue-manifest-v2".to_string();
+        assert_eq!(
+            unsupported.verify_at(1_010),
+            Err(AlexManifestRejection::UnsupportedVersion)
+        );
+    }
+
+    #[test]
+    fn venue_manifest_rejects_identity_time_and_source_failures() {
+        let mut blank = manifest(AlexNetwork::Mainnet);
+        blank.manifest_id = " ".to_string();
+        assert_eq!(
+            blank.verify_at(1_010),
+            Err(AlexManifestRejection::BlankIdentity)
+        );
+
+        let mut future = manifest(AlexNetwork::Mainnet);
+        future.valid_from_epoch_secs = 1_011;
+        future.venue.source.observed_at_epoch_secs = 1_011;
+        assert_eq!(
+            future.verify_at(1_010),
+            Err(AlexManifestRejection::FromFuture)
+        );
+
+        let mut expired = manifest(AlexNetwork::Mainnet);
+        expired.expires_at_epoch_secs = 1_010;
+        assert_eq!(
+            expired.verify_at(1_010),
+            Err(AlexManifestRejection::Expired)
+        );
+
+        let mut unverified = manifest(AlexNetwork::Mainnet);
+        unverified.venue.source.classification = AlexSourceClass::Unverified;
+        assert_eq!(
+            unverified.verify_at(1_010),
+            Err(AlexManifestRejection::VenueNotObserved)
+        );
+    }
+
+    #[test]
+    fn venue_manifest_enforces_observation_window_and_freshness() {
+        let mut before_window = manifest(AlexNetwork::Mainnet);
+        before_window.venue.source.observed_at_epoch_secs = 899;
+        assert_eq!(
+            before_window.verify_at(1_010),
+            Err(AlexManifestRejection::VenueEvidenceOutsideValidityWindow)
+        );
+
+        let mut at_expiry = manifest(AlexNetwork::Mainnet);
+        at_expiry.venue.source.observed_at_epoch_secs = at_expiry.expires_at_epoch_secs;
+        assert_eq!(
+            at_expiry.verify_at(1_010),
+            Err(AlexManifestRejection::VenueEvidenceOutsideValidityWindow)
+        );
+
+        let mut at_age_limit = manifest(AlexNetwork::Mainnet);
+        at_age_limit.venue.source.observed_at_epoch_secs = 950;
+        assert!(at_age_limit.verify_at(1_010).is_ok());
+
+        let mut stale = manifest(AlexNetwork::Mainnet);
+        stale.venue.source.observed_at_epoch_secs = 949;
+        assert_eq!(
+            stale.verify_at(1_010),
+            Err(AlexManifestRejection::VenueEvidenceStale)
+        );
+    }
+
+    #[test]
+    fn venue_manifest_rejects_revision_network_hash_and_allowlist_drift() {
+        let mut revision = manifest(AlexNetwork::Mainnet);
+        revision.manifest_revision = "manifest-r2".to_string();
+        assert_eq!(
+            revision.verify_at(1_010),
+            Err(AlexManifestRejection::PolicyRevisionMismatch)
+        );
+
+        let mut network = manifest(AlexNetwork::Mainnet);
+        network.venue.network = AlexNetwork::Testnet;
+        assert_eq!(
+            network.verify_at(1_010),
+            Err(AlexManifestRejection::NetworkMismatch)
+        );
+
+        let mut config = manifest(AlexNetwork::Mainnet);
+        config.venue.config_revision = "config-r2".to_string();
+        assert_eq!(
+            config.verify_at(1_010),
+            Err(AlexManifestRejection::ConfigRevisionMismatch)
+        );
+
+        let mut hash = manifest(AlexNetwork::Mainnet);
+        hash.venue.helper_code_hash = "code-hash-r2".to_string();
+        assert_eq!(
+            hash.verify_at(1_010),
+            Err(AlexManifestRejection::HelperCodeHashMismatch)
+        );
+
+        let mut allowlist = manifest(AlexNetwork::Mainnet);
+        allowlist.policy.allowed_venues[0].pool = AlexPoolRef::new(principal(
+            AlexNetwork::Mainnet,
+            "SP000000000000000000002Q6VF78.other-pool",
+        ));
+        assert_eq!(
+            allowlist.verify_at(1_010),
+            Err(AlexManifestRejection::VenueNotAllowed)
         );
     }
 }
