@@ -3,30 +3,53 @@ set -euo pipefail
 
 GATEWAY_URL=${1:-"http://localhost:3000"}
 API_TOKEN=${2:-"test-token"}
+: "${ALEX_ASSET_IN:?Set ALEX_ASSET_IN to an exact network-qualified principal}"
+: "${ALEX_ASSET_OUT:?Set ALEX_ASSET_OUT to an exact network-qualified principal}"
 
-echo "Running ALEX read-only/shadow boundary rehearsal..."
+request() {
+  local method=$1
+  local path=$2
+  local body=${3:-}
+  local output
+  output=$(mktemp "${TMPDIR:-/tmp}/alex_rehearsal.XXXXXX")
+  local args=(-s -o "$output" -w "%{http_code}" -X "$method" "$GATEWAY_URL$path"
+    -H "Authorization: Bearer $API_TOKEN")
+  if [ -n "$body" ]; then
+    args+=(-H "Content-Type: application/json" -d "$body")
+  fi
+  HTTP_CODE=$(curl "${args[@]}")
+  HTTP_BODY=$(cat "$output")
+  rm -f "$output"
+}
 
-echo "1. Requesting ALEX Quote for sBTC -> STX..."
-QUOTE_RES=$(curl -s -G "$GATEWAY_URL/api/v1/alex/quote"   --data-urlencode "token_x=sBTC"   --data-urlencode "token_y=STX"   --data-urlencode "amount=100000000"   --data-urlencode "factor=100000000"   -H "Authorization: Bearer $API_TOKEN")
+echo "Running ALEX read-only/policy-gate rehearsal..."
 
-echo "Quote Result: $QUOTE_RES"
+echo "1. Requesting the explicitly unverified compatibility quote..."
+QUOTE=$(printf '/api/v1/alex/quote?token_x=%s&token_y=%s&amount=1000' \
+  "$ALEX_ASSET_IN" "$ALEX_ASSET_OUT")
+request GET "$QUOTE"
+echo "Quote HTTP status: $HTTP_CODE"
+echo "Quote result: $HTTP_BODY"
 
-echo "2. Attempting unsigned ALEX preparation (expected to fail closed; never a settlement receipt)..."
-SWAP_TMP=$(mktemp "${TMPDIR:-/tmp}/alex_swap.XXXXXX")
-SWAP_HTTP_CODE=$(curl -s -o "$SWAP_TMP" -w "%{http_code}" -X POST "$GATEWAY_URL/api/v1/alex/swap" \
-  -H "Authorization: Bearer $API_TOKEN" \
-  -H "x-402-payment: rehearsal-proof" \
-  -H "Content-Type: application/json" \
-  -d '{"token_x": "sBTC", "token_y": "STX", "amount": 1000, "factor": 1000}')
-SWAP_RES=$(cat "$SWAP_TMP")
-rm -f "$SWAP_TMP"
+PAYLOAD=$(printf '{"token_x":"%s","token_y":"%s","factor":100000000,"amount":1000,"min_dy":1}' \
+  "$ALEX_ASSET_IN" "$ALEX_ASSET_OUT")
 
-echo "Swap HTTP status: $SWAP_HTTP_CODE"
-echo "Swap Result: $SWAP_RES"
-
-if [ "$SWAP_HTTP_CODE" -lt 400 ]; then
-  echo "Unexpected successful status from /alex/swap; unsigned preparation must fail closed" >&2
+echo "2. Exercising policy-gated unsigned preparation..."
+request POST "/api/v1/alex/prepare" "$PAYLOAD"
+echo "Prepare HTTP status: $HTTP_CODE"
+echo "Prepare result: $HTTP_BODY"
+if [ "$HTTP_CODE" -lt 400 ]; then
+  echo "Unexpected preparation success with the production unverified quote adapter" >&2
   exit 1
 fi
 
-echo "ALEX Rehearsal complete!"
+echo "3. Confirming legacy execution remains disabled..."
+request POST "/api/v1/alex/swap" "$PAYLOAD"
+echo "Swap HTTP status: $HTTP_CODE"
+echo "Swap result: $HTTP_BODY"
+if [ "$HTTP_CODE" != "409" ] || ! printf '%s' "$HTTP_BODY" | grep -q 'ALEX_EXECUTION_DISABLED'; then
+  echo "Legacy /alex/swap did not return stable ALEX_EXECUTION_DISABLED" >&2
+  exit 1
+fi
+
+echo "ALEX rehearsal completed without signing or broadcast."

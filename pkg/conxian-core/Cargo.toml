@@ -2,6 +2,7 @@
 name = "conxian_core"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 description = "Conxian Gateway Core Library - Institutional-grade Bitcoin/Stacks Gateway core types and utilities"
 license = "MIT"
 

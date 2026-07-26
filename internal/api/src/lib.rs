@@ -23,6 +23,7 @@ use crate::lightning::{LightningAdapter, SimulatedLightningBackend};
 use conxian_compliance::{IdentityManager, UniversalVerifier, ZkcVerifier};
 use conxian_core::{Persistence, SettlementProposal, SharedState};
 pub use conxian_engine::stacks::alex::AlexClient;
+use conxian_engine::stacks::alex::AlexPreparationService;
 use conxian_engine::BitcoinCoreShadowObserver;
 pub use conxian_engine::RedisCoordinator;
 use std::{collections::VecDeque, sync::Arc};
@@ -45,6 +46,7 @@ pub struct AppState {
     pub compliance: Arc<ZkcVerifier>,
     pub verifier: Arc<UniversalVerifier>,
     pub alex: Arc<dyn AlexClient>,
+    pub alex_preparer: Arc<AlexPreparationService>,
     pub multi_chain: std::collections::HashMap<String, Arc<dyn conxian_core::ChainAdapter>>,
     pub lightning: Arc<LightningAdapter>,
     pub fiat_webhook_secret: String,

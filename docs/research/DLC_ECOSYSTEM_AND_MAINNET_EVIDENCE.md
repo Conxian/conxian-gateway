@@ -4,6 +4,11 @@
 - **Scope:** Conxian Gateway issue [#220](https://github.com/Conxian/conxian-gateway/issues/220)
 - **Status:** Research and readiness alignment only; no DLC dependency or protocol code is added by this document.
 
+> **Current policy note (2026-07-26):** The Gateway now declares Rust 1.96 as
+> its MSRV and checks the locked workspace on Rust 1.96.0. The dated 1.85.1
+> probe observations below remain compatibility evidence only; this policy
+> alignment does not add a DLC dependency or advance CET/oracle behavior.
+
 ## Executive summary
 
 Conxian Gateway currently has a DLC-shaped API surface and an HTTP oracle adapter,
@@ -213,7 +218,7 @@ DDK's release notes describe `v1.1.2` as a maintenance release and publish the
 workspace crate list. The reviewed workspace manifests do not declare a formal
 `rust-version`. The same is true for the reviewed `rust-dlc` manifests. A
 dependency compiling against Bitcoin `0.32.x` does not prove compatibility with
-Conxian's MSRV 1.85, the full gateway workspace, or the intended transaction
+Conxian's Rust 1.96 MSRV, the full gateway workspace, or the intended transaction
 flow.
 
 ### 6.2 Bindings and secondary implementations
@@ -240,7 +245,7 @@ An isolated dependency-level check against the exact `rust-dlc v0.8.0` and DDK
 
 - it does not prove the full offer/accept/sign flow;
 - it does not prove serialization or vector compatibility between the families;
-- it does not prove the repository MSRV 1.85;
+- it does not prove compatibility with the repository's current Rust 1.96 MSRV;
 - it does not prove API stability, persistence correctness, restart behavior, or
   mainnet safety.
 
