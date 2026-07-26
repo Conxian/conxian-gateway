@@ -1,7 +1,7 @@
 # RFC: RGB Protocol-Rail Adapter
 
 ## Status
-- **Phase 2 filesystem/consignment boundary implemented on the focused #228 branch**
+- **Phase 2 filesystem/consignment and transactional update boundary implemented**
 - Issue #228 remains open until a concrete issuer signature backend and
   deterministic end-to-end Bitcoin/RGB fixture are accepted.
 
@@ -69,12 +69,39 @@ pub trait RgbAdapter {
   successful imports. Corrupt contract directories fail closed at startup.
 - Unknown-contract imports run in a same-filesystem staging directory and are
   atomically promoted only after `rgb::Contracts::consume_from_file` succeeds.
-  This compensates for the pinned `rgb-persist-fs` behavior that creates the
-  `*.contract` directory before `evaluate_commit` completes; every failed
-  import removes only its own staging directory and reports cleanup failures
-  separately. Existing contract updates are rejected until a copy-on-write
-  update path is available, so an import cannot mutate a valid contract in
-  place.
+  Existing-contract imports copy only the target `*.contract` directory into
+  isolated same-filesystem state, run the unchanged consensus importer there,
+  sync and reload the verified candidate, then promote it through a durable
+  phase journal and retained old-contract backup. The descriptive metadata,
+  seal registry, issuers, and unrelated contracts are not copied or mutated by
+  this transaction. The per-contract transaction directory is acquired with an
+  atomic create, so overlapping updates for the same contract fail closed
+  instead of promoting candidates derived from stale state.
+- Startup scans durable RGB update journals before loading `StockpileDir`.
+  Prepared or backed-up transactions restore the prior verified contract;
+  a durably persisted `promoted` phase is the irreversible commit point, so
+  promoted transactions retain the verified replacement and finish cleanup.
+  Post-commit cleanup failures never enter the old-state rollback path: the
+  live `StockpileDir` is reloaded before returning a clear committed-but-cleanup-
+  incomplete/uncertain error. The promoted journal is retained until backup
+  cleanup is synced and transaction-directory deletion is attempted. If the
+  final stockpile-root sync fails after deletion, the current namespace may no
+  longer contain the journal; the committed live state is still reloaded, and
+  restart is safe whether the promoted journal reappears or remains removed.
+- Recovery accepts only the canonical transaction-directory basename derived
+  from the validated journal contract ID. Transaction, staged, backup, and
+  contract paths used for recovery must be direct non-symlink directories;
+  prefixed non-directory entries, unsupported/corrupt journals, unsafe or
+  mismatched contract directories, and path/file-type inspection failures fail
+  closed before mutation. A promoted journal without its committed live
+  contract also fails closed rather than restoring the pre-commit backup.
+- Candidate files and each relevant directory are synced before rename.
+  Pre-commit failures restore/reload the prior state; successful promotion and
+  all reported post-commit cleanup failures reload the live `StockpileDir`.
+- These boundaries compensate for the pinned `rgb-persist-fs` behavior that
+  creates or mutates contract persistence before `evaluate_commit` completes
+  and exposes no filesystem rollback transaction. Exact RGB RC pins remain
+  unchanged.
 - Descriptive metadata remains in an atomic JSON cache, but it is never used
   by `verify_transition` or the Active proof path.
 - The wallet-owned auth-token registry stores only strict-encoded seal
@@ -109,6 +136,10 @@ pub trait RgbAdapter {
 - `RGB_STASH_PATH` (a directory, not the old metadata file path) and
   `RGB_ESPLORA_URL` are optional in Disabled/Shadow, but
   must be configured together. Active mode with `rgb-native` requires both.
+- `RGB_STASH_PATH` is process-owned state and must not be shared by multiple
+  running gateway processes. Per-contract atomic transaction acquisition
+  prevents overlapping imports, but startup recovery assumes exclusive process
+  ownership while it resolves durable journals.
 - Simulation uses only the `contract:` HRI and is explicitly non-consensus.
 
 ## Boundary Behavior
@@ -142,8 +173,14 @@ pub trait RgbAdapter {
   mismatch, staged cleanup after a semantically invalid unknown-contract
   import, fresh-stash reload after cleanup, the pinned unknown-contract
   resolver boundary, Unix permission hardening, registry replay/overwrite,
-  unknown auth tokens, invalid signature policy, and corrupted persistence. A
-  complete signed RGB/Bitcoin regtest fixture is still required before treating
-  Active consignment import as a production rollout milestone.
+  unknown auth tokens, invalid signature policy, corrupted persistence, and the
+  existing-contract filesystem state machine (including interruption replay,
+  post-commit cleanup faults, and recovery path-identity rejection). The
+  generated/replayed consignment fixture proves those filesystem and pinned API
+  boundaries; it is not a real state-changing signed RGB transition or a
+  Bitcoin/RGB regtest harness. Both a production issuer-signature backend and a
+  complete independently reproducible signed transition/regtest fixture remain
+  required before treating Active consignment import as a production rollout
+  milestone.
 - The JSON cache remains for descriptive lookup compatibility and must not be
   interpreted as consensus evidence.
