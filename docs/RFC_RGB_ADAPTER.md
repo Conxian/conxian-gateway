@@ -201,6 +201,38 @@ pub trait RgbAdapter {
   load this file or expose a state-changing import endpoint.
 - Simulation uses only the `contract:` HRI and is explicitly non-consensus.
 
+## Opt-in Bitcoin Core regtest proof
+
+Run `bash tests/rgb/rgb_regtest_e2e.sh` to execute the dedicated test-only
+Bitcoin Core 31.1 lane. It creates a real regtest genesis UTXO and a
+`100 -> 40 receiver + 60 change` operation, derives the pinned MMB/MPC
+commitment before Bitcoin signing, embeds it through OP_RETURN, and has Bitcoin
+Core fund, sign, accept, broadcast and mine the exact witness. The receiver
+imports first the signed genesis and then the state-changing consignment through
+`Bip340IssuerPolicy`, asserts the receiver amount/operation/outpoint, and repeats
+the assertion after reopening the stash. Bad issuer signatures and wrong
+Bitcoin commitments must reject without state mutation across reopen.
+
+Bitcoin Core uses cookie authentication from the isolated ephemeral datadir;
+the cookie is read only to configure the Rust test RPC client and is never
+passed on a process command line or retained in artifacts. Generated wallets
+stay ephemeral, while consignments, stashes, sanitized daemon logs and
+`proof.json` remain under ignored `target/`. Before success or workflow upload,
+a fail-closed guard requires an owned, readable tree containing only regular
+files and directories, forbids `.cookie` entries, and distinguishes a clean
+scanner no-match from credential matches and scanner/I/O errors. Any match,
+unreadable entry, traversal failure, symlink, FIFO/device/socket or other
+unexpected object quarantines the complete run outside the upload tree and
+recreates only a sanitized failure marker. The exact secret stays in a protected
+temporary pattern file, is checked against both retained contents and relative
+artifact paths, and is never passed as a process argument or printed.
+`tests/rgb/test_rgb_artifact_guard.sh` covers clean, leak, unreadable,
+unexpected-object and scanner-error paths. The unreachable loopback Esplora
+constructor value is deliberate: this proof uses a witness-relative receiver
+seal, which is validated against the included Bitcoin transaction and does not
+trigger an Esplora query. This lane adds no runtime import exposure and does not
+change `RejectIssuerSignatures` as the default production policy.
+
 ## Boundary Behavior
 - A tracked Bitcoin transaction ID is not an RGB contract ID. The mempool
   orchestrator intentionally skips RGB lookup until a real contract-ID source

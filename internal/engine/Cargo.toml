@@ -52,7 +52,13 @@ rgb-native = [
 ]
 
 [dev-dependencies]
+amplify = "4.9.0"
 base64 = "0.22.1"
+
+[[test]]
+name = "rgb_regtest_transition"
+path = "tests/rgb_regtest_transition.rs"
+required-features = ["rgb-native"]
 
 [[test]]
 name = "groth16_boundary"
