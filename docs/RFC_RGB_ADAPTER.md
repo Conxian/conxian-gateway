@@ -201,6 +201,26 @@ pub trait RgbAdapter {
   load this file or expose a state-changing import endpoint.
 - Simulation uses only the `contract:` HRI and is explicitly non-consensus.
 
+## Opt-in Bitcoin Core regtest proof
+
+Run `bash tests/rgb/rgb_regtest_e2e.sh` to execute the dedicated test-only
+Bitcoin Core 31.1 lane. It creates a real regtest genesis UTXO and a
+`100 -> 40 receiver + 60 change` operation, derives the pinned MMB/MPC
+commitment before Bitcoin signing, embeds it through OP_RETURN, and has Bitcoin
+Core fund, sign, accept, broadcast and mine the exact witness. The receiver
+imports first the signed genesis and then the state-changing consignment through
+`Bip340IssuerPolicy`, asserts the receiver amount/operation/outpoint, and repeats
+the assertion after reopening the stash. Bad issuer signatures and wrong
+Bitcoin commitments must reject without state mutation across reopen.
+
+The generated wallet, RPC credentials, consignments, stashes, daemon logs and
+`proof.json` remain under ignored `target/` or an ephemeral temporary directory.
+The unreachable loopback Esplora constructor value is deliberate: this proof
+uses a witness-relative receiver seal, which is validated against the included
+Bitcoin transaction and does not trigger an Esplora query. This lane adds no
+runtime import exposure and does not change `RejectIssuerSignatures` as the
+default production policy.
+
 ## Boundary Behavior
 - A tracked Bitcoin transaction ID is not an RGB contract ID. The mempool
   orchestrator intentionally skips RGB lookup until a real contract-ID source
