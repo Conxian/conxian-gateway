@@ -48,6 +48,7 @@ fn setup_app(
         coordinator: None,
         shared: state,
         persistence: None,
+        bitcoin_core_shadow_observer: None,
         fiat,
         a2p,
         identity,

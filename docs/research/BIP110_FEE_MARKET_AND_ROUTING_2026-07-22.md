@@ -18,6 +18,43 @@
 > hypothesis. Gateway routing must therefore remain based on observed node,
 > mempool, block, and confirmation data rather than BIP-110 status alone.
 
+## Status refresh — 2026-07-25
+
+This refresh supplements the dated 2026-07-22 evidence below; it does not
+replace or rewrite those historical rows.
+
+- Gateway [PR #277](https://github.com/Conxian/conxian-gateway/pull/277)
+  merged the authenticated Gateway-tracked mempool telemetry slice at merge
+  commit `81d175540922b25192b683e95c9b48230c009454`. Gateway
+  [PR #279](https://github.com/Conxian/conxian-gateway/pull/279) merged the
+  persistence hardening follow-up at merge commit
+  `3a33f7537cea5482f81da5f11dca40ed2697c45e`.
+- The BIPs repository was rechecked at master commit
+  `b289d016b99c81527623c10e995e0318f744ebf3`; the inspected BIP-110 file blob
+  was `614736198798653006266821127a1f4c3ea1e482`. BIP-110 remains marked
+  `Complete`, which describes proposal-document status and is not proof of
+  activation or deployment.
+- Stock Bitcoin Core master was inspected at commit
+  `b33a7fcd7bd896da7175a28802bac9ca53fa238d`; the inspected deployment source
+  blob was `551982b23ae775a7bfd5ba3cccb8cebc8710bb06`. That source inspection did not
+  find a `REDUCED_DATA` deployment entry. This is source-scoped evidence only:
+  it is not a network-wide deployment observation and cannot establish future
+  Core behavior.
+- Bitcoin Core PRs #34929 and #34930 remain closed and unmerged. Their existence
+  cannot support a claim that BIP-110 is active, deployed, or enforced.
+- The next bounded Gateway slice is an explicitly opt-in, authenticated,
+  read-only observation of the configured Bitcoin Core endpoint. A trusted,
+  authenticated, self-operated endpoint is recommended. It reports
+  fixed-target fee estimates, aggregate mempool information, exact-best-block
+  aggregate statistics, numeric Core version, and exact-key deployment-source
+  exposure in shadow mode. Partial source failures remain visible and do not
+  become fee, routing, construction, signing, or broadcast decisions.
+
+The evidence still prohibits claims that BIP-110 activation has occurred, that
+inscriptions have been reduced, that blocks are “cleaner,” that BIP-110 caused
+fee benefits, or that any fee multiplier is justified. Historical calibration,
+outcome retention, route-confidence thresholds, and model changes remain open.
+
 ## 1. Scope and decision record
 
 This report answers a narrow question: what can the Gateway safely observe or
@@ -369,6 +406,21 @@ This preserves Gateway’s role as a routing and verification membrane: observe,
 measure, and route with evidence, without claiming consensus authority or taking
 custody.
 
+### 2026-07-25 roadmap checkpoint
+
+1. **Delivered:** PRs #277 and #279 provide authenticated, bounded
+   Gateway-tracked transaction telemetry and hardened same-process persistence.
+   This remains scoped to `gateway_tracked_transactions`, not the node or
+   Bitcoin network.
+2. **Current bounded slice:** add the opt-in configured-endpoint shadow API at
+   `GET /api/v1/bitcoin/core/shadow-observation`, using only aggregate,
+   read-only Core RPCs and source-scoped deployment exposure states.
+3. **Open:** retain historical node observations and confirmation outcomes with
+   version/policy segmentation sufficient for 30-day and 2016-block analysis.
+4. **Open:** calibrate route-confidence and fee-model acceptance thresholds.
+5. **Open:** review any model or routing change independently; no BIP-110 fee
+   multiplier or automatic route action is authorized.
+
 ## 10. Source ledger
 
 | Source | Access date | Version / commit / state | Use in this report |
@@ -392,3 +444,9 @@ custody.
 | https://github.com/Conxian/conxius-enclave-sdk/issues/202 | 2026-07-22 | Open | Independent security/release acceptance blocker |
 | https://github.com/Conxian/conxius-enclave-sdk/releases/tag/v2.0.11 | 2026-07-22 | Release `v2.0.11`; tag commit `d3e9a6a26da1bd4c15e612ce7051a0bfdf640a83` | Latest verified release target |
 | https://github.com/Conxian/conxian-gateway/issues/245 | 2026-07-22 | Open; current issue request | Gateway scope and downstream ownership |
+| https://github.com/bitcoin/bips/tree/b289d016b99c81527623c10e995e0318f744ebf3 | 2026-07-25 | BIPs master commit `b289d016b99c81527623c10e995e0318f744ebf3`; BIP-110 blob `614736198798653006266821127a1f4c3ea1e482` remains `Complete` | Refreshes proposal-document status without inferring activation or deployment |
+| https://github.com/bitcoin/bitcoin/tree/b33a7fcd7bd896da7175a28802bac9ca53fa238d | 2026-07-25 | Core master commit `b33a7fcd7bd896da7175a28802bac9ca53fa238d`; deployment source blob `551982b23ae775a7bfd5ba3cccb8cebc8710bb06`; no `REDUCED_DATA` entry found in the inspected source | Source-scoped implementation evidence only; not network-wide deployment evidence |
+| https://github.com/bitcoin/bitcoin/pull/34929 | 2026-07-25 | Closed and unmerged | Refreshes versionbits proposal state; no activation evidence |
+| https://github.com/bitcoin/bitcoin/pull/34930 | 2026-07-25 | Closed and unmerged | Refreshes ReducedData implementation proposal state; no activation evidence |
+| https://github.com/Conxian/conxian-gateway/pull/277 | 2026-07-25 | Merged; merge commit `81d175540922b25192b683e95c9b48230c009454` | Gateway-tracked telemetry delivered; not node/network mempool truth |
+| https://github.com/Conxian/conxian-gateway/pull/279 | 2026-07-25 | Merged; merge commit `3a33f7537cea5482f81da5f11dca40ed2697c45e` | Same-process persistence hardening delivered; not historical calibration or CAS |
