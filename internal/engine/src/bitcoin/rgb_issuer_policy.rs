@@ -1,8 +1,10 @@
 use std::collections::BTreeMap;
-use std::fs::{File, OpenOptions};
-use std::io::Read;
 use std::path::Path;
 
+#[cfg(unix)]
+use std::fs::{File, OpenOptions};
+#[cfg(unix)]
+use std::io::Read;
 #[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
 
@@ -17,6 +19,8 @@ const BIP340_ALGORITHM: &str = "bip340-secp256k1";
 const BIP340_PUBLIC_KEY_BYTES: usize = 32;
 const BIP340_SIGNATURE_BYTES: usize = 64;
 const CALLBACK_MESSAGE_BYTES: usize = 32;
+const MAX_IDENTITY_BYTES: usize = 4096;
+#[cfg(unix)]
 const MAX_POLICY_FILE_BYTES: u64 = 64 * 1024;
 
 /// A versioned, fail-closed allowlist for RGB issuer signatures.
@@ -40,6 +44,8 @@ pub enum IssuerPolicyError {
     EmptyIssuerList,
     #[error("RGB issuer identity must not be empty")]
     EmptyIdentity,
+    #[error("RGB issuer identity exceeds the 4096-byte Identity limit: {0} bytes")]
+    IdentityTooLong(usize),
     #[error("RGB issuer identity must contain printable ASCII only")]
     InvalidIdentity,
     #[error("duplicate RGB issuer identity: {0}")]
@@ -58,6 +64,10 @@ pub enum IssuerPolicyError {
     FileOpen,
     #[error("failed to read RGB issuer policy file")]
     FileRead,
+    #[error(
+        "RGB issuer policy file loading is unsupported on non-Unix platforms until a handle-level no-follow implementation exists"
+    )]
+    UnsupportedFileLoaderPlatform,
 }
 
 #[derive(Debug, Deserialize)]
@@ -116,24 +126,37 @@ impl Bip340IssuerPolicy {
         Self::from_json_bytes(json.as_bytes())
     }
 
-    /// Loads a bounded policy from a regular file without following symlinks on
-    /// Unix. Other platforms reject paths identified as symlinks before open.
+    /// Loads a bounded policy from a regular file without following symlinks.
+    ///
+    /// This loader is supported only on Unix, where it opens with
+    /// `O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC` and validates the opened file
+    /// descriptor. Non-Unix platforms fail closed until an equivalent
+    /// handle-level no-follow implementation exists.
     pub fn load_json_file(path: impl AsRef<Path>) -> Result<Self, IssuerPolicyError> {
-        let path = path.as_ref();
-        let path_metadata =
-            std::fs::symlink_metadata(path).map_err(|_| IssuerPolicyError::FileMetadata)?;
-        if path_metadata.file_type().is_symlink() || !path_metadata.is_file() {
-            return Err(IssuerPolicyError::NotRegularFile);
+        #[cfg(not(unix))]
+        {
+            let _ = path;
+            Err(IssuerPolicyError::UnsupportedFileLoaderPlatform)
         }
 
-        let mut options = OpenOptions::new();
-        options.read(true);
         #[cfg(unix)]
-        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC);
-        let file = options
-            .open(path)
-            .map_err(|_| IssuerPolicyError::FileOpen)?;
-        read_policy_file(file)
+        {
+            let path = path.as_ref();
+            let path_metadata =
+                std::fs::symlink_metadata(path).map_err(|_| IssuerPolicyError::FileMetadata)?;
+            if path_metadata.file_type().is_symlink() || !path_metadata.is_file() {
+                return Err(IssuerPolicyError::NotRegularFile);
+            }
+
+            let mut options = OpenOptions::new();
+            options
+                .read(true)
+                .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC);
+            let file = options
+                .open(path)
+                .map_err(|_| IssuerPolicyError::FileOpen)?;
+            read_policy_file(file)
+        }
     }
 }
 
@@ -163,6 +186,9 @@ fn validate_identity(identity: &str) -> Result<(), IssuerPolicyError> {
     if identity.is_empty() {
         return Err(IssuerPolicyError::EmptyIdentity);
     }
+    if identity.len() > MAX_IDENTITY_BYTES {
+        return Err(IssuerPolicyError::IdentityTooLong(identity.len()));
+    }
     if !identity.bytes().all(|byte| (0x20..=0x7e).contains(&byte)) {
         return Err(IssuerPolicyError::InvalidIdentity);
     }
@@ -177,6 +203,7 @@ fn decode_public_key(value: &str) -> Option<[u8; BIP340_PUBLIC_KEY_BYTES]> {
     bytes.try_into().ok()
 }
 
+#[cfg(unix)]
 fn read_policy_file(file: File) -> Result<Bip340IssuerPolicy, IssuerPolicyError> {
     let metadata = file
         .metadata()
@@ -200,8 +227,11 @@ fn read_policy_file(file: File) -> Result<Bip340IssuerPolicy, IssuerPolicyError>
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
     use std::fs;
+    #[cfg(unix)]
     use std::path::PathBuf;
+    #[cfg(unix)]
     use std::sync::atomic::{AtomicU64, Ordering};
 
     #[cfg(unix)]
@@ -216,6 +246,7 @@ mod tests {
     use crate::bitcoin::rgb_stash::RejectIssuerSignatures;
 
     const IDENTITY: &str = "did:example:conxian-rgb-issuer";
+    #[cfg(unix)]
     static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(0);
 
     fn fixture() -> (Bip340IssuerPolicy, Secp256k1<secp256k1::All>, Keypair) {
@@ -248,6 +279,7 @@ mod tests {
         )
     }
 
+    #[cfg(unix)]
     fn temp_path(name: &str) -> PathBuf {
         std::env::temp_dir().join(format!(
             "conxian-rgb-policy-{name}-{}-{}",
@@ -388,6 +420,32 @@ mod tests {
     }
 
     #[test]
+    fn parser_enforces_pinned_identity_length_limit() {
+        let (_, _, keypair) = fixture();
+        let (key, _) = XOnlyPublicKey::from_keypair(&keypair);
+        let key = hex::encode(key.serialize());
+        let maximum_identity = "A".repeat(MAX_IDENTITY_BYTES);
+        let oversized_identity = "A".repeat(MAX_IDENTITY_BYTES + 1);
+
+        assert!(Bip340IssuerPolicy::from_json_str(&policy_json(
+            &maximum_identity,
+            BIP340_ALGORITHM,
+            &key,
+        ))
+        .is_ok());
+        assert!(matches!(
+            Bip340IssuerPolicy::from_json_str(&policy_json(
+                &oversized_identity,
+                BIP340_ALGORITHM,
+                &key,
+            )),
+            Err(IssuerPolicyError::IdentityTooLong(length))
+                if length == MAX_IDENTITY_BYTES + 1
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn file_loader_accepts_regular_bounded_policy_and_rejects_oversized_file() {
         let (policy, _, _) = fixture();
         assert!(policy.issuers.contains_key(IDENTITY));
@@ -406,6 +464,15 @@ mod tests {
             Err(IssuerPolicyError::FileTooLarge)
         ));
         fs::remove_file(path).unwrap();
+    }
+
+    #[cfg(not(unix))]
+    #[test]
+    fn file_loader_fails_closed_as_unsupported() {
+        assert!(matches!(
+            Bip340IssuerPolicy::load_json_file("rgb-issuers.json"),
+            Err(IssuerPolicyError::UnsupportedFileLoaderPlatform)
+        ));
     }
 
     #[cfg(unix)]

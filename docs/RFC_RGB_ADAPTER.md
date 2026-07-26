@@ -168,10 +168,12 @@ pub trait RgbAdapter {
 - Per-contract atomic transaction acquisition remains defense in depth for
   overlapping imports; it does not replace process-lifetime stash ownership.
 - Issuer policy loading is a library operation, not an environment variable or
-  public HTTP import endpoint. `Bip340IssuerPolicy::load_json_file` reads at
-  most 64 KiB, rejects non-regular files and paths identified as symlinks, and
-  uses no-follow, non-blocking, close-on-exec open semantics on Unix before
-  checking the opened descriptor is regular. A controlled caller can opt in:
+  public HTTP import endpoint. On Unix, `Bip340IssuerPolicy::load_json_file`
+  reads at most 64 KiB, rejects non-regular files and paths identified as
+  symlinks, and uses no-follow, non-blocking, close-on-exec open semantics
+  before checking the opened descriptor is regular. Non-Unix file loading
+  fails closed as unsupported until an equivalent handle-level no-follow
+  implementation exists. A controlled Unix caller can opt in:
 
   ```rust
   let policy = Bip340IssuerPolicy::load_json_file("/etc/conxian/rgb-issuers.json")?;

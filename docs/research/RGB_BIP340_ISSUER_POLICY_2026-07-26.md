@@ -4,7 +4,8 @@
 
 Conxian defines one explicit, opt-in RGB issuer signature profile:
 
-- match the RGB `Identity` as an exact, case-sensitive printable-ASCII string;
+- match the RGB `Identity` as an exact, case-sensitive printable-ASCII string
+  of `1..=4096` bytes;
 - resolve it only through a versioned public-key allowlist;
 - require algorithm name `bip340-secp256k1`;
 - interpret `SigBlob` as exactly the raw 64-byte BIP340 signature;
@@ -72,11 +73,16 @@ documents, merge policies, or hot-reload. Deployments that later add runtime
 wiring must define atomic configuration rollout, audit provenance, rollback,
 and restart behavior without weakening the default reject policy.
 
+The bounded policy-file loader is Unix-only. It fails closed on non-Unix
+platforms until a reviewed handle-level no-follow implementation can provide
+equivalent protection against path replacement and special-file inputs.
+
 ## Remaining evidence gap
 
-Unit tests prove exact identity/key/message binding, malformed-input rejection,
-strict policy parsing, bounded regular-file loading, and no second hash. They do
-not replace a complete independently reproducible Bitcoin/RGB regtest fixture
-that creates and imports a real state-changing signed transition. That fixture,
-plus an approved controlled import call site, remains required before claiming
-production Active-mode issuer import.
+Unit tests prove exact identity/key/message binding, the pinned `Identity`
+length boundary, malformed-input rejection, strict policy parsing, bounded Unix
+regular-file loading, and no second hash. They do not replace a complete
+independently reproducible Bitcoin/RGB regtest fixture that creates and imports
+a real state-changing signed transition. That fixture, plus an approved
+controlled import call site, remains required before claiming production
+Active-mode issuer import.
