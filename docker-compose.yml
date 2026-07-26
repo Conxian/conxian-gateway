@@ -10,10 +10,14 @@ services:
     environment:
       - API_TOKEN=${SOVEREIGN_API_TOKEN:-local-dev-token}
       - BITCOIN_RPC_URL=${BITCOIN_RPC_URL:-https://bitcoin-rpc.publicnode.com}
+      - BITCOIN_CORE_SHADOW_OBSERVATION_ENABLED=${BITCOIN_CORE_SHADOW_OBSERVATION_ENABLED:-false}
       - BABYLON_API_URL=${BABYLON_API_URL:-}
       - STACKS_RPC_URL=${STACKS_RPC_URL:-https://api.mainnet.hiro.so}
       - FIAT_WEBHOOK_SECRET=${FIAT_WEBHOOK_SECRET:-sentinel_fiat_secret}
       - SETTLEMENT_INGRESS_SECRET=${SETTLEMENT_INGRESS_SECRET:-sentinel_ingress_secret}
+      - GATEWAY_STATE_PATH=/usr/app/gateway_state.json
+      - GATEWAY_PERSISTENCE_MODE=exclusive-local-writer
+      - GATEWAY_ALLOW_UNKNOWN_STATE_FILESYSTEM=false
     ports:
       - "3000:3000"
     volumes:
@@ -29,10 +33,14 @@ services:
     environment:
       - API_TOKEN=${BUSINESS_API_TOKEN:-business-dev-token}
       - BITCOIN_RPC_URL=${BITCOIN_RPC_URL}
+      - BITCOIN_CORE_SHADOW_OBSERVATION_ENABLED=${BITCOIN_CORE_SHADOW_OBSERVATION_ENABLED:-false}
       - BABYLON_API_URL=${BABYLON_API_URL:-}
       - STACKS_RPC_URL=${STACKS_RPC_URL}
       - FIAT_WEBHOOK_SECRET=${FIAT_WEBHOOK_SECRET}
       - SETTLEMENT_INGRESS_SECRET=${SETTLEMENT_INGRESS_SECRET}
+      - GATEWAY_STATE_PATH=/usr/app/gateway_state.json
+      - GATEWAY_PERSISTENCE_MODE=exclusive-local-writer
+      - GATEWAY_ALLOW_UNKNOWN_STATE_FILESYSTEM=false
       - RUST_LOG=debug
     ports:
       - "3001:3000"
@@ -49,18 +57,24 @@ services:
     environment:
       - API_TOKEN=${ENTERPRISE_API_TOKEN:-enterprise-dev-token}
       - BITCOIN_RPC_URL=${BITCOIN_RPC_URL}
+      - BITCOIN_CORE_SHADOW_OBSERVATION_ENABLED=${BITCOIN_CORE_SHADOW_OBSERVATION_ENABLED:-false}
       - BABYLON_API_URL=${BABYLON_API_URL:-}
       - STACKS_RPC_URL=${STACKS_RPC_URL}
       - FIAT_WEBHOOK_SECRET=${FIAT_WEBHOOK_SECRET}
       - SETTLEMENT_INGRESS_SECRET=${SETTLEMENT_INGRESS_SECRET}
       - ALEX_API_URL=${ALEX_API_URL:-https://api.alexlab.co}
       - ALEX_HELPER_PRINCIPAL=${ALEX_HELPER_PRINCIPAL:-}
+      - GATEWAY_STATE_PATH=/usr/app/gateway_state.json
+      - GATEWAY_PERSISTENCE_MODE=exclusive-local-writer
+      - GATEWAY_ALLOW_UNKNOWN_STATE_FILESYSTEM=false
     ports:
       - "3002:3000"
     volumes:
       - enterprise_data:/usr/app
     deploy:
-      replicas: 2
+      # File persistence supports one Gateway owner for each state path.
+      # Horizontal replicas require a distributed persistence backend.
+      replicas: 1
     restart: unless-stopped
 
 volumes:

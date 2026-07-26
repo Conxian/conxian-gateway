@@ -22,6 +22,10 @@ The Conxian Gateway provides a single API layer for indexing, verifying, and orc
 3. **Production**: Deploy the gateway behind your own institutional security perimeter using the provided [Docker Compose](docker-compose.yml) baseline.
 4. **Expansion**: Add custom chain adapters or compliance rules using the [`ChainAdapter`](pkg/conxian-core/src/lib.rs) trait.
 
+Before production deployment, review the supported single-writer topology,
+crash recovery, backup, mempool reconciliation, and shutdown procedures in
+[`docs/PERSISTENCE_TOPOLOGY.md`](docs/PERSISTENCE_TOPOLOGY.md).
+
 ## Core Capabilities
 - **Universal Verification (UCV-1)**: Unified interface for heterogeneous proofs (BitVM, ZKC, TEE).
 - **Institutional Egress**: ISO 20022 (pacs.008) banking-standard messaging.

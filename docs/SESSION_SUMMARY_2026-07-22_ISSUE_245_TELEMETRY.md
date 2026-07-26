@@ -48,7 +48,7 @@ repository verification protocol has completed.
   - Wire the existing persistence backend into `AppState` without changing the
     orchestrator or listener decisions. Lightweight test harnesses may leave
     the backend unconfigured; production wiring supplies `FilePersistence`.
-- `cmd/gateway/src/persistence.rs`
+- **Historical state as of July 22, 2026:** `cmd/gateway/src/persistence.rs`
   - `FilePersistence` now serializes in-process `load()`/`save()` calls through
     a backend-owned mutex, writes each save to a unique temporary file in the
     state-file directory, flushes and syncs that file, atomically renames it
@@ -65,11 +65,12 @@ repository verification protocol has completed.
     samples, and omission of transaction IDs, aggregate zeros, and free-form
     backend errors.
 
-The persistence hardening is intentionally bounded: the mutex coordinates
+The July 22 persistence hardening was intentionally bounded: the mutex coordinates
 calls sharing the same `FilePersistence` instance within one process, and the
 rename provides atomic replacement of the state path on the supported Unix
 deployment. It is not a multi-process writer-coordination layer and does not
 make a caller's separate `load` → modify → `save` sequence transactional.
+Current CON-1548 guarantees are documented in `docs/PERSISTENCE_TOPOLOGY.md`.
 - Documentation updated:
   - `docs/research/BIP110_FEE_MARKET_AND_ROUTING_2026-07-22.md`
   - `docs/GAP_ANALYSIS_2026-07-22.md`
@@ -136,11 +137,12 @@ part of this bounded follow-up.
 - The endpoint is unavailable if production persistence is not configured or
   cannot be loaded; the metrics surface exposes availability rather than
   fabricating aggregate zeros.
-- `FilePersistence` protects only same-process calls through the shared
+- **Historical July 22 limitation:** `FilePersistence` protected only same-process calls through the shared
   backend; separate processes can still race, and load-modify-save sequences
   can still lose updates because the `Persistence` trait remains unchanged.
 - Before merge, re-check the final PR checks and retain the explicit
   single-process/non-transactional persistence limits above.
+  The replacement CON-1548 boundary is documented in `docs/PERSISTENCE_TOPOLOGY.md`.
 
 ## Next-session commands
 

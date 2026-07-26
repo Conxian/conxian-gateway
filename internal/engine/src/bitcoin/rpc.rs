@@ -28,7 +28,7 @@ pub trait BitcoinRpc: Send + Sync {
 }
 
 pub struct BitcoinRpcClient {
-    client: Arc<Client>,
+    pub(super) client: Arc<Client>,
 }
 
 impl BitcoinRpcClient {

@@ -1,5 +1,13 @@
 # Conxian Gateway Gap Analysis — 2026-07-22
 
+> **2026-07-25 branch update:** CON-1548 / GitHub #281 phase 2 is implemented
+> on `charlie/con-1548-transactional-persistence` but is not yet pushed or
+> merged. The branch removes non-transactional production state writes, adds
+> listener CAS retries and mempool claim leases, hardens envelope/path
+> validation, and adds local subprocess lock/CAS tests. The gap remains open
+> until review and merge; distributed filesystems and exactly-once fee-bump
+> broadcasts remain explicitly unsupported.
+
 **Scope:** Current Gateway issue inventory, implementation evidence, research
 boundaries, and next acceptance slices for the six issues that were open at the
 2026-07-22 Phase 2 audit checkpoint.
@@ -256,7 +264,7 @@ multiplier or fee-model rewrite is justified by the current evidence.
 - `/metrics` exposes the same useful aggregates with bounded names and only
   closed status/strategy labels. It emits no txids, addresses, node IDs, route
   IDs, or free-form errors.
-- `FilePersistence` now serializes same-process reads and writes through the
+- **Historical state as of July 22, 2026:** `FilePersistence` serialized same-process reads and writes through the
   shared backend, uses durable temporary-file plus atomic-rename replacement,
   and cleans up failed temporary writes. The async telemetry handlers offload
   blocking loads with `spawn_blocking`; route tests cover stable 503 failures
@@ -265,10 +273,12 @@ multiplier or fee-model rewrite is justified by the current evidence.
   honesty, capability totals, last-updated derivation, deterministic serde, no
   mutation, bounded metric rendering, and authenticated route behavior.
 
-This persistence boundary is deliberately limited to same-process calls on a
+That July 22 persistence boundary was deliberately limited to same-process calls on a
 shared `FilePersistence` instance (with atomic replacement on the supported
 Unix deployment). It is not a multi-process transaction layer and does not
 make separate load-modify-save sequences transactional.
+
+Current CON-1548 guarantees are documented in `docs/PERSISTENCE_TOPOLOGY.md`.
 
 This slice does **not** provide a Bitcoin Core or network mempool view, BIP-110
 validation or deployment detection, `estimatesmartfee` passthrough, block or
@@ -487,3 +497,33 @@ environment reviewers, tag restrictions, required-check administration, Cargo
 registry secrets, external CodeQL/GitGuardian/dependency-review results, or a
 live release rehearsal are configured. Those controls must be verified by
 repository administrators or a controlled release owner after merge.
+
+## Post-snapshot #245 note — 2026-07-25
+
+This note supplements the historical 2026-07-22 analysis above without
+rewriting its issue states, rankings, branch references, or evidence rows.
+
+- Gateway PR #277 and PR #279 are merged. They delivered bounded,
+  authenticated telemetry for Gateway-tracked transactions and hardened its
+  same-process persistence boundary; they did not add a node/network mempool
+  view, fee predictor, or BIP-110 deployment verdict.
+- The next accepted #245 slice is an explicitly opt-in, authenticated,
+  read-only `GET /api/v1/bitcoin/core/shadow-observation` endpoint scoped to
+  the configured Bitcoin Core endpoint. A trusted, authenticated,
+  self-operated endpoint is recommended. Its fixed-target fee estimates,
+  aggregate mempool data, exact-best-block aggregate statistics, numeric Core
+  version, and exact-key deployment exposure are shadow observations only.
+- The observer remains separate from `BitcoinRpc`, fee-bump policy, the mempool
+  orchestrator, routing, construction, signing, and broadcast. Partial RPC
+  failures remain section-scoped; no raw Core errors, credentials, transaction
+  identifiers, addresses, peer details, or Prometheus metrics are exposed.
+- The 2026-07-25 evidence refresh pins BIPs master
+  `b289d016b99c81527623c10e995e0318f744ebf3`, BIP-110 blob
+  `614736198798653006266821127a1f4c3ea1e482`, Core master
+  `b33a7fcd7bd896da7175a28802bac9ca53fa238d`, and Core deployment source blob
+  `551982b23ae775a7bfd5ba3cccb8cebc8710bb06`. Core PRs #34929/#34930 remain
+  closed and unmerged; inspected stock Core source lacks `REDUCED_DATA`.
+- Issue #245 remains open. Historical calibration, version/policy-segmented
+  outcome retention, route-confidence thresholds, and any independently
+  reviewed model change remain future gates. No activation, reduced-inscription,
+  cleaner-block, causal-fee-benefit, or fee-multiplier claim is authorized.

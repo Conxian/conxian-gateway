@@ -1,9 +1,10 @@
+use crate::shutdown::sleep_or_shutdown;
 use conxian_core::{
     evaluate_trust_metadata_json, ConxianResult, SharedState, TrustPolicyDecision,
     TrustPolicyReasonCode,
 };
 use std::time::Duration;
-use tokio::time::sleep;
+use tokio::sync::watch;
 use tracing::{info, warn};
 
 const NTT_TRUST_METADATA_ENV: &str = "CONXIAN_NTT_TRUST_METADATA";
@@ -21,14 +22,22 @@ impl NttRelayer {
         }
     }
 
-    pub async fn run(&self) -> ConxianResult<()> {
+    /// NTT currently owns no Gateway persistence checkpoint, so transient
+    /// upstream processing errors remain retryable while shutdown is observed
+    /// between complete event-processing passes.
+    pub async fn run_until_shutdown(
+        &self,
+        mut shutdown: watch::Receiver<bool>,
+    ) -> ConxianResult<()> {
         info!("Starting NTT Relayer for sovereign bridging...");
 
         loop {
             if let Err(e) = self.process_ntt_events().await {
                 warn!("Error processing NTT events: {}", e);
             }
-            sleep(Duration::from_secs(self.poll_interval)).await;
+            if sleep_or_shutdown(&mut shutdown, Duration::from_secs(self.poll_interval)).await {
+                return Ok(());
+            }
         }
     }
 

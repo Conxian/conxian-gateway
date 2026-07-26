@@ -143,6 +143,7 @@ fn make_test_state(lightning: Arc<LightningAdapter>) -> AppState {
         coordinator: None,
         shared: state,
         persistence: None,
+        bitcoin_core_shadow_observer: None,
         fiat,
         a2p,
         identity,

@@ -2,11 +2,20 @@ pub mod fee_bump_policy;
 pub mod listener;
 pub mod mempool_orchestrator;
 pub mod rpc;
+pub mod shadow_observation;
 
 pub use fee_bump_policy::FeeBumpPolicyConfig;
 pub use listener::BitcoinListener;
 pub use mempool_orchestrator::MempoolOrchestrator;
 pub use rpc::{BitcoinRpc, BitcoinRpcClient};
+pub use shadow_observation::{
+    BitcoinCoreShadowObservation, BitcoinCoreShadowObserver, BitcoinCoreShadowObserverClient,
+    CoreBestBlockStats, CoreBlockchainInfo, CoreMempoolInfo, CoreNetworkInfo, DeploymentAlias,
+    DeploymentObservation, DeploymentObservationStatus, DeploymentReportedState,
+    DeploymentSourceScope, FeeEstimateAvailability, FeeEstimateObservation, FeeRateUnit,
+    ObservationAvailability, ObservationErrorCategory, ShadowObserverFailure, SourceObservation,
+    SHADOW_FEE_TARGETS,
+};
 pub mod rgb_adapter;
 pub use rgb_adapter::NodeRgbAdapter;
 pub mod liquid_adapter;
