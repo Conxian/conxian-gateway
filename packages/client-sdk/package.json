@@ -1,6 +1,7 @@
 {
   "name": "@conxian/client-sdk",
   "version": "0.1.4",
+  "license": "MIT",
   "private": true,
   "description": "Internal API client helpers for Conxian Gateway",
   "main": "dist/index.js",

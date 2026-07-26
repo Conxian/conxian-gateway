@@ -1,6 +1,7 @@
 {
   "name": "@conxian/schemas",
   "version": "0.1.0",
+  "license": "MIT",
   "private": true,
   "description": "Shared domain schemas for Conxian BOS",
   "main": "dist/index.js",
