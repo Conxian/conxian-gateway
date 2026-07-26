@@ -152,6 +152,9 @@ fn make_test_state(lightning: Arc<LightningAdapter>) -> AppState {
             compliance as Arc<dyn conxian_compliance::CoreVerifier>,
             multi_chain.clone(),
         )),
+        alex_preparer: Arc::new(
+            conxian_engine::stacks::alex::AlexPreparationService::disabled(alex.clone()),
+        ),
         alex,
         multi_chain,
         lightning,

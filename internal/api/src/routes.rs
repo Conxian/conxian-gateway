@@ -88,6 +88,7 @@ pub fn configure_routes(
             get(handlers::get_external_settlements),
         )
         .route("/alex/quote", get(handlers::get_alex_quote))
+        .route("/alex/prepare", post(handlers::prepare_alex_swap))
         .route("/alex/swap", post(handlers::execute_alex_swap))
         .route(
             "/bounties/payouts/toggle",

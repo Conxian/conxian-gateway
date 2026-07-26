@@ -54,6 +54,9 @@ fn setup_app(
         identity,
         compliance,
         verifier,
+        alex_preparer: Arc::new(
+            conxian_engine::stacks::alex::AlexPreparationService::disabled(alex.clone()),
+        ),
         alex,
         multi_chain,
         lightning: new_lightning_adapter(),

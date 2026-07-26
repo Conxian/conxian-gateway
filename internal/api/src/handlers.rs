@@ -16,6 +16,7 @@ use conxian_core::{
     TrustPolicyDecision,
 };
 use http_body_util::BodyExt;
+use serde::Deserialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
@@ -644,23 +645,39 @@ pub async fn get_external_settlements(
     Json(log.iter().cloned().collect())
 }
 
+#[derive(Debug, Deserialize)]
+pub struct AlexQuoteQuery {
+    token_x: String,
+    token_y: String,
+    amount: String,
+}
+
 pub async fn get_alex_quote(
     State(state): State<AppState>,
-    Query(params): Query<Value>,
+    Query(params): Query<AlexQuoteQuery>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    let token_x = params["token_x"].as_str().unwrap_or("sBTC");
-    let token_y = params["token_y"].as_str().unwrap_or("STX");
-    let amount_str = params["amount"].as_str().unwrap_or("0");
-    let amount = amount_str.parse::<u128>().map_err(|_| {
+    let amount = params.amount.parse::<u128>().map_err(|_| {
         (
             StatusCode::BAD_REQUEST,
-            Json(json!({ "error": "Invalid amount format" })),
+            Json(json!({
+                "code": "ALEX_QUOTE_INVALID_REQUEST",
+                "error": "amount must be a nonzero unsigned integer"
+            })),
         )
     })?;
+    if params.token_x.trim().is_empty() || params.token_y.trim().is_empty() || amount == 0 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "code": "ALEX_QUOTE_INVALID_REQUEST",
+                "error": "token_x, token_y, and a nonzero amount are required"
+            })),
+        ));
+    }
 
     let req = conxian_core::AlexSwapRequest {
-        token_x: token_x.to_string(),
-        token_y: token_y.to_string(),
+        token_x: params.token_x,
+        token_y: params.token_y,
         factor: 100_000_000,
         amount,
         min_dy: None,
@@ -671,37 +688,101 @@ pub async fn get_alex_quote(
             "quote": observation.amount_out.to_string(),
             "source": observation.source,
             "status": observation.status,
-            "endpoint": observation.endpoint
+            "endpoint": observation.endpoint,
+            "execution_eligible": false,
+            "warning": "read-only unverified compatibility quote"
         }))),
-        Err(e) => Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
+        Err(_) => Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({
+                "code": "ALEX_QUOTE_UNAVAILABLE",
+                "error": "ALEX read-only quote is unavailable"
+            })),
         )),
     }
 }
 
-pub async fn execute_alex_swap(
+pub async fn prepare_alex_swap(
     headers: HeaderMap,
     State(state): State<AppState>,
     Json(payload): Json<conxian_core::AlexSwapRequest>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    let _ = parse_gateway_x402_payload(&headers).map_err(|e: crate::x402::X402ParseError| {
+    let _ = parse_gateway_x402_payload(&headers).map_err(|error| {
         (
-            e.status_code(),
-            Json(json!({ "error": e.message(), "code": e.code() })),
+            error.status_code(),
+            Json(json!({ "error": error.message(), "code": error.code() })),
         )
     })?;
 
-    match state.alex.build_swap_payload(payload).await {
+    match state.alex_preparer.prepare(payload, now_unix()).await {
         Ok(prepared) => Ok(Json(json!({
-            "status": "prepared",
-            "payload": prepared
+            "status": "unsigned_prepared",
+            "intent": prepared.intent,
+            "payload": prepared.payload,
+            "signing": "disabled",
+            "broadcast": "disabled"
         }))),
-        Err(e) => Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
-        )),
+        Err(error) => {
+            use conxian_engine::stacks::alex::AlexPrepareError;
+            let (status, code, message) = match error {
+                AlexPrepareError::ManifestUnavailable => (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "ALEX_MANIFEST_UNAVAILABLE",
+                    "ALEX prepare is disabled because no verified venue manifest is loaded",
+                ),
+                AlexPrepareError::ManifestInvalid => (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "ALEX_MANIFEST_INVALID_OR_STALE",
+                    "ALEX prepare is disabled because venue evidence is invalid or stale",
+                ),
+                AlexPrepareError::EvidenceUnavailable => (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "ALEX_EVIDENCE_UNAVAILABLE",
+                    "ALEX prepare is disabled because quote evidence is unavailable or stale",
+                ),
+                AlexPrepareError::VerificationRequired => (
+                    StatusCode::CONFLICT,
+                    "ALEX_VERIFICATION_REQUIRED",
+                    "ALEX quote or exposure evidence is unverified; shadow observation only",
+                ),
+                AlexPrepareError::PolicyRejected(_) => (
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "ALEX_POLICY_REJECTED",
+                    "ALEX settlement policy rejected the request",
+                ),
+                AlexPrepareError::InvalidAmount => (
+                    StatusCode::BAD_REQUEST,
+                    "ALEX_INVALID_AMOUNT",
+                    "amount must be nonzero",
+                ),
+                AlexPrepareError::InvalidMinimumOutput => (
+                    StatusCode::BAD_REQUEST,
+                    "ALEX_INVALID_MIN_DY",
+                    "min_dy must be present and nonzero",
+                ),
+                AlexPrepareError::PayloadConstruction => (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "ALEX_PREPARATION_UNAVAILABLE",
+                    "ALEX unsigned preparation is unavailable",
+                ),
+            };
+            Err((status, Json(json!({ "code": code, "error": message }))))
+        }
     }
+}
+
+pub async fn execute_alex_swap(
+    _headers: HeaderMap,
+    State(_state): State<AppState>,
+    Json(_payload): Json<conxian_core::AlexSwapRequest>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    Err((
+        StatusCode::CONFLICT,
+        Json(json!({
+            "code": "ALEX_EXECUTION_DISABLED",
+            "error": "ALEX execution is disabled; use /api/v1/alex/prepare for the policy-gated unsigned boundary"
+        })),
+    ))
 }
 
 pub async fn toggle_bounty_payouts(
