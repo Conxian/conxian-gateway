@@ -24,8 +24,8 @@ source "${SCRIPT_DIR}/rgb_artifact_guard.sh"
 
 BITCOIND_PID=""
 ARTIFACT_DIR=""
-RPC_USER=""
-RPC_PASSWORD=""
+COOKIE_ACCOUNT=""
+COOKIE_VALUE=""
 ARTIFACTS_FINALIZED=0
 ARTIFACT_GUARD_FAILED=0
 
@@ -43,13 +43,13 @@ stop_bitcoind() {
 }
 
 load_cookie_credentials() {
-    local cookie=""
+    local cookie_line=""
     [[ -f "$COOKIE_FILE" && ! -L "$COOKIE_FILE" ]] || return 1
-    IFS= read -r cookie <"$COOKIE_FILE" || [[ -n "$cookie" ]] || return 1
-    [[ "$cookie" == *:* ]] || return 1
-    RPC_USER="${cookie%%:*}"
-    RPC_PASSWORD="${cookie#*:}"
-    [[ -n "$RPC_USER" && -n "$RPC_PASSWORD" ]]
+    IFS= read -r cookie_line <"$COOKIE_FILE" || [[ -n "$cookie_line" ]] || return 1
+    [[ "$cookie_line" == *:* ]] || return 1
+    COOKIE_ACCOUNT="${cookie_line%%:*}"
+    COOKIE_VALUE="${cookie_line#*:}"
+    [[ -n "$COOKIE_ACCOUNT" && -n "$COOKIE_VALUE" ]]
 }
 
 contain_artifact_failure() {
@@ -77,14 +77,14 @@ finalize_artifacts() {
         ARTIFACT_GUARD_FAILED=1
         status=1
     fi
-    if [[ "$ARTIFACT_GUARD_FAILED" -eq 0 && -z "$RPC_PASSWORD" && ( -e "$COOKIE_FILE" || -L "$COOKIE_FILE" ) ]]; then
+    if [[ "$ARTIFACT_GUARD_FAILED" -eq 0 && -z "$COOKIE_VALUE" && ( -e "$COOKIE_FILE" || -L "$COOKIE_FILE" ) ]]; then
         if ! load_cookie_credentials; then
             contain_artifact_failure "unreadable-cookie-credential"
             status=1
         fi
     fi
-    if [[ -n "$RPC_PASSWORD" && "$ARTIFACT_GUARD_FAILED" -eq 0 ]]; then
-        (umask 077 && printf '%s\n' "$RPC_PASSWORD" >"$SECRET_PATTERN_FILE") || {
+    if [[ -n "$COOKIE_VALUE" && "$ARTIFACT_GUARD_FAILED" -eq 0 ]]; then
+        (umask 077 && printf '%s\n' "$COOKIE_VALUE" >"$SECRET_PATTERN_FILE") || {
             contain_artifact_failure "secret-pattern-write-error"
             status=1
         }
@@ -183,8 +183,8 @@ GENESIS_VOUT="$(jq -r --arg address "$GENESIS_ADDRESS" '.vout[] | select(.script
 [[ "$GENESIS_VOUT" =~ ^[0-9]+$ ]] || fail "could not locate the real genesis UTXO"
 
 export RGB_REGTEST_RPC_URL="http://127.0.0.1:${RPC_PORT}/wallet/${WALLET}"
-export RGB_REGTEST_RPC_USER="$RPC_USER"
-export RGB_REGTEST_RPC_PASSWORD="$RPC_PASSWORD"
+export RGB_REGTEST_RPC_USER="$COOKIE_ACCOUNT"
+export RGB_REGTEST_RPC_PASSWORD="$COOKIE_VALUE"
 export RGB_REGTEST_GENESIS_TXID="$GENESIS_TXID"
 export RGB_REGTEST_GENESIS_VOUT="$GENESIS_VOUT"
 export RGB_REGTEST_RECEIVER_ADDRESS="$(wallet getnewaddress rgb-receiver bech32)"
