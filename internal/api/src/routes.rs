@@ -2,7 +2,7 @@ use crate::auth::auth_middleware;
 use crate::middleware::latency_tracker;
 use crate::world_id;
 use crate::AppState;
-use crate::{admin, handlers, x402::x402_filter};
+use crate::{admin, handlers, shadow_observation, x402::x402_filter};
 use axum::{
     extract::DefaultBodyLimit,
     middleware,
@@ -50,6 +50,10 @@ pub fn configure_routes(
         .route(
             "/bitcoin/mempool/telemetry",
             get(handlers::get_mempool_telemetry),
+        )
+        .route(
+            "/bitcoin/core/shadow-observation",
+            get(shadow_observation::get_bitcoin_core_shadow_observation),
         )
         .route("/state", get(handlers::get_state))
         .route("/verify", post(handlers::verify_attestation))

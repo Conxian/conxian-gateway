@@ -1153,6 +1153,7 @@ version = "0.1.5"
 dependencies = [
  "anyhow",
  "async-trait",
+ "base64 0.22.1",
  "binfile",
  "bitcoin",
  "bitcoincore-rpc",

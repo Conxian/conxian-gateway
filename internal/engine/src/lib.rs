@@ -8,9 +8,15 @@ pub mod treasury;
 
 pub use bitcoin::{
     BabylonAdapter, BabylonHeaderInfoResponse, BabylonHeaderSource, BabylonHttpClient,
-    BabylonMainChainResponse, BabylonPagination, BabylonTipResponse, BitVmAdapter, BitcoinListener,
-    BitcoinRpc, BitcoinRpcClient, BtcHeaderInfo, FedimintAdapter, FeeBumpPolicyConfig,
-    LiquidAdapter, MempoolOrchestrator, NodeRgbAdapter, StashResolver, StrataAdapter,
+    BabylonMainChainResponse, BabylonPagination, BabylonTipResponse, BitVmAdapter,
+    BitcoinCoreShadowObservation, BitcoinCoreShadowObserver, BitcoinCoreShadowObserverClient,
+    BitcoinListener, BitcoinRpc, BitcoinRpcClient, BtcHeaderInfo, CoreBestBlockStats,
+    CoreBlockchainInfo, CoreMempoolInfo, CoreNetworkInfo, DeploymentAlias, DeploymentObservation,
+    DeploymentObservationStatus, DeploymentReportedState, DeploymentSourceScope, FedimintAdapter,
+    FeeBumpPolicyConfig, FeeEstimateAvailability, FeeEstimateObservation, FeeRateUnit,
+    LiquidAdapter, MempoolOrchestrator, NodeRgbAdapter, ObservationAvailability,
+    ObservationErrorCategory, ShadowObserverFailure, SourceObservation, StashResolver,
+    StrataAdapter, SHADOW_FEE_TARGETS,
 };
 pub use coordination::RedisCoordinator;
 pub use ntt::{CitreaAdapter, NttRelayer, RootstockAdapter};
