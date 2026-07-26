@@ -91,7 +91,7 @@ For complete organizational protocol, see:
 
 ## Technical Standards
 - **Rust Edition**: 2021
-- **MSRV**: 1.85 (toolchain: 1.96.0)
+- **MSRV**: 1.96 (declared minimum and CI-tested baseline: 1.96.0)
 - **Framework**: Axum (HTTP), Tokio (Runtime)
 - **Security**: Mandatory Bearer token auth for sensitive endpoints.
 - **Observability**: Prometheus metrics and structured tracing are required for all new modules.

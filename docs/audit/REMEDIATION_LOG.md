@@ -40,7 +40,7 @@
 - **Fixed control-plane test runner** (G-13): Added `playwright.config.ts`, updated test script from no-op to `playwright test`, updated root `pnpm test` to use `pnpm -r run test` (workspace-aware), updated node-ci.yml to scope to client-sdk only. (Priority: 8)
 - **Deleted dead code** (G-19): Removed `internal/engine/src/treasury/tests.rs` — duplicate of inline tests in `mod.rs`. (Priority: 1)
 - **Fixed audit.toml compatibility** (G-17): Added `stale = false` to `[database]` section in both `audit.toml` and `.cargo/audit.toml`. (Priority: 6)
-- **Aligned Dockerfile toolchain** (G-15): Updated from `rust:1.85` to `rust:1.96` to match rust-toolchain.toml. MSRV stays 1.85. (Priority: 4)
+- **Aligned Dockerfile toolchain** (G-15): Updated from `rust:1.85` to `rust:1.96` to match rust-toolchain.toml. At this 2026-06-28 checkpoint the declared MSRV remained 1.85; that policy was superseded on 2026-07-26 by the declared and CI-tested Rust 1.96 baseline. (Priority: 4)
 - **Updated AGENTS.md**: Added CI/CD pipeline inventory, known gaps with priority tracking, research context, expanded verification protocol.
 - **Updated GAP_ANALYSIS_AND_SCORING.md**: Comprehensive rewrite — 17 gap entries, build health dashboard, detailed remediation plans, web research findings, verified assets summary.
 - **Web research completed**: BitVM3 (published design, garbled circuits), RGB Protocol (v0.12 release), NWC/NIP-47 (nostr-sdk nip47), Groth16 recursion (experimental).
