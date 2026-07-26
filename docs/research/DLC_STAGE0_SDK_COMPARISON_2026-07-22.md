@@ -5,6 +5,11 @@
 - **Status:** Isolated research checkpoint; no Gateway dependency, manifest, lockfile, or runtime change.
 - **Base verified:** [`175ac209f24099c3ff0c4dcd5143ea955007c0d8`](https://github.com/Conxian/conxian-gateway/commit/175ac209f24099c3ff0c4dcd5143ea955007c0d8)
 
+> **Current policy note (2026-07-26):** The Gateway now declares Rust 1.96 as
+> its MSRV and checks the locked workspace on Rust 1.96.0. The Rust 1.85.1
+> results and labels below describe this Stage 0 checkpoint and are preserved
+> as historical probe evidence; no DLC dependency or runtime behavior changed.
+
 ## Scope and non-goals
 
 Stage 0 compares two pinned Rust implementation families against the pinned
@@ -140,7 +145,7 @@ different and remains a separate gate.
 | --- | --- | --- |
 | CET-only API fit | **Preferred candidate**: direct low-level constructors and message types | Works, but includes a wider manager/application surface |
 | Deterministic local probe | Passes on Rust 1.85.1 and 1.96.0 | Passes on Rust 1.96.0 |
-| Gateway MSRV 1.85.1 | Bounded probe passes; full manager dev graph needs dependency curation | Fails in source on `unsigned_is_multiple_of` |
+| Checkpoint-declared Gateway MSRV 1.85.1 | Bounded probe passes; full manager dev graph needs dependency curation | Fails in source on `unsigned_is_multiple_of` |
 | Bitcoin resolution | Original isolated locks: `0.32.102` / `0.32.101`; combined experiment lock: `0.32.102` | Original isolated lock: `0.32.101`; combined experiment lock: `0.32.102` |
 | Official vector/schema compatibility | **Blocked** by `localPayout` vs `offerPayout`; 6/7 numerical byte sets match | Not demonstrated; embedded fixture schema differs |
 | Persistence/transport implications | Deferred; manager/provider integration still requires external services | Larger framework with wallet, transport, oracle, and optional storage features |
@@ -150,7 +155,7 @@ different and remains a separate gate.
 low-level `dlc` + `dlc-messages` family as the preferred candidate for Stage 1,
 but block Stage 1 until the vector schema decision and deterministic full
 offer/accept/sign fixture are resolved. DDK remains a fallback and does not
-currently satisfy the Gateway MSRV gate.
+satisfy the checkpoint's former Rust 1.85.1 MSRV gate.
 
 ## Stage 1 checkpoint acceptance criteria
 
@@ -165,7 +170,8 @@ Before any Gateway manifest or runtime change, the next checkpoint must provide:
 5. malformed, wrong-event, wrong-oracle, signed-outcome-mutation,
    unannounced-enum-domain, invalid-signature, and wrong-transaction rejection
    tests;
-6. a locked dependency graph that satisfies the Gateway MSRV of Rust 1.85.1;
+6. a locked dependency graph that satisfies the current Gateway MSRV of Rust
+   1.96;
 7. an explicit decision about manager/provider integration and persistence;
 8. persistence, restart/recovery, transport, and production operations deferred
    to a later stage unless the selected implementation makes them unavoidable.
