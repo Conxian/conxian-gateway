@@ -1,7 +1,9 @@
+use crate::shutdown::sleep_or_shutdown;
 use crate::stacks::alex::AlexClient;
 use conxian_core::{AlexSwapRequest, ConxianResult, SharedState};
 use std::sync::Arc;
-use tokio::time::{sleep, Duration};
+use tokio::sync::watch;
+use tokio::time::Duration;
 use tracing::{error, info, warn};
 
 pub struct TreasuryMonitor {
@@ -19,7 +21,12 @@ impl TreasuryMonitor {
         }
     }
 
-    pub async fn run(&self) -> ConxianResult<()> {
+    /// Treasury owns no Gateway persistence checkpoint, so transient ALEX
+    /// failures remain retryable while shutdown is observed between updates.
+    pub async fn run_until_shutdown(
+        &self,
+        mut shutdown: watch::Receiver<bool>,
+    ) -> ConxianResult<()> {
         info!("Starting Treasury Monitor with ALEX-driven Sovereign Yield Index (SYI)...");
 
         loop {
@@ -27,7 +34,9 @@ impl TreasuryMonitor {
                 error!("Treasury monitor error: {}", e);
             }
 
-            sleep(Duration::from_secs(self.interval_secs)).await;
+            if sleep_or_shutdown(&mut shutdown, Duration::from_secs(self.interval_secs)).await {
+                return Ok(());
+            }
         }
     }
 

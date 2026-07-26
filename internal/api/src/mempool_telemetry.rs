@@ -2,7 +2,7 @@ use conxian_core::{FeeBumpStrategy, MempoolTxStatus, TrackedMempoolTx};
 use serde::{Deserialize, Serialize};
 use std::fmt::Write as _;
 
-pub const MEMPOOL_TELEMETRY_SCHEMA_VERSION: u8 = 1;
+pub const MEMPOOL_TELEMETRY_SCHEMA_VERSION: u8 = 2;
 pub const MEMPOOL_TELEMETRY_SCOPE: &str = "gateway_tracked_transactions";
 pub const NETWORK_MEMPOOL_OBSERVATION: &str = "not_configured";
 const EMPTY_SEMANTICS: &str =
@@ -27,6 +27,7 @@ pub struct MempoolStatusCounts {
     pub stuck: u64,
     #[serde(rename = "bump_broadcasted")]
     pub bump_broadcasted: u64,
+    pub bump_outcome_unknown: u64,
     #[serde(rename = "guardrail_rejected")]
     pub guardrail_rejected: u64,
     pub confirmed: u64,
@@ -80,6 +81,7 @@ pub fn aggregate_tracked_mempool_transactions(
             MempoolTxStatus::Pending => status_counts.pending += 1,
             MempoolTxStatus::Stuck => status_counts.stuck += 1,
             MempoolTxStatus::BumpBroadcasted => status_counts.bump_broadcasted += 1,
+            MempoolTxStatus::BumpOutcomeUnknown => status_counts.bump_outcome_unknown += 1,
             MempoolTxStatus::GuardrailRejected => status_counts.guardrail_rejected += 1,
             MempoolTxStatus::Confirmed => status_counts.confirmed += 1,
         }
@@ -247,6 +249,12 @@ pub fn render_prometheus_metrics(
     .unwrap();
     writeln!(
         body,
+        "conxian_gateway_tracked_mempool_transactions_status{{status=\"BUMP_OUTCOME_UNKNOWN\"}} {}",
+        telemetry.status_counts.bump_outcome_unknown
+    )
+    .unwrap();
+    writeln!(
+        body,
         "conxian_gateway_tracked_mempool_transactions_status{{status=\"GUARDRAIL_REJECTED\"}} {}",
         telemetry.status_counts.guardrail_rejected
     )
@@ -389,6 +397,10 @@ mod tests {
             last_bump_strategy: None,
             last_error: None,
             replacement_txid: None,
+            lease_owner: None,
+            lease_id: None,
+            lease_expires_at: None,
+            record_generation: 0,
         }
     }
 
@@ -399,6 +411,7 @@ mod tests {
         let stuck = tracked(MempoolTxStatus::Stuck);
         let mut broadcasted = tracked(MempoolTxStatus::BumpBroadcasted);
         broadcasted.cpfp_eligible = true;
+        let unknown = tracked(MempoolTxStatus::BumpOutcomeUnknown);
         let rejected = tracked(MempoolTxStatus::GuardrailRejected);
         let confirmed = tracked(MempoolTxStatus::Confirmed);
 
@@ -406,6 +419,7 @@ mod tests {
             pending,
             stuck,
             broadcasted,
+            unknown,
             rejected,
             confirmed,
         ]);
@@ -414,10 +428,11 @@ mod tests {
             telemetry.availability,
             MempoolTelemetryAvailability::Available
         );
-        assert_eq!(telemetry.tracked_transaction_count, 5);
+        assert_eq!(telemetry.tracked_transaction_count, 6);
         assert_eq!(telemetry.status_counts.pending, 1);
         assert_eq!(telemetry.status_counts.stuck, 1);
         assert_eq!(telemetry.status_counts.bump_broadcasted, 1);
+        assert_eq!(telemetry.status_counts.bump_outcome_unknown, 1);
         assert_eq!(telemetry.status_counts.guardrail_rejected, 1);
         assert_eq!(telemetry.status_counts.confirmed, 1);
         assert_eq!(telemetry.replaceable_tracked_total, 1);
@@ -494,7 +509,7 @@ mod tests {
         assert_eq!(
             serde_json::from_str::<serde_json::Value>(&first).unwrap(),
             json!({
-                "schema_version": 1,
+                "schema_version": 2,
                 "scope": "gateway_tracked_transactions",
                 "network_mempool_observation": "not_configured",
                 "availability": "available",
@@ -504,6 +519,7 @@ mod tests {
                     "pending": 1,
                     "stuck": 0,
                     "bump_broadcasted": 0,
+                    "bump_outcome_unknown": 0,
                     "guardrail_rejected": 0,
                     "confirmed": 0
                 },

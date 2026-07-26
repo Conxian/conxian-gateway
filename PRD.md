@@ -94,6 +94,12 @@ Conxian is designed to capture the Total Addressable Market (TAM) of Bitcoin-nat
     - Aligned all documentation with v1.9.2 standards.
 
 ## 4. Technical Implementation Details
+- **Persistence and deployment boundary**: Production file persistence is an
+  exclusive local writer with transactional CAS, old-or-new crash recovery,
+  fenced mempool fee-bump leases, and coordinated critical-task supervision.
+  Active-active/shared filesystems and exactly-once fee-bump claims are not
+  supported. Operators must follow
+  [`docs/PERSISTENCE_TOPOLOGY.md`](docs/PERSISTENCE_TOPOLOGY.md).
 - **TAM Engine**: Simulates growth of sBTC liquidity and tracks the Sovereign Yield Index.
 - **WIF Manager**: Handles OIDC-to-GCP token exchange for enclave-signed attestations.
 - **BitVM Verifier**: Implements state-root commitment verification for optimistic fraud proofs.

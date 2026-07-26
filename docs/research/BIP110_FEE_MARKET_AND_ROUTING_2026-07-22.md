@@ -213,13 +213,16 @@ are closed enums. The metrics contain no txids, addresses, node IDs, route IDs,
 or free-form errors, and their help text explicitly says they are not
 network-wide observations.
 
-`FilePersistence` now coordinates `load()` and `save()` calls that share the
+**Historical state as of July 22, 2026:** `FilePersistence` coordinated
+`load()` and `save()` calls that shared the
 same backend within one process. Saves are written to a unique temporary file,
 flushed and synced, then atomically renamed over the state path; temporary
 files are removed on failure and the parent directory is synced on a
 best-effort basis. The JSON and Prometheus handlers run these synchronous
 loads through `spawn_blocking`. This is not multi-process writer coordination,
 and it does not make a separate load-modify-save sequence transactional.
+See `docs/PERSISTENCE_TOPOLOGY.md` for the current CON-1548 transactional
+boundary.
 
 This slice is operational telemetry only. It is **not** a BIP-110 validator,
 deployment oracle, network mempool view, or fee predictor. It does not change

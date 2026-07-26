@@ -1,4 +1,5 @@
 use std::net::IpAddr;
+use std::path::Path;
 use std::{env, panic};
 
 use url::Url;
@@ -20,6 +21,111 @@ const REDIS_URL_SENTINEL: &str = "sentinel_REDIS_URL";
 const REDIS_USERNAME_SENTINEL: &str = "sentinel_REDIS_USERNAME";
 const REDIS_PASSWORD_SENTINEL: &str = "sentinel_REDIS_PASSWORD";
 const TOKEN_TTL_SENTINEL: &str = "sentinel_TOKEN_TTL";
+const EXCLUSIVE_LOCAL_WRITER_MODE: &str = "exclusive-local-writer";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FilesystemClass {
+    Local(&'static str),
+    SharedOrNetwork(&'static str),
+    Unknown(u32),
+}
+
+fn classify_filesystem_magic(magic: u32) -> FilesystemClass {
+    match magic {
+        0x0000_ef53 => FilesystemClass::Local("ext"),
+        0x5846_5342 => FilesystemClass::Local("xfs"),
+        0x9123_683e => FilesystemClass::Local("btrfs"),
+        0xf2f5_2010 => FilesystemClass::Local("f2fs"),
+        0x0102_1994 => FilesystemClass::Local("tmpfs"),
+        0x794c_7630 => FilesystemClass::Local("overlayfs"),
+        0x8584_58f6 => FilesystemClass::Local("ramfs"),
+        0x2fc1_2fc1 => FilesystemClass::Local("zfs"),
+        0x3153_464a => FilesystemClass::Local("jfs"),
+        0x5265_4973 => FilesystemClass::Local("reiserfs"),
+        0x0000_3434 => FilesystemClass::Local("nilfs"),
+        0x2405_1905 => FilesystemClass::Local("ubifs"),
+        0x0000_6969 => FilesystemClass::SharedOrNetwork("nfs"),
+        0x0000_517b => FilesystemClass::SharedOrNetwork("smb"),
+        0xff53_4d42 => FilesystemClass::SharedOrNetwork("cifs"),
+        0x00c3_6400 => FilesystemClass::SharedOrNetwork("ceph"),
+        0x0102_1997 => FilesystemClass::SharedOrNetwork("9p"),
+        0x7375_7245 => FilesystemClass::SharedOrNetwork("coda"),
+        0x5346_414f => FilesystemClass::SharedOrNetwork("afs"),
+        0x0000_564c => FilesystemClass::SharedOrNetwork("ncp"),
+        0x0116_1970 => FilesystemClass::SharedOrNetwork("gfs2"),
+        0x0bd0_0bd0 => FilesystemClass::SharedOrNetwork("lustre"),
+        0x4750_4653 => FilesystemClass::SharedOrNetwork("gpfs"),
+        other => FilesystemClass::Unknown(other),
+    }
+}
+
+fn classify_filesystem_type(raw_type: i64) -> FilesystemClass {
+    classify_filesystem_magic(raw_type as u32)
+}
+
+fn validate_filesystem_policy(class: FilesystemClass, allow_unknown: bool) -> Result<(), String> {
+    match class {
+        FilesystemClass::Local(_) => Ok(()),
+        FilesystemClass::SharedOrNetwork(name) => Err(format!(
+            "Gateway file persistence rejects known shared/network filesystem '{name}'"
+        )),
+        FilesystemClass::Unknown(_) if allow_unknown => Ok(()),
+        FilesystemClass::Unknown(magic) => Err(format!(
+            "Gateway file persistence cannot verify filesystem type 0x{magic:08x} as local; set GATEWAY_ALLOW_UNKNOWN_STATE_FILESYSTEM=true only after operator review"
+        )),
+    }
+}
+
+pub fn validate_state_filesystem(state_path: &Path, allow_unknown: bool) -> Result<(), String> {
+    let parent = state_path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let canonical_parent = parent.canonicalize().map_err(|error| {
+        format!(
+            "failed to resolve Gateway state parent '{}': {error}",
+            parent.display()
+        )
+    })?;
+
+    #[cfg(target_os = "linux")]
+    {
+        use std::ffi::CString;
+        use std::os::unix::ffi::OsStrExt;
+
+        let path = CString::new(canonical_parent.as_os_str().as_bytes()).map_err(|_| {
+            format!(
+                "Gateway state parent '{}' contains an interior NUL byte",
+                canonical_parent.display()
+            )
+        })?;
+        let mut stats = std::mem::MaybeUninit::<libc::statfs>::uninit();
+        // SAFETY: `path` is a valid NUL-terminated pathname and `stats` points
+        // to writable storage for one `statfs` result.
+        let result = unsafe { libc::statfs(path.as_ptr(), stats.as_mut_ptr()) };
+        if result != 0 {
+            return Err(format!(
+                "failed to classify Gateway state parent '{}': {}",
+                canonical_parent.display(),
+                std::io::Error::last_os_error()
+            ));
+        }
+        // Normalize through u32 so sign-extended Linux magic values classify
+        // identically on every supported Linux architecture.
+        let raw_type = unsafe { stats.assume_init() }.f_type as u32;
+        validate_filesystem_policy(classify_filesystem_type(i64::from(raw_type)), allow_unknown)
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        validate_filesystem_policy(FilesystemClass::Unknown(0), allow_unknown).map_err(|error| {
+            format!(
+                "{error}; filesystem classification is not implemented for {}",
+                std::env::consts::OS
+            )
+        })
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Network {
@@ -55,6 +161,8 @@ impl Network {
 
 #[derive(Debug, Clone)]
 pub struct Config {
+    pub gateway_state_path: String,
+    pub gateway_allow_unknown_state_filesystem: bool,
     pub bitcoin_rpc_url: String,
     pub bitcoin_rpc_user: String,
     pub bitcoin_rpc_pass: String,
@@ -265,7 +373,33 @@ impl Config {
             panic!("SETTLEMENT_INGRESS_SECRET must be distinct from FIAT_WEBHOOK_SECRET");
         }
 
+        let gateway_state_path = env::var("GATEWAY_STATE_PATH")
+            .unwrap_or_else(|_| "gateway_state.json".to_string())
+            .trim()
+            .to_string();
+        if gateway_state_path.is_empty() {
+            panic!("GATEWAY_STATE_PATH must be a non-empty file path");
+        }
+        let persistence_mode = env::var("GATEWAY_PERSISTENCE_MODE")
+            .unwrap_or_else(|_| EXCLUSIVE_LOCAL_WRITER_MODE.to_string())
+            .trim()
+            .to_ascii_lowercase();
+        if persistence_mode != EXCLUSIVE_LOCAL_WRITER_MODE {
+            panic!(
+                "GATEWAY_PERSISTENCE_MODE must be '{EXCLUSIVE_LOCAL_WRITER_MODE}'; active-active and shared-writer file persistence are unsupported"
+            );
+        }
+        let gateway_allow_unknown_state_filesystem =
+            match env::var("GATEWAY_ALLOW_UNKNOWN_STATE_FILESYSTEM") {
+                Ok(value) if value.trim().eq_ignore_ascii_case("true") => true,
+                Ok(value) if value.trim().eq_ignore_ascii_case("false") => false,
+                Ok(_) => panic!("GATEWAY_ALLOW_UNKNOWN_STATE_FILESYSTEM must be 'true' or 'false'"),
+                Err(_) => false,
+            };
+
         Self {
+            gateway_state_path,
+            gateway_allow_unknown_state_filesystem,
             bitcoin_rpc_url: env::var("BITCOIN_RPC_URL").unwrap_or(btc_url),
             bitcoin_rpc_user: env::var("BITCOIN_RPC_USER").unwrap_or_default(),
             bitcoin_rpc_pass: env::var("BITCOIN_RPC_PASS").unwrap_or_default(),
@@ -387,6 +521,9 @@ mod tests {
                 "TOKEN_TTL_SECONDS",
                 "BABYLON_API_URL",
                 "ALEX_HELPER_PRINCIPAL",
+                "GATEWAY_STATE_PATH",
+                "GATEWAY_PERSISTENCE_MODE",
+                "GATEWAY_ALLOW_UNKNOWN_STATE_FILESYSTEM",
                 "BITCOIN_CORE_SHADOW_OBSERVATION_ENABLED",
             ];
             let vars = keys.into_iter().map(|k| (k, env::var(k).ok())).collect();
@@ -500,6 +637,37 @@ mod tests {
     }
 
     #[test]
+    fn from_env_reads_explicit_gateway_state_path() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        let _env_restore = FullEnvRestore::new();
+        set_test_envs();
+
+        env::set_var(
+            "GATEWAY_STATE_PATH",
+            "  /var/lib/conxian/gateway-state.json  ",
+        );
+        let config = Config::from_env();
+
+        assert_eq!(
+            config.gateway_state_path,
+            "/var/lib/conxian/gateway-state.json"
+        );
+        assert!(!config.gateway_allow_unknown_state_filesystem);
+    }
+
+    #[test]
+    fn persistence_mode_rejects_shared_writer_variants() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        let _env_restore = FullEnvRestore::new();
+        set_test_envs();
+
+        for mode in ["active-active", "shared-writer", "unknown-mode"] {
+            env::set_var("GATEWAY_PERSISTENCE_MODE", mode);
+            assert!(std::panic::catch_unwind(Config::from_env).is_err());
+        }
+    }
+
+    #[test]
     fn shadow_observation_is_disabled_by_default_and_uses_strict_truthy_values() {
         let _guard = ENV_MUTEX.lock().unwrap();
         let _env_restore = FullEnvRestore::new();
@@ -517,6 +685,62 @@ mod tests {
             env::set_var("BITCOIN_CORE_SHADOW_OBSERVATION_ENABLED", disabled);
             assert!(!Config::from_env().bitcoin_core_shadow_observation_enabled);
         }
+    }
+
+    #[test]
+    fn persistence_mode_defaults_to_exclusive_local_writer() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        let _env_restore = FullEnvRestore::new();
+        set_test_envs();
+        env::remove_var("GATEWAY_PERSISTENCE_MODE");
+
+        let config = Config::from_env();
+        assert!(!config.gateway_allow_unknown_state_filesystem);
+    }
+
+    #[test]
+    fn unknown_filesystem_override_requires_explicit_boolean() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        let _env_restore = FullEnvRestore::new();
+        set_test_envs();
+
+        env::set_var("GATEWAY_ALLOW_UNKNOWN_STATE_FILESYSTEM", "true");
+        assert!(Config::from_env().gateway_allow_unknown_state_filesystem);
+
+        env::set_var("GATEWAY_ALLOW_UNKNOWN_STATE_FILESYSTEM", "yes");
+        assert!(std::panic::catch_unwind(Config::from_env).is_err());
+    }
+
+    #[test]
+    fn filesystem_classifier_normalizes_sign_extended_magic_values() {
+        let sign_extended = |magic: u32| i32::from_ne_bytes(magic.to_ne_bytes()) as i64;
+
+        assert_eq!(
+            classify_filesystem_type(sign_extended(0xff53_4d42)),
+            FilesystemClass::SharedOrNetwork("cifs")
+        );
+        assert_eq!(
+            classify_filesystem_type(sign_extended(0xf2f5_2010)),
+            FilesystemClass::Local("f2fs")
+        );
+        assert_eq!(
+            classify_filesystem_type(sign_extended(0x9123_683e)),
+            FilesystemClass::Local("btrfs")
+        );
+    }
+
+    #[test]
+    fn unknown_override_never_bypasses_known_shared_filesystems() {
+        assert!(validate_filesystem_policy(FilesystemClass::Unknown(7), false).is_err());
+        assert!(validate_filesystem_policy(FilesystemClass::Unknown(7), true).is_ok());
+        assert!(validate_filesystem_policy(FilesystemClass::SharedOrNetwork("nfs"), true).is_err());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn current_linux_test_filesystem_is_accepted_as_known_local() {
+        let state_path = env::current_dir().unwrap().join("gateway-state-test.json");
+        validate_state_filesystem(&state_path, false).unwrap();
     }
 
     #[test]
