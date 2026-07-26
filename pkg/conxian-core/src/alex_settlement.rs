@@ -270,6 +270,7 @@ pub struct AlexExposureSnapshot {
     pub before: u128,
     pub after: u128,
     pub cap: u128,
+    pub source: AlexSourceSnapshot,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -304,6 +305,8 @@ pub struct AlexSettlementPolicy {
     pub expected_config_revision: String,
     pub expected_helper_code_hash: String,
     pub max_quote_age_secs: u64,
+    pub max_exposure_age_secs: u64,
+    pub max_config_age_secs: u64,
     pub max_price_impact_bps: u32,
     pub max_exposure_bps: u32,
     #[serde(default = "default_exposure_safety_ceiling_bps")]
@@ -360,6 +363,11 @@ impl AlexVenueManifest {
         if self.valid_from_epoch_secs >= self.expires_at_epoch_secs {
             return Err(AlexManifestRejection::InvalidValidityWindow);
         }
+        if self.venue.source.observed_at_epoch_secs < self.valid_from_epoch_secs
+            || self.venue.source.observed_at_epoch_secs >= self.expires_at_epoch_secs
+        {
+            return Err(AlexManifestRejection::VenueEvidenceOutsideValidityWindow);
+        }
         if self.valid_from_epoch_secs > now_epoch_secs
             || self.venue.source.observed_at_epoch_secs > now_epoch_secs
         {
@@ -377,6 +385,12 @@ impl AlexVenueManifest {
         self.policy
             .validate()
             .map_err(AlexManifestRejection::InvalidPolicy)?;
+        let venue_age = now_epoch_secs
+            .checked_sub(self.venue.source.observed_at_epoch_secs)
+            .ok_or(AlexManifestRejection::FromFuture)?;
+        if venue_age > self.policy.max_config_age_secs {
+            return Err(AlexManifestRejection::VenueEvidenceStale);
+        }
         if self.policy.supported_network != self.venue.network {
             return Err(AlexManifestRejection::NetworkMismatch);
         }
@@ -416,10 +430,14 @@ pub enum AlexManifestRejection {
     BlankIdentity,
     #[error("manifest validity window is invalid")]
     InvalidValidityWindow,
+    #[error("venue evidence falls outside the manifest validity window")]
+    VenueEvidenceOutsideValidityWindow,
     #[error("manifest or venue evidence is from the future")]
     FromFuture,
     #[error("manifest is expired")]
     Expired,
+    #[error("venue evidence is stale")]
+    VenueEvidenceStale,
     #[error("venue evidence is not observed")]
     VenueNotObserved,
     #[error("manifest and policy revisions do not match")]
@@ -475,21 +493,44 @@ impl AlexSettlementPolicy {
         if request.quote.amount_in != request.amount_in {
             return Err(AlexPolicyRejection::QuoteAmountMismatch);
         }
-        if request.quote.quoted_at_epoch_secs > now_epoch_secs
-            || request.quote.source.observed_at_epoch_secs > now_epoch_secs
-            || request.venue.source.observed_at_epoch_secs > now_epoch_secs
-        {
-            return Err(AlexPolicyRejection::QuoteFromFuture);
+        if request.requested_at_epoch_secs > now_epoch_secs {
+            return Err(AlexPolicyRejection::RequestFromFuture);
         }
-        if request.quote.expires_at_epoch_secs <= now_epoch_secs
-            || request.quote.expires_at_epoch_secs <= request.quote.quoted_at_epoch_secs
+        if request.quote.source.observed_at_epoch_secs > request.quote.quoted_at_epoch_secs
+            || request.quote.quoted_at_epoch_secs > request.requested_at_epoch_secs
+            || request.requested_at_epoch_secs > request.quote.expires_at_epoch_secs
         {
+            return Err(AlexPolicyRejection::InvalidQuoteTimestampOrder);
+        }
+        if request.exposure.source.observed_at_epoch_secs > request.requested_at_epoch_secs {
+            return Err(AlexPolicyRejection::InvalidExposureTimestampOrder);
+        }
+        if request.venue.source.observed_at_epoch_secs > request.requested_at_epoch_secs {
+            return Err(AlexPolicyRejection::InvalidVenueTimestampOrder);
+        }
+        if request.quote.expires_at_epoch_secs <= now_epoch_secs {
             return Err(AlexPolicyRejection::QuoteExpired);
         }
-        if now_epoch_secs.saturating_sub(request.quote.quoted_at_epoch_secs)
-            > self.max_quote_age_secs
-        {
+        let quote_age = request
+            .requested_at_epoch_secs
+            .checked_sub(request.quote.source.observed_at_epoch_secs)
+            .ok_or(AlexPolicyRejection::InvalidQuoteTimestampOrder)?;
+        if quote_age > self.max_quote_age_secs {
             return Err(AlexPolicyRejection::QuoteStale);
+        }
+        let exposure_age = request
+            .requested_at_epoch_secs
+            .checked_sub(request.exposure.source.observed_at_epoch_secs)
+            .ok_or(AlexPolicyRejection::InvalidExposureTimestampOrder)?;
+        if exposure_age > self.max_exposure_age_secs {
+            return Err(AlexPolicyRejection::ExposureStale);
+        }
+        let venue_age = request
+            .requested_at_epoch_secs
+            .checked_sub(request.venue.source.observed_at_epoch_secs)
+            .ok_or(AlexPolicyRejection::InvalidVenueTimestampOrder)?;
+        if venue_age > self.max_config_age_secs {
+            return Err(AlexPolicyRejection::VenueEvidenceStale);
         }
         if min_dy > request.quote.amount_out {
             return Err(AlexPolicyRejection::MinimumOutputExceedsQuote);
@@ -530,6 +571,7 @@ impl AlexSettlementPolicy {
         }
 
         let decision = if request.quote.source.classification == AlexSourceClass::Observed
+            && request.exposure.source.classification == AlexSourceClass::Observed
             && request.venue.source.classification == AlexSourceClass::Observed
         {
             AlexPolicyDecision::AllowUnsigned
@@ -575,6 +617,8 @@ impl AlexSettlementPolicy {
             || self.expected_helper_code_hash.trim().is_empty()
             || self.allowed_venues.is_empty()
             || self.max_quote_age_secs == 0
+            || self.max_exposure_age_secs == 0
+            || self.max_config_age_secs == 0
             || self.max_price_impact_bps > 10_000
             || self.exposure_safety_ceiling_bps != ALEX_EXPOSURE_SAFETY_CEILING_BPS
             || self.max_exposure_bps > self.exposure_safety_ceiling_bps
@@ -746,6 +790,7 @@ impl AlexUnsignedSettlementIntent {
         put_u128(&mut bytes, self.exposure.before);
         put_u128(&mut bytes, self.exposure.after);
         put_u128(&mut bytes, self.exposure.cap);
+        put_source(&mut bytes, &self.exposure.source);
         put_u8(
             &mut bytes,
             match self.decision {
@@ -816,10 +861,22 @@ pub enum AlexPolicyRejection {
     QuoteAmountMismatch,
     #[error("ALEX policy rejected: quote timestamp is from the future")]
     QuoteFromFuture,
+    #[error("ALEX policy rejected: request timestamp is from the future")]
+    RequestFromFuture,
+    #[error("ALEX policy rejected: quote evidence timestamps are out of order")]
+    InvalidQuoteTimestampOrder,
+    #[error("ALEX policy rejected: exposure evidence timestamps are out of order")]
+    InvalidExposureTimestampOrder,
+    #[error("ALEX policy rejected: venue evidence timestamps are out of order")]
+    InvalidVenueTimestampOrder,
     #[error("ALEX policy rejected: quote is expired")]
     QuoteExpired,
     #[error("ALEX policy rejected: quote is stale")]
     QuoteStale,
+    #[error("ALEX policy rejected: exposure evidence is stale")]
+    ExposureStale,
+    #[error("ALEX policy rejected: venue evidence is stale")]
+    VenueEvidenceStale,
     #[error("ALEX policy rejected: min-dy exceeds quoted output")]
     MinimumOutputExceedsQuote,
     #[error("ALEX policy rejected: policy revision is stale")]
@@ -909,6 +966,8 @@ mod tests {
             expected_config_revision: "config-r1".to_string(),
             expected_helper_code_hash: "code-hash-r1".to_string(),
             max_quote_age_secs: 60,
+            max_exposure_age_secs: 60,
+            max_config_age_secs: 60,
             max_price_impact_bps: 500,
             max_exposure_bps: 2_000,
             exposure_safety_ceiling_bps: ALEX_EXPOSURE_SAFETY_CEILING_BPS,
@@ -955,6 +1014,10 @@ mod tests {
                 before: 0,
                 after: 10,
                 cap: 100,
+                source: AlexSourceSnapshot {
+                    classification: AlexSourceClass::Observed,
+                    observed_at_epoch_secs: 1_000,
+                },
             },
         }
     }
@@ -1057,6 +1120,98 @@ mod tests {
         stale.quote.source.observed_at_epoch_secs = 900;
         stale.quote.expires_at_epoch_secs = 1_030;
         assert_eq!(evaluate(&stale), Err(AlexPolicyRejection::QuoteStale));
+    }
+
+    #[test]
+    fn rejects_incoherent_quote_timestamp_ordering() {
+        let mut observed_after_quote = request(AlexNetwork::Mainnet);
+        observed_after_quote.quote.source.observed_at_epoch_secs = 1_001;
+        assert_eq!(
+            evaluate(&observed_after_quote),
+            Err(AlexPolicyRejection::InvalidQuoteTimestampOrder)
+        );
+
+        let mut quoted_after_request = request(AlexNetwork::Mainnet);
+        quoted_after_request.quote.quoted_at_epoch_secs = 1_006;
+        assert_eq!(
+            evaluate(&quoted_after_request),
+            Err(AlexPolicyRejection::InvalidQuoteTimestampOrder)
+        );
+
+        let mut requested_after_expiry = request(AlexNetwork::Mainnet);
+        requested_after_expiry.quote.expires_at_epoch_secs = 1_004;
+        assert_eq!(
+            evaluate(&requested_after_expiry),
+            Err(AlexPolicyRejection::InvalidQuoteTimestampOrder)
+        );
+    }
+
+    #[test]
+    fn rejects_future_request_and_incoherent_evidence_ordering() {
+        let mut future_request = request(AlexNetwork::Mainnet);
+        future_request.requested_at_epoch_secs = 1_011;
+        assert_eq!(
+            evaluate(&future_request),
+            Err(AlexPolicyRejection::RequestFromFuture)
+        );
+
+        let mut future_exposure = request(AlexNetwork::Mainnet);
+        future_exposure.exposure.source.observed_at_epoch_secs = 1_006;
+        assert_eq!(
+            evaluate(&future_exposure),
+            Err(AlexPolicyRejection::InvalidExposureTimestampOrder)
+        );
+
+        let mut future_venue = request(AlexNetwork::Mainnet);
+        future_venue.venue.source.observed_at_epoch_secs = 1_006;
+        assert_eq!(
+            evaluate(&future_venue),
+            Err(AlexPolicyRejection::InvalidVenueTimestampOrder)
+        );
+    }
+
+    #[test]
+    fn enforces_quote_exposure_and_config_freshness_boundaries() {
+        let mut quote_at_limit = request(AlexNetwork::Mainnet);
+        quote_at_limit.quote.source.observed_at_epoch_secs = 945;
+        quote_at_limit.quote.quoted_at_epoch_secs = 945;
+        assert!(evaluate(&quote_at_limit).is_ok());
+        quote_at_limit.quote.source.observed_at_epoch_secs = 944;
+        quote_at_limit.quote.quoted_at_epoch_secs = 944;
+        assert_eq!(
+            evaluate(&quote_at_limit),
+            Err(AlexPolicyRejection::QuoteStale)
+        );
+
+        let mut exposure_at_limit = request(AlexNetwork::Mainnet);
+        exposure_at_limit.exposure.source.observed_at_epoch_secs = 945;
+        assert!(evaluate(&exposure_at_limit).is_ok());
+        exposure_at_limit.exposure.source.observed_at_epoch_secs = 944;
+        assert_eq!(
+            evaluate(&exposure_at_limit),
+            Err(AlexPolicyRejection::ExposureStale)
+        );
+
+        let mut venue_at_limit = request(AlexNetwork::Mainnet);
+        venue_at_limit.venue.source.observed_at_epoch_secs = 945;
+        assert!(evaluate(&venue_at_limit).is_ok());
+        venue_at_limit.venue.source.observed_at_epoch_secs = 944;
+        assert_eq!(
+            evaluate(&venue_at_limit),
+            Err(AlexPolicyRejection::VenueEvidenceStale)
+        );
+    }
+
+    #[test]
+    fn allows_equal_quote_observation_and_issue_time() {
+        let mut boundary = request(AlexNetwork::Mainnet);
+        boundary.quote.source.observed_at_epoch_secs = 1_000;
+        boundary.quote.quoted_at_epoch_secs = 1_000;
+        boundary.requested_at_epoch_secs = 1_000;
+        boundary.quote.expires_at_epoch_secs = 1_011;
+        assert!(policy(AlexNetwork::Mainnet)
+            .evaluate(&boundary, 1_010)
+            .is_ok());
     }
 
     #[test]
@@ -1186,6 +1341,7 @@ mod tests {
 
         let mut future = manifest(AlexNetwork::Mainnet);
         future.valid_from_epoch_secs = 1_011;
+        future.venue.source.observed_at_epoch_secs = 1_011;
         assert_eq!(
             future.verify_at(1_010),
             Err(AlexManifestRejection::FromFuture)
@@ -1203,6 +1359,34 @@ mod tests {
         assert_eq!(
             unverified.verify_at(1_010),
             Err(AlexManifestRejection::VenueNotObserved)
+        );
+    }
+
+    #[test]
+    fn venue_manifest_enforces_observation_window_and_freshness() {
+        let mut before_window = manifest(AlexNetwork::Mainnet);
+        before_window.venue.source.observed_at_epoch_secs = 899;
+        assert_eq!(
+            before_window.verify_at(1_010),
+            Err(AlexManifestRejection::VenueEvidenceOutsideValidityWindow)
+        );
+
+        let mut at_expiry = manifest(AlexNetwork::Mainnet);
+        at_expiry.venue.source.observed_at_epoch_secs = at_expiry.expires_at_epoch_secs;
+        assert_eq!(
+            at_expiry.verify_at(1_010),
+            Err(AlexManifestRejection::VenueEvidenceOutsideValidityWindow)
+        );
+
+        let mut at_age_limit = manifest(AlexNetwork::Mainnet);
+        at_age_limit.venue.source.observed_at_epoch_secs = 950;
+        assert!(at_age_limit.verify_at(1_010).is_ok());
+
+        let mut stale = manifest(AlexNetwork::Mainnet);
+        stale.venue.source.observed_at_epoch_secs = 949;
+        assert_eq!(
+            stale.verify_at(1_010),
+            Err(AlexManifestRejection::VenueEvidenceStale)
         );
     }
 

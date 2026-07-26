@@ -8,7 +8,9 @@ use conxian_core::{
 use conxian_engine::StashResolver;
 use conxian_engine::{
     run_blocking_persistence,
-    stacks::alex::{load_alex_venue_manifest, AlexClient, AlexPreparationService, AlexRpcClient},
+    stacks::alex::{
+        load_alex_venue_manifest_for_network, AlexClient, AlexPreparationService, AlexRpcClient,
+    },
     BitcoinCoreShadowObserver, BitcoinCoreShadowObserverClient, BitcoinListener, BitcoinRpcClient,
     FeeBumpPolicyConfig, MempoolOrchestrator, NodeRgbAdapter, NttRelayer, RedisCoordinator,
     StacksListener, StacksRpcClient, TreasuryMonitor,
@@ -214,17 +216,8 @@ async fn main() -> anyhow::Result<()> {
             );
             None
         }
-        Some(path) => match load_alex_venue_manifest(std::path::Path::new(path), now_epoch_secs) {
-            Ok(manifest) if alex_network == Some(manifest.manifest().venue.network) => {
-                info!(
-                    network = %config.network,
-                    manifest_id = %manifest.manifest().manifest_id,
-                    manifest_revision = %manifest.manifest().manifest_revision,
-                    "ALEX venue manifest loaded"
-                );
-                Some(manifest)
-            }
-            Ok(_) => {
+        Some(path) => match alex_network {
+            None => {
                 error!(
                     network = %config.network,
                     code = "ALEX_MANIFEST_NETWORK_MISMATCH",
@@ -232,14 +225,29 @@ async fn main() -> anyhow::Result<()> {
                 );
                 None
             }
-            Err(error) => {
-                error!(
-                    network = %config.network,
-                    code = error.code(),
-                    "ALEX prepare disabled"
-                );
-                None
-            }
+            Some(network) => match load_alex_venue_manifest_for_network(
+                std::path::Path::new(path),
+                now_epoch_secs,
+                network,
+            ) {
+                Ok(manifest) => {
+                    info!(
+                        network = %config.network,
+                        manifest_id = %manifest.manifest().manifest_id,
+                        manifest_revision = %manifest.manifest().manifest_revision,
+                        "ALEX venue manifest loaded"
+                    );
+                    Some(manifest)
+                }
+                Err(error) => {
+                    error!(
+                        network = %config.network,
+                        code = error.code(),
+                        "ALEX prepare disabled"
+                    );
+                    None
+                }
+            },
         },
     };
     let alex_preparer = Arc::new(AlexPreparationService::new(

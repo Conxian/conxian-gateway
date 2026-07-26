@@ -703,17 +703,9 @@ pub async fn get_alex_quote(
 }
 
 pub async fn prepare_alex_swap(
-    headers: HeaderMap,
     State(state): State<AppState>,
     Json(payload): Json<conxian_core::AlexSwapRequest>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    let _ = parse_gateway_x402_payload(&headers).map_err(|error| {
-        (
-            error.status_code(),
-            Json(json!({ "error": error.message(), "code": error.code() })),
-        )
-    })?;
-
     match state.alex_preparer.prepare(payload, now_unix()).await {
         Ok(prepared) => Ok(Json(json!({
             "status": "unsigned_prepared",
@@ -1296,12 +1288,6 @@ fn verify_tee_settlement_attestation(
         })?;
 
     Ok(att)
-}
-
-fn parse_gateway_x402_payload(
-    headers: &HeaderMap,
-) -> Result<crate::x402::X402PaymentPayload, crate::x402::X402ParseError> {
-    crate::x402::parse_gateway_x402_payload(headers)
 }
 
 // ============================================================

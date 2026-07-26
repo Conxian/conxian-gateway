@@ -40,7 +40,28 @@ pub struct AlexQuoteObservation {
     pub observed_at_epoch_secs: Option<u64>,
     pub price_impact_bps: Option<u32>,
     pub exposure: Option<AlexExposureSnapshot>,
-    pub exposure_source: Option<AlexSourceClass>,
+}
+
+/// Engine-owned authorization to cross the raw payload-builder boundary.
+///
+/// The serializable intent remains an audit/response record. This capability
+/// has no public constructor or deserialization path and is created only by
+/// `AlexPreparationService` after observed evidence passes policy evaluation.
+#[derive(Debug)]
+pub struct AlexApprovedPreparation {
+    intent: AlexUnsignedSettlementIntent,
+}
+
+impl AlexApprovedPreparation {
+    fn new(intent: AlexUnsignedSettlementIntent) -> Self {
+        debug_assert_eq!(intent.decision, AlexPolicyDecision::AllowUnsigned);
+        debug_assert_eq!(intent.status, AlexIntentStatus::UnsignedPrepared);
+        Self { intent }
+    }
+
+    pub fn intent(&self) -> &AlexUnsignedSettlementIntent {
+        &self.intent
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -69,7 +90,6 @@ pub trait AlexClient: Send + Sync {
             observed_at_epoch_secs: None,
             price_impact_bps: None,
             exposure: None,
-            exposure_source: None,
         })
     }
 
@@ -82,7 +102,7 @@ pub trait AlexClient: Send + Sync {
     /// Raw construction accepts only an intent already approved by policy.
     async fn build_swap_payload(
         &self,
-        intent: &AlexUnsignedSettlementIntent,
+        approved: &AlexApprovedPreparation,
     ) -> ConxianResult<serde_json::Value>;
 }
 
@@ -148,7 +168,6 @@ impl AlexRpcClient {
             observed_at_epoch_secs: None,
             price_impact_bps: None,
             exposure: None,
-            exposure_source: None,
         })
     }
 }
@@ -174,15 +193,9 @@ impl AlexClient for AlexRpcClient {
 
     async fn build_swap_payload(
         &self,
-        intent: &AlexUnsignedSettlementIntent,
+        approved: &AlexApprovedPreparation,
     ) -> ConxianResult<serde_json::Value> {
-        if intent.decision != AlexPolicyDecision::AllowUnsigned
-            || intent.status != AlexIntentStatus::UnsignedPrepared
-        {
-            return Err(ConxianError::Security(
-                "ALEX unsigned payload rejected: policy did not allow preparation".to_string(),
-            ));
-        }
+        let intent = approved.intent();
         let helper = &intent.helper.principal;
         Ok(json!({
             "network": intent.network.as_str(),
@@ -237,7 +250,6 @@ impl AlexClient for SimulatedAlexClient {
             observed_at_epoch_secs: None,
             price_impact_bps: None,
             exposure: None,
-            exposure_source: None,
         })
     }
 
@@ -254,7 +266,7 @@ impl AlexClient for SimulatedAlexClient {
 
     async fn build_swap_payload(
         &self,
-        _intent: &AlexUnsignedSettlementIntent,
+        _approved: &AlexApprovedPreparation,
     ) -> ConxianResult<serde_json::Value> {
         Err(ConxianError::Internal(
             "ALEX simulated client cannot produce an unsigned settlement payload".to_string(),
@@ -270,6 +282,8 @@ pub enum AlexManifestLoadError {
     Parse,
     #[error("manifest verification failed: {0}")]
     Rejected(AlexManifestRejection),
+    #[error("manifest network does not match gateway network")]
+    NetworkMismatch,
 }
 
 impl AlexManifestLoadError {
@@ -278,6 +292,7 @@ impl AlexManifestLoadError {
             Self::Read => "ALEX_MANIFEST_READ_FAILED",
             Self::Parse => "ALEX_MANIFEST_INVALID_JSON",
             Self::Rejected(_) => "ALEX_MANIFEST_VERIFICATION_FAILED",
+            Self::NetworkMismatch => "ALEX_MANIFEST_NETWORK_MISMATCH",
         }
     }
 }
@@ -292,6 +307,18 @@ pub fn load_alex_venue_manifest(
     manifest
         .verify_at(now_epoch_secs)
         .map_err(AlexManifestLoadError::Rejected)
+}
+
+pub fn load_alex_venue_manifest_for_network(
+    path: &Path,
+    now_epoch_secs: u64,
+    expected_network: conxian_core::AlexNetwork,
+) -> Result<VerifiedAlexVenueManifest, AlexManifestLoadError> {
+    let manifest = load_alex_venue_manifest(path, now_epoch_secs)?;
+    if manifest.manifest().venue.network != expected_network {
+        return Err(AlexManifestLoadError::NetworkMismatch);
+    }
+    Ok(manifest)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -359,9 +386,7 @@ impl AlexPreparationService {
             .get_swap_quote_observation(request.clone())
             .await
             .map_err(|_| AlexPrepareError::EvidenceUnavailable)?;
-        if observation.source != AlexSourceClass::Observed
-            || observation.exposure_source != Some(AlexSourceClass::Observed)
-        {
+        if observation.source != AlexSourceClass::Observed {
             return Err(AlexPrepareError::VerificationRequired);
         }
         let quoted_at_epoch_secs = observation
@@ -379,6 +404,9 @@ impl AlexPreparationService {
         let exposure = observation
             .exposure
             .ok_or(AlexPrepareError::VerificationRequired)?;
+        if exposure.source.classification != AlexSourceClass::Observed {
+            return Err(AlexPrepareError::VerificationRequired);
+        }
 
         let asset_in = AlexAssetRef::new(
             AlexPrincipal::new(manifest.venue.network, request.token_x.as_str())
@@ -418,16 +446,25 @@ impl AlexPreparationService {
             .evaluate(&policy_request, now_epoch_secs)
             .map_err(|error| match error {
                 AlexPolicyRejection::QuoteFromFuture
+                | AlexPolicyRejection::RequestFromFuture
+                | AlexPolicyRejection::InvalidQuoteTimestampOrder
+                | AlexPolicyRejection::InvalidExposureTimestampOrder
+                | AlexPolicyRejection::InvalidVenueTimestampOrder
                 | AlexPolicyRejection::QuoteExpired
-                | AlexPolicyRejection::QuoteStale => AlexPrepareError::EvidenceUnavailable,
+                | AlexPolicyRejection::QuoteStale
+                | AlexPolicyRejection::ExposureStale
+                | AlexPolicyRejection::VenueEvidenceStale => AlexPrepareError::EvidenceUnavailable,
                 other => AlexPrepareError::PolicyRejected(other),
             })?;
-        if intent.decision != AlexPolicyDecision::AllowUnsigned {
+        if intent.decision != AlexPolicyDecision::AllowUnsigned
+            || intent.status != AlexIntentStatus::UnsignedPrepared
+        {
             return Err(AlexPrepareError::VerificationRequired);
         }
+        let approved = AlexApprovedPreparation::new(intent.clone());
         let payload = self
             .client
-            .build_swap_payload(&intent)
+            .build_swap_payload(&approved)
             .await
             .map_err(|_| AlexPrepareError::PayloadConstruction)?;
         Ok(AlexPreparedPayload { intent, payload })
@@ -442,6 +479,7 @@ mod tests {
         AlexVenueAllowlistEntry, AlexVenueSnapshot, ALEX_EXPOSURE_SAFETY_CEILING_BPS,
         ALEX_VENUE_MANIFEST_VERSION,
     };
+    use std::path::PathBuf;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     const ASSET_IN: &str = "SP000000000000000000002Q6VF78.usdcx";
@@ -488,6 +526,8 @@ mod tests {
                 expected_config_revision: "config-r1".to_string(),
                 expected_helper_code_hash: "hash-r1".to_string(),
                 max_quote_age_secs: 60,
+                max_exposure_age_secs: 60,
+                max_config_age_secs: 60,
                 max_price_impact_bps: 500,
                 max_exposure_bps: 2_000,
                 exposure_safety_ceiling_bps: ALEX_EXPOSURE_SAFETY_CEILING_BPS,
@@ -505,6 +545,15 @@ mod tests {
             amount: 100,
             min_dy: Some(90),
         }
+    }
+
+    fn temp_manifest_path(label: &str) -> PathBuf {
+        static NEXT_PATH: AtomicUsize = AtomicUsize::new(0);
+        std::env::temp_dir().join(format!(
+            "conxian-alex-{label}-{}-{}.json",
+            std::process::id(),
+            NEXT_PATH.fetch_add(1, Ordering::Relaxed)
+        ))
     }
 
     struct FakeClient {
@@ -529,8 +578,11 @@ mod tests {
                         before: 0,
                         after: 10,
                         cap: 100,
+                        source: AlexSourceSnapshot {
+                            classification: AlexSourceClass::Observed,
+                            observed_at_epoch_secs: 1_000,
+                        },
                     }),
-                    exposure_source: Some(AlexSourceClass::Observed),
                 },
                 quote_calls: AtomicUsize::new(0),
                 build_calls: AtomicUsize::new(0),
@@ -543,7 +595,6 @@ mod tests {
             client.observation.status = AlexQuoteStatus::UnverifiedEndpoint;
             client.observation.price_impact_bps = None;
             client.observation.exposure = None;
-            client.observation.exposure_source = None;
             client
         }
     }
@@ -572,9 +623,10 @@ mod tests {
 
         async fn build_swap_payload(
             &self,
-            intent: &AlexUnsignedSettlementIntent,
+            approved: &AlexApprovedPreparation,
         ) -> ConxianResult<serde_json::Value> {
             self.build_calls.fetch_add(1, Ordering::SeqCst);
+            let intent = approved.intent();
             Ok(json!({"intent_hash": intent.intent_hash}))
         }
     }
@@ -586,6 +638,18 @@ mod tests {
         assert_eq!(
             service.prepare(request(), 1_010).await.unwrap_err(),
             AlexPrepareError::ManifestUnavailable
+        );
+        assert_eq!(client.quote_calls.load(Ordering::SeqCst), 0);
+        assert_eq!(client.build_calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn stale_manifest_disables_prepare_before_quote_or_payload() {
+        let client = Arc::new(FakeClient::observed());
+        let service = AlexPreparationService::new(client.clone(), Some(manifest()));
+        assert_eq!(
+            service.prepare(request(), 1_061).await.unwrap_err(),
+            AlexPrepareError::ManifestInvalid
         );
         assert_eq!(client.quote_calls.load(Ordering::SeqCst), 0);
         assert_eq!(client.build_calls.load(Ordering::SeqCst), 0);
@@ -616,6 +680,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn temporal_evidence_failures_happen_before_raw_payload_construction() {
+        let mut cases = Vec::new();
+
+        let mut quote_after_request = FakeClient::observed();
+        quote_after_request.observation.quoted_at_epoch_secs = Some(1_011);
+        cases.push(quote_after_request);
+
+        let mut stale_quote = FakeClient::observed();
+        stale_quote.observation.quoted_at_epoch_secs = Some(949);
+        stale_quote.observation.observed_at_epoch_secs = Some(949);
+        cases.push(stale_quote);
+
+        let mut missing_exposure_time = FakeClient::observed();
+        missing_exposure_time.observation.exposure = None;
+        cases.push(missing_exposure_time);
+
+        for client in cases {
+            let client = Arc::new(client);
+            let service = AlexPreparationService::new(client.clone(), Some(manifest()));
+            assert!(matches!(
+                service.prepare(request(), 1_010).await,
+                Err(AlexPrepareError::EvidenceUnavailable)
+                    | Err(AlexPrepareError::VerificationRequired)
+            ));
+            assert_eq!(client.build_calls.load(Ordering::SeqCst), 0);
+        }
+    }
+
+    #[tokio::test]
     async fn fully_observed_fake_reaches_policy_gated_unsigned_payload() {
         let client = Arc::new(FakeClient::observed());
         let service = AlexPreparationService::new(client.clone(), Some(manifest()));
@@ -632,5 +725,61 @@ mod tests {
         let observation = client.get_swap_quote_observation(request()).await.unwrap();
         assert_eq!(observation.source, AlexSourceClass::Fixture);
         assert_eq!(observation.status, AlexQuoteStatus::Fixture);
+    }
+
+    #[test]
+    fn manifest_loader_rejects_absent_and_malformed_input() {
+        let absent = temp_manifest_path("absent");
+        let _ = std::fs::remove_file(&absent);
+        assert!(matches!(
+            load_alex_venue_manifest_for_network(&absent, 1_010, AlexNetwork::Mainnet),
+            Err(AlexManifestLoadError::Read)
+        ));
+
+        let malformed = temp_manifest_path("malformed");
+        std::fs::write(&malformed, b"not-json").unwrap();
+        assert!(matches!(
+            load_alex_venue_manifest_for_network(&malformed, 1_010, AlexNetwork::Mainnet),
+            Err(AlexManifestLoadError::Parse)
+        ));
+        std::fs::remove_file(malformed).unwrap();
+    }
+
+    #[test]
+    fn manifest_loader_rejects_expired_and_network_mismatched_input() {
+        let mut expired = manifest().manifest().clone();
+        expired.expires_at_epoch_secs = 1_010;
+        let expired_path = temp_manifest_path("expired");
+        std::fs::write(&expired_path, serde_json::to_vec(&expired).unwrap()).unwrap();
+        assert!(matches!(
+            load_alex_venue_manifest_for_network(&expired_path, 1_010, AlexNetwork::Mainnet),
+            Err(AlexManifestLoadError::Rejected(
+                AlexManifestRejection::Expired
+            ))
+        ));
+        std::fs::remove_file(expired_path).unwrap();
+
+        let valid = manifest().manifest().clone();
+        let mismatch_path = temp_manifest_path("network-mismatch");
+        std::fs::write(&mismatch_path, serde_json::to_vec(&valid).unwrap()).unwrap();
+        assert!(matches!(
+            load_alex_venue_manifest_for_network(&mismatch_path, 1_010, AlexNetwork::Testnet),
+            Err(AlexManifestLoadError::NetworkMismatch)
+        ));
+        std::fs::remove_file(mismatch_path).unwrap();
+    }
+
+    #[test]
+    fn manifest_loader_accepts_valid_network_matched_input() {
+        let valid_path = temp_manifest_path("valid");
+        std::fs::write(
+            &valid_path,
+            serde_json::to_vec(manifest().manifest()).unwrap(),
+        )
+        .unwrap();
+        let loaded =
+            load_alex_venue_manifest_for_network(&valid_path, 1_010, AlexNetwork::Mainnet).unwrap();
+        assert_eq!(loaded.manifest().manifest_id, "test-venue");
+        std::fs::remove_file(valid_path).unwrap();
     }
 }

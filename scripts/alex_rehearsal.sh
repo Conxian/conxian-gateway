@@ -13,8 +13,7 @@ request() {
   local output
   output=$(mktemp "${TMPDIR:-/tmp}/alex_rehearsal.XXXXXX")
   local args=(-s -o "$output" -w "%{http_code}" -X "$method" "$GATEWAY_URL$path"
-    -H "Authorization: Bearer $API_TOKEN"
-    -H "x-402-payment: rehearsal-proof")
+    -H "Authorization: Bearer $API_TOKEN")
   if [ -n "$body" ]; then
     args+=(-H "Content-Type: application/json" -d "$body")
   fi
