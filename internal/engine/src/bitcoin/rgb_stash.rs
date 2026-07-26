@@ -29,6 +29,8 @@ use binfile::BinFile;
 #[cfg(feature = "rgb-native")]
 use commit_verify::StrictHash;
 #[cfg(feature = "rgb-native")]
+use fs2::FileExt;
+#[cfg(feature = "rgb-native")]
 use rgb_persist_fs::StockpileDir;
 #[cfg(feature = "rgb-native")]
 use rgbcore::RgbSealDef;
@@ -43,6 +45,8 @@ const IMPORT_STAGING_PREFIX: &str = ".rgb-import-";
 const UPDATE_TRANSACTION_PREFIX: &str = ".rgb-update-";
 #[cfg(feature = "rgb-native")]
 const UPDATE_JOURNAL_FILE: &str = "journal.json";
+#[cfg(feature = "rgb-native")]
+const OWNER_LOCK_FILE: &str = ".conxian-rgb-owner.lock";
 #[cfg(feature = "rgb-native")]
 static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(0);
 
@@ -131,6 +135,19 @@ struct UpdateJournal {
     phase: UpdatePhase,
 }
 
+#[cfg(feature = "rgb-native")]
+#[derive(Debug)]
+struct StashOwnershipGuard {
+    lock_file: File,
+}
+
+#[cfg(feature = "rgb-native")]
+impl Drop for StashOwnershipGuard {
+    fn drop(&mut self) {
+        let _ = FileExt::unlock(&self.lock_file);
+    }
+}
+
 /// StashResolver owns the RGB filesystem stockpile, a wallet-owned auth-token
 /// registry, and a non-consensus metadata cache.
 ///
@@ -141,8 +158,11 @@ struct UpdateJournal {
 /// The stash directory is a local-filesystem trust boundary. Its contract
 /// files, metadata, and wallet-correlated seal registry are trusted only after
 /// strict decoding and consistency checks; they are not encrypted by this
-/// component. On Unix, this resolver creates the directory with owner-only
-/// permissions and persists the registry with owner read/write permissions.
+/// component. Ownership fencing is currently supported only on Unix local
+/// filesystems, where this resolver creates the directory with owner-only
+/// permissions and persists the registry and process-ownership lock with owner
+/// read/write permissions. Other platforms fail startup closed until a safe
+/// platform-native no-follow lock implementation exists.
 #[cfg(feature = "rgb-native")]
 pub struct StashResolver {
     cache: RwLock<HashMap<String, ContractMeta>>,
@@ -155,6 +175,9 @@ pub struct StashResolver {
     #[allow(dead_code)]
     esplora_url: String,
     esplora_client: esplora::BlockingClient,
+    // Fields drop in declaration order. Keep ownership last so every other
+    // stash handle is gone before process ownership is released.
+    _ownership_guard: StashOwnershipGuard,
 }
 
 #[cfg(feature = "rgb-native")]
@@ -183,9 +206,11 @@ impl StashResolver {
         }
 
         validate_endpoint(esplora_url)?;
+        ensure_stash_ownership_platform_supported()?;
         fs::create_dir_all(&stockpile_dir).map_err(|_| {
             ConxianError::Rgb("failed to create RGB stockpile directory".to_string())
         })?;
+        let ownership_guard = acquire_stash_ownership(&stockpile_dir)?;
         restrict_directory(&stockpile_dir).map_err(|_| {
             ConxianError::Rgb("failed to restrict RGB stockpile directory permissions".to_string())
         })?;
@@ -217,6 +242,7 @@ impl StashResolver {
             testnet,
             esplora_url: esplora_url.to_string(),
             esplora_client,
+            _ownership_guard: ownership_guard,
         })
     }
 
@@ -1569,6 +1595,83 @@ fn restrict_file(path: &Path) -> std::io::Result<()> {
 }
 
 #[cfg(feature = "rgb-native")]
+fn ensure_stash_ownership_platform_supported() -> ConxianResult<()> {
+    #[cfg(unix)]
+    {
+        Ok(())
+    }
+    #[cfg(not(unix))]
+    {
+        Err(ConxianError::Rgb(
+            "unsupported platform for RGB stash ownership: use a Unix local filesystem until a safe platform-native no-follow lock implementation is available"
+                .to_string(),
+        ))
+    }
+}
+
+#[cfg(feature = "rgb-native")]
+fn acquire_stash_ownership(stockpile_dir: &Path) -> ConxianResult<StashOwnershipGuard> {
+    ensure_stash_ownership_platform_supported()?;
+    let lock_path = stockpile_dir.join(OWNER_LOCK_FILE);
+    let mut options = OpenOptions::new();
+    options.create(true).truncate(false).read(true).write(true);
+    #[cfg(unix)]
+    {
+        options
+            .mode(0o600)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC);
+    }
+    let lock_file = options.open(&lock_path).map_err(|error| {
+        ConxianError::Rgb(format!(
+            "failed to safely open RGB stash ownership lock '{}': {error}",
+            lock_path.display()
+        ))
+    })?;
+
+    let metadata = lock_file.metadata().map_err(|error| {
+        ConxianError::Rgb(format!(
+            "failed to inspect opened RGB stash ownership lock '{}': {error}",
+            lock_path.display()
+        ))
+    })?;
+    if !metadata.file_type().is_file() {
+        return Err(ConxianError::Rgb(format!(
+            "RGB stash ownership lock '{}' must be a regular non-symlink file",
+            lock_path.display()
+        )));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+
+        if metadata.nlink() != 1 {
+            return Err(ConxianError::Rgb(format!(
+                "RGB stash ownership lock '{}' must not be hard-linked",
+                lock_path.display()
+            )));
+        }
+    }
+
+    lock_file.try_lock_exclusive().map_err(|error| {
+        ConxianError::Rgb(format!(
+            "RGB stash '{}' is already owned by another Gateway process or exclusive ownership lock '{}' cannot be acquired: {error}",
+            stockpile_dir.display(),
+            lock_path.display()
+        ))
+    })?;
+    #[cfg(unix)]
+    lock_file
+        .set_permissions(fs::Permissions::from_mode(0o600))
+        .map_err(|error| {
+            ConxianError::Rgb(format!(
+                "failed to restrict RGB stash ownership lock '{}' permissions after acquisition: {error}",
+                lock_path.display()
+            ))
+        })?;
+    Ok(StashOwnershipGuard { lock_file })
+}
+
+#[cfg(feature = "rgb-native")]
 fn load_stockpile(path: &Path, testnet: bool) -> ConxianResult<StockpileDir<bp::seals::TxoSeal>> {
     for entry in fs::read_dir(path)
         .map_err(|_| ConxianError::Rgb("corrupt RGB stockpile persistence".to_string()))?
@@ -1852,6 +1955,7 @@ mod tests {
     use std::cell::Cell;
     use std::collections::BTreeMap;
     use std::convert::Infallible;
+    use std::process::Command;
     use std::sync::atomic::{AtomicU64, Ordering};
     use strict_encoding::{
         StreamWriter, StrictDecode, StrictDumb, StrictEncode, StrictReader, StrictWriter,
@@ -1882,6 +1986,183 @@ mod tests {
     fn cleanup(path: &Path) {
         let _ = fs::remove_file(path);
         let _ = fs::remove_dir_all(path);
+    }
+
+    #[test]
+    fn ownership_subprocess_worker() {
+        let Ok(stash_path) = std::env::var("CONXIAN_RGB_OWNERSHIP_STASH_PATH") else {
+            return;
+        };
+        let output_path = PathBuf::from(
+            std::env::var("CONXIAN_RGB_OWNERSHIP_OUTPUT_PATH")
+                .expect("ownership subprocess output path is required"),
+        );
+        let result = match StashResolver::new(&stash_path, "https://blockstream.info/api") {
+            Ok(_resolver) => "acquired",
+            Err(ConxianError::Rgb(message)) if message.contains("already owned") => "blocked",
+            Err(error) => panic!("unexpected ownership subprocess error: {error}"),
+        };
+        fs::write(output_path, result).unwrap();
+    }
+
+    fn run_ownership_subprocess(stash_path: &Path, output_path: &Path) -> String {
+        let status = Command::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg("bitcoin::rgb_stash::tests::ownership_subprocess_worker")
+            .arg("--nocapture")
+            .env("CONXIAN_RGB_OWNERSHIP_STASH_PATH", stash_path)
+            .env("CONXIAN_RGB_OWNERSHIP_OUTPUT_PATH", output_path)
+            .env("RUST_TEST_THREADS", "1")
+            .status()
+            .expect("ownership subprocess should start");
+        assert!(status.success(), "ownership subprocess failed: {status}");
+        fs::read_to_string(output_path).unwrap()
+    }
+
+    #[test]
+    fn subprocess_same_path_contention_then_drop_allows_reacquire() {
+        let path = temp_path("ownership-subprocess");
+        cleanup(&path);
+        let first_output = path.with_extension("blocked.out");
+        let second_output = path.with_extension("acquired.out");
+        let resolver = StashResolver::new(&path, "https://blockstream.info/api").unwrap();
+
+        assert_eq!(run_ownership_subprocess(&path, &first_output), "blocked");
+        drop(resolver);
+        assert_eq!(run_ownership_subprocess(&path, &second_output), "acquired");
+
+        cleanup(&first_output);
+        cleanup(&second_output);
+        cleanup(&path);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn same_process_same_path_contention_fails_closed() {
+        let path = temp_path("ownership-same-process");
+        cleanup(&path);
+        let resolver = StashResolver::new(&path, "https://blockstream.info/api").unwrap();
+
+        let result = StashResolver::new(&path, "https://blockstream.info/api");
+        assert!(matches!(
+            result,
+            Err(ConxianError::Rgb(message)) if message.contains("already owned")
+        ));
+
+        drop(resolver);
+        cleanup(&path);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn failed_contention_does_not_change_stash_root_mode() {
+        let path = temp_path("ownership-preserves-root-mode");
+        cleanup(&path);
+        let resolver = StashResolver::new(&path, "https://blockstream.info/api").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o751)).unwrap();
+
+        let result = StashResolver::new(&path, "https://blockstream.info/api");
+        assert!(matches!(
+            result,
+            Err(ConxianError::Rgb(message)) if message.contains("already owned")
+        ));
+        assert_eq!(
+            fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o751
+        );
+
+        drop(resolver);
+        cleanup(&path);
+    }
+
+    #[cfg(not(unix))]
+    #[test]
+    fn non_unix_stash_ownership_is_rejected_before_filesystem_mutation() {
+        let path = temp_path("ownership-unsupported-platform");
+        cleanup(&path);
+
+        let result = StashResolver::new(&path, "https://blockstream.info/api");
+        assert!(matches!(
+            result,
+            Err(ConxianError::Rgb(message))
+                if message.contains("unsupported platform for RGB stash ownership")
+        ));
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn different_stash_roots_have_independent_ownership() {
+        let first_path = temp_path("ownership-independent-a");
+        let second_path = temp_path("ownership-independent-b");
+        cleanup(&first_path);
+        cleanup(&second_path);
+
+        let first = StashResolver::new(&first_path, "https://blockstream.info/api").unwrap();
+        let second = StashResolver::new(&second_path, "https://blockstream.info/api").unwrap();
+        assert!(first_path.join(OWNER_LOCK_FILE).is_file());
+        assert!(second_path.join(OWNER_LOCK_FILE).is_file());
+
+        drop(first);
+        drop(second);
+        cleanup(&first_path);
+        cleanup(&second_path);
+    }
+
+    #[test]
+    fn owner_lock_directory_fails_closed() {
+        let path = temp_path("ownership-directory");
+        cleanup(&path);
+        fs::create_dir_all(path.join(OWNER_LOCK_FILE)).unwrap();
+
+        let result = StashResolver::new(&path, "https://blockstream.info/api");
+        assert!(matches!(
+            result,
+            Err(ConxianError::Rgb(message)) if message.contains("ownership lock")
+        ));
+        assert!(path.join(OWNER_LOCK_FILE).is_dir());
+        cleanup(&path);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn owner_lock_symlink_and_hard_link_fail_closed() {
+        for hard_link in [false, true] {
+            let path = temp_path("ownership-link");
+            cleanup(&path);
+            fs::create_dir_all(&path).unwrap();
+            let target = path.join("lock-target");
+            fs::write(&target, b"do-not-touch").unwrap();
+            let lock_path = path.join(OWNER_LOCK_FILE);
+            if hard_link {
+                fs::hard_link(&target, &lock_path).unwrap();
+            } else {
+                symlink(&target, &lock_path).unwrap();
+            }
+
+            let result = StashResolver::new(&path, "https://blockstream.info/api");
+            assert!(matches!(
+                result,
+                Err(ConxianError::Rgb(message)) if message.contains("ownership lock")
+            ));
+            assert_eq!(fs::read(&target).unwrap(), b"do-not-touch");
+            cleanup(&path);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn owner_lock_uses_restrictive_permissions() {
+        let path = temp_path("ownership-permissions");
+        cleanup(&path);
+        let resolver = StashResolver::new(&path, "https://blockstream.info/api").unwrap();
+        let mode = fs::metadata(path.join(OWNER_LOCK_FILE))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o600);
+        drop(resolver);
+        cleanup(&path);
     }
 
     #[test]
@@ -1919,6 +2200,7 @@ mod tests {
         );
         assert!(!path.join("contract-metadata.tmp").exists());
 
+        drop(resolver);
         let reloaded = StashResolver::new(&path, "https://blockstream.info/api").unwrap();
         assert_eq!(
             reloaded.lookup_contract(VALID_ID).unwrap(),
@@ -2263,6 +2545,7 @@ mod tests {
             .count();
         assert_eq!(staging_dirs, 0, "failed import left a staging directory");
 
+        drop(resolver);
         let reloaded =
             StashResolver::new_with_network(&stash_path, "http://127.0.0.1:1/api", true).unwrap();
         assert!(!reloaded.verify_transition(&contract_id).unwrap());
@@ -2284,6 +2567,7 @@ mod tests {
         assert!(resolver.verify_transition(&contract_id).unwrap());
         assert!(transaction_residue(&stash_path).is_empty());
 
+        drop(resolver);
         let reloaded =
             StashResolver::new_with_network(&stash_path, "http://127.0.0.1:1/api", true).unwrap();
         assert!(reloaded.verify_transition(&contract_id).unwrap());
@@ -2347,6 +2631,7 @@ mod tests {
             b"new"
         );
 
+        drop(resolver);
         let restarted =
             StashResolver::new_with_network(&stash_path, "http://127.0.0.1:1/api", true).unwrap();
         assert!(restarted
@@ -2377,6 +2662,7 @@ mod tests {
         assert!(resolver.verify_transition(&contract_id).unwrap());
         assert!(transaction_residue(&stash_path).is_empty());
 
+        drop(resolver);
         let restarted =
             StashResolver::new_with_network(&stash_path, "http://127.0.0.1:1/api", true).unwrap();
         assert!(restarted.verify_transition(&contract_id).unwrap());
@@ -2458,6 +2744,7 @@ mod tests {
         assert!(resolver.verify_transition(&contract_id).unwrap());
         assert!(transaction_residue(&stash_path).is_empty());
 
+        drop(resolver);
         let reloaded =
             StashResolver::new_with_network(&stash_path, "http://127.0.0.1:1/api", true).unwrap();
         assert!(reloaded.verify_transition(&contract_id).unwrap());
@@ -2546,6 +2833,46 @@ mod tests {
         ));
         recover_update_transaction(&transaction.transaction_dir, &stash_path, true).unwrap();
         assert!(transaction_residue(&stash_path).is_empty());
+        cleanup(&path);
+    }
+
+    #[test]
+    fn ownership_contention_precedes_recovery_and_persistence_mutation() {
+        let path = temp_path("ownership-before-recovery");
+        cleanup(&path);
+        let (_, contract_id, stash_path) = import_fixture(&path);
+        let contract_id = rgb::ContractId::from_str(&contract_id).unwrap();
+        let transaction = create_update_transaction(&stash_path, contract_id, true).unwrap();
+        let metadata_path = stash_path.join("contract-metadata.json");
+        let registry_path = stash_path.join("seal-registry.json");
+        fs::write(&metadata_path, b"metadata-must-not-change").unwrap();
+        fs::write(&registry_path, b"registry-must-not-change").unwrap();
+        let journal_before =
+            fs::read(transaction.transaction_dir.join(UPDATE_JOURNAL_FILE)).unwrap();
+        let owner = acquire_stash_ownership(&stash_path).unwrap();
+
+        let result = StashResolver::new_with_network(&stash_path, "http://127.0.0.1:1/api", true);
+        assert!(matches!(
+            result,
+            Err(ConxianError::Rgb(message)) if message.contains("already owned")
+        ));
+        assert!(transaction.transaction_dir.is_dir());
+        assert!(transaction.live_contract.is_dir());
+        assert!(transaction.staged_contract.is_dir());
+        assert_eq!(
+            fs::read(transaction.transaction_dir.join(UPDATE_JOURNAL_FILE)).unwrap(),
+            journal_before
+        );
+        assert_eq!(
+            fs::read(&metadata_path).unwrap(),
+            b"metadata-must-not-change"
+        );
+        assert_eq!(
+            fs::read(&registry_path).unwrap(),
+            b"registry-must-not-change"
+        );
+
+        drop(owner);
         cleanup(&path);
     }
 
