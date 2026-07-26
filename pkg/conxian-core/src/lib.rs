@@ -46,6 +46,7 @@ pub enum MempoolTxStatus {
     Pending,
     Stuck,
     BumpBroadcasted,
+    BumpOutcomeUnknown,
     GuardrailRejected,
     Confirmed,
 }
@@ -66,6 +67,18 @@ pub struct TrackedMempoolTx {
     pub last_bump_strategy: Option<FeeBumpStrategy>,
     pub last_error: Option<String>,
     pub replacement_txid: Option<String>,
+    /// Ephemeral ownership of this record while an orchestrator evaluates and
+    /// possibly broadcasts a fee bump. Missing fields preserve legacy state.
+    #[serde(default)]
+    pub lease_owner: Option<String>,
+    /// Unique fencing token for one claim. Legacy records deserialize as no claim.
+    #[serde(default)]
+    pub lease_id: Option<String>,
+    #[serde(default)]
+    pub lease_expires_at: Option<u64>,
+    /// Monotonic record generation used to reject stale completion snapshots.
+    #[serde(default)]
+    pub record_generation: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -160,10 +173,32 @@ pub enum ConxianError {
     Io(String),
     #[error("Persistence error: {0}")]
     Persistence(String),
+    #[error("persistence revision conflict: expected {expected}, found {actual}")]
+    PersistenceConflict { expected: u64, actual: u64 },
+    #[error("persistence commit outcome is unknown after revision {revision}: {message}")]
+    PersistenceCommitUnknown { revision: u64, message: String },
+    #[error("persistence lease for transaction '{txid}' is not owned by '{owner}'")]
+    PersistenceLeaseLost { txid: String, owner: String },
     #[error("RGB error: {0}")]
     Rgb(String),
     #[error("Machine identity error: {0}")]
     MachineIdentity(String),
+}
+
+impl ConxianError {
+    /// Whether this error means Gateway-owned durable state could not be
+    /// loaded, fenced, or committed safely. Long-running owners of that state
+    /// must return these errors to process supervision instead of retrying an
+    /// upstream polling loop.
+    pub fn is_persistence_failure(&self) -> bool {
+        matches!(
+            self,
+            Self::Persistence(_)
+                | Self::PersistenceConflict { .. }
+                | Self::PersistenceCommitUnknown { .. }
+                | Self::PersistenceLeaseLost { .. }
+        )
+    }
 }
 
 /// Shared global state wrapped for thread-safe access.
@@ -654,6 +689,7 @@ pub struct GcpTokenRequest {
 
 /// Persistent data that needs to be saved across restarts.
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[serde(deny_unknown_fields)]
 pub struct PersistentState {
     pub bitcoin_height: u64,
     pub stacks_height: u64,
@@ -661,10 +697,79 @@ pub struct PersistentState {
     pub mempool_pending_txs: Vec<TrackedMempoolTx>,
 }
 
+/// A persistence snapshot paired with the revision used for compare-and-swap.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct VersionedPersistentState {
+    pub revision: u64,
+    pub state: PersistentState,
+}
+
 /// Trait for persistence of gateway state.
 pub trait Persistence: Send + Sync {
-    fn save(&self, state: &PersistentState) -> ConxianResult<()>;
-    fn load(&self) -> ConxianResult<PersistentState>;
+    /// Legacy whole-snapshot mutation hook retained for pre-`0.1.5` source
+    /// compatibility. Production callers must use compare-and-swap instead.
+    #[deprecated(note = "use load_versioned plus compare_and_swap")]
+    fn save(&self, _state: &PersistentState) -> ConxianResult<()> {
+        Err(ConxianError::Persistence(
+            "non-transactional save unsupported; use compare_and_swap".to_string(),
+        ))
+    }
+
+    /// Load state with its compare-and-swap revision. Implementations must
+    /// provide real revision semantics; there is no non-atomic fallback.
+    fn load_versioned(&self) -> ConxianResult<VersionedPersistentState> {
+        Err(ConxianError::Persistence(
+            "transactions unsupported by this persistence implementation".to_string(),
+        ))
+    }
+
+    /// Atomically replace state only when the persisted revision matches.
+    ///
+    fn compare_and_swap(
+        &self,
+        _expected_revision: u64,
+        _new_state: &PersistentState,
+    ) -> ConxianResult<VersionedPersistentState> {
+        Err(ConxianError::Persistence(
+            "transactions unsupported by this persistence implementation".to_string(),
+        ))
+    }
+
+    fn load(&self) -> ConxianResult<PersistentState> {
+        self.load_versioned().map(|versioned| versioned.state)
+    }
+}
+
+/// Apply a scoped state mutation with bounded optimistic retries.
+///
+/// Only revision conflicts are retried. Corruption, lock/durability failures,
+/// and unknown commit outcomes fail closed so callers cannot replay external
+/// side effects after an ambiguous commit.
+pub fn transactional_update<T>(
+    persistence: &dyn Persistence,
+    max_attempts: usize,
+    mut mutate: impl FnMut(&mut PersistentState) -> ConxianResult<T>,
+) -> ConxianResult<(VersionedPersistentState, T)> {
+    if max_attempts == 0 {
+        return Err(ConxianError::Persistence(
+            "transactional update requires at least one attempt".to_string(),
+        ));
+    }
+
+    for attempt in 0..max_attempts {
+        let current = persistence.load_versioned()?;
+        let mut next = current.state.clone();
+        let value = mutate(&mut next)?;
+        match persistence.compare_and_swap(current.revision, &next) {
+            Ok(committed) => return Ok((committed, value)),
+            Err(ConxianError::PersistenceConflict { .. }) if attempt + 1 < max_attempts => {}
+            Err(error) => return Err(error),
+        }
+    }
+
+    Err(ConxianError::Persistence(
+        "transactional update exhausted conflict retries".to_string(),
+    ))
 }
 
 /// CON-423: SAB-owned system wallets for BOS operations.

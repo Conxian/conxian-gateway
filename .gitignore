@@ -5,6 +5,8 @@ dist
 *.log
 test-results/
 gateway_state.json
+.gateway_state.json.transaction.lock
+.gateway_state.json.ownership.lock
 offline_queue.db
 .env
 .env.local

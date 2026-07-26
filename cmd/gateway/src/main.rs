@@ -1,26 +1,32 @@
+use anyhow::Context;
 use conxian_api::{configure_routes, new_lightning_adapter, new_settlement_log, AppState};
 use conxian_compliance::{CoreVerifier, IdentityManager, ZkcVerifier};
-use conxian_core::{GatewayState, Persistence, SharedState};
+use conxian_core::{
+    persistence::FilePersistence, ConxianError, GatewayState, Persistence, SharedState,
+};
 #[cfg(feature = "rgb-native")]
 use conxian_engine::StashResolver;
 use conxian_engine::{
+    run_blocking_persistence,
     stacks::alex::{AlexClient, AlexRpcClient},
-    BitcoinListener, BitcoinRpcClient, FeeBumpPolicyConfig, MempoolOrchestrator, NodeRgbAdapter,
-    NttRelayer, RedisCoordinator, StacksListener, StacksRpcClient, TreasuryMonitor,
+    BitcoinCoreShadowObserver, BitcoinCoreShadowObserverClient, BitcoinListener, BitcoinRpcClient,
+    FeeBumpPolicyConfig, MempoolOrchestrator, NodeRgbAdapter, NttRelayer, RedisCoordinator,
+    StacksListener, StacksRpcClient, TreasuryMonitor,
 };
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tokio::signal;
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
 mod config;
-mod persistence;
-
+mod supervisor;
 use config::Config;
-use persistence::FilePersistence;
+use supervisor::{shutdown_requested, supervise, CriticalTask};
+
+const CRITICAL_TASK_SHUTDOWN_GRACE: Duration = Duration::from_secs(30);
 
 fn init_tracing() {
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
@@ -52,19 +58,38 @@ async fn main() -> anyhow::Result<()> {
     // Capture server start time for token expiry enforcement (CON-1276)
     let server_start = Instant::now();
 
-    // Initialize persistence
-    let persistence = Arc::new(FilePersistence::new("gateway_state.json"));
+    // Construct, exclusively lock, and load the synchronous file backend on
+    // Tokio's blocking pool so startup never stalls an async runtime worker.
+    let persistence_path = config.gateway_state_path.clone();
+    let allow_unknown_filesystem = config.gateway_allow_unknown_state_filesystem;
+    let (persistence, _state_ownership_guard, p_state) =
+        run_blocking_persistence("initialize Gateway file persistence", move || {
+            config::validate_state_filesystem(
+                std::path::Path::new(&persistence_path),
+                allow_unknown_filesystem,
+            )
+            .map_err(ConxianError::Persistence)?;
+            let persistence = Arc::new(FilePersistence::new(&persistence_path)?);
+            let ownership_guard = persistence.acquire_ownership()?;
+            let state = persistence.load()?;
+            Ok((persistence, ownership_guard, state))
+        })
+        .await
+        .with_context(|| {
+            format!(
+                "failed to initialize, lock, or load Gateway persistence path '{}'",
+                config.gateway_state_path
+            )
+        })?;
 
     // Initialize shared state
     let mut initial_state = GatewayState::default();
-    if let Ok(p_state) = persistence.load() {
-        initial_state.bitcoin.height = p_state.bitcoin_height;
-        initial_state.stacks.height = p_state.stacks_height;
-        info!(
-            "Loaded persisted state: Bitcoin height {}, Stacks height {}",
-            p_state.bitcoin_height, p_state.stacks_height
-        );
-    }
+    initial_state.bitcoin.height = p_state.bitcoin_height;
+    initial_state.stacks.height = p_state.stacks_height;
+    info!(
+        "Loaded persisted state: Bitcoin height {}, Stacks height {}",
+        p_state.bitcoin_height, p_state.stacks_height
+    );
 
     let state: SharedState = Arc::new(RwLock::new(initial_state));
 
@@ -90,13 +115,26 @@ async fn main() -> anyhow::Result<()> {
         &config.bitcoin_rpc_pass,
     )?;
 
+    let bitcoin_core_shadow_observer: Option<Arc<dyn BitcoinCoreShadowObserver>> = config
+        .bitcoin_core_shadow_observation_enabled
+        .then(|| {
+            BitcoinCoreShadowObserverClient::new(
+                &config.bitcoin_rpc_url,
+                &config.bitcoin_rpc_user,
+                &config.bitcoin_rpc_pass,
+            )
+            .map(|observer| Arc::new(observer) as Arc<dyn BitcoinCoreShadowObserver>)
+        })
+        .transpose()?;
+
     let mut btc_listener = BitcoinListener::new(
         btc_rpc,
         state.clone(),
         persistence.clone(),
         coordinator.clone(),
         config.bitcoin_sync_interval,
-    );
+    )
+    .await?;
 
     // Initialize mempool orchestrator (CON-718)
     let mempool_rpc = BitcoinRpcClient::new(
@@ -150,7 +188,8 @@ async fn main() -> anyhow::Result<()> {
         persistence.clone(),
         coordinator.clone(),
         config.stacks_sync_interval,
-    );
+    )
+    .await?;
 
     // ALEX Client Initialization. The quote path remains read-only and
     // unverified. Unsigned payload preparation is disabled unless an exact,
@@ -302,6 +341,7 @@ async fn main() -> anyhow::Result<()> {
     let app_state = AppState {
         shared: state.clone(),
         persistence: Some(persistence.clone()),
+        bitcoin_core_shadow_observer,
         fiat: fiat_router,
         a2p: a2p_router,
         identity: identity_manager,
@@ -317,79 +357,6 @@ async fn main() -> anyhow::Result<()> {
         coordinator,
     };
 
-    // Create a cancellation token for graceful shutdown of listeners
-    let (shutdown_tx, _) = tokio::sync::broadcast::channel::<()>(1);
-
-    let mut btc_shutdown_rx = shutdown_tx.subscribe();
-    tokio::spawn(async move {
-        tokio::select! {
-            res = btc_listener.run() => {
-                if let Err(e) = res {
-                    error!("Bitcoin listener failed: {}", e);
-                }
-            }
-            _ = btc_shutdown_rx.recv() => {
-                info!("Bitcoin listener stopping...");
-            }
-        }
-    });
-
-    let mut stx_shutdown_rx = shutdown_tx.subscribe();
-    tokio::spawn(async move {
-        tokio::select! {
-            res = stx_listener.run() => {
-                if let Err(e) = res {
-                    error!("Stacks listener failed: {}", e);
-                }
-            }
-            _ = stx_shutdown_rx.recv() => {
-                info!("Stacks listener stopping...");
-            }
-        }
-    });
-
-    let mut treasury_shutdown_rx = shutdown_tx.subscribe();
-    tokio::spawn(async move {
-        tokio::select! {
-            res = treasury_monitor.run() => {
-                if let Err(e) = res {
-                    error!("Treasury monitor failed: {}", e);
-                }
-            }
-            _ = treasury_shutdown_rx.recv() => {
-                info!("Treasury monitor stopping...");
-            }
-        }
-    });
-
-    let mut ntt_shutdown_rx = shutdown_tx.subscribe();
-    tokio::spawn(async move {
-        tokio::select! {
-            res = ntt_relayer.run() => {
-                if let Err(e) = res {
-                    error!("NTT relayer failed: {}", e);
-                }
-            }
-            _ = ntt_shutdown_rx.recv() => {
-                info!("NTT relayer stopping...");
-            }
-        }
-    });
-
-    let mut mempool_shutdown_rx = shutdown_tx.subscribe();
-    tokio::spawn(async move {
-        tokio::select! {
-            res = mempool_orchestrator.run() => {
-                if let Err(e) = res {
-                    error!("Mempool orchestrator failed: {}", e);
-                }
-            }
-            _ = mempool_shutdown_rx.recv() => {
-                info!("Mempool orchestrator stopping...");
-            }
-        }
-    });
-
     // Configure and start API server
     let app = configure_routes(
         app_state,
@@ -401,39 +368,75 @@ async fn main() -> anyhow::Result<()> {
     info!("API server listening on {}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
+    let tasks = vec![
+        CriticalTask::new("Bitcoin listener", move |shutdown| async move {
+            btc_listener
+                .run_until_shutdown(shutdown)
+                .await
+                .map_err(Into::into)
+        }),
+        CriticalTask::new("Stacks listener", move |shutdown| async move {
+            stx_listener
+                .run_until_shutdown(shutdown)
+                .await
+                .map_err(Into::into)
+        }),
+        CriticalTask::new("treasury monitor", move |shutdown| async move {
+            treasury_monitor
+                .run_until_shutdown(shutdown)
+                .await
+                .map_err(Into::into)
+        }),
+        CriticalTask::new("NTT relayer", move |shutdown| async move {
+            ntt_relayer
+                .run_until_shutdown(shutdown)
+                .await
+                .map_err(Into::into)
+        }),
+        CriticalTask::new("mempool orchestrator", move |shutdown| async move {
+            mempool_orchestrator
+                .run_until_shutdown(shutdown)
+                .await
+                .map_err(Into::into)
+        }),
+        CriticalTask::new("HTTP server", move |mut shutdown| async move {
+            axum::serve(listener, app)
+                .with_graceful_shutdown(async move {
+                    shutdown_requested(&mut shutdown).await;
+                })
+                .await
+                .context("HTTP server failed")
+        }),
+    ];
 
-    // Axum graceful shutdown
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal(shutdown_tx))
-        .await?;
+    supervise(tasks, shutdown_signal(), CRITICAL_TASK_SHUTDOWN_GRACE).await?;
 
     info!("Conxian Gateway shut down successfully.");
     Ok(())
 }
 
-async fn shutdown_signal(shutdown_tx: tokio::sync::broadcast::Sender<()>) {
+async fn shutdown_signal() -> anyhow::Result<()> {
     let ctrl_c = async {
         signal::ctrl_c()
             .await
-            .expect("failed to install Ctrl+C handler");
+            .context("failed to install Ctrl+C handler")
     };
 
     #[cfg(unix)]
     let terminate = async {
         signal::unix::signal(signal::unix::SignalKind::terminate())
-            .expect("failed to install signal handler")
+            .context("failed to install SIGTERM handler")?
             .recv()
             .await;
+        anyhow::Ok(())
     };
 
     #[cfg(not(unix))]
-    let terminate = std::future::pending::<()>();
+    let terminate = std::future::pending::<anyhow::Result<()>>();
 
     tokio::select! {
-        _ = ctrl_c => {},
-        _ = terminate => {},
+        result = ctrl_c => result?,
+        result = terminate => result?,
     }
-
-    info!("Shutdown signal received...");
-    let _ = shutdown_tx.send(());
+    Ok(())
 }

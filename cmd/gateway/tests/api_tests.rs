@@ -15,7 +15,14 @@ use conxian_compliance::{CoreVerifier, IdentityManager, UniversalVerifier, ZkcVe
 use conxian_core::{
     Attestation, AttestationRequest, BitVmAttestation, ConxianJobCard, FeeBumpStrategy,
     GatewayState, JobCardSettlementRequest, MempoolTxStatus, Persistence, PersistentState,
-    SharedState, TrackedMempoolTx, WorkIntent,
+    SharedState, TrackedMempoolTx, VersionedPersistentState, WorkIntent,
+};
+use conxian_engine::{
+    BitcoinCoreShadowObservation, BitcoinCoreShadowObserver, CoreBestBlockStats,
+    CoreBlockchainInfo, CoreMempoolInfo, CoreNetworkInfo, DeploymentObservation,
+    DeploymentObservationStatus, DeploymentSourceScope, FeeEstimateAvailability,
+    FeeEstimateObservation, FeeRateUnit, ObservationAvailability, ObservationErrorCategory,
+    ShadowObserverFailure, SourceObservation,
 };
 use hmac::KeyInit;
 use hmac::{Hmac, Mac};
@@ -43,50 +50,88 @@ struct StaticPersistence {
 }
 
 impl Persistence for StaticPersistence {
-    fn save(&self, _state: &PersistentState) -> conxian_core::ConxianResult<()> {
-        Ok(())
+    fn load_versioned(&self) -> conxian_core::ConxianResult<VersionedPersistentState> {
+        Ok(VersionedPersistentState {
+            revision: 0,
+            state: self.state.clone(),
+        })
     }
 
-    fn load(&self) -> conxian_core::ConxianResult<PersistentState> {
-        Ok(self.state.clone())
+    fn compare_and_swap(
+        &self,
+        expected_revision: u64,
+        _new_state: &PersistentState,
+    ) -> conxian_core::ConxianResult<VersionedPersistentState> {
+        Err(conxian_core::ConxianError::PersistenceConflict {
+            expected: expected_revision,
+            actual: 0,
+        })
     }
 }
 
 struct FailingPersistence;
 
 impl Persistence for FailingPersistence {
-    fn save(&self, _state: &PersistentState) -> conxian_core::ConxianResult<()> {
+    fn load_versioned(&self) -> conxian_core::ConxianResult<VersionedPersistentState> {
         Err(conxian_core::ConxianError::Internal(
             "backend-error-must-not-appear".to_string(),
         ))
     }
 
-    fn load(&self) -> conxian_core::ConxianResult<PersistentState> {
+    fn compare_and_swap(
+        &self,
+        _expected_revision: u64,
+        _new_state: &PersistentState,
+    ) -> conxian_core::ConxianResult<VersionedPersistentState> {
         Err(conxian_core::ConxianError::Internal(
             "backend-error-must-not-appear".to_string(),
         ))
+    }
+}
+
+struct StaticShadowObserver {
+    result: Result<BitcoinCoreShadowObservation, ShadowObserverFailure>,
+}
+
+#[async_trait]
+impl BitcoinCoreShadowObserver for StaticShadowObserver {
+    async fn observe(&self) -> Result<BitcoinCoreShadowObservation, ShadowObserverFailure> {
+        self.result.clone()
     }
 }
 
 fn setup_app(state: SharedState) -> axum::Router {
-    setup_app_with_lightning_and_persistence(state, new_lightning_adapter(), None)
+    setup_app_with_lightning_and_persistence(state, new_lightning_adapter(), None, None)
 }
 
 fn setup_app_with_lightning(state: SharedState, lightning: Arc<LightningAdapter>) -> axum::Router {
-    setup_app_with_lightning_and_persistence(state, lightning, None)
+    setup_app_with_lightning_and_persistence(state, lightning, None, None)
 }
 
 fn setup_app_with_persistence(
     state: SharedState,
     persistence: Arc<dyn Persistence>,
 ) -> axum::Router {
-    setup_app_with_lightning_and_persistence(state, new_lightning_adapter(), Some(persistence))
+    setup_app_with_lightning_and_persistence(
+        state,
+        new_lightning_adapter(),
+        Some(persistence),
+        None,
+    )
+}
+
+fn setup_app_with_shadow_observer(
+    state: SharedState,
+    observer: Arc<dyn BitcoinCoreShadowObserver>,
+) -> axum::Router {
+    setup_app_with_lightning_and_persistence(state, new_lightning_adapter(), None, Some(observer))
 }
 
 fn setup_app_with_lightning_and_persistence(
     state: SharedState,
     lightning: Arc<LightningAdapter>,
     persistence: Option<Arc<dyn Persistence>>,
+    bitcoin_core_shadow_observer: Option<Arc<dyn BitcoinCoreShadowObserver>>,
 ) -> axum::Router {
     let fiat = Arc::new(FiatRouter::new(
         "ramp-key".to_string(),
@@ -163,6 +208,7 @@ fn setup_app_with_lightning_and_persistence(
         coordinator: None,
         shared: state,
         persistence,
+        bitcoin_core_shadow_observer,
         fiat,
         a2p,
         identity,
@@ -183,6 +229,76 @@ fn setup_app_with_lightning_and_persistence(
         std::time::Instant::now(),
         None,
     )
+}
+
+fn observed<T>(data: T) -> SourceObservation<T> {
+    SourceObservation {
+        availability: ObservationAvailability::Observed,
+        data: Some(data),
+        error_category: None,
+    }
+}
+
+fn sample_shadow_observation() -> BitcoinCoreShadowObservation {
+    let hash = "0000000000000000000000000000000000000000000000000000000000000001";
+    BitcoinCoreShadowObservation {
+        network_info: observed(CoreNetworkInfo { version: 310000 }),
+        blockchain_info: observed(CoreBlockchainInfo {
+            chain: "main".to_string(),
+            tip_height: 900000,
+            best_block_hash: hash.to_string(),
+        }),
+        fee_estimates: [
+            FeeEstimateObservation {
+                target_blocks: 2,
+                unit: FeeRateUnit::SatPerVbyte,
+                availability: FeeEstimateAvailability::Observed,
+                fee_rate_sat_vb: Some(25.0),
+                error_category: None,
+            },
+            FeeEstimateObservation {
+                target_blocks: 6,
+                unit: FeeRateUnit::SatPerVbyte,
+                availability: FeeEstimateAvailability::NoEstimate,
+                fee_rate_sat_vb: None,
+                error_category: None,
+            },
+            FeeEstimateObservation {
+                target_blocks: 12,
+                unit: FeeRateUnit::SatPerVbyte,
+                availability: FeeEstimateAvailability::Observed,
+                fee_rate_sat_vb: Some(5.0),
+                error_category: None,
+            },
+        ],
+        mempool_info: observed(CoreMempoolInfo {
+            transaction_count: 1000,
+            virtual_size_bytes: 2_000_000,
+            memory_usage_bytes: 3_000_000,
+            max_mempool_bytes: 300_000_000,
+            mempool_min_fee_sat_vb: 1.0,
+            min_relay_tx_fee_sat_vb: 1.0,
+            unbroadcast_count: 0,
+        }),
+        best_block_stats: observed(CoreBestBlockStats {
+            height: 900000,
+            block_hash: hash.to_string(),
+            transaction_count: 2500,
+            total_fees_sat: 123456,
+            total_weight: 3_999_000,
+            min_fee_rate_sat_vb: 1.0,
+            average_fee_rate_sat_vb: 4.5,
+            max_fee_rate_sat_vb: 100.0,
+            fee_rate_percentiles_sat_vb: [1.0, 2.0, 3.0, 4.0, 5.0],
+        }),
+        deployment: DeploymentObservation {
+            source_scope: DeploymentSourceScope::BitcoinCoreConfiguredEndpoint,
+            status: DeploymentObservationStatus::NotExposed,
+            observed_alias: None,
+            reported_state: None,
+            error_category: None,
+        },
+    }
 }
 
 fn make_attestation_header(device_id: &str, payload_hash: &str) -> String {
@@ -354,6 +470,229 @@ async fn test_get_metrics_authorized() {
 }
 
 #[tokio::test]
+async fn test_core_shadow_observation_requires_authentication() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let observer = Arc::new(StaticShadowObserver {
+        result: Ok(sample_shadow_observation()),
+    });
+    let app = setup_app_with_shadow_observer(state, observer);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/bitcoin/core/shadow-observation")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn test_core_shadow_observation_disabled_returns_stable_503() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/bitcoin/core/shadow-observation")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("x-402-payment", TEST_X402_PROOF)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&body).unwrap(),
+        json!({ "error": "bitcoin_core_shadow_observation_disabled" })
+    );
+}
+
+#[tokio::test]
+async fn test_core_shadow_observation_success_is_bounded_and_observation_only() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let observer = Arc::new(StaticShadowObserver {
+        result: Ok(sample_shadow_observation()),
+    });
+    let app = setup_app_with_shadow_observer(state, observer);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/bitcoin/core/shadow-observation")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("x-402-payment", TEST_X402_PROOF)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(body["schema_version"], 1);
+    assert_eq!(body["mode"], "shadow");
+    assert_eq!(body["scope"], "bitcoin_core_configured_endpoint");
+    assert_eq!(body["decision_use"], "observation_only");
+    assert_eq!(
+        body["provenance"]["source"],
+        "configured_bitcoin_core_endpoint"
+    );
+    assert_eq!(
+        body["provenance"]["scope"],
+        "bitcoin_core_configured_endpoint"
+    );
+    assert_eq!(body["provenance"]["network_scope"], "not_bitcoin_network");
+    assert_eq!(body["provenance"]["read_only"], true);
+    assert_eq!(body["network_info"]["data"]["version"], 310000);
+    assert_eq!(body["fee_estimates"].as_array().unwrap().len(), 3);
+    assert_eq!(body["fee_estimates"][0]["target_blocks"], 2);
+    assert_eq!(body["fee_estimates"][1]["target_blocks"], 6);
+    assert_eq!(body["fee_estimates"][2]["target_blocks"], 12);
+    assert_eq!(body["fee_estimates"][0]["unit"], "sat_per_vbyte");
+    assert_eq!(body["fee_estimates"][1]["availability"], "no_estimate");
+    assert!(body["fee_estimates"][1].get("fee_rate_sat_vb").is_none());
+    assert_eq!(
+        body["best_block_stats"]["data"]["fee_rate_percentiles_sat_vb"]
+            .as_array()
+            .unwrap()
+            .len(),
+        5
+    );
+    assert_eq!(
+        body["deployment"]["source_scope"],
+        "bitcoin_core_configured_endpoint"
+    );
+
+    let serialized = body.to_string();
+    for forbidden in [
+        "rpc_url",
+        "credential",
+        "subversion",
+        "peer",
+        "txid",
+        "address",
+        "route_id",
+        "raw_error",
+        "network_consensus",
+    ] {
+        assert!(!serialized.contains(forbidden), "leaked field: {forbidden}");
+    }
+}
+
+#[tokio::test]
+async fn test_core_shadow_observation_preserves_independent_partial_sources() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let mut observation = sample_shadow_observation();
+    observation.blockchain_info = SourceObservation {
+        availability: ObservationAvailability::Unavailable,
+        data: None,
+        error_category: Some(ObservationErrorCategory::Transport),
+    };
+    observation.best_block_stats = SourceObservation {
+        availability: ObservationAvailability::DependencyUnavailable,
+        data: None,
+        error_category: None,
+    };
+    observation.mempool_info = SourceObservation {
+        availability: ObservationAvailability::Unavailable,
+        data: None,
+        error_category: Some(ObservationErrorCategory::InvalidResponse),
+    };
+    let observer = Arc::new(StaticShadowObserver {
+        result: Ok(observation),
+    });
+    let app = setup_app_with_shadow_observer(state, observer);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/bitcoin/core/shadow-observation")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("x-402-payment", TEST_X402_PROOF)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(body["network_info"]["availability"], "observed");
+    assert_eq!(body["blockchain_info"]["availability"], "unavailable");
+    assert_eq!(body["blockchain_info"]["error_category"], "transport");
+    assert_eq!(
+        body["best_block_stats"]["availability"],
+        "dependency_unavailable"
+    );
+    assert_eq!(body["mempool_info"]["availability"], "unavailable");
+    assert_eq!(body["deployment"]["status"], "not_exposed");
+}
+
+#[tokio::test]
+async fn test_core_shadow_observation_catastrophic_failure_is_stable_503() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let observer = Arc::new(StaticShadowObserver {
+        result: Err(ShadowObserverFailure {
+            category: ObservationErrorCategory::Internal,
+        }),
+    });
+    let app = setup_app_with_shadow_observer(state, observer);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/bitcoin/core/shadow-observation")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("x-402-payment", TEST_X402_PROOF)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&body).unwrap(),
+        json!({ "error": "bitcoin_core_shadow_observation_unavailable" })
+    );
+}
+
+#[tokio::test]
+async fn test_core_shadow_observation_is_not_exposed_in_prometheus() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let observer = Arc::new(StaticShadowObserver {
+        result: Ok(sample_shadow_observation()),
+    });
+    let app = setup_app_with_shadow_observer(state, observer);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/metrics")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let body = String::from_utf8(body.to_vec()).unwrap();
+    assert!(!body.contains("shadow_observation"));
+    assert!(!body.contains("bitcoin_core_configured_endpoint"));
+}
+
+#[tokio::test]
 async fn test_mempool_telemetry_requires_authentication() {
     let state = Arc::new(RwLock::new(GatewayState::default()));
     let app = setup_app(state);
@@ -392,6 +731,10 @@ async fn test_mempool_telemetry_authorized_and_scoped() {
                 last_bump_strategy: Some(FeeBumpStrategy::Rbf),
                 last_error: Some("must-not-appear".to_string()),
                 replacement_txid: Some("replacement-must-not-appear".to_string()),
+                lease_owner: None,
+                lease_id: None,
+                lease_expires_at: None,
+                record_generation: 0,
             }],
         },
     });
@@ -413,7 +756,7 @@ async fn test_mempool_telemetry_authorized_and_scoped() {
     let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
     let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
 
-    assert_eq!(body["schema_version"], 1);
+    assert_eq!(body["schema_version"], 2);
     assert_eq!(body["scope"], "gateway_tracked_transactions");
     assert_eq!(body["network_mempool_observation"], "not_configured");
     assert_eq!(body["availability"], "available");
