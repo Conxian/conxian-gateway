@@ -314,3 +314,20 @@ The Conxian Protocol is built to empower individuals and institutions within the
 **Canton Principle**: Route without touching. Conxian serves as the sovereign membrane between institutional privacy DLTs and permissionless Bitcoin — verifying, attesting, translating — but never holding, controlling, or intermediating assets on either side.
 
 **Machine Economy Principle**: Machines are sovereign economic actors. Conxian provides the identity, routing, and compliance infrastructure for autonomous M2M value exchange without ever taking custody of machine wallets or revenue streams.
+
+## Session State (2026-07-30)
+
+### v0.1.5 — lib-conxian-core v0.3.0 Dependency
+- PR [#304](https://github.com/Conxian/conxian-gateway/pull/304) merged to main
+- `Cargo.toml`: added `lib-conxian-core` workspace dependency
+- `pkg/conxian-core/Cargo.toml`: added `lib-conxian-core` crate dependency
+- `pkg/conxian-core/src/trust_policy.rs`: new `core_compat` module with:
+  - `gateway_tier_to_core()`: T1→Strict, T2→Managed, T3→Expedient, T4→ObserverOnly
+  - `core_tier_to_gateway()`: reverse mapping
+  - `gateway_system_to_core()`: TrustSystem→BridgeSystem mapping
+  - Re-exports: Chain, ChainFamily, BridgeSystem, VerificationClass, FinalityClass
+- Tag `v0.1.5` created on main. GitHub Release published.
+- Core dep pinned to git rev on main
+
+### Remaining
+- crates.io publish: `gh workflow run release.yml -R Conxian/conxian-gateway -f release_version=0.1.5 -f publish_to_crates_io=true`
