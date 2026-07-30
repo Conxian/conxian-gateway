@@ -1,5 +1,50 @@
 use serde::{Deserialize, Serialize};
 
+// ── Core compatibility bridge (v0.3.0) ──
+// Maps gateway T1-T4 ↔ lib-conxian-core Strict/Managed/Expedient/ObserverOnly.
+// Gateway types and their serde names are preserved for backward compatibility.
+// New code should use lib_conxian_core::control_model types directly.
+pub mod core_compat {
+    pub use lib_conxian_core::control_model::{
+        Chain, ChainFamily, TrustTier as CoreTrustTier, BridgeSystem as CoreBridgeSystem,
+        VerificationClass, FinalityClass, chain_family_for,
+    };
+
+    use super::TrustSystem;
+    use super::TrustTier;
+
+    /// Maps gateway T1-T4 to Core Strict/Managed/Expedient/ObserverOnly.
+    pub const fn gateway_tier_to_core(tier: TrustTier) -> CoreTrustTier {
+        match tier {
+            TrustTier::T1 => CoreTrustTier::Strict,
+            TrustTier::T2 => CoreTrustTier::Managed,
+            TrustTier::T3 => CoreTrustTier::Expedient,
+            TrustTier::T4 => CoreTrustTier::ObserverOnly,
+        }
+    }
+
+    /// Maps Core Strict/Managed/Expedient/ObserverOnly to gateway T1-T4.
+    pub const fn core_tier_to_gateway(tier: CoreTrustTier) -> TrustTier {
+        match tier {
+            CoreTrustTier::Strict => TrustTier::T1,
+            CoreTrustTier::Managed => TrustTier::T2,
+            CoreTrustTier::Expedient => TrustTier::T3,
+            CoreTrustTier::ObserverOnly => TrustTier::T4,
+        }
+    }
+
+    /// Maps gateway TrustSystem to Core BridgeSystem where Core has an equivalent.
+    pub const fn gateway_system_to_core(system: TrustSystem) -> Option<CoreBridgeSystem> {
+        match system {
+            TrustSystem::Ibc => Some(CoreBridgeSystem::Ibc),
+            TrustSystem::Hyperlane => Some(CoreBridgeSystem::Hyperlane),
+            TrustSystem::LayerZeroV2 => Some(CoreBridgeSystem::LayerZeroV2),
+            TrustSystem::WormholeNtt => Some(CoreBridgeSystem::WormholeNtt),
+            TrustSystem::Axelar => Some(CoreBridgeSystem::Axelar),
+        }
+    }
+}
+
 pub const TRUST_METADATA_MISSING: &str = "TRUST_METADATA_MISSING";
 pub const TRUST_METADATA_INVALID: &str = "TRUST_METADATA_INVALID";
 pub const TRUST_METADATA_STALE: &str = "TRUST_METADATA_STALE";
