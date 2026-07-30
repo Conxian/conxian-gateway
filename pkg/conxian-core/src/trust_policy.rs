@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 // New code should use lib_conxian_core::control_model types directly.
 pub mod core_compat {
     pub use lib_conxian_core::control_model::{
-        Chain, ChainFamily, TrustTier as CoreTrustTier, BridgeSystem as CoreBridgeSystem,
-        VerificationClass, FinalityClass, chain_family_for,
+        chain_family_for, BridgeSystem as CoreBridgeSystem, Chain, ChainFamily, FinalityClass,
+        TrustTier as CoreTrustTier, VerificationClass,
     };
 
     use super::TrustSystem;
