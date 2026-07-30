@@ -84,6 +84,81 @@ For complete organizational protocol, see:
 | Machine Economy (peaq/DIMO/DePIN) | 🟡 Research — BTC/LN gateway opportunity (G-C8 P3) | `docs/research/CANTON_NETWORK_AND_MACHINE_ECONOMY_RESEARCH.md` |
 | UCV-2 | 🟡 Architecture — Cross-ledger settlement protocol | `docs/research/CANTON_NETWORK_AND_MACHINE_ECONOMY_RESEARCH.md` |
 
+## Protocol Coverage — SDK → Gateway Alignment
+
+The Conxius Enclave SDK (`lib-conclave-sdk` v0.2.5) defines the canonical **41-chain AssetRegistry**, **33 protocol modules**, and **6 settlement rails**. The Gateway is the primary runtime adapter layer — every SDK protocol with production intent must have a Gateway adapter.
+
+### SDK Chain → Gateway Adapter Map (41 chains)
+
+| # | Chain | SDK Registry | Gateway Adapter | Status |
+|---|-------|-------------|-----------------|--------|
+| 1 | Bitcoin | ✅ BTC | bitcoin core | ✅ Live |
+| 2 | Lightning | ✅ BTC | lightning (via LND) | ✅ Integrated |
+| 3 | Liquid | ✅ L-BTC | `liquid_adapter.rs` | ✅ Integrated |
+| 4 | Rootstock | ✅ RBTC | `rootstock_adapter.rs` | ✅ Integrated |
+| 5 | Babylon | ✅ BTC | `babylon_adapter.rs` | ✅ Integrated |
+| 6 | BitVM2 | ✅ BTC | `bitvm_adapter.rs` | ✅ Integrated |
+| 7 | RGB | ✅ BTC | `rgb_adapter.rs` + `rgb_stash.rs` | ✅ v0.12 P1 |
+| 8 | Citrea | ✅ BTC | `citrea_adapter.rs` | ✅ Integrated |
+| 9 | Fedimint | ✅ BTC | `fedimint_adapter.rs` | ✅ Integrated |
+| 10 | Strata | ✅ BTC | `strata_adapter.rs` | ✅ Testnet |
+| 11 | BOB | ✅ BTC | ⚠️ Planned | Q4 2026 |
+| 12 | Botanix | ✅ BTC | ⚠️ Planned | Q4 2026 |
+| 13 | Mezo | ✅ BTC | ⚠️ Planned | Q4 2026 |
+| 14 | Stacks | ✅ STX | Via Hiro API | ✅ Integrated |
+| 15 | Ethereum | ✅ ETH | Via EVM stack | ✅ Integrated |
+| 16 | Solana | ✅ SOL | ⚠️ Planned | SolanaAdapter P2 |
+| 17 | Arbitrum | ✅ ETH | Via EVM | ✅ Via EVM |
+| 18 | Base | ✅ ETH | Via EVM | ✅ Via EVM |
+| 19 | Optimism | ✅ ETH | Via EVM | ✅ Via EVM |
+| 20 | Linea | ✅ ETH | Via EVM | ✅ Via EVM |
+| 21 | Polygon | ✅ POL | Via EVM | ✅ Via EVM |
+| 22 | BSC | ✅ BNB | Via EVM | ✅ Via EVM |
+| 23 | Avalanche | ✅ AVAX | Via EVM | ✅ Via EVM |
+| 24 | Celo | ✅ CELO | Via EVM | ✅ Via EVM |
+| 25 | Fantom | ✅ FTM | Via EVM | ✅ Via EVM |
+| 26 | Gnosis | ✅ GNO | Via EVM | ✅ Via EVM |
+| 27 | Cronos | ✅ CRO | Via EVM | ✅ Via EVM |
+| 28 | Kava | ✅ KAVA | Via EVM | ✅ Via EVM |
+| 29 | Mantle | ✅ MNT | Via EVM | ✅ Via EVM |
+| 30 | zkSync | ✅ ETH | Via EVM | ✅ Via EVM |
+| 31 | Scroll | ✅ ETH | Via EVM | ✅ Via EVM |
+| 32 | Taiko | ✅ TAIKO | Via EVM | ✅ Via EVM |
+| 33 | Blast | ✅ BLAST | Via EVM | ✅ Via EVM |
+| 34 | Berachain | ✅ BERA | Via EVM | ✅ Via EVM |
+| 35 | Starknet | ✅ STRK | ⚠️ Planned | StarknetAdapter P3 |
+| 36 | Monad | ✅ MONAD | ⚠️ Planned | MonadAdapter P3 |
+| 37 | Near | ✅ NEAR | ⚠️ Planned | NearAdapter P3 |
+| 38 | Cosmos | ✅ ATOM | ⚠️ Planned | CosmosAdapter P3 |
+| 39 | XRP Ledger | ✅ XRP | ⚠️ Planned | XRPLAdapter P3 |
+| 40 | Tron | ✅ TRX | ⚠️ Planned | TronAdapter P3 |
+| 41 | Sui/Aptos/Sei/Stellar | ✅ Various | ⚠️ Planned | Move/Stellar P3 |
+
+### Settlement Rails Coverage
+
+| Rail | SDK | Gateway | Status |
+|------|-----|---------|--------|
+| x402 | ✅ | ✅ Integrated | Open payment protocol |
+| Wormhole | ✅ | ✅ NTT adapter | Cross-chain messaging |
+| NTT | ✅ | ✅ `ntt/` | Native token transfer |
+| Bisq | ✅ | ❌ Not covered | P2P exchange (wallet-side) |
+| Boltz | ✅ | ❌ Not covered | Atomic swap (wallet-side) |
+| Changelly | ✅ | ❌ Not covered | Instant exchange (wallet-side) |
+
+### SDK Protocol Module → Gateway Coverage
+
+| SDK Module | Gateway Status | Notes |
+|-----------|---------------|-------|
+| bitcoin, lightning, liquid, rootstock, babylon, bitvm, rgb, citrea, fedimint, strata | ✅ Adapter | All in `internal/engine/src/` |
+| stacks, ethereum, evm-l2s | ✅ RPC/API | Via Hiro/EVM RPC |
+| dlc | ✅ NWC adapter | `nwc_backend.rs` |
+| nwc (NIP-47) | ✅ Integrated | Nostr Wallet Connect |
+| mmr, frost, musig2 | ✅ Enclave SDK | Via `conxius-enclave-sdk` |
+| solana, near, cosmos, xrp, tron, sui, aptos | ⚠️ Planned | P2/P3 adapters |
+| a2p, account_abstraction, cctp, chain_abstraction, credit, fiat, intent, job_card, opportunity, solver, swap_router | ❌ Not covered | Application/logic layer |
+| stablecoin_orchestrator | ✅ Partial | Regional stablecoins |
+| ark, bip322, covenant | ❌ Not covered | P3 research |
+
 ## Core Philosophy
 - **Sovereignty**: All code must prioritize non-custodial logic and user sovereignty.
 - **Institutional Grade**: Maintain SLA-grade interfaces, high-performance async Rust, and robust error handling.
