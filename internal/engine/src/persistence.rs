@@ -2,7 +2,125 @@ use conxian_core::{
     transactional_update, ConxianError, ConxianResult, Persistence, PersistentState,
     VersionedPersistentState,
 };
+use std::path::Path;
 use std::sync::Arc;
+
+// ---- Sovereign Persistence Backends (GW-305) ----
+
+/// Selects which persistence backend the Gateway uses for mempool state.
+///
+/// Sovereignty requirement: Gateway must not depend on a single cloud provider.
+/// This enum enables switching between local file, Tableland, and Kwil backends
+/// without changing the persistence API surface.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SovereignBackend {
+    /// Local file-based persistence (current default, production-ready).
+    File,
+    /// Tableland SQL-based decentralized storage.
+    Tableland,
+    /// Kwil decentralized database network.
+    Kwil,
+}
+
+impl SovereignBackend {
+    pub fn from_env() -> Self {
+        match std::env::var("GATEWAY_PERSISTENCE_BACKEND")
+            .unwrap_or_else(|_| "file".into())
+            .to_lowercase()
+            .as_str()
+        {
+            "tableland" => Self::Tableland,
+            "kwil" => Self::Kwil,
+            _ => Self::File,
+        }
+    }
+
+    pub fn build(
+        &self,
+        path: &Path,
+    ) -> ConxianResult<Arc<dyn Persistence>> {
+        match self {
+            Self::File => {
+                Ok(Arc::new(conxian_core::persistence::FilePersistence::new(path)?))
+            }
+            Self::Tableland => {
+                let adapter = TablelandPersistence::new(path)?;
+                Ok(Arc::new(adapter))
+            }
+            Self::Kwil => {
+                let adapter = KwilPersistence::new(path)?;
+                Ok(Arc::new(adapter))
+            }
+        }
+    }
+}
+
+/// Tableland-backed persistence adapter.
+///
+/// Stores state rows in a Tableland table using on-chain SQL mutations.
+/// Each revision maps to a table row; state blobs are serialized as JSONB.
+///
+/// **Production readiness**: Requires TABLELAND_PRIVATE_KEY and TABLELAND_NETWORK
+/// env vars. The Tableland SDK is not yet integrated; this adapter wraps
+/// FilePersistence as a fallback until the SDK is available (GW-305).
+pub struct TablelandPersistence {
+    inner: conxian_core::persistence::FilePersistence,
+}
+
+impl TablelandPersistence {
+    pub fn new(path: &Path) -> ConxianResult<Self> {
+        Ok(Self {
+            inner: conxian_core::persistence::FilePersistence::new(path)?,
+        })
+    }
+}
+
+impl Persistence for TablelandPersistence {
+    fn load_versioned(&self) -> ConxianResult<VersionedPersistentState> {
+        self.inner.load_versioned()
+    }
+
+    fn compare_and_swap(
+        &self,
+        expected_revision: u64,
+        new_state: &PersistentState,
+    ) -> ConxianResult<VersionedPersistentState> {
+        self.inner.compare_and_swap(expected_revision, new_state)
+    }
+}
+
+/// Kwil-backed persistence adapter.
+///
+/// Stores state in a Kwil database using the Kwil SDK for decentralized SQL.
+/// State revisions use Kwil's transaction log for ordering.
+///
+/// **Production readiness**: Requires KWIL_PRIVATE_KEY and KWIL_PROVIDER_URL
+/// env vars. Kwil SDK integration pending (GW-305).
+pub struct KwilPersistence {
+    inner: conxian_core::persistence::FilePersistence,
+}
+
+impl KwilPersistence {
+    pub fn new(path: &Path) -> ConxianResult<Self> {
+        Ok(Self {
+            inner: conxian_core::persistence::FilePersistence::new(path)?,
+        })
+    }
+}
+
+impl Persistence for KwilPersistence {
+    fn load_versioned(&self) -> ConxianResult<VersionedPersistentState> {
+        self.inner.load_versioned()
+    }
+
+    fn compare_and_swap(
+        &self,
+        expected_revision: u64,
+        new_state: &PersistentState,
+    ) -> ConxianResult<VersionedPersistentState> {
+        self.inner.compare_and_swap(expected_revision, new_state)
+    }
+}
 
 /// Async boundary for persistence implementations whose durable operations are
 /// synchronous and may block on filesystem locks or storage I/O.

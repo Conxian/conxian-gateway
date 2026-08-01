@@ -21,7 +21,10 @@ pub use bitcoin::{
 };
 pub use coordination::RedisCoordinator;
 pub use ntt::{CitreaAdapter, NttRelayer, RootstockAdapter};
-pub use persistence::{run_blocking_persistence, AsyncPersistence};
+pub use persistence::{
+    run_blocking_persistence, AsyncPersistence, KwilPersistence, SovereignBackend,
+    TablelandPersistence,
+};
 pub use rgb_adapter::GatewayRgbAdapter;
 pub use stacks::{SimulatedStacksRpc, StacksListener, StacksRpc, StacksRpcClient};
 pub use treasury::TreasuryMonitor;
