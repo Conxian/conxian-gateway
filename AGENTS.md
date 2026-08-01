@@ -4,6 +4,34 @@ You are working on the **Conxian Gateway**, an institutional-grade Rust middlewa
 
 ---
 
+## Architecture Note: `conxian_core` vs `lib-conxian-core`
+
+The Gateway workspace has its own `conxian_core` crate (`pkg/conxian-core/`)
+that provides Gateway-specific types (settlement, Lightning, MuSig2, Alex
+settlement, trust policy, persistence). This is **not** the same crate as
+`lib-conxian-core` (at the monorepo root), which provides shared protocol
+primitives (control models, verifier, signing, anchoring, chain adapters).
+
+| Crate | Scope | Location |
+|-------|-------|----------|
+| `conxian_core` | Gateway-local types & utilities | `pkg/conxian-core/` |
+| `lib-conxian-core` | Shared protocol primitives | `lib-conxian-core/` |
+| `conxius-enclave-sdk` | Hardware enclave & production signing | `conxius-enclave-sdk/` |
+
+When adding protocol-level capabilities (BitVM2 verification, DLC, FROST,
+control model enforcement), prefer `lib-conxian-core` types. When adding
+Gateway-specific operational types (persistence, trust policies, settlement
+envelopes), extend `conxian_core`.
+
+### Contract Bridge (Session 47 — Aug 2026)
+The Gateway now has a Clarity contract-call bridge at
+`internal/engine/src/stacks/contract_bridge.rs`. This enables typed,
+validated, and signed contract calls to the Conxian protocol's Clarity
+contracts via the Stacks RPC layer. Canonical contract names are
+enumerated for defense-in-depth validation.
+
+---
+
 ## 🚨 CRITICAL: Session Continuity Protocol
 
 **This is a production-grade repository. Every session MUST verify previous work before proceeding.**

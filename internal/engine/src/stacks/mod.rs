@@ -1,4 +1,5 @@
 pub mod alex;
+pub mod contract_bridge;
 pub mod listener;
 pub mod rpc;
 
@@ -8,5 +9,6 @@ pub use alex::{
     AlexPreparedPayload, AlexQuoteObservation, AlexQuoteStatus, AlexRpcClient, AlexSwapRequest,
     SimulatedAlexClient,
 };
+pub use contract_bridge::{CallResult, ContractBridge, ContractCall, SignedContractCall};
 pub use listener::StacksListener;
 pub use rpc::{SimulatedStacksRpc, StacksRpc, StacksRpcClient};
