@@ -1,8 +1,25 @@
-# Conxian Agent Guidelines
+# Conxian Agent Guidelines (v0.3.0 — Session 47, Aug 2026)
 
 ## Conxian Gateway Architecture
 
 The Conxian Gateway consolidates core Bitcoin/Stacks state logic (internal/engine) and API/Auth layers (internal/api) into a singular, audit-ready Rust binary.
+
+### SDK Dependencies
+
+| Crate | Purpose |
+|-------|---------|
+| `conxian_core` | Gateway-local operational types (persistence, trust policy, settlement) |
+| `lib-conxian-core` | Canonical protocol primitives (verifier, control models, chain adapters for Taproot, BIP-322, Liquid, sBTC, Lightning, RGB, Babylon, Fedimint, DLC, FROST, Covenant, Intent) |
+| `conxius-enclave-sdk` | Hardware enclave for attestation (optional, WASM-compatible) |
+
+### Contract Bridge (Session 47)
+
+`internal/engine/src/stacks/contract_bridge.rs` provides typed Clarity contract calls:
+
+- `ContractCall` — strongly-typed call with canonical contract enumeration
+- `SignedContractCall` — signed variant with principal validation
+- `canonical_contracts()` — maps human-readable names to `.contract-name` principals
+- `preview()` — read-only contract calls for simulation
 
 ### Key Documents
 
