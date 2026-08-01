@@ -402,3 +402,30 @@ The Conxian Protocol is built to empower individuals and institutions within the
 
 ### Remaining
 - crates.io publish: `gh workflow run release.yml -R Conxian/conxian-gateway -f release_version=0.1.5 -f publish_to_crates_io=true`
+
+---
+
+## Session 48 Gap Analysis Integration
+
+Cross-repo gap analysis published in `conxian_market/docs/research/CROSS_REPO_GAP_ANALYSIS_SESSION_48.md`.
+Gateway-specific gaps with implementation tracking:
+
+| Gap | Issue | Severity | Sprint | Adapter Impact |
+|-----|-------|:--------:|:------:|:---------------|
+| CI/CD strict baseline | [#222](https://github.com/Conxian/conxian-gateway/issues/222) | P1 | S1 | All adapters |
+| RGB stash resolver | [#228](https://github.com/Conxian/conxian-gateway/issues/228) | P1 | S5 | RGB rail |
+| DLC CET construction | [#220](https://github.com/Conxian/conxian-gateway/issues/220) | P1 | S5 | DLC rail |
+| BitVM3 adapter | [#189](https://github.com/Conxian/conxian-gateway/issues/189) | P2 | S5 | BitVM3 rail |
+| BIP-110 fee market eval | [#245](https://github.com/Conxian/conxian-gateway/issues/245) | P2 | S3 | Routing |
+| MRR/billing module | [#306](https://github.com/Conxian/conxian-gateway/issues/306) | P2 | S3 | Billing |
+
+### Adapter Production Readiness
+
+```
+Production: sbtc.rs, alex.rs, babylon_adapter.rs, fedimint_adapter.rs — wired, green CI
+Partial:    rgb_adapter.rs — core wired, stash resolver (#228) needed
+Stub:       dlc_oracle.rs — CET path not built (#220)
+Research:   bitvm_adapter.rs — garbled circuits (#189)
+```
+
+Cross-ref: `SETTLEMENT_RAILS.md` §10 (market-side adapter readiness table).
