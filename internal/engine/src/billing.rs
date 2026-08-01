@@ -529,7 +529,13 @@ mod protocol_fee_tests {
         }
     }
 
-    fn sample_record(id: &str, rail: &str, tier: &str, amount_sat: u64, fee_bps: u16) -> ProtocolFeeRecord {
+    fn sample_record(
+        id: &str,
+        rail: &str,
+        tier: &str,
+        amount_sat: u64,
+        fee_bps: u16,
+    ) -> ProtocolFeeRecord {
         let fee_sat = (amount_sat as u128 * fee_bps as u128 / 10000) as u64;
         ProtocolFeeRecord {
             settlement_id: id.into(),
@@ -547,7 +553,10 @@ mod protocol_fee_tests {
     #[test]
     fn accumulate_and_report_single_record() {
         let mut records = Vec::new();
-        accumulate_protocol_fee(&mut records, sample_record("s1", "sbtc", "EXPEDIENT", 100_000, 200));
+        accumulate_protocol_fee(
+            &mut records,
+            sample_record("s1", "sbtc", "EXPEDIENT", 100_000, 200),
+        );
 
         let report = generate_protocol_fee_report(test_period(), &records);
         assert_eq!(report.event_count, 1);
@@ -561,9 +570,18 @@ mod protocol_fee_tests {
     #[test]
     fn accumulate_multiple_rails() {
         let mut records = Vec::new();
-        accumulate_protocol_fee(&mut records, sample_record("s1", "sbtc", "EXPEDIENT", 100_000, 200));
-        accumulate_protocol_fee(&mut records, sample_record("s2", "lightning", "EXPEDIENT", 50_000, 100));
-        accumulate_protocol_fee(&mut records, sample_record("s3", "fedimint", "EXPEDIENT", 25_000, 100));
+        accumulate_protocol_fee(
+            &mut records,
+            sample_record("s1", "sbtc", "EXPEDIENT", 100_000, 200),
+        );
+        accumulate_protocol_fee(
+            &mut records,
+            sample_record("s2", "lightning", "EXPEDIENT", 50_000, 100),
+        );
+        accumulate_protocol_fee(
+            &mut records,
+            sample_record("s3", "fedimint", "EXPEDIENT", 25_000, 100),
+        );
 
         let report = generate_protocol_fee_report(test_period(), &records);
         assert_eq!(report.event_count, 3);
@@ -575,7 +593,10 @@ mod protocol_fee_tests {
     #[test]
     fn records_outside_period_are_excluded() {
         let mut records = Vec::new();
-        accumulate_protocol_fee(&mut records, sample_record("s1", "sbtc", "EXPEDIENT", 100_000, 200));
+        accumulate_protocol_fee(
+            &mut records,
+            sample_record("s1", "sbtc", "EXPEDIENT", 100_000, 200),
+        );
 
         let mut future = sample_record("s2", "lightning", "EXPEDIENT", 50_000, 100);
         future.timestamp = 99_999_999; // far future, outside period
@@ -589,12 +610,22 @@ mod protocol_fee_tests {
     #[test]
     fn tier_aggregation() {
         let mut records = Vec::new();
-        accumulate_protocol_fee(&mut records, sample_record("s1", "sbtc", "EXPEDIENT", 100_000, 200));
-        accumulate_protocol_fee(&mut records, sample_record("s2", "sbtc", "MANAGED", 100_000, 250));
+        accumulate_protocol_fee(
+            &mut records,
+            sample_record("s1", "sbtc", "EXPEDIENT", 100_000, 200),
+        );
+        accumulate_protocol_fee(
+            &mut records,
+            sample_record("s2", "sbtc", "MANAGED", 100_000, 250),
+        );
 
         let report = generate_protocol_fee_report(test_period(), &records);
         assert_eq!(report.by_tier.len(), 2);
-        let exp = report.by_tier.iter().find(|t| t.tier == "EXPEDIENT").unwrap();
+        let exp = report
+            .by_tier
+            .iter()
+            .find(|t| t.tier == "EXPEDIENT")
+            .unwrap();
         let man = report.by_tier.iter().find(|t| t.tier == "MANAGED").unwrap();
         assert_eq!(exp.total_fee_sat, 2_000);
         assert_eq!(man.total_fee_sat, 2_500);
