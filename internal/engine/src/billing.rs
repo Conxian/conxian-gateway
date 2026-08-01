@@ -524,7 +524,7 @@ mod protocol_fee_tests {
     fn test_period() -> BillingPeriod {
         BillingPeriod {
             start_unix: 0u64,
-            end_unix: BILLING_PERIOD_SECONDS as u64,
+            end_unix: BILLING_PERIOD_SECONDS,
             deployment: GatewayDeployment::Managed,
         }
     }
