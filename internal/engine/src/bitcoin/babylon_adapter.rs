@@ -441,7 +441,7 @@ impl BabylonAdapter {
 
         // Minimum 6 confirmations for T2 trust tier (per CON-791)
         if lock_time_blocks < 6 {
-            return Err(ConxianError::Validation(format!(
+            return Err(ConxianError::Internal(format!(
                 "Babylon staking requires ≥6 lock-time blocks (got {lock_time_blocks})"
             )));
         }

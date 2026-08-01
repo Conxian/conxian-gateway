@@ -2,6 +2,7 @@ pub mod alex;
 pub mod contract_bridge;
 pub mod listener;
 pub mod rpc;
+pub mod sbtc;
 
 pub use alex::{
     load_alex_venue_manifest, load_alex_venue_manifest_for_network, AlexApprovedPreparation,
@@ -12,3 +13,7 @@ pub use alex::{
 pub use contract_bridge::{CallResult, ContractBridge, ContractCall, SignedContractCall};
 pub use listener::StacksListener;
 pub use rpc::{SimulatedStacksRpc, StacksRpc, StacksRpcClient};
+pub use sbtc::{
+    SbtcBridgeMetrics, SbtcBridgeMonitor, SbtcEmilyClient, SbtcOperation, SbtcOperationKind,
+    SbtcOperationState,
+};

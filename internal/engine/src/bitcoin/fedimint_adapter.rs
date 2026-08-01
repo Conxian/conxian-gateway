@@ -36,15 +36,16 @@ impl FedimintAdapter {
     ) -> ConxianResult<FedimintMint> {
         let signature = proof_metadata["blinded_signature"].as_str().unwrap_or("");
         if signature.is_empty() {
-            warn!(chain = "fedimint", "Empty blinded signature — consensus failure");
-            return Err(conxian_core::ConxianError::Validation(
+            warn!(
+                chain = "fedimint",
+                "Empty blinded signature — consensus failure"
+            );
+            return Err(conxian_core::ConxianError::Internal(
                 "Fedimint consensus proof rejected: empty blinded signature".into(),
             ));
         }
 
-        let quorum_count = proof_metadata["quorum_signatures"]
-            .as_u64()
-            .unwrap_or(0);
+        let quorum_count = proof_metadata["quorum_signatures"].as_u64().unwrap_or(0);
         let federation_size = proof_metadata["federation_size"].as_u64().unwrap_or(1);
         let threshold = (2 * federation_size) / 3; // 2/3 supermajority
 
@@ -55,7 +56,7 @@ impl FedimintAdapter {
                 required = threshold,
                 "Insufficient quorum for Fedimint consensus"
             );
-            return Err(conxian_core::ConxianError::Validation(format!(
+            return Err(conxian_core::ConxianError::Internal(format!(
                 "Fedimint quorum not met: {quorum_count}/{federation_size} < {threshold} required"
             )));
         }
@@ -63,9 +64,7 @@ impl FedimintAdapter {
         let mint_id = proof_metadata["federation_id"]
             .as_str()
             .unwrap_or("unknown");
-        let community_name = proof_metadata["community_name"]
-            .as_str()
-            .unwrap_or(mint_id);
+        let community_name = proof_metadata["community_name"].as_str().unwrap_or(mint_id);
 
         // Canonical FedimintMint from core — wire to T2 trust tier
         let mint = FedimintMint {

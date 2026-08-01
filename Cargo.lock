@@ -1427,6 +1427,7 @@ dependencies = [
  "conxian_core",
  "fs2",
  "hex",
+ "lib-conxian-core",
  "libc",
  "minreq 3.0.0",
  "redis",
