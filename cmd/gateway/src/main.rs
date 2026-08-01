@@ -1,19 +1,17 @@
 use anyhow::Context;
 use conxian_api::{configure_routes, new_lightning_adapter, new_settlement_log, AppState};
 use conxian_compliance::{CoreVerifier, IdentityManager, ZkcVerifier};
-use conxian_core::{
-    ConxianError, GatewayState, Persistence, SharedState,
-};
+use conxian_core::{ConxianError, GatewayState, Persistence, SharedState};
 #[cfg(feature = "rgb-native")]
 use conxian_engine::StashResolver;
 use conxian_engine::{
-    run_blocking_persistence, SovereignBackend,
+    run_blocking_persistence,
     stacks::alex::{
         load_alex_venue_manifest_for_network, AlexClient, AlexPreparationService, AlexRpcClient,
     },
     BitcoinCoreShadowObserver, BitcoinCoreShadowObserverClient, BitcoinListener, BitcoinRpcClient,
     FeeBumpPolicyConfig, MempoolOrchestrator, NodeRgbAdapter, NttRelayer, RedisCoordinator,
-    StacksListener, StacksRpcClient, TreasuryMonitor,
+    SovereignBackend, StacksListener, StacksRpcClient, TreasuryMonitor,
 };
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -74,12 +72,16 @@ async fn main() -> anyhow::Result<()> {
             .map_err(ConxianError::Persistence)?;
 
             if backend == SovereignBackend::File {
-                let fp = conxian_core::persistence::FilePersistence::new(
-                    std::path::Path::new(&persistence_path),
-                )?;
+                let fp = conxian_core::persistence::FilePersistence::new(std::path::Path::new(
+                    &persistence_path,
+                ))?;
                 let ownership_guard = fp.acquire_ownership()?;
                 let state = fp.load()?;
-                Ok((Arc::new(fp) as Arc<dyn Persistence>, Some(ownership_guard), state))
+                Ok((
+                    Arc::new(fp) as Arc<dyn Persistence>,
+                    Some(ownership_guard),
+                    state,
+                ))
             } else {
                 let persistence = backend.build(std::path::Path::new(&persistence_path))?;
                 let state = persistence.load()?;

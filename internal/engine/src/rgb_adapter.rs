@@ -72,7 +72,7 @@ impl RGBAdapter for GatewayRgbAdapter {
             RGBExecutionMode::Active => {
                 #[cfg(feature = "rgb-native")]
                 {
-                    verify_seal_native(utxo_txid, seal_commitment)
+                    verify_seal_native(_utxo_txid, _seal_commitment)
                 }
                 #[cfg(not(feature = "rgb-native"))]
                 {

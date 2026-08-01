@@ -35,14 +35,11 @@ impl SovereignBackend {
         }
     }
 
-    pub fn build(
-        &self,
-        path: &Path,
-    ) -> ConxianResult<Arc<dyn Persistence>> {
+    pub fn build(&self, path: &Path) -> ConxianResult<Arc<dyn Persistence>> {
         match self {
-            Self::File => {
-                Ok(Arc::new(conxian_core::persistence::FilePersistence::new(path)?))
-            }
+            Self::File => Ok(Arc::new(conxian_core::persistence::FilePersistence::new(
+                path,
+            )?)),
             Self::Tableland => {
                 let adapter = TablelandPersistence::new(path)?;
                 Ok(Arc::new(adapter))

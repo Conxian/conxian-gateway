@@ -146,10 +146,7 @@ pub struct LineItem {
 // ---- Billing Calculator ----
 
 /// Computes a billing report from accumulated usage.
-pub fn compute_mrr(
-    period: BillingPeriod,
-    usage: &UsageMetrics,
-) -> MrrReport {
+pub fn compute_mrr(period: BillingPeriod, usage: &UsageMetrics) -> MrrReport {
     let mut line_items = Vec::new();
     let mut total = 0u64;
 
@@ -303,8 +300,8 @@ mod tests {
         let report = compute_mrr(period, &usage);
         assert!(report.enterprise_discount_applied);
         // Base fee + 100k relay messages, minus 20% discount
-        let undiscounted = MANAGED_GATEWAY_BASE_FEE_CENTS
-            + ENTERPRISE_RELAY_THRESHOLD * RELAY_MESSAGE_COST_CENTS;
+        let undiscounted =
+            MANAGED_GATEWAY_BASE_FEE_CENTS + ENTERPRISE_RELAY_THRESHOLD * RELAY_MESSAGE_COST_CENTS;
         let expected = undiscounted - (undiscounted * ENTERPRISE_DISCOUNT_BPS) / 10000;
         assert_eq!(report.total_cost_cents, expected);
     }
@@ -354,9 +351,6 @@ mod tests {
     fn gateway_deployment_from_env() {
         // Default is self-hosted when env var not set
         std::env::remove_var("GATEWAY_DEPLOYMENT_MODEL");
-        assert_eq!(
-            GatewayDeployment::from_env(),
-            GatewayDeployment::SelfHosted
-        );
+        assert_eq!(GatewayDeployment::from_env(), GatewayDeployment::SelfHosted);
     }
 }
