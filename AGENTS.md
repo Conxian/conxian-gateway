@@ -30,6 +30,21 @@ validated, and signed contract calls to the Conxian protocol's Clarity
 contracts via the Stacks RPC layer. Canonical contract names are
 enumerated for defense-in-depth validation.
 
+### Sovereign Persistence (Session 48 — Aug 2026)
+Multi-backend persistence at `internal/engine/src/persistence.rs` (118 lines):
+- `SovereignBackend` enum: File (default), Tableland, Kwil
+- Environment-driven selection via `GATEWAY_PERSISTENCE_BACKEND`
+- Uses `lib_conxian_core::Persistence` trait for atomic transactional updates
+- Designed for sovereignty: no single cloud provider dependency
+
+### MRR Billing Engine (Session 48 — Aug 2026)
+Usage-based billing at `internal/engine/src/billing.rs` (362 lines):
+- Tiered pricing: self-hosted (zero-cost) vs managed (per-operation)
+- Counters: relay messages, RWA verifications, settlement ops
+- Daily aggregation → monthly billing periods
+- JSON export for Stripe/accounting integration
+- Base fee: $200/mo managed; per-op costs: $0.01–$0.10
+
 ---
 
 ## 🚨 CRITICAL: Session Continuity Protocol
