@@ -2,12 +2,12 @@ use anyhow::Context;
 use conxian_api::{configure_routes, new_lightning_adapter, new_settlement_log, AppState};
 use conxian_compliance::{CoreVerifier, IdentityManager, ZkcVerifier};
 use conxian_core::{
-    persistence::FilePersistence, ConxianError, GatewayState, Persistence, SharedState,
+    ConxianError, GatewayState, Persistence, SharedState,
 };
 #[cfg(feature = "rgb-native")]
 use conxian_engine::StashResolver;
 use conxian_engine::{
-    run_blocking_persistence,
+    run_blocking_persistence, SovereignBackend,
     stacks::alex::{
         load_alex_venue_manifest_for_network, AlexClient, AlexPreparationService, AlexRpcClient,
     },
@@ -64,17 +64,27 @@ async fn main() -> anyhow::Result<()> {
     // Tokio's blocking pool so startup never stalls an async runtime worker.
     let persistence_path = config.gateway_state_path.clone();
     let allow_unknown_filesystem = config.gateway_allow_unknown_state_filesystem;
+    let backend = SovereignBackend::from_env();
     let (persistence, _state_ownership_guard, p_state) =
-        run_blocking_persistence("initialize Gateway file persistence", move || {
+        run_blocking_persistence("initialize Gateway persistence", move || {
             config::validate_state_filesystem(
                 std::path::Path::new(&persistence_path),
                 allow_unknown_filesystem,
             )
             .map_err(ConxianError::Persistence)?;
-            let persistence = Arc::new(FilePersistence::new(&persistence_path)?);
-            let ownership_guard = persistence.acquire_ownership()?;
-            let state = persistence.load()?;
-            Ok((persistence, ownership_guard, state))
+
+            if backend == SovereignBackend::File {
+                let fp = conxian_core::persistence::FilePersistence::new(
+                    std::path::Path::new(&persistence_path),
+                )?;
+                let ownership_guard = fp.acquire_ownership()?;
+                let state = fp.load()?;
+                Ok((Arc::new(fp) as Arc<dyn Persistence>, Some(ownership_guard), state))
+            } else {
+                let persistence = backend.build(std::path::Path::new(&persistence_path))?;
+                let state = persistence.load()?;
+                Ok((persistence, None, state))
+            }
         })
         .await
         .with_context(|| {
