@@ -21,6 +21,7 @@
 //! monthly `ProtocolFeeReport` for contract settlement via `protocol-fee-collector.clar`.
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 // ---- Pricing constants ----
@@ -451,8 +452,6 @@ pub fn generate_protocol_fee_report(
     period: BillingPeriod,
     records: &[ProtocolFeeRecord],
 ) -> ProtocolFeeReport {
-    use std::collections::HashMap;
-
     let mut total_settled_sat: u64 = 0;
     let mut total_fees_sat: u64 = 0;
     let mut by_rail: HashMap<String, RailFeeBreakdown> = HashMap::new();
@@ -460,7 +459,7 @@ pub fn generate_protocol_fee_report(
     let mut event_count: u64 = 0;
 
     for r in records {
-        if r.timestamp < period.start_unix || r.timestamp >= period.end_unix {
+        if r.timestamp < period.start_unix as i64 || r.timestamp >= period.end_unix as i64 {
             continue;
         }
         event_count += 1;
@@ -524,8 +523,8 @@ mod protocol_fee_tests {
 
     fn test_period() -> BillingPeriod {
         BillingPeriod {
-            start_unix: 0,
-            end_unix: BILLING_PERIOD_SECONDS as i64,
+            start_unix: 0u64,
+            end_unix: BILLING_PERIOD_SECONDS as u64,
             deployment: GatewayDeployment::Managed,
         }
     }
