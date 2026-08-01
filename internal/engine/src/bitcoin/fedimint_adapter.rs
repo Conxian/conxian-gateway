@@ -60,19 +60,25 @@ impl FedimintAdapter {
             )));
         }
 
+        let mint_id = proof_metadata["federation_id"]
+            .as_str()
+            .unwrap_or("unknown");
+        let community_name = proof_metadata["community_name"]
+            .as_str()
+            .unwrap_or(mint_id);
+
         // Canonical FedimintMint from core — wire to T2 trust tier
         let mint = FedimintMint {
-            federation_id: proof_metadata["federation_id"]
-                .as_str()
-                .unwrap_or("unknown")
-                .to_string(),
-            members: federation_size as u32,
-            threshold: threshold as u32,
+            mint_id: mint_id.to_string(),
+            community_name: community_name.to_string(),
+            total_liquidity_sats: proof_metadata["total_liquidity_sats"].as_u64().unwrap_or(0),
         };
 
         info!(
             chain = "fedimint",
-            federation_id = %mint.federation_id,
+            mint_id = %mint.mint_id,
+            community = %mint.community_name,
+            liquidity_sats = mint.total_liquidity_sats,
             trust_tier = ?TrustTier::Managed,
             "Fedimint consensus validated at T2 (Managed) trust tier"
         );

@@ -424,45 +424,40 @@ impl BabylonAdapter {
     ///            → lib_conxian_core::control_model::TrustTier::Managed
     pub async fn validate_staking_intent(
         &self,
-        staker_btc_address: &str,
-        amount_sat: u64,
-        btc_confirmation_height: u64,
+        staker_pubkey: &[u8],
+        finality_provider_pubkey: &[u8],
+        amount_sats: u64,
+        lock_time_blocks: u32,
     ) -> ConxianResult<StakingIntent> {
-        // Verify BTC finality before accepting staking intent
-        let header = self.get_verified_btc_header(btc_confirmation_height).await?;
-        let confirmations = self
-            .get_latest_height()
-            .await?
-            .saturating_sub(btc_confirmation_height);
+        let current_height = self.get_latest_height().await?;
 
         info!(
             chain = "babylon",
-            staker = staker_btc_address,
-            amount_sat,
-            confirmations,
+            amount_sats,
+            lock_time_blocks,
+            current_height,
             "Validating Babylon staking intent at T2 (Managed) trust tier"
         );
 
         // Minimum 6 confirmations for T2 trust tier (per CON-791)
-        if confirmations < 6 {
+        if lock_time_blocks < 6 {
             return Err(ConxianError::Validation(format!(
-                "Babylon staking requires ≥6 BTC confirmations (got {confirmations})"
+                "Babylon staking requires ≥6 lock-time blocks (got {lock_time_blocks})"
             )));
         }
 
         let intent = StakingIntent {
-            staker: staker_btc_address.to_string(),
-            amount_sat,
-            btc_block_height: header.height,
-            btc_block_hash: header.hash.clone(),
-            trust_tier: TrustTier::Managed,
+            staker_pubkey: staker_pubkey.to_vec(),
+            finality_provider_pubkey: finality_provider_pubkey.to_vec(),
+            amount_sats,
+            lock_time_blocks,
         };
 
         info!(
             chain = "babylon",
-            staker = %intent.staker,
-            amount_sat = intent.amount_sat,
-            trust_tier = ?intent.trust_tier,
+            amount_sats = intent.amount_sats,
+            lock_time_blocks = intent.lock_time_blocks,
+            trust_tier = ?TrustTier::Managed,
             "Babylon staking intent validated — ready for treasury processing"
         );
 
