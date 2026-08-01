@@ -25,10 +25,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Checkout lib-conxian-core
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: Conxian/lib-conxian-core
-          path: ../lib-conxian-core
+        run: git clone --depth 1 https://github.com/Conxian/lib-conxian-core.git ../lib-conxian-core
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
