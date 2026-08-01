@@ -5,6 +5,8 @@ use bitcoin::hex::FromHex;
 use bitcoin::pow::{Target, Work};
 use bitcoin::BlockHash;
 use conxian_core::{BlockInfo, ChainAdapter, ConxianError, ConxianResult};
+use lib_conxian_core::babylon::StakingIntent;
+use lib_conxian_core::control_model::TrustTier;
 use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{json, Value};
@@ -409,6 +411,62 @@ impl BabylonAdapter {
             height: header.height,
             timestamp: header.timestamp,
         })
+    }
+
+    /// Validate a Babylon staking intent against core trust tier taxonomy.
+    ///
+    /// Uses `lib_conxian_core::babylon::StakingIntent` to validate staking
+    /// lifecycle operations against the T2 (Managed) trust tier. Babylon
+    /// staking requires BTC finality verification (via header chain) before
+    /// accepting any staking intent.
+    ///
+    /// Wire path: gateway babylon_adapter → lib_conxian_core::babylon::StakingIntent
+    ///            → lib_conxian_core::control_model::TrustTier::Managed
+    pub async fn validate_staking_intent(
+        &self,
+        staker_btc_address: &str,
+        amount_sat: u64,
+        btc_confirmation_height: u64,
+    ) -> ConxianResult<StakingIntent> {
+        // Verify BTC finality before accepting staking intent
+        let header = self.get_verified_btc_header(btc_confirmation_height).await?;
+        let confirmations = self
+            .get_latest_height()
+            .await?
+            .saturating_sub(btc_confirmation_height);
+
+        info!(
+            chain = "babylon",
+            staker = staker_btc_address,
+            amount_sat,
+            confirmations,
+            "Validating Babylon staking intent at T2 (Managed) trust tier"
+        );
+
+        // Minimum 6 confirmations for T2 trust tier (per CON-791)
+        if confirmations < 6 {
+            return Err(ConxianError::Validation(format!(
+                "Babylon staking requires ≥6 BTC confirmations (got {confirmations})"
+            )));
+        }
+
+        let intent = StakingIntent {
+            staker: staker_btc_address.to_string(),
+            amount_sat,
+            btc_block_height: header.height,
+            btc_block_hash: header.hash.clone(),
+            trust_tier: TrustTier::Managed,
+        };
+
+        info!(
+            chain = "babylon",
+            staker = %intent.staker,
+            amount_sat = intent.amount_sat,
+            trust_tier = ?intent.trust_tier,
+            "Babylon staking intent validated — ready for treasury processing"
+        );
+
+        Ok(intent)
     }
 
     /// Verify a bounded, contiguous Babylon BTC header-chain range.
