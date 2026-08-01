@@ -358,7 +358,13 @@ The Conxian Protocol is built to empower individuals and institutions within the
 
 **Machine Economy Principle**: Machines are sovereign economic actors. Conxian provides the identity, routing, and compliance infrastructure for autonomous M2M value exchange without ever taking custody of machine wallets or revenue streams.
 
-## Session State (2026-07-30)
+## Session State (2026-08-01)
+
+### v0.1.6 — Session 48: CI Pass + Persistence + Billing
+- CI all green (14/14 checks): MSRV, Clippy, Format, Build, Test, RGB, Liquid, audit
+- 3 fixes: lib-conxian-core CI checkout (`db14f7b`/`e315e78`), `_utxo_txid` compile fix (`f700994`), RUSTSEC-2026-0220 ignore (`44db53d`)
+- PR [#308](https://github.com/Conxian/conxian-gateway/pull/308) merged: SovereignBackend (File/Tableland/Kwil) + MRR billing engine
+- New modules: `internal/engine/src/persistence.rs` (118 lines), `internal/engine/src/billing.rs` (362 lines)
 
 ### v0.1.5 — lib-conxian-core v0.3.0 Dependency
 - PR [#304](https://github.com/Conxian/conxian-gateway/pull/304) merged to main
