@@ -1,3 +1,19 @@
+//! Gateway-local Lightning types for payment lifecycle and failure taxonomy.
+//!
+//! These types are **operational** wrappers used inside the Gateway's engine.
+//! For **canonical** Lightning protocol primitives (BOLT 12 offers, BIP-353
+//! resolution, payment state transitions), use `lib_conxian_core::lightning`
+//! which provides the `LightningAdapter` trait, `LightningPaymentState`,
+//! `LightningPaymentIntent`, and `LightningPaymentEvent`.
+//!
+//! Type mapping between Gateway and Core:
+//! | Gateway (`conxian_core`)           | Core (`lib_conxian_core`)          |
+//! |------------------------------------|-------------------------------------|
+//! | `PaymentIntent`                    | `LightningPaymentIntent`            |
+//! | `PaymentEvent`                     | `LightningPaymentEvent`             |
+//! | `PaymentLifecycle { Pending, .. }` | `LightningPaymentState { Created, ..}` |
+//! | `FailureTaxonomy`                  | `LightningFailureClass`             |
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::fmt;
