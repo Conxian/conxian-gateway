@@ -33,8 +33,8 @@ for [Gateway PR #278](https://github.com/Conxian/conxian-gateway/pull/278).
   [`c893cbb39ea9d680b229a89035ab38f29ed51b8b`](https://github.com/Conxian/conxian-gateway/commit/c893cbb39ea9d680b229a89035ab38f29ed51b8b),
   including the `main` merge at
   [`81d175540922b25192b683e95c9b48230c009454`](https://github.com/Conxian/conxian-gateway/commit/81d175540922b25192b683e95c9b48230c009454).
-- The Phase 4 continuity checkpoint predates the external merge of PR #278.
-  GitHub reports that it was merged externally on
+- At the Phase 4 continuity checkpoint, PR #278 was **pending and not merged**.
+  GitHub subsequently reports that it was merged externally on
   2026-07-22T19:57:47Z by `botshelomokoka` as merge commit
   [`96de9c0e976caf1dd3592593073d1f53e58bc91b`](https://github.com/Conxian/conxian-gateway/commit/96de9c0e976caf1dd3592593073d1f53e58bc91b).
   Charlie did not merge PR #278.
@@ -42,8 +42,6 @@ for [Gateway PR #278](https://github.com/Conxian/conxian-gateway/pull/278).
   [`e761d3edfa7c7cbe6a4d9aa67e4e34229a7e3005`](https://github.com/Conxian/conxian-gateway/commit/e761d3edfa7c7cbe6a4d9aa67e4e34229a7e3005)
   was created at 2026-07-22T20:07:46Z and pushed after that merge, so these
   docs are on the post-merge branch head and are not part of merged `main`.
-  This documentation recovery is carried by a separate follow-up PR that
-  remains pending review/merge until it lands in `main`.
   This report remains a research and implementation handoff; it does not
   resolve [issue #189](https://github.com/Conxian/conxian-gateway/issues/189)
   or authorize a cryptographic backend, settlement, custody, compliance, or
@@ -171,8 +169,8 @@ These are dependencies and blockers, not endorsements. All listed items were ope
 | Area | Current verified classification | Durable reference |
 |---|---|---|
 | Gateway main | `internal/engine/src/bitcoin/groth16_verifier.rs` defines a versioned, backend-neutral BN254 envelope whose circuit, verification-key, public-input, witness-commitment, and block-context fields are bound by the canonical contract. `MockGroth16Verifier` performs no pairings. | [PR #255](https://github.com/Conxian/conxian-gateway/pull/255) merged; [Groth16 contract](https://github.com/Conxian/conxian-gateway/blob/main/docs/GROTH16_VERIFIER_CONTRACT.md) |
-| Gateway PR #278 | The generic BitVM route now propagates typed `VerifierUnavailable` and returns HTTP `501` with an unsupported/non-authoritative response instead of treating metadata as cryptographic verification. The implementation was merged at [`96de9c0e976caf1dd3592593073d1f53e58bc91b`](https://github.com/Conxian/conxian-gateway/commit/96de9c0e976caf1dd3592593073d1f53e58bc91b); the Phase 4 documentation commit is a post-merge branch update carried by a separate follow-up PR. | [PR #278](https://github.com/Conxian/conxian-gateway/pull/278), implementation commit [`114b857ed9d400beaf474cb68e7ac5f25ef58d78`](https://github.com/Conxian/conxian-gateway/commit/114b857ed9d400beaf474cb68e7ac5f25ef58d78), docs commit [`e761d3edfa7c7cbe6a4d9aa67e4e34229a7e3005`](https://github.com/Conxian/conxian-gateway/commit/e761d3edfa7c7cbe6a4d9aa67e4e34229a7e3005) |
-| BitVM adapter | `internal/engine/src/bitcoin/bitvm_adapter.rs` parses/validates the envelope and delegates to an injected verifier. The legacy `ChainAdapter::verify_state_proof` path is explicitly fail-closed with `VerifierUnavailable`; it is not a metadata-verification path. | [PR #255](https://github.com/Conxian/conxian-gateway/pull/255), [PR #278](https://github.com/Conxian/conxian-gateway/pull/278) |
+| Gateway PR #278 | The generic BitVM route now propagates typed `VerifierUnavailable` and returns HTTP `501` with an unsupported/non-authoritative response instead of treating metadata as cryptographic verification. The implementation was merged externally; the Phase 4 documentation commit is a post-merge branch update and is not in merged `main`. | [PR #278](https://github.com/Conxian/conxian-gateway/pull/278), implementation commit [`114b857ed9d400beaf474cb68e7ac5f25ef58d78`](https://github.com/Conxian/conxian-gateway/commit/114b857ed9d400beaf474cb68e7ac5f25ef58d78), docs commit [`e761d3edfa7c7cbe6a4d9aa67e4e34229a7e3005`](https://github.com/Conxian/conxian-gateway/commit/e761d3edfa7c7cbe6a4d9aa67e4e34229a7e3005) |
+| BitVM adapter | `internal/engine/src/bitcoin/bitvm_adapter.rs` parses/validates the envelope and delegates to an injected verifier. The legacy state-proof path remains metadata-only. | [PR #255](https://github.com/Conxian/conxian-gateway/pull/255) |
 | BitVMX evaluator | `tools/bitvmx-eval/` is a feature-gated, isolated BitVMX-CPU subprocess evaluator with research-only contract tests. | [PR #259](https://github.com/Conxian/conxian-gateway/pull/259) |
 | Universal verifier | `internal/compliance/src/verifier.rs` performs generic adapter dispatch; no production BitVM3, BitVMX-GC, recursive-SNARK, or pairing backend is wired. | [PR #267](https://github.com/Conxian/conxian-gateway/pull/267) |
 | Gateway issue | #189 is open and remains research-only. | [Issue #189](https://github.com/Conxian/conxian-gateway/issues/189) |
