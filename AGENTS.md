@@ -45,6 +45,28 @@ Usage-based billing at `internal/engine/src/billing.rs` (362 lines):
 - JSON export for Stripe/accounting integration
 - Base fee: $200/mo managed; per-op costs: $0.01–$0.10
 
+### Settlement Rail Adapters (Session 48 — All Wired)
+Every Bitcoin L2 settlement rail now has a Gateway adapter:
+
+| Rail | Adapter | Location | Market Doc |
+|------|---------|----------|------------|
+| sBTC | SBTCBridge + Emily API | `stacks/sbtc.rs` (441 lines) | conxian_market: SETTLEMENT_RAILS.md §3, monitoring.md §1 |
+| RGB | GatewayRgbAdapter | `bitcoin/rgb_adapter.rs` (201 lines) | SETTLEMENT_RAILS.md §4 |
+| Babylon | StakingIntent adapter | `bitcoin/babylon_adapter.rs` | SETTLEMENT_RAILS.md §5, FUNDING §3.4 |
+| Fedimint | FedimintMint adapter | `bitcoin/fedimint_adapter.rs` | SETTLEMENT_RAILS.md §6, monitoring.md §2 |
+| Statechain (Spark) | Via enclave-sdk | `conxius-enclave-sdk/src/protocol/statechain.rs` | SETTLEMENT_RAILS.md §2 |
+| Lightning | LightningAdapter | Via nexus compat bridge | SETTLEMENT_RAILS.md §7 |
+
+> Monitoring specification: `conxian_market/docs/knowledge_base/monitoring.md` covers alert thresholds,
+> Prometheus endpoints, and dashboard queries for all 6 rails.
+
+### TrustTier Pricing (Session 48)
+4-tier pricing model defined in market `trust_tier_pricing.md`:
+- **ObserverOnly**: Free (no settlement)
+- **Expedient**: 2% flat (Fedimint, Lightning, ALEX)
+- **Managed**: 2% + 0.5% premium (Statechain, sBTC, RGB, Babylon)
+- **Strict**: Negotiated (all rails, TEE+ZK)
+
 ---
 
 ## 🚨 CRITICAL: Session Continuity Protocol
