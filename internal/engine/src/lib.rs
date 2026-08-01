@@ -1,3 +1,4 @@
+pub mod billing;
 pub mod bitcoin;
 pub mod coordination;
 pub mod ntt;
@@ -7,6 +8,10 @@ mod shutdown;
 pub mod stacks;
 pub mod treasury;
 
+pub use billing::{
+    compute_mrr, format_usd, BillingPeriod, GatewayDeployment, LineItem, MrrReport, UsageMetrics,
+    BILLING_PERIOD_SECONDS,
+};
 pub use bitcoin::{
     BabylonAdapter, BabylonHeaderInfoResponse, BabylonHeaderSource, BabylonHttpClient,
     BabylonMainChainResponse, BabylonPagination, BabylonTipResponse, BitVmAdapter,
