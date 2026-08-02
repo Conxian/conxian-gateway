@@ -178,24 +178,27 @@ EV, Drone, Robot, Sensor, ComputeNode, Charger, Storage, Transmitter, Vehicle, G
     │  SettlementSource       │
     │  ┌───────────────────┐  │
     │  │ JobCard           │  │  ← Human-to-human (DLC/Stacks)
-    │  │ MachineToMachine  │  │  ← G-C3: Autonomous M2M
-    │  │ LightningOnly     │  │  ← Lightning-native
-    │  │ FiatRamp          │  │  ← A2P/OTP
-    │  │ NwcRelay          │  │  ← Nostr Wallet Connect
-    │  └───────┬───────────┘  │
-    └──────────┼──────────────┘
-               │
-    ┌──────────┴──────────────────────────────┐
-    │           M2M Settlement Rails            │
-    │  ┌──────────┐  ┌──────────┐  ┌────────┐  │
-    │  │Lightning │  │  peaq     │  │BTC L1  │  │
-    │  │(Live)    │  │(Q4 2026) │  │(Q4 2026)│  │
-    │  └──────────┘  └──────────┘  └────────┘  │
-    │  ┌──────────┐                            │
-    │  │Taproot   │  ← Taproot Assets           │
-    │  │Assets    │    (Q4 2026)                │
-    │  └──────────┘                            │
-    └──────────────────────────────────────────┘
+
+
+---
+
+## Cross-Repo Market Integration (Session 48)
+
+Gateway adapters power all 6 settlement rails documented in `conxian_market`:
+
+| Gateway Adapter | Market Doc | Rail | Fee | Trust Tier |
+|----------------|-----------|------|----:|:----------:|
+| `stacks/sbtc.rs` | SETTLEMENT_RAILS §3, monitoring §1 | sBTC | 2% | T2 Managed |
+| `bitcoin/rgb_adapter.rs` | SETTLEMENT_RAILS §4 | RGB | 2% | T2 Managed |
+| `bitcoin/babylon_adapter.rs` | SETTLEMENT_RAILS §5, FUNDING §3.4 | Babylon | 0.5% yield | T2 Managed |
+| `bitcoin/fedimint_adapter.rs` | SETTLEMENT_RAILS §6, monitoring §2 | Fedimint | 1% | T1 Expedient |
+| (via enclave-sdk) | SETTLEMENT_RAILS §2 | Statechain | 2% | T2 Managed |
+| (via nexus bridge) | SETTLEMENT_RAILS §7 | Lightning | 1% | T1 Expedient |
+
+> Market monitoring: `conxian_market/docs/knowledge_base/monitoring.md` specifies
+> Prometheus endpoints, alert thresholds, and dashboard queries for all adapters.
+> Pricing: `trust_tier_pricing.md` governs tier-based fee calculation and rail routing.
+
 ```
 
 ### Machine Services (G-C3)

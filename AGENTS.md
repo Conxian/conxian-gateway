@@ -30,6 +30,43 @@ validated, and signed contract calls to the Conxian protocol's Clarity
 contracts via the Stacks RPC layer. Canonical contract names are
 enumerated for defense-in-depth validation.
 
+### Sovereign Persistence (Session 48 — Aug 2026)
+Multi-backend persistence at `internal/engine/src/persistence.rs` (118 lines):
+- `SovereignBackend` enum: File (default), Tableland, Kwil
+- Environment-driven selection via `GATEWAY_PERSISTENCE_BACKEND`
+- Uses `lib_conxian_core::Persistence` trait for atomic transactional updates
+- Designed for sovereignty: no single cloud provider dependency
+
+### MRR Billing Engine (Session 48 — Aug 2026)
+Usage-based billing at `internal/engine/src/billing.rs` (362 lines):
+- Tiered pricing: self-hosted (zero-cost) vs managed (per-operation)
+- Counters: relay messages, RWA verifications, settlement ops
+- Daily aggregation → monthly billing periods
+- JSON export for Stripe/accounting integration
+- Base fee: $200/mo managed; per-op costs: $0.01–$0.10
+
+### Settlement Rail Adapters (Session 48 — All Wired)
+Every Bitcoin L2 settlement rail now has a Gateway adapter:
+
+| Rail | Adapter | Location | Market Doc |
+|------|---------|----------|------------|
+| sBTC | SBTCBridge + Emily API | `stacks/sbtc.rs` (441 lines) | conxian_market: SETTLEMENT_RAILS.md §3, monitoring.md §1 |
+| RGB | GatewayRgbAdapter | `bitcoin/rgb_adapter.rs` (201 lines) | SETTLEMENT_RAILS.md §4 |
+| Babylon | StakingIntent adapter | `bitcoin/babylon_adapter.rs` | SETTLEMENT_RAILS.md §5, FUNDING §3.4 |
+| Fedimint | FedimintMint adapter | `bitcoin/fedimint_adapter.rs` | SETTLEMENT_RAILS.md §6, monitoring.md §2 |
+| Statechain (Spark) | Via enclave-sdk | `conxius-enclave-sdk/src/protocol/statechain.rs` | SETTLEMENT_RAILS.md §2 |
+| Lightning | LightningAdapter | Via nexus compat bridge | SETTLEMENT_RAILS.md §7 |
+
+> Monitoring specification: `conxian_market/docs/knowledge_base/monitoring.md` covers alert thresholds,
+> Prometheus endpoints, and dashboard queries for all 6 rails.
+
+### TrustTier Pricing (Session 48)
+4-tier pricing model defined in market `trust_tier_pricing.md`:
+- **ObserverOnly**: Free (no settlement)
+- **Expedient**: 2% flat (Fedimint, Lightning, ALEX)
+- **Managed**: 2% + 0.5% premium (Statechain, sBTC, RGB, Babylon)
+- **Strict**: Negotiated (all rails, TEE+ZK)
+
 ---
 
 ## 🚨 CRITICAL: Session Continuity Protocol
@@ -343,7 +380,13 @@ The Conxian Protocol is built to empower individuals and institutions within the
 
 **Machine Economy Principle**: Machines are sovereign economic actors. Conxian provides the identity, routing, and compliance infrastructure for autonomous M2M value exchange without ever taking custody of machine wallets or revenue streams.
 
-## Session State (2026-07-30)
+## Session State (2026-08-01)
+
+### v0.1.6 — Session 48: CI Pass + Persistence + Billing
+- CI all green (14/14 checks): MSRV, Clippy, Format, Build, Test, RGB, Liquid, audit
+- 3 fixes: lib-conxian-core CI checkout (`db14f7b`/`e315e78`), `_utxo_txid` compile fix (`f700994`), RUSTSEC-2026-0220 ignore (`44db53d`)
+- PR [#308](https://github.com/Conxian/conxian-gateway/pull/308) merged: SovereignBackend (File/Tableland/Kwil) + MRR billing engine
+- New modules: `internal/engine/src/persistence.rs` (118 lines), `internal/engine/src/billing.rs` (362 lines)
 
 ### v0.1.5 — lib-conxian-core v0.3.0 Dependency
 - PR [#304](https://github.com/Conxian/conxian-gateway/pull/304) merged to main
