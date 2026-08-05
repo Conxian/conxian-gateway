@@ -1,5 +1,6 @@
 pub mod billing;
 pub mod bitcoin;
+pub mod bitvm_adapter;
 pub mod coordination;
 pub mod ntt;
 pub mod persistence;
