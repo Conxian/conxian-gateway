@@ -17,7 +17,7 @@ This matrix tracks the maturity of core components and identifies the best candi
 | **Identity Resolution (World ID)** | 4 | High | Development | Transitioning from placeholder to live API |
 | **Blake2s (Ark Alignment)** | 2 | High | Research | Required for V-UTXO PRF (CON-1282) |
 | **Silent Payments (BIP-352)** | 1 | High | Research | Native scanning integration planned (CON-1281) |
-| **Nostr Wallet Connect (NWC)** | 1 | High | Research | Protocol transport defined (CON-1267) |
+| **Nostr Wallet Connect (NWC)** | 7 | High | Production | NIP-47 relay-settle integrated; 5 API tests passing. See `internal/api/src/nwc_backend.rs` |
 
 ## 2. Best Candidates for Implementation
 
@@ -31,9 +31,8 @@ This matrix tracks the maturity of core components and identifies the best candi
 - **Readiness**: High. Deterministic hashing required for V-UTXO; implementation is self-contained.
 - **Impact**: Unblocks Ark protocol compliance and recovery model.
 
-### Candidate C: Nostr Wallet Connect (NWC) (Score: 7.5)
-- **Urgency**: High (CON-1267).
-- **Readiness**: Medium. Requires NIP-47 transport logic.
+### Candidate C: Nostr Wallet Connect (NWC) (Score: N/A — Shipped)
+- **Status**: ✅ Shipped. NIP-47 relay-settle integrated with 5 passing API tests.
 - **Impact**: Enables non-custodial authorization of Lightning payments.
 
 ## 2. Best Candidates for Implementation (Continued)

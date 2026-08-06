@@ -239,6 +239,7 @@ fn observed<T>(data: T) -> SourceObservation<T> {
         availability: ObservationAvailability::Observed,
         data: Some(data),
         error_category: None,
+        observed_at_unix: 0,
     }
 }
 
@@ -258,6 +259,7 @@ fn sample_shadow_observation() -> BitcoinCoreShadowObservation {
                 availability: FeeEstimateAvailability::Observed,
                 fee_rate_sat_vb: Some(25.0),
                 error_category: None,
+                observed_at_unix: 0,
             },
             FeeEstimateObservation {
                 target_blocks: 6,
@@ -265,6 +267,7 @@ fn sample_shadow_observation() -> BitcoinCoreShadowObservation {
                 availability: FeeEstimateAvailability::NoEstimate,
                 fee_rate_sat_vb: None,
                 error_category: None,
+                observed_at_unix: 0,
             },
             FeeEstimateObservation {
                 target_blocks: 12,
@@ -272,6 +275,7 @@ fn sample_shadow_observation() -> BitcoinCoreShadowObservation {
                 availability: FeeEstimateAvailability::Observed,
                 fee_rate_sat_vb: Some(5.0),
                 error_category: None,
+                observed_at_unix: 0,
             },
         ],
         mempool_info: observed(CoreMempoolInfo {
@@ -301,6 +305,7 @@ fn sample_shadow_observation() -> BitcoinCoreShadowObservation {
             reported_state: None,
             error_category: None,
         },
+        route_confidence: None,
     }
 }
 
@@ -728,16 +733,19 @@ async fn test_core_shadow_observation_preserves_independent_partial_sources() {
         availability: ObservationAvailability::Unavailable,
         data: None,
         error_category: Some(ObservationErrorCategory::Transport),
+        observed_at_unix: 0,
     };
     observation.best_block_stats = SourceObservation {
         availability: ObservationAvailability::DependencyUnavailable,
         data: None,
         error_category: None,
+        observed_at_unix: 0,
     };
     observation.mempool_info = SourceObservation {
         availability: ObservationAvailability::Unavailable,
         data: None,
         error_category: Some(ObservationErrorCategory::InvalidResponse),
+        observed_at_unix: 0,
     };
     let observer = Arc::new(StaticShadowObserver {
         result: Ok(observation),

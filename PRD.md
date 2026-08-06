@@ -51,6 +51,7 @@ Conxian is designed to capture the Total Addressable Market (TAM) of Bitcoin-nat
 - [x] R37: Structured Finance Tranche Implementation (Status: Complete)
 - [x] R38: Phase 7 Sovereign Labor & Sharding Verification (Status: Complete)
 - [x] R39: Network Promotion Policy (dev -> main) Integration (Status: Complete)
+- [ ] R40: BitVM3 Adapter — Garbled Circuits & Recursive Proof Verification (Status: Research-only structural placeholder; fail-closed pending a stable BitVM3/GC SDK, audit, and verified production deployment. Tracked in #189.)
 
 ## 3. Progress Log
 - 2026-02-13: Initialized workspace structure.
@@ -103,6 +104,7 @@ Conxian is designed to capture the Total Addressable Market (TAM) of Bitcoin-nat
 - **TAM Engine**: Simulates growth of sBTC liquidity and tracks the Sovereign Yield Index.
 - **WIF Manager**: Handles OIDC-to-GCP token exchange for enclave-signed attestations.
 - **BitVM Verifier**: Implements state-root commitment verification for optimistic fraud proofs.
+- **BitVM3 Adapter**: Research-only structural placeholder for garbled-circuit and recursive-proof verification; all paths fail closed pending a stable SDK, audit, and verified production deployment. Tracked in [#189](https://github.com/Conxian/conxian-gateway/issues/189).
 - **ISO 20022 Forge**: Generates standardized XML banking messages for institutional egress.
 - **ALEX Client**: Read-only/shadow interface for an unverified quote compatibility path plus a typed, fail-closed unsigned-intent/payload boundary. Exact network-qualified identifiers, nonzero `min_dy`, freshness, policy revisions, code hashes, admin state, price impact, and exposure caps are required by the core policy slice. No signer, broadcast, receipt, or reconciliation path is wired; see [`docs/research/ALEX_SETTLEMENT_EVIDENCE_AND_GATE_2026-07-22.md`](docs/research/ALEX_SETTLEMENT_EVIDENCE_AND_GATE_2026-07-22.md).
 - **A2P Router**: Orchestrates global stateless OTP delivery via Infobip with HMAC verification.
