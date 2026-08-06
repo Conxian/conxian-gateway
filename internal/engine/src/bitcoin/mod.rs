@@ -10,11 +10,11 @@ pub use mempool_orchestrator::MempoolOrchestrator;
 pub use rpc::{BitcoinRpc, BitcoinRpcClient};
 pub use shadow_observation::{
     BitcoinCoreShadowObservation, BitcoinCoreShadowObserver, BitcoinCoreShadowObserverClient,
-    CoreBestBlockStats, CoreBlockchainInfo, CoreMempoolInfo, CoreNetworkInfo, DeploymentAlias,
-    DeploymentObservation, DeploymentObservationStatus, DeploymentReportedState,
+    CalibrationMeta, CoreBestBlockStats, CoreBlockchainInfo, CoreMempoolInfo, CoreNetworkInfo,
+    DeploymentAlias, DeploymentObservation, DeploymentObservationStatus, DeploymentReportedState,
     DeploymentSourceScope, FeeEstimateAvailability, FeeEstimateObservation, FeeRateUnit,
-    ObservationAvailability, ObservationErrorCategory, ShadowObserverFailure, SourceObservation,
-    SHADOW_FEE_TARGETS,
+    ObservationAvailability, ObservationErrorCategory, RouteConfidence, ShadowObserverFailure,
+    SourceObservation, SHADOW_FEE_TARGETS,
 };
 pub mod rgb_adapter;
 pub use rgb_adapter::NodeRgbAdapter;

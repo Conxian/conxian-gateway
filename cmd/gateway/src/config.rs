@@ -196,6 +196,13 @@ pub struct Config {
     pub rgb_stash_path: Option<String>,
     #[allow(dead_code)]
     pub rgb_esplora_url: Option<String>,
+    /// Optional path to a BIP340 issuer-policy JSON file for RGB consignment
+    /// import validation. When set, consignment imports validate issuer
+    /// signatures against the policy's x-only public keys. When absent,
+    /// imports fall back to `RejectIssuerSignatures` (fail-closed).
+    /// Tracked in [#228](https://github.com/Conxian/conxian-gateway/issues/228).
+    #[allow(dead_code)]
+    pub rgb_issuer_policy_path: Option<String>,
     pub network: Network,
     pub alex_api_url: String,
     pub alex_venue_manifest_path: Option<String>,
@@ -325,6 +332,7 @@ impl Config {
         let rgb_stash_path = Self::optional_env("RGB_STASH_PATH");
         let rgb_esplora_url = Self::optional_env("RGB_ESPLORA_URL")
             .map(|url| Self::validate_rgb_endpoint("RGB_ESPLORA_URL", &url));
+        let rgb_issuer_policy_path = Self::optional_env("RGB_ISSUER_POLICY_PATH");
         if rgb_stash_path.is_some() != rgb_esplora_url.is_some() {
             panic!("RGB_STASH_PATH and RGB_ESPLORA_URL must be configured together");
         }
@@ -458,6 +466,7 @@ impl Config {
             rgb_node_url,
             rgb_stash_path,
             rgb_esplora_url,
+            rgb_issuer_policy_path,
             network,
             alex_api_url: env::var("ALEX_API_URL").unwrap_or(alex_url),
             alex_venue_manifest_path,
@@ -510,6 +519,7 @@ mod tests {
                 "RGB_NODE_URL",
                 "RGB_STASH_PATH",
                 "RGB_ESPLORA_URL",
+                "RGB_ISSUER_POLICY_PATH",
                 "MEMPOOL_ORCHESTRATOR_INTERVAL",
                 "MEMPOOL_STUCK_THRESHOLD_SECS",
                 "MEMPOOL_MAX_FEE_BUMP_ATTEMPTS",
@@ -560,6 +570,7 @@ mod tests {
         env::remove_var("RGB_NODE_URL");
         env::remove_var("RGB_STASH_PATH");
         env::remove_var("RGB_ESPLORA_URL");
+        env::remove_var("RGB_ISSUER_POLICY_PATH");
     }
 
     #[test]
