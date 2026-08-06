@@ -1,8 +1,8 @@
 pub mod alex_settlement;
 pub mod lightning;
 pub mod musig2;
-pub mod sdk_signing_adapter;
 pub mod persistence;
+pub mod sdk_signing_adapter;
 pub mod settlement;
 pub mod trust_policy;
 pub use alex_settlement::*;

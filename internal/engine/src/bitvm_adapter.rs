@@ -53,7 +53,7 @@ impl GatewayBitVM2Adapter {
             return Err(BitVM2Error::GatedByRolloutMode);
         }
         // SDK BITVM2_ENCODING_VERSION is the canonical value
-        if version != sdk::BITVM2_ENCODING_VERSION {
+        if version != sdk::blockchain::bitvm2::BITVM2_ENCODING_VERSION {
             return Err(BitVM2Error::InvalidEncodingVersion(version));
         }
         Ok(())
@@ -178,9 +178,7 @@ mod tests {
         // Missing operator
         assert!(adapter.validate_role_config("", &["v1".into()]).is_err());
         // Missing verifiers
-        assert!(adapter
-            .validate_role_config("op1", &[])
-            .is_err());
+        assert!(adapter.validate_role_config("op1", &[]).is_err());
         // Valid
         assert!(adapter
             .validate_role_config("op1", &["v1".into(), "v2".into()])
@@ -194,8 +192,6 @@ mod tests {
         assert!(adapter.validate_instance_id("").is_err());
         assert!(adapter.validate_instance_id("abc").is_err());
         assert!(adapter.validate_instance_id(&"00".repeat(32)).is_ok());
-        assert!(adapter
-            .validate_instance_id(&"zz".repeat(32))
-            .is_err()); // non-hex
+        assert!(adapter.validate_instance_id(&"zz".repeat(32)).is_err()); // non-hex
     }
 }

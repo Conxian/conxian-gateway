@@ -14,7 +14,6 @@
 //! uses bitcoin 0.32.x. Full BIP-322 verification through the SDK
 //! requires a gateway bitcoin crate upgrade (tracked in #318).
 
-
 /// Adapter for SDK MuSig2 signing operations.
 ///
 /// Wraps [`lib_conxian_core::sdk::signing::musig2_signing::MuSig2Signer`]
@@ -31,10 +30,14 @@ impl SdkMuSig2Signer {
     }
 
     /// Access the raw SDK signer for advanced use.
-    pub fn inner(
-        &self,
-    ) -> &lib_conxian_core::sdk::signing::musig2_signing::MuSig2Signer {
+    pub fn inner(&self) -> &lib_conxian_core::sdk::signing::musig2_signing::MuSig2Signer {
         &self.inner
+    }
+}
+
+impl Default for SdkMuSig2Signer {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -61,6 +64,12 @@ impl SdkBip322Verifier {
     }
 }
 
+impl Default for SdkBip322Verifier {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -79,4 +88,3 @@ mod tests {
         let _inner = verifier.inner();
     }
 }
-
