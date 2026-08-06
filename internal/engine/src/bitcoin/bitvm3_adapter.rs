@@ -7,9 +7,9 @@
 //! circuits and recursive proof verification. No stable SDK, release, audit,
 //! or verified production deployment exists as of the last evidence refresh.
 //!
-//! This adapter provides a structural placeholder for the ChainAdapter surface
-//! so that Gateway's adapter registry can acknowledge the BitVM3 lane without
-//! implying production readiness. All verification paths fail closed with
+//! This adapter reserves the ChainAdapter surface so that Gateway's adapter
+//! registry can acknowledge the BitVM3 lane without implying production
+//! readiness. All verification paths fail closed with
 //! [`ConxianError::VerifierUnavailable`].
 //!
 //! ## Promotion gates (from canonical triage)
@@ -34,7 +34,7 @@ use conxian_core::{ChainAdapter, ConxianError, ConxianResult};
 use serde_json::{json, Value};
 use tracing::warn;
 
-/// BitVM3 protocol adapter — research-only structural placeholder.
+/// BitVM3 protocol adapter — research-only, fail-closed.
 ///
 /// Represents the BitVM3 lane (garbled circuits + recursive proof
 /// verification) in the Gateway's adapter registry. All cryptographic
