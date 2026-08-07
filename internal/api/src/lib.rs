@@ -4,6 +4,7 @@ compile_error!("feature `mock-integrations` must not be enabled in release build
 pub mod a2p;
 pub mod admin;
 pub mod auth;
+pub mod camt;
 pub mod fiat;
 pub mod handlers;
 pub mod lightning;
