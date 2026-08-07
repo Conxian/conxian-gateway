@@ -2,8 +2,6 @@ use anyhow::Context;
 use conxian_api::{configure_routes, new_lightning_adapter, new_settlement_log, AppState};
 use conxian_compliance::{CoreVerifier, IdentityManager, ZkcVerifier};
 use conxian_core::{ConxianError, GatewayState, Persistence, SharedState};
-#[cfg(feature = "rgb-native")]
-use conxian_engine::{Bip340IssuerPolicy, StashResolver};
 use conxian_engine::{
     run_blocking_persistence,
     stacks::alex::{
@@ -13,6 +11,8 @@ use conxian_engine::{
     FeeBumpPolicyConfig, MempoolOrchestrator, NodeRgbAdapter, NttRelayer, RedisCoordinator,
     SovereignBackend, StacksListener, StacksRpcClient, TreasuryMonitor,
 };
+#[cfg(feature = "rgb-native")]
+use conxian_engine::{Bip340IssuerPolicy, StashResolver};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};

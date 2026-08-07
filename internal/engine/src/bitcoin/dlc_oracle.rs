@@ -233,7 +233,7 @@ impl ThresholdOracleCoordinator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use secp256k1::{Keypair, rand};
+    use secp256k1::{rand, Keypair};
 
     fn test_secp() -> Secp256k1<VerifyOnly> {
         Secp256k1::verification_only()
@@ -259,7 +259,11 @@ mod tests {
         }
     }
 
-    fn announcement_for(event_id: &str, pubkey_hex: &str, outcomes: Vec<&str>) -> OracleAnnouncement {
+    fn announcement_for(
+        event_id: &str,
+        pubkey_hex: &str,
+        outcomes: Vec<&str>,
+    ) -> OracleAnnouncement {
         OracleAnnouncement {
             event_id: event_id.into(),
             oracle_pubkey: pubkey_hex.into(),
@@ -299,15 +303,19 @@ mod tests {
         let decoy_att = OracleAttestation {
             event_id: "btc-usd-2026q3".into(),
             outcome: "down".into(),
-            signature: hex::encode(signing_secp().sign_schnorr(
-                &secp256k1::Message::from_digest({
-                    let mut h = Sha256::new();
-                    h.update(b"btc-usd-2026q3");
-                    h.update(b"up"); // signed "up", but outcome claims "down"
-                    h.finalize().into()
-                }),
-                &kp,
-            ).serialize()),
+            signature: hex::encode(
+                signing_secp()
+                    .sign_schnorr(
+                        &secp256k1::Message::from_digest({
+                            let mut h = Sha256::new();
+                            h.update(b"btc-usd-2026q3");
+                            h.update(b"up"); // signed "up", but outcome claims "down"
+                            h.finalize().into()
+                        }),
+                        &kp,
+                    )
+                    .serialize(),
+            ),
             oracle_pubkey: pubkey_hex.clone(),
         };
 

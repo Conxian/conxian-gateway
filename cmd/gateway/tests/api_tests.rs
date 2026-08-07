@@ -2772,7 +2772,10 @@ async fn admin_release_request_approval_succeeds_with_valid_token() {
     let val: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(val["status"], "pending");
     assert!(val["action_id"].as_str().unwrap().starts_with("req-"));
-    assert!(val["audit_event_id"].as_str().unwrap().starts_with("audit-"));
+    assert!(val["audit_event_id"]
+        .as_str()
+        .unwrap()
+        .starts_with("audit-"));
 }
 
 #[tokio::test]
@@ -2865,7 +2868,10 @@ async fn admin_governance_decision_succeeds_with_valid_token() {
     let val: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(val["status"], "accepted");
     assert!(val["action_id"].as_str().unwrap().starts_with("gov-"));
-    assert!(val["audit_event_id"].as_str().unwrap().starts_with("audit-"));
+    assert!(val["audit_event_id"]
+        .as_str()
+        .unwrap()
+        .starts_with("audit-"));
 }
 
 #[tokio::test]

@@ -80,9 +80,7 @@ impl FedimintAdapter {
             .unwrap_or(invite_code);
 
         let config: FederationConfig = serde_json::from_str(payload).map_err(|e| {
-            conxian_core::ConxianError::Internal(format!(
-                "Federation config parse error: {e}"
-            ))
+            conxian_core::ConxianError::Internal(format!("Federation config parse error: {e}"))
         })?;
 
         // Validate structural invariants
@@ -105,9 +103,7 @@ impl FedimintAdapter {
         }
 
         Ok(FederationConfig {
-            community_name: community_name
-                .unwrap_or(&config.community_name)
-                .to_string(),
+            community_name: community_name.unwrap_or(&config.community_name).to_string(),
             ..config
         })
     }
@@ -264,8 +260,7 @@ mod tests {
         })
         .to_string();
 
-        let config =
-            FedimintAdapter::parse_invite_code(&json, Some("Custom Fed")).unwrap();
+        let config = FedimintAdapter::parse_invite_code(&json, Some("Custom Fed")).unwrap();
         assert_eq!(config.community_name, "Custom Fed");
     }
 

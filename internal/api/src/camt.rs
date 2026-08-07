@@ -166,7 +166,10 @@ mod tests {
 
     #[test]
     fn xml_escape_preserves_safe_strings() {
-        assert_eq!(xml_escape("DE89370400440532013000"), "DE89370400440532013000");
+        assert_eq!(
+            xml_escape("DE89370400440532013000"),
+            "DE89370400440532013000"
+        );
     }
 
     #[test]

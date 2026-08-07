@@ -1760,10 +1760,13 @@ pub async fn route_ccip_message(
 /// - `CCIP_LOW_RISK_CHAINS` (default: `canton,ethereum,arbitrum,polygon,optimism,bitcoin`)
 fn classify_ccip_risk(source: &str, destination: &str) -> conxian_core::SanctionsRisk {
     let high_risk: Vec<String> = env_csv("CCIP_HIGH_RISK_CHAINS", &["spfs", "brics-pay-dcms"]);
-    let medium_risk: Vec<String> = env_csv("CCIP_MEDIUM_RISK_CHAINS", &["cips", "papss", "mbridge"]);
+    let medium_risk: Vec<String> =
+        env_csv("CCIP_MEDIUM_RISK_CHAINS", &["cips", "papss", "mbridge"]);
     let low_risk: Vec<String> = env_csv(
         "CCIP_LOW_RISK_CHAINS",
-        &["canton", "ethereum", "arbitrum", "polygon", "optimism", "bitcoin"],
+        &[
+            "canton", "ethereum", "arbitrum", "polygon", "optimism", "bitcoin",
+        ],
     );
 
     let src_lower = source.to_lowercase();

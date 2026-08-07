@@ -138,13 +138,12 @@ impl IdentityManager {
                         e
                     ))
                 })?;
-                let val: serde_json::Value =
-                    serde_json::from_str(body).map_err(|e| {
-                        conxian_core::ConxianError::Compliance(format!(
-                            "Invalid ENS response JSON: {}",
-                            e
-                        ))
-                    })?;
+                let val: serde_json::Value = serde_json::from_str(body).map_err(|e| {
+                    conxian_core::ConxianError::Compliance(format!(
+                        "Invalid ENS response JSON: {}",
+                        e
+                    ))
+                })?;
 
                 let address = val
                     .pointer("/data/domains/0/resolver/addr/id")
