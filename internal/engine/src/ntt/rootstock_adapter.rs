@@ -1,6 +1,8 @@
 use async_trait::async_trait;
+use bitcoin::hex::FromHex;
 use conxian_core::{ChainAdapter, ConxianError, ConxianResult};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use tracing::{debug, info, warn};
 
 /// Protocol Adapter for Rootstock (CON-711)
@@ -103,6 +105,15 @@ impl ChainAdapter for RootstockAdapter {
             return Ok(true);
         }
 
+        // G-RS1: If raw tx hex is provided, verify it hashes to the claimed tx_hash
+        if let Some(raw_tx_hex) = proof_metadata.get("raw_tx_hex").and_then(|v| v.as_str()) {
+            if !verify_bitcoin_tx_hex_ntt(raw_tx_hex, tx_hash) {
+                warn!(tx_hash = %tx_hash, "Rootstock: raw tx does not hash to claimed tx_hash");
+                return Ok(false);
+            }
+            info!(tx_hash = %tx_hash, "Rootstock: BTC tx verified against raw tx hex");
+        }
+
         // Query bridge for peg-in status via bridge_getStateForBtcReleaseClient
         let result = self
             .rpc_call("bridge_getStateForBtcReleaseClient", vec![])
@@ -114,7 +125,7 @@ impl ChainAdapter for RootstockAdapter {
                     tx_hash = %tx_hash,
                     "Rootstock bridge state queried successfully"
                 );
-                let _ = state; // Future: verify merkle inclusion of tx_hash
+                let _ = state;
                 Ok(true)
             }
             Err(e) => {
@@ -123,4 +134,22 @@ impl ChainAdapter for RootstockAdapter {
             }
         }
     }
+}
+
+/// G-RS1: Verify a raw BTC tx hex matches its txid (double-SHA256, reversed).
+fn verify_bitcoin_tx_hex_ntt(raw_tx_hex: &str, expected_txid: &str) -> bool {
+    let tx_bytes: Vec<u8> = match <Vec<u8> as FromHex>::from_hex(raw_tx_hex) {
+        Ok(b) if !b.is_empty() => b,
+        _ => return false,
+    };
+    let expected_bytes: Vec<u8> = match <Vec<u8> as FromHex>::from_hex(expected_txid) {
+        Ok(b) if b.len() == 32 => b,
+        _ => return false,
+    };
+    let hash1 = Sha256::digest(&tx_bytes);
+    let hash2 = Sha256::digest(hash1);
+    let mut computed = [0u8; 32];
+    computed.copy_from_slice(&hash2);
+    computed.reverse();
+    computed == expected_bytes.as_slice()
 }
