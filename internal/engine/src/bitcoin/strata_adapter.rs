@@ -55,7 +55,10 @@ impl ChainAdapter for StrataAdapter {
 
         // Exact length check: 32 bytes = 64 hex chars (standard Merkle root)
         if batch_root.len() != 64 {
-            info!(len = batch_root.len(), "Strata: batch_root not 32 bytes (64 hex chars)");
+            info!(
+                len = batch_root.len(),
+                "Strata: batch_root not 32 bytes (64 hex chars)"
+            );
             return Ok(false);
         }
 

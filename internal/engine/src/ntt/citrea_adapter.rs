@@ -104,7 +104,10 @@ impl ChainAdapter for CitreaAdapter {
 
         // Minimum length check: ≥ 32 bytes (≥ 64 hex chars)
         if proof.len() < 64 {
-            warn!(len = proof.len(), "Citrea: zk_proof too short (min 64 hex chars)");
+            warn!(
+                len = proof.len(),
+                "Citrea: zk_proof too short (min 64 hex chars)"
+            );
             return Ok(false);
         }
 
