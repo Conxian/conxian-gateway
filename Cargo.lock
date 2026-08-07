@@ -2497,8 +2497,8 @@ dependencies = [
 
 [[package]]
 name = "conxius-enclave-sdk"
-version = "2.0.15"
-source = "git+https://github.com/Conxian/conxius-enclave-sdk?tag=v2.0.15#5bb1e3e6ea36901ce67ad3ff1e82355161221180"
+version = "2.0.16"
+source = "git+https://github.com/Conxian/conxius-enclave-sdk?tag=v2.0.16#91b09799c9c7de4f50fca3c449c34b526af784d6"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -4324,7 +4324,7 @@ dependencies = [
 [[package]]
 name = "lib-conxian-core"
 version = "0.3.2"
-source = "git+https://github.com/Conxian/lib-conxian-core?tag=v0.3.2#d6a4a6221dcdef071b994809a838e5a9e10a8ad8"
+source = "git+https://github.com/Conxian/lib-conxian-core?tag=v0.3.2#930caaa839cefb90b5a6c10ae62585e5d893a516"
 dependencies = [
  "aluvm",
  "anyhow",
