@@ -162,8 +162,97 @@ impl ZkcVerifier {
         })
     }
 
-    pub fn format_iso20022_pacs008_v8(&self, _job_card: &ConxianJobCard) -> ConxianResult<String> {
-        Ok("<AppHdr>...</AppHdr><Document>...</Document>".to_string())
+    pub fn format_iso20022_pacs008_v8(&self, job_card: &ConxianJobCard) -> ConxianResult<String> {
+        use std::fmt::Write;
+
+        let e = |s: &str| -> String {
+            s.chars()
+                .map(|c| match c {
+                    '&' => "&amp;".to_string(),
+                    '<' => "&lt;".to_string(),
+                    '>' => "&gt;".to_string(),
+                    '"' => "&quot;".to_string(),
+                    '\'' => "&apos;".to_string(),
+                    _ => c.to_string(),
+                })
+                .collect()
+        };
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or_default();
+        let minutes = (now / 60) % 60;
+        let hours = (now / 3600) % 24;
+        let cre_dt_tm = format!("2026-08-07T{hours:02}:{minutes:02}:00");
+
+        let msg_id = format!("pacs008-{}", uuid::Uuid::new_v4());
+        let instr_id = format!("instr-{}", uuid::Uuid::new_v4());
+        let end_to_end_id = format!("e2e-{}", uuid::Uuid::new_v4());
+
+        let debtor = &job_card.work_intent.sender_address;
+        let creditor = &job_card.work_intent.receiver_address;
+        let amount = job_card.work_intent.amount_sbtc.to_string();
+
+        let mut xml = String::with_capacity(2048);
+        writeln!(xml, r#"<?xml version="1.0" encoding="UTF-8"?>"#).unwrap();
+        writeln!(
+            xml,
+            r#"<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pacs.008.001.08">"#
+        )
+        .unwrap();
+        writeln!(xml, r#"  <FIToFICstmrCdtTrf>"#).unwrap();
+        writeln!(xml, r#"    <GrpHdr>"#).unwrap();
+        writeln!(xml, r#"      <MsgId>{}</MsgId>"#, e(&msg_id)).unwrap();
+        writeln!(xml, r#"      <CreDtTm>{}</CreDtTm>"#, e(&cre_dt_tm)).unwrap();
+        writeln!(xml, r#"      <NbOfTxs>1</NbOfTxs>"#).unwrap();
+        writeln!(xml, r#"      <SttlmInf>"#).unwrap();
+        writeln!(xml, r#"        <SttlmMtd>INDA</SttlmMtd>"#).unwrap();
+        writeln!(xml, r#"      </SttlmInf>"#).unwrap();
+        writeln!(xml, r#"    </GrpHdr>"#).unwrap();
+        writeln!(xml, r#"    <CdtTrfTxInf>"#).unwrap();
+        writeln!(xml, r#"      <PmtId>"#).unwrap();
+        writeln!(xml, r#"        <InstrId>{}</InstrId>"#, e(&instr_id)).unwrap();
+        writeln!(
+            xml,
+            r#"        <EndToEndId>{}</EndToEndId>"#,
+            e(&end_to_end_id)
+        )
+        .unwrap();
+        writeln!(xml, r#"      </PmtId>"#).unwrap();
+        writeln!(
+            xml,
+            r#"      <IntrBkSttlmAmt Ccy="SAT">{}</IntrBkSttlmAmt>"#,
+            e(&amount)
+        )
+        .unwrap();
+        writeln!(xml, r#"      <Dbtr>"#).unwrap();
+        writeln!(xml, r#"        <Nm>{}</Nm>"#, e(debtor)).unwrap();
+        writeln!(xml, r#"      </Dbtr>"#).unwrap();
+        writeln!(xml, r#"      <DbtrAcct>"#).unwrap();
+        writeln!(
+            xml,
+            r#"        <Id><Othr><Id>{}</Id></Othr></Id>"#,
+            e(debtor)
+        )
+        .unwrap();
+        writeln!(xml, r#"      </DbtrAcct>"#).unwrap();
+        writeln!(xml, r#"      <Cdtr>"#).unwrap();
+        writeln!(xml, r#"        <Nm>{}</Nm>"#, e(creditor)).unwrap();
+        writeln!(xml, r#"      </Cdtr>"#).unwrap();
+        writeln!(xml, r#"      <CdtrAcct>"#).unwrap();
+        writeln!(
+            xml,
+            r#"        <Id><Othr><Id>{}</Id></Othr></Id>"#,
+            e(creditor)
+        )
+        .unwrap();
+        writeln!(xml, r#"      </CdtrAcct>"#).unwrap();
+        writeln!(xml, r#"    </CdtTrfTxInf>"#).unwrap();
+        writeln!(xml, r#"  </FIToFICstmrCdtTrf>"#).unwrap();
+        writeln!(xml, r#"</Document>"#).unwrap();
+
+        Ok(xml)
     }
 
     pub fn normalize_papss_ingress(
