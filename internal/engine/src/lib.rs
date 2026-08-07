@@ -13,6 +13,8 @@ pub use billing::{
     compute_mrr, format_usd, BillingPeriod, GatewayDeployment, LineItem, MrrReport, UsageMetrics,
     BILLING_PERIOD_SECONDS,
 };
+#[cfg(feature = "rgb-native")]
+pub use bitcoin::Bip340IssuerPolicy;
 pub use bitcoin::{
     BabylonAdapter, BabylonHeaderInfoResponse, BabylonHeaderSource, BabylonHttpClient,
     BabylonMainChainResponse, BabylonPagination, BabylonTipResponse, BitVmAdapter,

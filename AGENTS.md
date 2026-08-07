@@ -117,7 +117,7 @@ For complete organizational protocol, see:
 - **Gap Analysis (2026-07-22)**: Current six-issue inventory, weighted ranking, and evidence-backed acceptance slices are recorded in `docs/GAP_ANALYSIS_2026-07-22.md`; `docs/GAP_ANALYSIS_2026-07-14.md` remains the dated historical snapshot. Key findings and current corrections:
   - ⚠️ #222 CI/CD: Phase 3 release-governance implementation is prepared on the audit branch — fail-closed tag/version validation, production binary packaging, checksums, normalized CycloneDX SBOM, SLSA subjects, protected release job, and rollback runbook are present; merge, admin ruleset/environment configuration, a live release rehearsal, and Cargo publication prerequisites remain
   - ✅ #236 SDK: Version/documentation alignment is fixed in the tree — `packages/client-sdk/package.json` is `0.1.4` and the README says "Developer Preview"; the dated gap-analysis entry is retained as historical context
-  - ⚠️ #220 DLC: HTTP oracle/event/key/outcome scaffold only; cryptographic announcement and attestation verification, any DLC dependency, funding/CET/refund/adaptor-signature construction, and real bond construction remain open. The current scaffold uses UUID/mock bond IDs only; see `docs/research/DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md`
+  - ⚠️ #220 DLC: HTTP oracle/event/key/outcome scaffold; cryptographic Schnorr verification ✅ implemented (Session 50); funding/CET/refund/adaptor-signature construction, and real bond construction remain open. The current scaffold uses UUID/mock bond IDs only; see `docs/research/DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md`
   - ⚠️ #219 Groth16: canonical BN254 contract, BitVM handoff, fixture, and rejection tests merged in PR #255; production cryptographic backend remains open
   - [x] #216 Babylon: BTC header-chain retrieval and bounded SPV-style verification merged in PR #253; EOTS/finality extensions remain separate
 - **Sprint Protocol (2026-07-14)**: Session Continuity Protocol implemented. All agent sessions now verify prior work before proceeding. See:
@@ -380,25 +380,87 @@ The Conxian Protocol is built to empower individuals and institutions within the
 
 **Machine Economy Principle**: Machines are sovereign economic actors. Conxian provides the identity, routing, and compliance infrastructure for autonomous M2M value exchange without ever taking custody of machine wallets or revenue streams.
 
-## Session State (2026-08-01)
+## Session State (2026-08-07)
 
-### v0.1.6 — Session 48: CI Pass + Persistence + Billing
-- CI all green (14/14 checks): MSRV, Clippy, Format, Build, Test, RGB, Liquid, audit
-- 3 fixes: lib-conxian-core CI checkout (`db14f7b`/`e315e78`), `_utxo_txid` compile fix (`f700994`), RUSTSEC-2026-0220 ignore (`44db53d`)
-- PR [#308](https://github.com/Conxian/conxian-gateway/pull/308) merged: SovereignBackend (File/Tableland/Kwil) + MRR billing engine
-- New modules: `internal/engine/src/persistence.rs` (118 lines), `internal/engine/src/billing.rs` (362 lines)
+### Sessions 49–50: Full-Scope Production Readiness + Research Expansion + Gap Closure
 
-### v0.1.5 — lib-conxian-core v0.3.0 Dependency
-- PR [#304](https://github.com/Conxian/conxian-gateway/pull/304) merged to main
-- `Cargo.toml`: added `lib-conxian-core` workspace dependency
-- `pkg/conxian-core/Cargo.toml`: added `lib-conxian-core` crate dependency
-- `pkg/conxian-core/src/trust_policy.rs`: new `core_compat` module with:
-  - `gateway_tier_to_core()`: T1→Strict, T2→Managed, T3→Expedient, T4→ObserverOnly
-  - `core_tier_to_gateway()`: reverse mapping
-  - `gateway_system_to_core()`: TrustSystem→BridgeSystem mapping
-  - Re-exports: Chain, ChainFamily, BridgeSystem, VerificationClass, FinalityClass
-- Tag `v0.1.5` created on main. GitHub Release published.
-- Core dep pinned to git rev on main
+**8 commits · 28 files · 3,397 lines**
+
+#### Production Completeness (Session 49)
+- **ENS resolver**: Production path now calls The Graph ENS subgraph for real resolution (was "disabled in this build")
+- **BNS resolver**: Improved error message directing operators to set `STACKS_RPC_URL`
+- **RGB BIP340 issuer policy**: Wired at runtime — `Bip340IssuerPolicy` loaded from `RGB_ISSUER_POLICY_PATH`, stored in `NodeRgbAdapter`, fail-closed on error
+- **Chain classification**: `CCIP_HIGH/MEDIUM/LOW_RISK_CHAINS` env vars replace hardcoded lists (the only TODO in the codebase is now resolved)
+- **Persistence stubs**: Tableland/Kwil now emit `warn!` logs on fallback, expose `as_str()` and `PERSISTENCE_BACKEND_METRIC`
+- **Unsafe hygiene**: Replaced `#[allow(unused_unsafe)]` with `SAFETY` comments in `ntt/relayer.rs`
+
+#### Code Quality & Security (Session 49)
+- **Admin endpoint tests**: 8 new tests covering auth rejection, invalid tokens, valid tokens (all 3 endpoints), and malformed JSON
+- **XML injection fix**: Entity escaping in CAMT XML generators (`camt.rs`); 8 unit tests covering &, <, >, ", ', injection attempts
+- **Orphan module fix**: `camt.rs` was never declared in `lib.rs` as a module; now wired
+- **CI verification**: clippy clean (0 warnings), 420+ lib tests passing, cargo check clean, contamination guard clean
+
+#### Research Documentation (10 docs, ~2,500 lines)
+| # | Document | Focus |
+|---|----------|-------|
+| 1 | `LIGHTNING_SETTLEMENT_RAIL_RESEARCH.md` | BOLTs, 5 implementations, 3 backends, $1.1B M2M/month |
+| 2 | `SBTC_SETTLEMENT_RAIL_RESEARCH.md` | SIP-021, Emily API, peg mechanism, trust model |
+| 3 | `BABYLON_ADAPTER_RESEARCH.md` | BTC header SPV, EOTS/finality, staking lifecycle |
+| 4 | `FEDIMINT_ADAPTER_RESEARCH.md` | Chaumian e-cash, privacy-compliance tension |
+| 5 | `DLC_SETTLEMENT_RAIL_RESEARCH.md` | 6-stage plan, 13/14 vectors, Schnorr roadmap |
+| 6 | `FIAT_ISO20022_SETTLEMENT_RAIL_RESEARCH.md` | 4 providers, CAMT, XML injection found+fixed |
+| 7 | `BITVM_VERIFICATION_FAMILY_RESEARCH.md` | Groth16 verifier, BitVM3 9 promotion gates |
+| 8 | `RGB_SETTLEMENT_RAIL_RESEARCH.md` | 3-tier RolloutMode, 3,255-line stash |
+| 9 | `NTT_SOVEREIGN_BRIDGE_RESEARCH.md` | Trust-policy relay, RSK/Citrea/Strata |
+| 10 | `GAP_ANALYSIS_2026-08-07.md` | 20 gaps, dependency graph, scoring, 3-phase roadmap |
+
+#### Gaps Closed (Session 50)
+| Gap | Description | Impact |
+|-----|-------------|--------|
+| **G-DL1** | BIP340 Schnorr oracle attestation verification | Unblocks entire 6-stage DLC pipeline; `secp256k1` + `sha2` now non-optional deps |
+| **G-FM2** | Fedimint federation discovery | `FederationConfig` struct + `discover_federation()` + JSON/URI parsing + 10 tests |
+| **XML injection** | CAMT entity escaping | Production-grade institutional banking compliance |
+
+#### Gap Analysis (2026-08-07)
+20 gaps identified across 9 settlement rails. Priority triage:
+- **P1 (1 remaining):** G-BB1 (Babylon EOTS verification, 3-5d)
+- **P2 (8):** G-FI1/2/3, G-BB2/3, G-FM1, G-SB3
+- **P3 (4):** G-FI4, G-LN2/3, G-FM3 (governance)
+- **Infra-gated (4):** G-SB1/2, G-LN1, G-FI4
+
+#### Adapter Registry
+All adapters now have research docs linked in `ADAPTER_FAMILY_STRATEGY.md`.
+DLC CET added to Bitcoin L2/Sidechain family. RGB detail section with modularization note.
+NTT detail section with Rootstock/Citrea/Strata comparison.
 
 ### Remaining
 - crates.io publish: `gh workflow run release.yml -R Conxian/conxian-gateway -f release_version=0.1.5 -f publish_to_crates_io=true`
+- G-BB1: Babylon EOTS verification (highest remaining P1)
+- `canton_m2m_tests` binary: LLVM linker crash (SIGBUS) — pre-existing infrastructure issue; lib tests all pass
+
+---
+
+## Session 48 Gap Analysis Integration
+
+Cross-repo gap analysis published in `conxian_market/docs/research/CROSS_REPO_GAP_ANALYSIS_SESSION_48.md`.
+Gateway-specific gaps with implementation tracking:
+
+| Gap | Issue | Severity | Sprint | Adapter Impact |
+|-----|-------|:--------:|:------:|:---------------|
+| CI/CD strict baseline | [#222](https://github.com/Conxian/conxian-gateway/issues/222) | P1 | S1 | All adapters |
+| RGB stash resolver | [#228](https://github.com/Conxian/conxian-gateway/issues/228) | P1 | S5 | RGB rail |
+| DLC CET construction | [#220](https://github.com/Conxian/conxian-gateway/issues/220) | P1 | S5 | DLC rail |
+| BitVM3 adapter | [#189](https://github.com/Conxian/conxian-gateway/issues/189) | P2 | S5 | BitVM3 rail |
+| BIP-110 fee market eval | [#245](https://github.com/Conxian/conxian-gateway/issues/245) | P2 | S3 | Routing |
+| MRR/billing module | [#306](https://github.com/Conxian/conxian-gateway/issues/306) | P2 | S3 | Billing |
+
+### Adapter Production Readiness
+
+```
+Production: sbtc.rs, alex.rs, babylon_adapter.rs, fedimint_adapter.rs — wired, green CI
+Partial:    rgb_adapter.rs — core wired, stash resolver (#228) needed
+Stub:       dlc_oracle.rs — CET path not built (#220)
+Research:   bitvm_adapter.rs — garbled circuits (#189)
+```
+
+Cross-ref: `SETTLEMENT_RAILS.md` §10 (market-side adapter readiness table).

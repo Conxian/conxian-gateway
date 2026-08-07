@@ -1753,35 +1753,43 @@ pub async fn route_ccip_message(
 
 /// Classify the sanctions risk of a CCIP route based on source/destination chains.
 ///
-/// TODO: Move chain classification lists to `conxian-core` config or environment
-/// variables (e.g. `CCIP_LOW_RISK_CHAINS`, `CCIP_HIGH_RISK_CHAINS`) so that
-/// jurisdictional routing can be updated without code changes.
+/// Chain classifications are driven by environment variables so that
+/// jurisdictional routing can be updated without code changes:
+/// - `CCIP_HIGH_RISK_CHAINS` (default: `spfs,brics-pay-dcms`)
+/// - `CCIP_MEDIUM_RISK_CHAINS` (default: `cips,papss,mbridge`)
+/// - `CCIP_LOW_RISK_CHAINS` (default: `canton,ethereum,arbitrum,polygon,optimism,bitcoin`)
 fn classify_ccip_risk(source: &str, destination: &str) -> conxian_core::SanctionsRisk {
-    let high_risk_chains = ["spfs", "brics-pay-dcms"];
-    let medium_risk_chains = ["cips", "papss", "mbridge"];
-    let low_risk_chains = [
-        "canton", "ethereum", "arbitrum", "polygon", "optimism", "bitcoin",
-    ];
+    let high_risk: Vec<String> = env_csv("CCIP_HIGH_RISK_CHAINS", &["spfs", "brics-pay-dcms"]);
+    let medium_risk: Vec<String> =
+        env_csv("CCIP_MEDIUM_RISK_CHAINS", &["cips", "papss", "mbridge"]);
+    let low_risk: Vec<String> = env_csv(
+        "CCIP_LOW_RISK_CHAINS",
+        &[
+            "canton", "ethereum", "arbitrum", "polygon", "optimism", "bitcoin",
+        ],
+    );
 
     let src_lower = source.to_lowercase();
     let dst_lower = destination.to_lowercase();
 
-    if high_risk_chains.contains(&src_lower.as_str())
-        || high_risk_chains.contains(&dst_lower.as_str())
-    {
+    if high_risk.contains(&src_lower) || high_risk.contains(&dst_lower) {
         return conxian_core::SanctionsRisk::High;
     }
-    if medium_risk_chains.contains(&src_lower.as_str())
-        || medium_risk_chains.contains(&dst_lower.as_str())
-    {
+    if medium_risk.contains(&src_lower) || medium_risk.contains(&dst_lower) {
         return conxian_core::SanctionsRisk::Medium;
     }
-    if low_risk_chains.contains(&src_lower.as_str())
-        && low_risk_chains.contains(&dst_lower.as_str())
-    {
+    if low_risk.contains(&src_lower) && low_risk.contains(&dst_lower) {
         return conxian_core::SanctionsRisk::Low;
     }
-    conxian_core::SanctionsRisk::Medium // Unknown chains default to Medium
+    conxian_core::SanctionsRisk::Medium
+}
+
+fn env_csv(var: &str, defaults: &[&str]) -> Vec<String> {
+    std::env::var(var)
+        .ok()
+        .filter(|v| !v.is_empty())
+        .map(|v| v.split(',').map(|s| s.trim().to_lowercase()).collect())
+        .unwrap_or_else(|| defaults.iter().map(|s| s.to_lowercase()).collect())
 }
 
 /// Escalate sanctions risk one level for elevated scrutiny.

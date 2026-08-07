@@ -5,6 +5,8 @@ use conxian_core::{ContractState, ConxianError, ConxianResult, RgbAdapter, Rollo
 use serde::Deserialize;
 use serde_json::{json, Value};
 
+#[cfg(feature = "rgb-native")]
+use super::rgb_issuer_policy::Bip340IssuerPolicy;
 use super::rgb_native;
 use super::StashResolver;
 
@@ -124,6 +126,8 @@ pub struct NodeRgbAdapter {
     pub mode: RolloutMode,
     pub node_url: String,
     pub stash: Option<Arc<StashResolver>>,
+    #[cfg(feature = "rgb-native")]
+    pub issuer_policy: Option<Bip340IssuerPolicy>,
     node_client: Arc<dyn RgbNodeClient>,
 }
 
@@ -134,12 +138,20 @@ impl NodeRgbAdapter {
             mode,
             node_url,
             stash: None,
+            #[cfg(feature = "rgb-native")]
+            issuer_policy: None,
             node_client,
         }
     }
 
     pub fn with_stash(mut self, stash: Arc<StashResolver>) -> Self {
         self.stash = Some(stash);
+        self
+    }
+
+    #[cfg(feature = "rgb-native")]
+    pub fn with_issuer_policy(mut self, policy: Bip340IssuerPolicy) -> Self {
+        self.issuer_policy = Some(policy);
         self
     }
 

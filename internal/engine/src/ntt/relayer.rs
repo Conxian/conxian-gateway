@@ -118,15 +118,17 @@ mod tests {
 
     static ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
+    // SAFETY: Callers must hold ENV_LOCK to serialize access and prevent data
+    // races with other threads that may read or write the same environment variable.
     fn set_env_var(key: &str, value: String) {
-        #[allow(unused_unsafe)]
         unsafe {
             std::env::set_var(key, value);
         }
     }
 
+    // SAFETY: Callers must hold ENV_LOCK to serialize access and prevent data
+    // races with other threads that may read or write the same environment variable.
     fn remove_env_var(key: &str) {
-        #[allow(unused_unsafe)]
         unsafe {
             std::env::remove_var(key);
         }

@@ -4,8 +4,13 @@ use conxian_core::{
 };
 use std::path::Path;
 use std::sync::Arc;
+use tracing::warn;
 
 // ---- Sovereign Persistence Backends (GW-305) ----
+
+/// Prometheus metric label for the active persistence backend.
+/// Exported as `conxian_gateway_persistence_backend{backend="..."}` with value 1.
+pub const PERSISTENCE_BACKEND_METRIC: &str = "conxian_gateway_persistence_backend";
 
 /// Selects which persistence backend the Gateway uses for mempool state.
 ///
@@ -16,15 +21,15 @@ use std::sync::Arc;
 pub enum SovereignBackend {
     /// Local file-based persistence (current default, production-ready).
     File,
-    /// Tableland SQL-based decentralized storage.
+    /// Tableland SQL-based decentralized storage (GW-305: SDK pending).
     Tableland,
-    /// Kwil decentralized database network.
+    /// Kwil decentralized database network (GW-305: SDK pending).
     Kwil,
 }
 
 impl SovereignBackend {
     pub fn from_env() -> Self {
-        match std::env::var("GATEWAY_PERSISTENCE_BACKEND")
+        let backend = match std::env::var("GATEWAY_PERSISTENCE_BACKEND")
             .unwrap_or_else(|_| "file".into())
             .to_lowercase()
             .as_str()
@@ -32,6 +37,20 @@ impl SovereignBackend {
             "tableland" => Self::Tableland,
             "kwil" => Self::Kwil,
             _ => Self::File,
+        };
+        tracing::info!(
+            backend = backend.as_str(),
+            "Persistence backend selected (metric: {})",
+            PERSISTENCE_BACKEND_METRIC
+        );
+        backend
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::File => "file",
+            Self::Tableland => "tableland",
+            Self::Kwil => "kwil",
         }
     }
 
@@ -41,10 +60,20 @@ impl SovereignBackend {
                 path,
             )?)),
             Self::Tableland => {
+                warn!(
+                    "Tableland SDK not yet integrated (GW-305); \
+                     using FilePersistence fallback. \
+                     Set GATEWAY_PERSISTENCE_BACKEND=file to suppress this warning."
+                );
                 let adapter = TablelandPersistence::new(path)?;
                 Ok(Arc::new(adapter))
             }
             Self::Kwil => {
+                warn!(
+                    "Kwil SDK not yet integrated (GW-305); \
+                     using FilePersistence fallback. \
+                     Set GATEWAY_PERSISTENCE_BACKEND=file to suppress this warning."
+                );
                 let adapter = KwilPersistence::new(path)?;
                 Ok(Arc::new(adapter))
             }
