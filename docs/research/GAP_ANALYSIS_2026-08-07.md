@@ -33,9 +33,9 @@ improvement) and ranked by estimated effort vs. strategic impact.
 | ID | Adapter | Gap | Effort | Blocked by |
 |----|---------|-----|--------|------------|
 | **G-BB1** | Babylon | EOTS (Extractable One-Time Signature) verification — core security primitive for BTC staking slashing conditions. Gateway cannot independently verify that a finality provider's double-sign would be slashed. | 3-5 days | secp256k1 EOTS extraction algorithm research |
-| **G-DL1** | DLC | Schnorr oracle attestation — `verify_attestation()` checks payload consistency but not BIP340 Schnorr signatures. Blocks Stage 3 (CET construction) and all downstream DLC capabilities. | 2-3 days | None (secp256k1 already in workspace) |
+| **G-DL1** | DLC | ✅ CLOSED (Session 50) | Schnorr oracle attestation — `verify_schnorr_attestation()` now performs full BIP340 verification. `secp256k1` + `sha2` are non-optional deps. 9 tests. ~~2-3 days~~ | — | No dependencies |
 
-**Resolution priority:** G-DL1 first (lower effort, no external dependency, unblocks entire DLC pipeline). G-BB1 second (higher effort, requires EOTS algorithm research).
+**Resolution priority:** G-DL1 ✅ closed (Sessions 49-50). G-BB1 is now the sole remaining P1.
 
 ### 1.2 P2 — Significant Capability Gap (8 gaps)
 
@@ -47,7 +47,7 @@ improvement) and ranked by estimated effort vs. strategic impact.
 | **G-BB2** | Babylon | Finality gadget verification — BTC-anchored checkpoint consensus parsing. Provides stronger finality guarantees than header-chain SPV alone. | 5-7 days |
 | **G-BB3** | Babylon | Staking lifecycle monitoring — full lifecycle tracking (Locked→Active→Unbonding→Withdrawn) for institutional treasury management. | 3-5 days |
 | **G-FM1** | Fedimint | Cryptographic blind signature verification — `verify_state_proof` checks non-empty sigs but doesn't verify against guardian public keys. Blocks T1 promotion. | 3-5 days |
-| **G-FM2** | Fedimint | Federation discovery — no mechanism to discover or validate federation configurations. Federation metadata must be provided out-of-band. | 2-3 days |
+| **G-FM2** | Fedimint | ✅ CLOSED (Session 50) | Federation discovery — `FederationConfig` struct, `discover_federation()`, JSON/fedimint:// URI parsing with guardian pubkey count validation. 10 tests. ~~2-3 days~~ |
 | **G-SB3** | sBTC | Bitcoin L1 proof verification — bridge monitor trusts Emily API; no independent Bitcoin transaction inclusion verification via Merkle proof. | 3-5 days |
 
 ### 1.3 P3 — Operational Improvement (4 gaps)
@@ -101,13 +101,13 @@ G-LN3 (Liquidity) ──► Enables high-throughput M2M settlement
 
 ## 3. Effort-to-Impact Matrix
 
-### Quick Wins (≤3 days, high impact)
+### Quick Wins (≤3 days, high impact) — 2 of 4 closed
 
 | Gap | Days | Impact |
 |-----|------|--------|
-| **G-DL1** — Schnorr oracle | 2-3 | Unblocks entire DLC pipeline (6 stages) |
+| **G-DL1** — Schnorr oracle | ✅ CLOSED | Unblocks entire DLC pipeline (6 stages) |
+| **G-FM2** — Federation discovery | ✅ CLOSED | Enables self-service Fedimint onboarding |
 | **G-FI1** — XSD validation | 2-3 | Eliminates silent bank rejection risk |
-| **G-FM2** — Federation discovery | 2-3 | Enables self-service Fedimint onboarding |
 | **G-FI4** — Provider sandbox testing | 1-2 | Removes dead_code stubs |
 
 ### Medium Investments (3-5 days, high impact)
@@ -133,15 +133,14 @@ G-LN3 (Liquidity) ──► Enables high-throughput M2M settlement
 
 ## 4. Strategic Roadmap
 
-### Phase 1: Unblockers (Week 1-2)
+### Phase 1: Unblockers (Week 1-2) — Sessions 49-50
 
 ```
-G-DL1 (Schnorr) ─── 2-3 days ─── Unblocks DLC
-G-FI1 (XSD)     ─── 2-3 days ─── ISO 20022 compliance
-G-FM2 (Federation)── 2-3 days  ─── Fedimint onboarding
-G-FI4 (Sandbox)  ─── 1-2 days ─── Provider readiness
+G-DL1 (Schnorr) ─── ✅ CLOSED (Session 50) ─── DLC pipeline unblocked
+G-FM2 (Federation)── ✅ CLOSED (Session 50) ─── Fedimint self-service onboarding
 ─────────────────────────────────────────────
-Total: 7-11 days, 4 gaps closed
+Remaining Phase 1: G-FI1 (XSD, 2-3d), G-FI4 (Sandbox, 1-2d)
+Total remaining: 3-5 days, 2 gaps
 ```
 
 ### Phase 2: T1 Promotions (Week 2-4)
@@ -173,22 +172,22 @@ Total: 21-32 days, 5 gaps closed
 
 Each gap is scored on 3 axes (1-5 scale):
 
-| ID | Strategic Value | Code Readiness | External Risk | **Score** |
-|----|----------------|----------------|---------------|-----------|
-| **G-DL1** | 5 (unblocks pipeline) | 5 (secp256k1 ready) | 1 (no dependencies) | **11** |
-| **G-FI1** | 4 (bank compliance) | 4 (XSD fixtures needed) | 1 (no dependencies) | **9** |
-| **G-BB1** | 5 (T1 promotion) | 3 (EOTS research) | 2 (algorithm clarity) | **10** |
-| **G-FM1** | 4 (T1 promotion) | 3 (SDK evaluation) | 3 (license check) | **10** |
-| **G-FI2** | 4 (payment initiation) | 3 (new message format) | 2 (bank sandbox) | **9** |
-| **G-SB3** | 3 (defense-in-depth) | 4 (BitcoinListener exists) | 1 (no dependencies) | **8** |
-| **G-BB2** | 3 (stronger finality) | 2 (OP_RETURN parsing) | 2 (Babylon spec) | **7** |
-| **G-FI3** | 4 (BRICS corridors) | 2 (4 protocol adapters) | 4 (regulatory) | **10** |
-| **G-BB3** | 3 (treasury mgmt) | 4 (lifecycle modeling) | 2 (treasury spec) | **9** |
-| **G-FM2** | 3 (self-service) | 4 (invite code parsing) | 1 (no dependencies) | **8** |
-| **G-LN2** | 3 (M2M UX) | 3 (backend support) | 4 (BOLT 12 stability) | **10** |
-| **G-LN3** | 3 (throughput) | 3 (LND/CLN APIs) | 4 (operator demand) | **10** |
-| **G-FI4** | 2 (QA complete) | 5 (existing HMAC code) | 3 (sandbox keys) | **10** |
-| **G-FM3** | 2 (governance) | 5 (no code) | 5 (ExCo decision) | **12** |
+| ID | Strategic Value | Code Readiness | External Risk | **Score** | Status |
+|----|----------------|----------------|---------------|-----------|--------|
+| **G-BB1** | 5 (T1 promotion) | 3 (EOTS research) | 2 (algorithm clarity) | **10** | P1 |
+| ~~G-DL1~~ | 5 | 5 | 1 | 11 | ✅ |
+| **G-FI1** | 4 (bank compliance) | 4 (XSD fixtures needed) | 1 (no dependencies) | **9** | P2 |
+| **G-FM1** | 4 (T1 promotion) | 3 (SDK evaluation) | 3 (license check) | **10** | P2 |
+| **G-FI2** | 4 (payment initiation) | 3 (new message format) | 2 (bank sandbox) | **9** | P2 |
+| **G-SB3** | 3 (defense-in-depth) | 4 (BitcoinListener exists) | 1 (no dependencies) | **8** | P2 |
+| **G-BB2** | 3 (stronger finality) | 2 (OP_RETURN parsing) | 2 (Babylon spec) | **7** | P2 |
+| **G-FI3** | 4 (BRICS corridors) | 2 (4 protocol adapters) | 4 (regulatory) | **10** | P2 |
+| **G-BB3** | 3 (treasury mgmt) | 4 (lifecycle modeling) | 2 (treasury spec) | **9** | P2 |
+| ~~G-FM2~~ | 3 | 4 | 1 | 8 | ✅ |
+| **G-LN2** | 3 (M2M UX) | 3 (backend support) | 4 (BOLT 12 stability) | **10** | P3 |
+| **G-LN3** | 3 (throughput) | 3 (LND/CLN APIs) | 4 (operator demand) | **10** | P3 |
+| **G-FI4** | 2 (QA complete) | 5 (existing HMAC code) | 3 (sandbox keys) | **10** | P3 |
+| **G-FM3** | 2 (governance) | 5 (no code) | 5 (ExCo decision) | **12** | P3 |
 
 **Highest combined risk (External Risk ≥ 3):** G-FM3 (ExCo), G-FI3 (regulatory), G-LN2/G-LN3 (backend stability), G-FI4 (sandbox access).
 

@@ -1,4 +1,4 @@
-# Session Summary — 2026-08-07 (Session 49)
+# Session Summary — 2026-08-07 (Sessions 49–50)
 
 ## Session Goals
 
@@ -6,7 +6,10 @@
 2. Production completeness: wire stubbed production paths (ENS, BNS, RGB policy)
 3. Code quality improvements (chain classification TODO, unsafe hygiene, persistence stubs)
 4. Admin endpoint test coverage
-5. Research expansion: Lightning and sBTC settlement rail deep-dives
+5. Research expansion: Lightning and sBTC settlement rail deep-dives (Session 49)
+6. **Gap closure: DLC Schnorr oracle (G-DL1) + Fedimint federation discovery (G-FM2)** (Session 50)
+7. XML injection fix + orphan module wiring
+8. Consolidated gap analysis + roadmap
 
 ## What Was Done
 
@@ -61,7 +64,29 @@
   - `admin_endpoints_reject_malformed_json` — 4xx for all 3 endpoints with bad JSON
   - Test count: 412+ (up from 404)
 
-### Research Documentation (9 docs, 2,488+ lines)
+### Security Improvements (Session 49)
+
+- **XML injection hardening** (`pkg/conxian-compliance/src/camt.rs`): Added
+  `xml_escape()` to sanitize all text content in CAMT.053/.054 XML generators.
+  8 unit tests covering `&`, `<`, `>`, `"`, `'`, and injection attempts. Wired
+  orphan `camt.rs` module into `pkg/conxian-compliance/src/lib.rs`.
+
+### Gap Closures (Session 50)
+
+- **G-DL1: DLC Schnorr oracle verification** (`internal/engine/src/bitcoin/dlc_oracle.rs`):
+  `verify_attestation()` now performs full BIP340 Schnorr verification.
+  New `verify_schnorr_attestation()` standalone method. `secp256k1` and `sha2`
+  promoted from optional to non-optional workspace dependencies. 9 tests:
+  valid sig, wrong outcome, wrong pubkey, wrong event_id, full integration,
+  bad hex error paths.
+
+- **G-FM2: Fedimint federation discovery** (`internal/engine/src/bitcoin/fedimint_adapter.rs`):
+  `FederationConfig` struct with guardian pubkey validation.
+  `discover_federation()` parses JSON or `fedimint://` URIs. 10 tests:
+  JSON parsing, URI prefix, community name override, structural validation
+  (empty ID, zero size, pubkey count mismatch), discover-federation roundtrip.
+
+### Research Documentation (10 docs, ~2,500 lines)
 
 | # | Document | Lines | Key Contribution |
 |---|----------|-------|------------------|
@@ -92,26 +117,39 @@
 | `internal/engine/src/persistence.rs` | warn! logs, as_str(), metric constant |
 | `docs/research/LIGHTNING_SETTLEMENT_RAIL_RESEARCH.md` | New: comprehensive Lightning research |
 | `docs/research/SBTC_SETTLEMENT_RAIL_RESEARCH.md` | New: comprehensive sBTC research |
+| `internal/engine/src/bitcoin/dlc_oracle.rs` | +233/-54: BIP340 Schnorr verification + 9 new tests |
+| `internal/engine/src/bitcoin/fedimint_adapter.rs` | +258/-1: FederationConfig + discovery + 10 tests |
+| `internal/engine/Cargo.toml` | secp256k1 + sha2 → non-optional |
+| `pkg/conxian-compliance/src/camt.rs` | xml_escape + 8 tests (XML injection fix) |
+| `pkg/conxian-compliance/src/lib.rs` | +2 lines: wire camt module |
+| `docs/research/GAP_ANALYSIS_2026-08-07.md` | Updated: 2 gaps closed, scoring+roadmap refreshed |
+| `docs/research/DLC_SETTLEMENT_RAIL_RESEARCH.md` | Updated: G-DL1 status, decision gates |
+| `AGENTS.md` | Updated session state: Sessions 49-50 complete |
 | `docs/SESSION_SUMMARY_2026-08-07.md` | This file |
 
-## Verification
+## Verification (Sessions 49–50)
 
 - `cargo check`: clean
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`: 0 warnings
-- `cargo test --workspace`: all passing (412+ tests)
-- `git commit`: `abdf904` on `master`
+- `cargo test --lib --workspace`: all passing (420+ tests)
+- `python3 scripts/verify_contamination_guard.py`: clean (74 files)
+- `canton_m2m_tests` binary: LLVM linker crash (SIGBUS) — pre-existing infrastructure issue
+- `git log`: 8 commits on `master` (abdf904 → be4d92c)
+- No uncommitted changes
 
 ## Deferred Items
 
+- G-BB1: Babylon EOTS verification (highest remaining P1)
+- G-FI1: CAMT XSD schema validation (requires ISO 20022 XSD schemas)
+- G-FM1: Cryptographic blind signature verification (requires fedimint-client SDK)
+- `canton_m2m_tests` linker fix (requires linker/infra tuning)
 - rgb_stash.rs modularization (3,255 lines) — requires `rgb-native` feature
-- OpenAPI/Swagger documentation — requires `utoipa` dependency
-- DLC Stage 2 oracle cryptographic verification (#220) — research-gated
 
 ## Next Session
 
 Per the session continuity protocol, next session should:
-1. Pull latest `main`
+1. Pull latest `master`
 2. Verify clippy + tests pass
-3. Review this summary
-4. Per the gap analysis (#222 at 88/90), CI/CD pipeline finalization is the
-   highest-scored remaining gap
+3. Review this summary + AGENTS.md
+4. **P1 target: G-BB1** (Babylon EOTS verification, 3-5d) — highest remaining priority
+5. After G-BB1: G-FI1 (CAMT XSD) → G-FI2 (pacs.008) → production-grade institutional fiat rail
