@@ -12,7 +12,7 @@ The Gateway supports 15+ protocol adapters grouped by architectural family. Each
 |---------|--------|-------|-------|
 | **Bitcoin Core** | ✅ Live | 3,545 | RPC, ZMQ listener, mempool orchestrator, fee-bump policy, shadow observation |
 | **Liquid** | 🟡 Boundary | 91 | Fail-closed proof boundary; production backend unwired |
-| **RGB v0.12** | ✅ Live | 4,474 | StashResolver, BIP340 issuer policy, native types; regtest E2E passing |
+| **RGB v0.12** | ✅ Live | 4,474 | StashResolver, BIP340 issuer policy, native types; regtest E2E passing; [full research](RGB_SETTLEMENT_RAIL_RESEARCH.md) |
 | **DLC** | ⚠️ Scaffold | 242 | HTTP oracle scaffold only; no cryptographic CET verification |
 
 **Shared**: PSBT (BIP-174), descriptor-based wallets, mempool fee estimation. Liquid diverges on Confidential Transactions and Elements opcodes.
@@ -21,9 +21,9 @@ The Gateway supports 15+ protocol adapters grouped by architectural family. Each
 
 | Adapter | Status | Lines | Notes |
 |---------|--------|-------|-------|
-| **BitVM (Groth16)** | 🟡 Boundary | 1,320 | BN254 envelope, backend-neutral contract; MockGroth16Verifier only |
+| **BitVM (Groth16)** | 🟡 Boundary | 1,320 | BN254 envelope, backend-neutral contract; MockGroth16Verifier only; [full research](BITVM_VERIFICATION_FAMILY_RESEARCH.md) |
 | **BitVM2** | 🟡 Boundary | 197 | Role/encoding/instance validation; `sdk::blockchain::bitvm2` path |
-| **BitVM3** | 🔬 Research | 144 | Structural placeholder; fail-closed; tracked in #189 |
+| **BitVM3** | 🔬 Research | 144 | Structural placeholder; fail-closed; tracked in #189; [full research](BITVM_VERIFICATION_FAMILY_RESEARCH.md) |
 | **RISC Zero** | 🟡 Unwired | 221 | STF verifier adapter exists; no runtime integration |
 | **BitVMX-CPU Eval** | 🔬 Research | 3,700 | Isolated subprocess evaluator; not in production dep graph |
 
@@ -43,7 +43,7 @@ The Gateway supports 15+ protocol adapters grouped by architectural family. Each
 
 | Adapter | Status | Lines | Notes |
 |---------|--------|-------|-------|
-| **NTT Relayer** | ✅ Live | 189 | Cross-chain native token transfer attestation forwarding |
+| **NTT Relayer** | ✅ Live | 189 | Cross-chain native token transfer attestation forwarding; [full research](NTT_SOVEREIGN_BRIDGE_RESEARCH.md) |
 | **Canton/M2M** | ✅ Live | 1,110 | CBTC verification, machine identity, M2M Lightning, CCIP routing, RWA |
 
 ## 5. Settlement Rail Family
