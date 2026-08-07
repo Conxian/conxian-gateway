@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use conxian_core::{ChainAdapter, ConxianError, ConxianResult};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use tracing::{debug, info, warn};
 
 /// Protocol Adapter for Rootstock (CON-711)
@@ -22,6 +23,24 @@ impl RootstockAdapter {
 }
 
 const ETH_BLOCK_NUMBER: &str = "eth_blockNumber";
+
+/// Verify that a raw BTC transaction hex hashes to the claimed txid.
+///
+/// Computes SHA256d (double SHA-256) of the decoded transaction bytes and
+/// compares the result (in big-endian txid order) against `expected_tx_hash`.
+fn verify_bitcoin_tx_hex_ntt(tx_hex: &str, expected_tx_hash: &str) -> bool {
+    let tx_bytes = match hex::decode(tx_hex) {
+        Ok(b) => b,
+        Err(_) => return false,
+    };
+    if tx_bytes.is_empty() {
+        return false;
+    }
+    let hash = Sha256::digest(Sha256::digest(&tx_bytes));
+    let computed = hex::encode(hash);
+    // BTC txid is the double-SHA256 in big-endian order
+    computed.eq_ignore_ascii_case(expected_tx_hash)
+}
 
 impl RootstockAdapter {
     async fn rpc_call(&self, method: &str, params: Vec<Value>) -> ConxianResult<Value> {
@@ -99,8 +118,16 @@ impl ChainAdapter for RootstockAdapter {
             .unwrap_or("");
 
         if tx_hash.is_empty() {
-            info!("Rootstock: no btc_tx_hash in proof, accepting shadow mode");
-            return Ok(true);
+            info!("Rootstock: no btc_tx_hash in proof, rejecting");
+            return Ok(false);
+        }
+
+        // G-RS1: Verify BTC transaction hex matches claimed tx_hash
+        if let Some(tx_hex) = proof_metadata.get("btc_tx_hex").and_then(|v| v.as_str()) {
+            if !verify_bitcoin_tx_hex_ntt(tx_hex, tx_hash) {
+                warn!(tx_hash = %tx_hash, "Rootstock: BTC tx hex does not match claimed tx_hash");
+                return Ok(false);
+            }
         }
 
         // Query bridge for peg-in status via bridge_getStateForBtcReleaseClient
