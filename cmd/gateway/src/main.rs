@@ -3,7 +3,7 @@ use conxian_api::{configure_routes, new_lightning_adapter, new_settlement_log, A
 use conxian_compliance::{CoreVerifier, IdentityManager, ZkcVerifier};
 use conxian_core::{ConxianError, GatewayState, Persistence, SharedState};
 #[cfg(feature = "rgb-native")]
-use conxian_engine::StashResolver;
+use conxian_engine::{Bip340IssuerPolicy, StashResolver};
 use conxian_engine::{
     run_blocking_persistence,
     stacks::alex::{
@@ -162,18 +162,39 @@ async fn main() -> anyhow::Result<()> {
         if config.rgb_mode != conxian_core::RolloutMode::Disabled {
             let adapter = NodeRgbAdapter::new(config.rgb_mode, config.rgb_node_url.clone());
             #[cfg(feature = "rgb-native")]
-            let adapter = if let (Some(stash_path), Some(esplora_url)) = (
-                config.rgb_stash_path.as_deref(),
-                config.rgb_esplora_url.as_deref(),
-            ) {
-                let resolver = StashResolver::new_with_network(
-                    stash_path,
-                    esplora_url,
-                    matches!(config.network, config::Network::Testnet),
-                )
-                .map_err(|error| anyhow::anyhow!(error.to_string()))?;
-                adapter.with_stash(Arc::new(resolver))
-            } else {
+            let adapter = {
+                let mut adapter = adapter;
+                if let (Some(stash_path), Some(esplora_url)) = (
+                    config.rgb_stash_path.as_deref(),
+                    config.rgb_esplora_url.as_deref(),
+                ) {
+                    let resolver = StashResolver::new_with_network(
+                        stash_path,
+                        esplora_url,
+                        matches!(config.network, config::Network::Testnet),
+                    )
+                    .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+                    adapter = adapter.with_stash(Arc::new(resolver));
+                }
+                if let Some(ref policy_path) = config.rgb_issuer_policy_path {
+                    match Bip340IssuerPolicy::load_json_file(std::path::Path::new(policy_path)) {
+                        Ok(policy) => {
+                            tracing::info!(
+                                issuer_count = policy.issuer_count(),
+                                "RGB BIP340 issuer policy loaded"
+                            );
+                            adapter = adapter.with_issuer_policy(policy);
+                        }
+                        Err(error) => {
+                            tracing::error!(
+                                path = %policy_path,
+                                error = %error,
+                                "Failed to load RGB issuer policy; \
+                                 all issuer signatures will be rejected"
+                            );
+                        }
+                    }
+                }
                 adapter
             };
             Some(Arc::new(adapter))

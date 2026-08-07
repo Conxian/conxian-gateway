@@ -25,6 +25,8 @@ pub use bitcoin::{
     ObservationErrorCategory, ShadowObserverFailure, SourceObservation, StashResolver,
     StrataAdapter, SHADOW_FEE_TARGETS,
 };
+#[cfg(feature = "rgb-native")]
+pub use bitcoin::Bip340IssuerPolicy;
 pub use coordination::RedisCoordinator;
 pub use ntt::{CitreaAdapter, NttRelayer, RootstockAdapter};
 pub use persistence::{
