@@ -481,3 +481,41 @@ Research:   bitvm_adapter.rs — garbled circuits (#189)
 ```
 
 Cross-ref: `SETTLEMENT_RAILS.md` §10 (market-side adapter readiness table).
+
+
+---
+
+## Org-Wide Issue Cross-Reference (2026-08-07)
+
+### Gateway Issues
+| Issue | Title | Status | Gateway Impact |
+|-------|-------|--------|----------------|
+| [conxian-gateway#189](https://github.com/Conxian/conxian-gateway/issues/189) | BitVM3 adapter research | 🔴 Open | 7/10 adapters now have real verification; BitVM3 remains fail-closed |
+| [conxian-gateway#320](https://github.com/Conxian/conxian-gateway/issues/320) | Add BitVM2 adapter file | ✅ Closed | Merged; groth16_boundary.rs tests validate boundary types |
+
+### SDK Issues (conxius-enclave-sdk)
+| Issue | Title | Status | Gateway Impact |
+|-------|-------|--------|----------------|
+| [#267](https://github.com/Conxian/conxius-enclave-sdk/issues/267) | BitVM2 Groth16 SNARK verification | 🔴 P0 Open | Gateway boundary types ready; awaiting SDK Groth16 impl |
+| [#271](https://github.com/Conxian/conxius-enclave-sdk/issues/271) | LDK payment execution | 🟡 P1 Open | Gateway Lightning adapter needs LDK for payment execution |
+| [#272](https://github.com/Conxian/conxius-enclave-sdk/issues/272) | SNARK proof validation | 🟡 P2 Open | Depends on #267 Groth16 completion |
+
+### Core Issues (lib-conxian-core)
+| Issue | Title | Status | Gateway Impact |
+|-------|-------|--------|----------------|
+| [#253](https://github.com/Conxian/lib-conxian-core/issues/253) | CORE-005: BIP-110 builder integration | 🔴 Open | Gateway sBTC module has tx verification but not BIP-110 limits |
+| [#255](https://github.com/Conxian/lib-conxian-core/issues/255) | CORE-009: Integration test framework | 🔴 Open | Gateway tests are lib-level; cross-crate integration tests pending |
+| [#254](https://github.com/Conxian/lib-conxian-core/issues/254) | CORE-008: Unit test coverage targets | 🔴 Open | Gateway at 352 tests; coverage targets not yet formalized |
+
+### Platform Issues (conxius-platform)
+| Issue | Title | Status | Gateway Impact |
+|-------|-------|--------|----------------|
+| [#1167](https://github.com/Conxian/conxius-platform/issues/1167) | Protocol Handoff alignment | 🟡 Open | Gateway verification hardening supports handoff narrative |
+| [#1168](https://github.com/Conxian/conxius-platform/issues/1168) | Founder Rights & Revenue Routing | 🔴 Research | Not yet wired — PACs.008+pacs.008 support fee field |
+
+### Smart Contract Issues (Conxian)
+| Issue | Title | Status | Gateway Impact |
+|-------|-------|--------|----------------|
+| [#507](https://github.com/Conxian/Conxian/issues/507) | sBTC Vault Implementation | 🟡 P2 Open | Gateway L1 proof verification supports vault deposit validation |
+| [#530](https://github.com/Conxian/Conxian/issues/530) | Partnership gateway + Stacks.js SDK | 🟡 P1 Open | Gateway ISO 20022 pacs.008 supports partnership payment format |
+| [#496](https://github.com/Conxian/Conxian/issues/496) | Partnership Fee Contracts | 🟡 P1 Open | Gateway settlement module ready for fee splitting |
