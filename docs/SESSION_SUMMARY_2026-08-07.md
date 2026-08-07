@@ -61,21 +61,20 @@
   - `admin_endpoints_reject_malformed_json` — 4xx for all 3 endpoints with bad JSON
   - Test count: 412+ (up from 404)
 
-### Research Documentation
+### Research Documentation (9 docs, 2,488+ lines)
 
-- **`LIGHTNING_SETTLEMENT_RAIL_RESEARCH.md`**: Comprehensive evidence review
-  covering BOLT specifications, mainnet metrics, implementation comparison
-  (LND/CLN/Eclair/LDK/Phoenixd), NIP-47 NWC protocol, current Gateway
-  implementation analysis (2,600 lines across 5 modules), gap analysis with
-  decision gates (G-LN1: Production backend, G-LN2: BOLT 12 Offers, G-LN3:
-  Channel liquidity), security assessment, Canton/M2M integration, and
-  recommendations.
-
-- **`SBTC_SETTLEMENT_RAIL_RESEARCH.md`**: Comprehensive evidence review covering
-  SIP-021 specification, two-way peg mechanism, Emily API reference, current
-  Gateway implementation (441-line bridge monitor), gap analysis with decision
-  gates (G-SB1: Peg initiation, G-SB2: Signer set monitoring, G-SB3: L1 proof
-  verification), trust model, and recommendations.
+| # | Document | Lines | Key Contribution |
+|---|----------|-------|------------------|
+| 1 | [LIGHTNING_SETTLEMENT_RAIL_RESEARCH.md](research/LIGHTNING_SETTLEMENT_RAIL_RESEARCH.md) | 322 | BOLTs, 5 implementations, 3 backends, M2M $1.1B/month |
+| 2 | [SBTC_SETTLEMENT_RAIL_RESEARCH.md](research/SBTC_SETTLEMENT_RAIL_RESEARCH.md) | 263 | SIP-021, Emily API, trust model, L1 proof gaps |
+| 3 | [BABYLON_ADAPTER_RESEARCH.md](research/BABYLON_ADAPTER_RESEARCH.md) | 253 | Header-chain SPV, EOTS/finality, fixture-testable arch |
+| 4 | [FEDIMINT_ADAPTER_RESEARCH.md](research/FEDIMINT_ADAPTER_RESEARCH.md) | 186 | Chaumian e-cash, privacy-compliance tension |
+| 5 | [DLC_SETTLEMENT_RAIL_RESEARCH.md](research/DLC_SETTLEMENT_RAIL_RESEARCH.md) | 244 | 6-stage plan, 13/14 vectors, Schnorr roadmap |
+| 6 | [FIAT_ISO20022_SETTLEMENT_RAIL_RESEARCH.md](research/FIAT_ISO20022_SETTLEMENT_RAIL_RESEARCH.md) | 284 | 4 providers, CAMT, ⛔ XML injection found + fixed |
+| 7 | [BITVM_VERIFICATION_FAMILY_RESEARCH.md](research/BITVM_VERIFICATION_FAMILY_RESEARCH.md) | 114 | Groth16 verifier, BitVM3 9 promotion gates |
+| 8 | [RGB_SETTLEMENT_RAIL_RESEARCH.md](research/RGB_SETTLEMENT_RAIL_RESEARCH.md) | 140 | 3-tier RolloutMode, 3,255-line stash, modularization |
+| 9 | [NTT_SOVEREIGN_BRIDGE_RESEARCH.md](research/NTT_SOVEREIGN_BRIDGE_RESEARCH.md) | 119 | Trust-policy relay, RSK/Citrea/Strata adapters |
+| 10 | [GAP_ANALYSIS_2026-08-07.md](research/GAP_ANALYSIS_2026-08-07.md) | 377 | Consolidated: 20 gaps, dependency graph, scoring, roadmap |
 
 ## Files Changed
 
