@@ -109,7 +109,7 @@ For complete organizational protocol, see:
 
 ---
 
-## Current State (2026-07-22, updated)
+## Current State (2026-08-07 — PR #324 merged)
 - **Status Audit**: Holistic review of Nexus/Gateway alignment complete (CON-1353).
 - **Protocol Drift**: Resolved — Fedimint, Citrea, and Strata adapters implemented and in production paths.
 - **RGB G-1385 (current correction, 2026-07-26)**: StashResolver, the pinned `rgb-persist-fs::StockpileDir`/consignment boundary, transactional existing-contract updates, and process-lifetime stash ownership are merged. An opt-in fail-closed BIP340 public-key allowlist backend is implemented on `charlie/issue-228-bip340-issuer-policy`; controlled runtime/import wiring and a complete state-changing signed Bitcoin/RGB regtest fixture remain open. `RejectIssuerSignatures` remains the runtime/default policy.
@@ -380,7 +380,13 @@ The Conxian Protocol is built to empower individuals and institutions within the
 
 **Machine Economy Principle**: Machines are sovereign economic actors. Conxian provides the identity, routing, and compliance infrastructure for autonomous M2M value exchange without ever taking custody of machine wallets or revenue streams.
 
-## Session State (2026-08-07)
+## Session State (2026-08-07 — PR #324 merged ✅)
+
+### ✅ PR #324: Full-Scope Branch Integration (merged `05f6843`)
+**Branches merged into main**: `docs/session-48-market-integration` + `feat/session-49-50-gap-closures-and-research`
+- 28 files, +3,518/-144 lines
+- All gates: cargo check ✅, clippy 0 warnings ✅, 308 lib tests ✅, fmt ✅, contamination guard ✅
+- Branches deleted post-merge, org-wide 11 issues updated with cross-references
 
 ### Sessions 49–50: Full-Scope Production Readiness + Research Expansion + Gap Closure
 
