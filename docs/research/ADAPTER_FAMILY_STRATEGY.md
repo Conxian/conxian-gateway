@@ -32,10 +32,11 @@ The Gateway supports 15+ protocol adapters grouped by architectural family. Each
 | Adapter | Status | Lines | Notes |
 |---------|--------|-------|-------|
 | **Stacks** | ✅ Live | 2,119 | RPC, listener, sBTC peg, Clarity contract bridge, ALEX (read-only/shadow) |
-| **Babylon** | 🟡 Partial | 1,311 | Header-chain SPV merged (#253); EOTS/finality extensions remain |
+| **Babylon** | 🟡 Partial | 1,311 | Header-chain SPV merged (#253); EOTS/finality extensions remain; [full research](BABYLON_ADAPTER_RESEARCH.md) |
 | **Rootstock (RSK)** | ✅ Live | 126 | NTT adapter; merged-mining finality |
 | **Citrea** | ✅ Live | 93 | NTT adapter; Bitcoin ZK rollup |
-| **Fedimint** | ✅ Live | 122 | Federated Chaumian e-cash |
+| **Fedimint** | ⬜ Scaffold | 122 | Federated Chaumian e-cash; ChainAdapter rehearsal; [full research](FEDIMINT_ADAPTER_RESEARCH.md) |
+| **DLC CET** | 🔬 Research | 242 | Oracle scaffold + Stage 0/1 experiments (#220); [full research](DLC_SETTLEMENT_RAIL_RESEARCH.md) |
 | **Strata** | ✅ Testnet | 43 | ZK rollup bridge (Alpen Labs) |
 
 ## 4. Cross-Chain / Interop Family
@@ -51,7 +52,7 @@ The Gateway supports 15+ protocol adapters grouped by architectural family. Each
 |------|--------|-------|-------|
 | **Lightning** | ✅ Live | 2,600 | 806-line handler + NWC NIP-47 relay-settle + X402 middleware + M2M; [full research](LIGHTNING_SETTLEMENT_RAIL_RESEARCH.md) |
 | **sBTC** | ✅ Live | 441 | Deposit/withdrawal lifecycle monitor via Emily API; Treasury/SYI integration; [full research](SBTC_SETTLEMENT_RAIL_RESEARCH.md) |
-| **Fiat (ISO 20022)** | ✅ Live | 776 | SPFS, PAPSS, CIPS, mBridge, CAMT.053 |
+| **Fiat (ISO 20022)** | ✅ Live | 1,396 | 4 on-ramp providers + CAMT.053/054 + X402 webhook verify; [full research](FIAT_ISO20022_SETTLEMENT_RAIL_RESEARCH.md) |
 | **x402** | ✅ Live | 776 | HTTP 402 payment protocol |
 
 ### Lightning Network Detail
@@ -75,6 +76,38 @@ Read-only bridge monitor polling the Emily API. Does not custody BTC or sBTC.
 Decision gates: G-SB1 (peg initiation), G-SB2 (signer set monitoring), G-SB3 (L1 proof verification).
 See [SBTC_SETTLEMENT_RAIL_RESEARCH.md](SBTC_SETTLEMENT_RAIL_RESEARCH.md) for full evidence,
 trust model analysis, and integration roadmap.
+
+### Fiat/ISO 20022 Detail
+
+Four fiat on-ramp providers + ISO 20022 CAMT XML generation. HMAC-SHA256 webhook verification.
+
+Decision gates: G-FI1 (XSD validation), G-FI2 (pacs.008), G-FI3 (BRICS protocol), G-FI4 (provider testing).
+⛔ XML injection risk in CAMT generators — needs entity escaping.
+See [FIAT_ISO20022_SETTLEMENT_RAIL_RESEARCH.md](FIAT_ISO20022_SETTLEMENT_RAIL_RESEARCH.md).
+
+### Babylon Detail
+
+Most mature multi-chain adapter: 1,311 lines with fixture-testable BTC header-chain SPV.
+Staking intent validation at T2 Managed tier.
+
+Decision gates: G-BB1 (EOTS verification), G-BB2 (finality gadget), G-BB3 (staking lifecycle).
+See [BABYLON_ADAPTER_RESEARCH.md](BABYLON_ADAPTER_RESEARCH.md).
+
+### Fedimint Detail
+
+Research scaffold (CON-1304). ChainAdapter with rehearsal-mode blind signature validation.
+No Fedimint SDK dependency.
+
+Decision gates: G-FM1 (crypto verification), G-FM2 (federation discovery), G-FM3 (e-cash audit).
+See [FEDIMINT_ADAPTER_RESEARCH.md](FEDIMINT_ADAPTER_RESEARCH.md).
+
+### DLC Detail
+
+T3 Research (#220). Oracle scaffold only — no cryptographic verification, no CET construction.
+No dependency in workspace. 6-stage gated plan.
+
+Decision gates: G-DL1 (Schnorr oracle), G-DL2 (CET construction), G-DL3 (multi-oracle threshold).
+See [DLC_SETTLEMENT_RAIL_RESEARCH.md](DLC_SETTLEMENT_RAIL_RESEARCH.md).
 
 ## 6. Trust Tiers and Readiness
 
