@@ -380,7 +380,17 @@ The Conxian Protocol is built to empower individuals and institutions within the
 
 **Machine Economy Principle**: Machines are sovereign economic actors. Conxian provides the identity, routing, and compliance infrastructure for autonomous M2M value exchange without ever taking custody of machine wallets or revenue streams.
 
-## Session State (2026-08-01)
+## Session State (2026-08-07)
+
+### Session 49: Production Completeness — Identity, RGB Policy, Code Quality
+- **ENS resolver**: Production path now calls The Graph ENS subgraph for real resolution (was "disabled in this build")
+- **BNS resolver**: Improved error message directing operators to set `STACKS_RPC_URL`
+- **RGB BIP340 issuer policy**: Wired at runtime — `Bip340IssuerPolicy` loaded from `RGB_ISSUER_POLICY_PATH`, stored in `NodeRgbAdapter`, fail-closed on error
+- **Chain classification**: `CCIP_HIGH/MEDIUM/LOW_RISK_CHAINS` env vars replace hardcoded lists (the only TODO in the codebase is now resolved)
+- **Persistence stubs**: Tableland/Kwil now emit `warn!` logs on fallback, expose `as_str()` and `PERSISTENCE_BACKEND_METRIC`
+- **Unsafe hygiene**: Replaced `#[allow(unused_unsafe)]` with `SAFETY` comments in `ntt/relayer.rs`
+- **Admin endpoint tests**: 8 new tests covering auth rejection, invalid tokens, valid tokens (all 3 endpoints), and malformed JSON
+- **CI verification**: clippy clean (0 warnings), all tests pass (412+, up from 404), cargo check clean
 
 ### v0.1.6 — Session 48: CI Pass + Persistence + Billing
 - CI all green (14/14 checks): MSRV, Clippy, Format, Build, Test, RGB, Liquid, audit
@@ -392,13 +402,8 @@ The Conxian Protocol is built to empower individuals and institutions within the
 - PR [#304](https://github.com/Conxian/conxian-gateway/pull/304) merged to main
 - `Cargo.toml`: added `lib-conxian-core` workspace dependency
 - `pkg/conxian-core/Cargo.toml`: added `lib-conxian-core` crate dependency
-- `pkg/conxian-core/src/trust_policy.rs`: new `core_compat` module with:
-  - `gateway_tier_to_core()`: T1→Strict, T2→Managed, T3→Expedient, T4→ObserverOnly
-  - `core_tier_to_gateway()`: reverse mapping
-  - `gateway_system_to_core()`: TrustSystem→BridgeSystem mapping
-  - Re-exports: Chain, ChainFamily, BridgeSystem, VerificationClass, FinalityClass
+- `pkg/conxian-core/src/trust_policy.rs`: new `core_compat` module
 - Tag `v0.1.5` created on main. GitHub Release published.
-- Core dep pinned to git rev on main
 
 ### Remaining
 - crates.io publish: `gh workflow run release.yml -R Conxian/conxian-gateway -f release_version=0.1.5 -f publish_to_crates_io=true`

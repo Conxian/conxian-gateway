@@ -33,6 +33,12 @@ pub struct Bip340IssuerPolicy {
     issuers: BTreeMap<String, XOnlyPublicKey>,
 }
 
+impl Bip340IssuerPolicy {
+    pub fn issuer_count(&self) -> usize {
+        self.issuers.len()
+    }
+}
+
 /// Errors produced while loading or validating an RGB issuer policy.
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum IssuerPolicyError {

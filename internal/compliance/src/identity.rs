@@ -103,11 +103,82 @@ impl IdentityManager {
         }
         #[cfg(not(any(test, feature = "mock-integrations")))]
         {
-            let _ = request;
-            Err(conxian_core::ConxianError::Compliance(
-                "ENS resolution is disabled in this build (requires an explicit resolver integration)"
-                    .to_string(),
-            ))
+            let name = request.identifier.to_lowercase();
+            if !name.ends_with(".eth") {
+                return Err(conxian_core::ConxianError::Compliance(
+                    "ENS name must end with .eth".to_string(),
+                ));
+            }
+
+            let query = serde_json::json!({
+                "query": "query($name: String!) { domains(where: { name: $name }) { resolver { addr { id } } } }",
+                "variables": { "name": name }
+            });
+            let body_bytes = serde_json::to_vec(&query).unwrap_or_default();
+
+            let res = tokio::task::spawn_blocking(move || {
+                minreq::post("https://api.thegraph.com/subgraphs/name/ensdomains/ens")
+                    .with_header("Content-Type", "application/json")
+                    .with_body(body_bytes)
+                    .send()
+            })
+            .await
+            .map_err(|e| conxian_core::ConxianError::Compliance(format!("ENS task panic: {}", e)))?
+            .map_err(|e| {
+                conxian_core::ConxianError::Compliance(format!(
+                    "ENS subgraph request failed: {}",
+                    e
+                ))
+            })?;
+
+            if res.status_code == 200 {
+                let body = res.as_str().map_err(|e| {
+                    conxian_core::ConxianError::Compliance(format!(
+                        "Failed to read ENS response: {}",
+                        e
+                    ))
+                })?;
+                let val: serde_json::Value =
+                    serde_json::from_str(body).map_err(|e| {
+                        conxian_core::ConxianError::Compliance(format!(
+                            "Invalid ENS response JSON: {}",
+                            e
+                        ))
+                    })?;
+
+                let address = val
+                    .pointer("/data/domains/0/resolver/addr/id")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+
+                match address {
+                    Some(addr) if !addr.is_empty() => Ok(IdentityResolutionResponse {
+                        address: addr,
+                        provider: "ens".to_string(),
+                        verified: true,
+                        metadata: Some(serde_json::json!({
+                            "name": request.identifier,
+                            "resolver": "ens-mainnet",
+                            "source": "thegraph-ens-subgraph"
+                        })),
+                    }),
+                    _ => Err(conxian_core::ConxianError::Compliance(format!(
+                        "ENS name not found or not resolved: {}",
+                        request.identifier
+                    ))),
+                }
+            } else {
+                let error_body = res.as_str().unwrap_or("Unknown error");
+                tracing::error!(
+                    status = res.status_code,
+                    body = error_body,
+                    "ENS resolution failed"
+                );
+                Err(conxian_core::ConxianError::Compliance(format!(
+                    "ENS resolution failed ({}): {}",
+                    res.status_code, error_body
+                )))
+            }
         }
     }
 
@@ -156,7 +227,7 @@ impl IdentityManager {
             #[cfg(not(any(test, feature = "mock-integrations")))]
             {
                 Err(conxian_core::ConxianError::Compliance(
-                    "BNS resolution is disabled in this build (requires an explicit resolver integration)"
+                    "BNS resolution unavailable: no Stacks RPC client configured. Set STACKS_RPC_URL to enable on-chain BNS resolution."
                         .to_string(),
                 ))
             }
