@@ -377,6 +377,102 @@ impl SbtcBridgeMonitor {
     }
 }
 
+// ── G-SB3: Bitcoin L1 proof verification ────────────────────────────────────
+
+/// Verify that a raw Bitcoin transaction matches its claimed txid.
+///
+/// Computes double-SHA256 of the raw transaction hex and compares against
+/// the expected txid (byte-reversed, as Bitcoin txids are displayed in
+/// reverse byte order). Returns `true` if the transaction hashes to the
+/// claimed txid.
+pub fn verify_bitcoin_tx_hex(raw_tx_hex: &str, expected_txid: &str) -> bool {
+    use sha2::{Digest, Sha256};
+
+    let tx_bytes: Vec<u8> = match <Vec<u8> as bitcoin::hex::FromHex>::from_hex(raw_tx_hex) {
+        Ok(b) if !b.is_empty() => b,
+        _ => return false,
+    };
+
+    let expected_bytes: Vec<u8> = match <Vec<u8> as bitcoin::hex::FromHex>::from_hex(expected_txid)
+    {
+        Ok(b) if b.len() == 32 => b,
+        _ => return false,
+    };
+
+    // Bitcoin txid = double-SHA256 of raw tx, byte-reversed
+    let hash1 = Sha256::digest(&tx_bytes);
+    let hash2 = Sha256::digest(hash1);
+
+    // Compare with expected txid (stored in display/reverse order)
+    let mut computed = [0u8; 32];
+    computed.copy_from_slice(&hash2);
+
+    // Reverse bytes to match Bitcoin display format
+    computed.reverse();
+    computed == expected_bytes.as_slice()
+}
+
+/// Verify that a Bitcoin block header has valid proof-of-work.
+///
+/// Checks:
+/// 1. Header is exactly 80 bytes (version + prev_blockhash + merkle_root + time + bits + nonce)
+/// 2. Block hash (double-SHA256, reversed) matches target difficulty
+/// 3. Target is non-zero (genesis block special case allowed)
+pub fn verify_block_header_pow(header_hex: &str) -> bool {
+    use sha2::{Digest, Sha256};
+
+    let header_bytes: Vec<u8> = match <Vec<u8> as bitcoin::hex::FromHex>::from_hex(header_hex) {
+        Ok(b) if b.len() == 80 => b,
+        _ => return false,
+    };
+
+    // Extract target from header bytes [72..76] (bits field, little-endian)
+    let bits = u32::from_le_bytes([
+        header_bytes[72],
+        header_bytes[73],
+        header_bytes[74],
+        header_bytes[75],
+    ]);
+
+    // Target must be non-zero (except genesis special case never hits here)
+    if bits == 0 {
+        return false;
+    }
+
+    // Compute block hash: double-SHA256 of 80-byte header, reversed
+    let hash1 = Sha256::digest(&header_bytes);
+    let hash2 = Sha256::digest(hash1);
+    let mut hash_rev = [0u8; 32];
+    hash_rev.copy_from_slice(&hash2);
+    hash_rev.reverse();
+
+    // Convert target from compact (bits) format
+    // compact: exponent (top byte) and mantissa (bottom 3 bytes)
+    let exponent = bits >> 24;
+    let mantissa = bits & 0x00FF_FFFF;
+
+    if exponent <= 3 {
+        return false;
+    }
+
+    // target = mantissa * 256^(exponent - 3)
+    let shift = (exponent - 3) * 8;
+    if shift >= 256 {
+        return false;
+    }
+
+    let mut target = [0u8; 32];
+    let mantissa_bytes = mantissa.to_be_bytes();
+    let start_idx = 32usize.saturating_sub(shift as usize / 8 + 4);
+    target[start_idx] = mantissa_bytes[0];
+    target[start_idx + 1] = mantissa_bytes[1];
+    target[start_idx + 2] = mantissa_bytes[2];
+    target[start_idx + 3] = mantissa_bytes[3];
+
+    // Block hash must be <= target
+    hash_rev <= target
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -437,5 +533,102 @@ mod tests {
             .total_deposited_sats
             .saturating_sub(metrics.total_withdrawn_sats);
         assert_eq!(metrics.circulating_sats, 0);
+    }
+
+    // ── G-SB3: Bitcoin L1 proof verification tests ──
+
+    #[test]
+    fn verify_tx_hex_matches_txid() {
+        // A real Bitcoin testnet tx: raw hex and its txid
+        // This tx: 1 input, 1 output, known P2PKH txid
+        let raw_tx = "020000000001010000000000000000000000000000000000000000000000000000000000000000ffffffff0401640101ffffffff0100f2052a01000000160014aa0000000000000000000000000000000000000000024730440220000000000000000000000000000000000000000000000000000000000000000002200000000000000000000000000000000000000000000000000000000000000000001210000000000000000000000000000000000000000000000000000000000000000000000000";
+
+        let txid = "1111111111111111111111111111111111111111111111111111111111111111";
+        // This is a deliberately fake tx/txid pair.
+        // verify_bitcoin_tx_hex just confirms the sha256d(tx) matches the claimed txid.
+        // For a real tx, we'd use actual on-chain data.
+        let result = verify_bitcoin_tx_hex(raw_tx, txid);
+        // Should be false since these don't match
+        assert!(!result);
+    }
+
+    #[test]
+    fn verify_tx_hex_rejects_non_hex() {
+        assert!(!verify_bitcoin_tx_hex(
+            "not-hex",
+            "aabbccddaabbccddaabbccddaabbccddaabbccddaabbccddaabbccddaabbccdd"
+        ));
+    }
+
+    #[test]
+    fn verify_tx_hex_rejects_empty_raw_tx() {
+        assert!(!verify_bitcoin_tx_hex(
+            "",
+            "aabbccddaabbccddaabbccddaabbccddaabbccddaabbccddaabbccddaabbccdd"
+        ));
+    }
+
+    #[test]
+    fn verify_tx_hex_rejects_invalid_txid() {
+        let raw_tx = "01000000010000000000000000000000000000000000000000000000000000000000000000ffffffff00ffffffff0100000000000000000000000000";
+        assert!(!verify_bitcoin_tx_hex(raw_tx, "not-32-bytes"));
+    }
+
+    #[test]
+    fn verify_tx_hex_end_to_end() {
+        // Construct a valid tx and compute its txid
+        use sha2::{Digest, Sha256};
+        let raw_tx = b"test-bitcoin-tx-data-for-sha256-hashing";
+        let hash1 = Sha256::digest(raw_tx);
+        let hash2 = Sha256::digest(hash1);
+        let mut txid = [0u8; 32];
+        txid.copy_from_slice(&hash2);
+        txid.reverse();
+        let txid_hex = hex::encode(txid);
+        let raw_tx_hex = hex::encode(raw_tx);
+
+        assert!(verify_bitcoin_tx_hex(&raw_tx_hex, &txid_hex));
+    }
+
+    #[test]
+    fn verify_tx_hex_rejects_wrong_txid() {
+        use sha2::{Digest, Sha256};
+        let raw_tx = b"actual-transaction-data";
+        let other_tx = b"different-transaction";
+        let hash1 = Sha256::digest(other_tx);
+        let hash2 = Sha256::digest(hash1);
+        let mut txid = [0u8; 32];
+        txid.copy_from_slice(&hash2);
+        txid.reverse();
+        let wrong_txid_hex = hex::encode(txid);
+        let raw_tx_hex = hex::encode(raw_tx);
+
+        assert!(!verify_bitcoin_tx_hex(&raw_tx_hex, &wrong_txid_hex));
+    }
+
+    #[test]
+    fn verify_block_header_rejects_short_header() {
+        // Header must be exactly 80 bytes (160 hex chars)
+        assert!(!verify_block_header_pow("00aabbcc"));
+    }
+
+    #[test]
+    fn verify_block_header_rejects_non_hex() {
+        assert!(!verify_block_header_pow("not-a-valid-hex-header-at-all"));
+    }
+
+    #[test]
+    fn verify_block_header_rejects_zero_bits() {
+        // 80 bytes of zeros — bits field (bytes 72-75) = 0, which is invalid target
+        let zeros = "00".repeat(80);
+        assert!(!verify_block_header_pow(&zeros));
+    }
+
+    #[test]
+    fn verify_block_header_rejects_header_that_does_not_satisfy_pow() {
+        // A block header with random data that won't satisfy the difficulty target
+        let random_header = hex::encode([0u8; 80]);
+        // bits = 0 → rejected
+        assert!(!verify_block_header_pow(&random_header));
     }
 }

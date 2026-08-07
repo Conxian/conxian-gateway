@@ -48,6 +48,18 @@ pub async fn generate_camt053(
     );
 
     let xml = build_camt053_xml(&message_id, &payload)?;
+    validate_camt_xml(
+        &xml,
+        "urn:iso:std:iso:20022:tech:xsd:camt.053.001.08",
+        &[
+            "BkToCstmrStmt",
+            "GrpHdr",
+            "Stmt",
+            "MsgId",
+            "CreDtTm",
+            "FrToDt",
+        ],
+    )?;
     Ok(Json(CamtResponse {
         message_id,
         message_type: "camt.053.001.08".to_string(),
@@ -69,6 +81,23 @@ pub async fn generate_camt054(
     );
 
     let xml = build_camt054_xml(&message_id, &payload)?;
+    validate_camt_xml(
+        &xml,
+        "urn:iso:std:iso:20022:tech:xsd:camt.054.001.08",
+        &[
+            "BkToCstmrDbtCdtNtfctn",
+            "GrpHdr",
+            "Ntfctn",
+            "MsgId",
+            "CreDtTm",
+            "Ntry",
+            "Amt",
+            "CdtDbtInd",
+            "BookgDt",
+            "ValDt",
+            "TxDtls",
+        ],
+    )?;
     Ok(Json(CamtResponse {
         message_id,
         message_type: "camt.054.001.08".to_string(),
@@ -160,6 +189,93 @@ fn now_iso8601() -> String {
     format!("2026-06-28T{hours}:{mins}:{secs}")
 }
 
+/// Validate that a CAMT XML payload conforms to ISO 20022 structural requirements.
+///
+/// Performs defense-in-depth validation on generated XML before returning to callers.
+/// Checks: well-formed XML declaration, correct namespace, required elements present,
+/// no empty required fields. This prevents silent bank rejection of non-compliant messages.
+fn validate_camt_xml(
+    xml: &str,
+    expected_ns: &str,
+    required_elements: &[&str],
+) -> Result<(), (StatusCode, String)> {
+    // XML declaration must be present
+    if !xml.starts_with("<?xml version=\"1.0\" encoding=\"UTF-8\"?>") {
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "CAMT validation: missing XML declaration".into(),
+        ));
+    }
+
+    // Namespace must be present on root Document element
+    let ns_attr = format!("xmlns=\"{expected_ns}\"");
+    if !xml.contains(&ns_attr) {
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("CAMT validation: missing or incorrect namespace (expected {expected_ns})"),
+        ));
+    }
+
+    // Root <Document> element must exist
+    if !xml.contains("<Document") || !xml.contains("</Document>") {
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "CAMT validation: missing root Document element".into(),
+        ));
+    }
+
+    // All required structural elements must be present
+    for element in required_elements {
+        let open_tag = format!("<{element}>");
+        let close_tag = format!("</{element}>");
+        let open_attrs = format!("<{element} ");
+
+        if !xml.contains(&open_tag) && !xml.contains(&open_attrs) {
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("CAMT validation: missing required element <{element}>"),
+            ));
+        }
+        if !xml.contains(&close_tag) {
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("CAMT validation: unclosed required element <{element}>"),
+            ));
+        }
+    }
+
+    // Validate no empty MsgId or other critical identifier fields
+    if xml.contains("<MsgId></MsgId>") {
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "CAMT validation: empty MsgId".into(),
+        ));
+    }
+    if xml.contains("<Id></Id>") {
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "CAMT validation: empty Id".into(),
+        ));
+    }
+    if xml.contains("<CreDtTm></CreDtTm>") {
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "CAMT validation: empty CreDtTm".into(),
+        ));
+    }
+
+    // ISO 20022 requires XML to have a single root element
+    let doc_count = xml.matches("<Document").count();
+    if doc_count != 1 {
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("CAMT validation: expected 1 Document element, found {doc_count}"),
+        ));
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -229,5 +345,233 @@ mod tests {
         assert!(xml.contains("&lt;inject&gt;"));
         assert!(xml.contains("TXN&amp;123"));
         assert!(!xml.contains("<inject>"));
+    }
+
+    // ── G-FI1: XSD structural validation tests ──
+
+    #[test]
+    fn validate_camt053_passes_on_valid_xml() {
+        let payload = Camt053Request {
+            account_id: "DE89370400440532013000".into(),
+            from_date: "2026-01-01".into(),
+            to_date: "2026-06-30".into(),
+            currency: "EUR".into(),
+            include_transactions: false,
+        };
+        let xml = build_camt053_xml("test-msg", &payload).unwrap();
+        assert!(validate_camt_xml(
+            &xml,
+            "urn:iso:std:iso:20022:tech:xsd:camt.053.001.08",
+            &[
+                "BkToCstmrStmt",
+                "GrpHdr",
+                "Stmt",
+                "MsgId",
+                "CreDtTm",
+                "FrToDt"
+            ],
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn validate_camt054_passes_on_valid_xml() {
+        let payload = Camt054Request {
+            account_id: "CH9300762011623852957".into(),
+            transaction_id: "TXN-001".into(),
+            amount: "1500.00".into(),
+            currency: "CHF".into(),
+            credit_debit_indicator: "CRDT".into(),
+            booking_date: "2026-06-28".into(),
+            value_date: "2026-06-28".into(),
+        };
+        let xml = build_camt054_xml("test-msg", &payload).unwrap();
+        assert!(validate_camt_xml(
+            &xml,
+            "urn:iso:std:iso:20022:tech:xsd:camt.054.001.08",
+            &[
+                "BkToCstmrDbtCdtNtfctn",
+                "GrpHdr",
+                "Ntfctn",
+                "MsgId",
+                "CreDtTm",
+                "Ntry",
+                "Amt",
+                "CdtDbtInd",
+                "BookgDt",
+                "ValDt",
+                "TxDtls",
+            ],
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn validate_camt_rejects_missing_xml_declaration() {
+        let xml = "<Document xmlns=\"urn:iso:std:iso:20022:tech:xsd:camt.053.001.08\"></Document>";
+        let err = validate_camt_xml(xml, "urn:iso:std:iso:20022:tech:xsd:camt.053.001.08", &[])
+            .unwrap_err();
+        assert!(err.1.contains("missing XML declaration"));
+    }
+
+    #[test]
+    fn validate_camt_rejects_wrong_namespace() {
+        let xml =
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Document xmlns=\"urn:wrong\"></Document>";
+        let err = validate_camt_xml(xml, "urn:iso:std:iso:20022:tech:xsd:camt.053.001.08", &[])
+            .unwrap_err();
+        assert!(err.1.contains("namespace"));
+    }
+
+    #[test]
+    fn validate_camt_rejects_missing_required_element() {
+        let payload = Camt053Request {
+            account_id: "DE89370400440532013000".into(),
+            from_date: "2026-01-01".into(),
+            to_date: "2026-06-30".into(),
+            currency: "EUR".into(),
+            include_transactions: false,
+        };
+        let xml = build_camt053_xml("test-msg", &payload).unwrap();
+        // Ask for an element that doesn't exist in camt.053
+        let err = validate_camt_xml(
+            &xml,
+            "urn:iso:std:iso:20022:tech:xsd:camt.053.001.08",
+            &["NonExistentElement"],
+        )
+        .unwrap_err();
+        assert!(err.1.contains("NonExistentElement"));
+    }
+
+    #[test]
+    fn validate_camt_rejects_empty_msg_id() {
+        let xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Document xmlns=\"urn:iso:std:iso:20022:tech:xsd:camt.053.001.08\"><BkToCstmrStmt><GrpHdr><MsgId></MsgId><CreDtTm>2026-01-01</CreDtTm></GrpHdr><Stmt><Id>1</Id></Stmt></BkToCstmrStmt></Document>";
+        let err = validate_camt_xml(xml, "urn:iso:std:iso:20022:tech:xsd:camt.053.001.08", &[])
+            .unwrap_err();
+        assert!(err.1.contains("empty MsgId"));
+    }
+
+    #[test]
+    fn validate_camt_rejects_empty_id() {
+        let xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Document xmlns=\"urn:iso:std:iso:20022:tech:xsd:camt.053.001.08\"><BkToCstmrStmt><GrpHdr><MsgId>M1</MsgId><CreDtTm>2026-01-01</CreDtTm></GrpHdr><Stmt><Id></Id></Stmt></BkToCstmrStmt></Document>";
+        let err = validate_camt_xml(xml, "urn:iso:std:iso:20022:tech:xsd:camt.053.001.08", &[])
+            .unwrap_err();
+        assert!(err.1.contains("empty Id"));
+    }
+
+    #[test]
+    fn validate_camt_rejects_multiple_document_roots() {
+        let xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Document xmlns=\"urn:iso:std:iso:20022:tech:xsd:camt.053.001.08\"></Document>\n<Document></Document>";
+        let err = validate_camt_xml(xml, "urn:iso:std:iso:20022:tech:xsd:camt.053.001.08", &[])
+            .unwrap_err();
+        assert!(err.1.contains("expected 1 Document"));
+    }
+
+    #[test]
+    fn validate_camt_rejects_missing_document_close() {
+        let xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Document xmlns=\"urn:iso:std:iso:20022:tech:xsd:camt.053.001.08\">";
+        let err = validate_camt_xml(xml, "urn:iso:std:iso:20022:tech:xsd:camt.053.001.08", &[])
+            .unwrap_err();
+        assert!(err.1.contains("missing root Document"));
+    }
+
+    #[test]
+    fn validate_camt_rejects_empty_cre_dt_tm() {
+        let xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Document xmlns=\"urn:iso:std:iso:20022:tech:xsd:camt.053.001.08\"><BkToCstmrStmt><GrpHdr><MsgId>M1</MsgId><CreDtTm></CreDtTm></GrpHdr><Stmt><Id>S1</Id></Stmt></BkToCstmrStmt></Document>";
+        let err = validate_camt_xml(xml, "urn:iso:std:iso:20022:tech:xsd:camt.053.001.08", &[])
+            .unwrap_err();
+        assert!(err.1.contains("empty CreDtTm"));
+    }
+
+    #[test]
+    fn full_generate_camt053_passes_validation() {
+        // Integration test: the full generate→build→validate pipeline
+        let payload = Camt053Request {
+            account_id: "GB29NWBK60161331926819".into(),
+            from_date: "2026-01-01T00:00:00".into(),
+            to_date: "2026-06-30T23:59:59".into(),
+            currency: "GBP".into(),
+            include_transactions: true,
+        };
+        let xml = build_camt053_xml("camt053-integration-test", &payload).unwrap();
+        // Must contain all six structural elements
+        for element in &[
+            "BkToCstmrStmt",
+            "GrpHdr",
+            "Stmt",
+            "MsgId",
+            "CreDtTm",
+            "FrToDt",
+        ] {
+            assert!(
+                xml.contains(&format!("<{element}>")),
+                "Missing element: {element}"
+            );
+        }
+        // Must validate
+        validate_camt_xml(
+            &xml,
+            "urn:iso:std:iso:20022:tech:xsd:camt.053.001.08",
+            &[
+                "BkToCstmrStmt",
+                "GrpHdr",
+                "Stmt",
+                "MsgId",
+                "CreDtTm",
+                "FrToDt",
+            ],
+        )
+        .expect("Full camt.053 pipeline validation should pass");
+    }
+
+    #[test]
+    fn full_generate_camt054_passes_validation() {
+        let payload = Camt054Request {
+            account_id: "JPSTSEA47682CUST01".into(),
+            transaction_id: "TXN-JP-0042".into(),
+            amount: "250000.00".into(),
+            currency: "JPY".into(),
+            credit_debit_indicator: "DBIT".into(),
+            booking_date: "2026-06-28".into(),
+            value_date: "2026-06-29".into(),
+        };
+        let xml = build_camt054_xml("camt054-integration-test", &payload).unwrap();
+        for element in &[
+            "BkToCstmrDbtCdtNtfctn",
+            "GrpHdr",
+            "Ntfctn",
+            "MsgId",
+            "CreDtTm",
+            "Ntry",
+            "CdtDbtInd",
+            "BookgDt",
+            "ValDt",
+            "TxDtls",
+        ] {
+            assert!(
+                xml.contains(&format!("<{element}>")) || xml.contains(&format!("<{element} ")),
+                "Missing element: {element}"
+            );
+        }
+        // Amt has attributes: <Amt Ccy="...">
+        assert!(xml.contains("<Amt "), "Missing element: Amt");
+        validate_camt_xml(
+            &xml,
+            "urn:iso:std:iso:20022:tech:xsd:camt.054.001.08",
+            &[
+                "BkToCstmrDbtCdtNtfctn",
+                "GrpHdr",
+                "Ntfctn",
+                "MsgId",
+                "CreDtTm",
+                "Ntry",
+                "Amt",
+                "CdtDbtInd",
+                "BookgDt",
+                "ValDt",
+                "TxDtls",
+            ],
+        )
+        .expect("Full camt.054 pipeline validation should pass");
     }
 }

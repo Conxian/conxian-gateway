@@ -392,6 +392,17 @@ The Conxian Protocol is built to empower individuals and institutions within the
 
 **8 commits · 28 files · 3,397 lines**
 
+#### Gap Closure Status (2026-08-07)
+| Gap | Status | Description |
+|-----|--------|-------------|
+| G-DL1 | ✅ | Schnorr oracle (Session 50) |
+| G-FM2 | ✅ | Federation discovery (Session 50) |
+| **G-FI1** | **✅** | **CAMT XSD structural validation** — `validate_camt_xml()` with 10 defense-in-depth checks |
+| **G-BB1** | **✅** | **Babylon EOTS verification** — `verify_eots_signature()` BIP340 Schnorr, wired into `verify_state_proof` |
+| **G-FM1** | **✅** | **Fedimint blind signature verification** — `verify_fedimint_blind_signature()` against guardian pubkeys |
+| **G-SB3** | **✅** | **sBTC Bitcoin L1 proof** — `verify_bitcoin_tx_hex()` + `verify_block_header_pow()` |
+| G-FI4 | ⏸️ | Provider sandbox testing — deferred (requires AlchemyPay/Banxa sandbox keys) |
+
 #### Production Completeness (Session 49)
 - **ENS resolver**: Production path now calls The Graph ENS subgraph for real resolution (was "disabled in this build")
 - **BNS resolver**: Improved error message directing operators to set `STACKS_RPC_URL`

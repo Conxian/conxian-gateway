@@ -2,8 +2,10 @@ use async_trait::async_trait;
 use conxian_core::{ChainAdapter, ConxianResult};
 use lib_conxian_core::control_model::TrustTier;
 use lib_conxian_core::fedimint::FedimintMint;
+use secp256k1::{schnorr, Message, Secp256k1, XOnlyPublicKey};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use tracing::{info, warn};
 
 /// Parsed Fedimint federation configuration from invite code or metadata.
@@ -206,10 +208,92 @@ impl ChainAdapter for FedimintAdapter {
             chain = "fedimint",
             "Verifying Fedimint blinded signature proof"
         );
-        // Fedimint-specific blinded signature verification (rehearsal mode)
-        let signature = proof_metadata["blinded_signature"].as_str();
-        Ok(signature.is_some())
+
+        let signature = proof_metadata["blinded_signature"].as_str().unwrap_or("");
+
+        // G-FM1: Cryptographic blind signature verification against guardian pubkeys.
+        // If federation config is discovered, verify the signature against at least
+        // one guardian. Falls back to rehearsal-mode presence check if not configured.
+        if let Some(federation) = &self.federation {
+            if signature.is_empty() {
+                return Ok(false);
+            }
+
+            let msg = proof_metadata["mint_id"]
+                .as_str()
+                .unwrap_or("")
+                .as_bytes()
+                .to_vec();
+
+            let verified =
+                verify_fedimint_blind_signature(signature, &msg, &federation.guardian_pubkeys);
+            if !verified {
+                warn!(
+                    chain = "fedimint",
+                    "Blind signature verification failed against all guardians"
+                );
+            }
+            return Ok(verified);
+        }
+
+        // Rehearsal-mode: presence check only
+        Ok(!signature.is_empty())
     }
+}
+
+/// G-FM1: Verify a Fedimint blind signature against at least one guardian public key.
+///
+/// Chaumian blind signatures in Fedimint are Schnorr-based. This function
+/// treats the `signature_hex` as a secp256k1 Schnorr signature over
+/// SHA256(guardian_pubkey || message), verified against each guardian's
+/// x-only public key. Returns `true` if any guardian successfully verifies.
+fn verify_fedimint_blind_signature(
+    signature_hex: &str,
+    message: &[u8],
+    guardian_pubkeys: &[String],
+) -> bool {
+    let secp = Secp256k1::verification_only();
+
+    let sig_bytes: Vec<u8> = match <Vec<u8> as bitcoin::hex::FromHex>::from_hex(signature_hex) {
+        Ok(b) if b.len() == 64 => b,
+        _ => {
+            warn!("Fedimint: invalid blind signature hex");
+            return false;
+        }
+    };
+
+    let sig = match schnorr::Signature::from_slice(&sig_bytes) {
+        Ok(s) => s,
+        Err(e) => {
+            warn!("Fedimint: invalid blind signature: {e}");
+            return false;
+        }
+    };
+
+    for pubkey_hex in guardian_pubkeys {
+        let pubkey_bytes: Vec<u8> = match <Vec<u8> as bitcoin::hex::FromHex>::from_hex(pubkey_hex) {
+            Ok(b) if b.len() == 32 => b,
+            _ => continue,
+        };
+
+        let pubkey = match XOnlyPublicKey::from_slice(&pubkey_bytes) {
+            Ok(pk) => pk,
+            Err(_) => continue,
+        };
+
+        // Message: SHA256(guardian_pubkey || message)
+        let mut hasher = Sha256::new();
+        hasher.update(&pubkey_bytes);
+        hasher.update(message);
+        let msg_hash: [u8; 32] = hasher.finalize().into();
+        let msg = Message::from_digest(msg_hash);
+
+        if secp.verify_schnorr(&sig, &msg, &pubkey).is_ok() {
+            return true;
+        }
+    }
+
+    false
 }
 
 #[cfg(test)]
@@ -370,5 +454,181 @@ mod tests {
         });
 
         assert!(adapter.validate_fedimint_consensus(&proof).is_err());
+    }
+
+    // ── G-FM1: Cryptographically verified blind signature tests ──
+
+    #[test]
+    fn fedimint_verifies_valid_blind_signature() {
+        use secp256k1::{Keypair, Secp256k1};
+
+        let secp = Secp256k1::new();
+        let (sk, _parity) = secp.generate_keypair(&mut secp256k1::rand::thread_rng());
+        let kp = Keypair::from_secret_key(&secp, &sk);
+        let (xonly, _parity) = kp.x_only_public_key();
+        let pubkey_hex = hex::encode(xonly.serialize());
+        let msg = b"fed1qtest";
+
+        let mut hasher = Sha256::new();
+        hasher.update(xonly.serialize());
+        hasher.update(msg);
+        let msg_hash: [u8; 32] = hasher.finalize().into();
+        let msg_digest = Message::from_digest(msg_hash);
+        let sig = secp.sign_schnorr(&msg_digest, &kp);
+        let sig_hex = hex::encode(sig.serialize());
+
+        assert!(verify_fedimint_blind_signature(
+            &sig_hex,
+            msg,
+            &[pubkey_hex]
+        ));
+    }
+
+    #[test]
+    fn fedimint_rejects_wrong_message() {
+        use secp256k1::{Keypair, Secp256k1};
+
+        let secp = Secp256k1::new();
+        let (sk, _parity) = secp.generate_keypair(&mut secp256k1::rand::thread_rng());
+        let kp = Keypair::from_secret_key(&secp, &sk);
+        let (xonly, _parity) = kp.x_only_public_key();
+        let pubkey_hex = hex::encode(xonly.serialize());
+        let msg = b"fed1qtest";
+
+        let mut hasher = Sha256::new();
+        hasher.update(xonly.serialize());
+        hasher.update(msg);
+        let msg_hash: [u8; 32] = hasher.finalize().into();
+        let msg_digest = Message::from_digest(msg_hash);
+        let sig = secp.sign_schnorr(&msg_digest, &kp);
+        let sig_hex = hex::encode(sig.serialize());
+
+        assert!(!verify_fedimint_blind_signature(
+            &sig_hex,
+            b"different-mint",
+            &[pubkey_hex]
+        ));
+    }
+
+    #[test]
+    fn fedimint_verifies_against_any_guardian() {
+        use secp256k1::{Keypair, Secp256k1};
+
+        let secp = Secp256k1::new();
+        let (sk, _parity) = secp.generate_keypair(&mut secp256k1::rand::thread_rng());
+        let kp = Keypair::from_secret_key(&secp, &sk);
+        let (xonly, _parity) = kp.x_only_public_key();
+        let pubkey_hex = hex::encode(xonly.serialize());
+        let msg = b"fed1qconsortium";
+
+        let mut hasher = Sha256::new();
+        hasher.update(xonly.serialize());
+        hasher.update(msg);
+        let msg_hash: [u8; 32] = hasher.finalize().into();
+        let msg_digest = Message::from_digest(msg_hash);
+        let sig = secp.sign_schnorr(&msg_digest, &kp);
+        let sig_hex = hex::encode(sig.serialize());
+
+        // Valid guardian is in position 2 of 3
+        let guardians = vec![
+            "aabbccddaabbccddaabbccddaabbccddaabbccddaabbccddaabbccddaabbccdd".to_string(),
+            pubkey_hex,
+            "1122334411223344112233441122334411223344112233441122334411223344".to_string(),
+        ];
+        assert!(verify_fedimint_blind_signature(&sig_hex, msg, &guardians));
+    }
+
+    #[test]
+    fn fedimint_rejects_invalid_signature_hex() {
+        let guardians =
+            vec!["aabbccddaabbccddaabbccddaabbccddaabbccddaabbccddaabbccddaabbccdd".to_string()];
+        assert!(!verify_fedimint_blind_signature(
+            "not-hex", b"test", &guardians
+        ));
+    }
+
+    #[test]
+    fn fedimint_rejects_empty_guardians() {
+        assert!(!verify_fedimint_blind_signature(
+            "aabbccddaabbccddaabbccddaabbccddaabbccddaabbccddaabbccddaabbccdd",
+            b"test",
+            &[]
+        ));
+    }
+
+    #[test]
+    fn fedimint_rejects_malformed_guardian_pubkeys() {
+        // All guardians have invalid pubkeys — none can verify
+        let guardians = vec!["bad-pubkey".to_string(), "too-short".to_string()];
+        assert!(!verify_fedimint_blind_signature(
+            "aabbccddaabbccddaabbccddaabbccddaabbccddaabbccddaabbccddaabbccdd",
+            b"test",
+            &guardians
+        ));
+    }
+
+    #[test]
+    fn fedimint_verify_state_proof_with_federation() {
+        use secp256k1::{Keypair, Secp256k1};
+
+        let secp = Secp256k1::new();
+        let (sk, _parity) = secp.generate_keypair(&mut secp256k1::rand::thread_rng());
+        let kp = Keypair::from_secret_key(&secp, &sk);
+        let (xonly, _parity) = kp.x_only_public_key();
+        let pubkey_hex = hex::encode(xonly.serialize());
+        let mint_id = "fed1qverified";
+        let msg = mint_id.as_bytes();
+
+        let mut hasher = Sha256::new();
+        hasher.update(xonly.serialize());
+        hasher.update(msg);
+        let msg_hash: [u8; 32] = hasher.finalize().into();
+        let msg_digest = Message::from_digest(msg_hash);
+        let sig = secp.sign_schnorr(&msg_digest, &kp);
+        let sig_hex = hex::encode(sig.serialize());
+
+        let json_config = serde_json::json!({
+            "federation_id": mint_id,
+            "community_name": "Verified Fed",
+            "guardian_pubkeys": [pubkey_hex],
+            "federation_size": 1,
+            "network": "regtest"
+        })
+        .to_string();
+
+        let mut adapter = FedimintAdapter::new("regtest".into());
+        adapter.discover_federation(&json_config, None).unwrap();
+
+        let proof = serde_json::json!({
+            "blinded_signature": sig_hex,
+            "mint_id": mint_id
+        });
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(adapter.verify_state_proof(proof)).unwrap();
+        assert!(result);
+    }
+
+    #[test]
+    fn fedimint_verify_state_proof_rejects_invalid_sig_with_federation() {
+        let json_config = serde_json::json!({
+            "federation_id": "fed1qbad",
+            "community_name": "Bad Fed",
+            "guardian_pubkeys": ["aabbccddaabbccddaabbccddaabbccddaabbccddaabbccddaabbccddaabbccdd"],
+            "federation_size": 1,
+            "network": "regtest"
+        }).to_string();
+
+        let mut adapter = FedimintAdapter::new("regtest".into());
+        adapter.discover_federation(&json_config, None).unwrap();
+
+        let proof = serde_json::json!({
+            "blinded_signature": "invalid-sig",
+            "mint_id": "fed1qbad"
+        });
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(adapter.verify_state_proof(proof)).unwrap();
+        assert!(!result);
     }
 }
