@@ -47,12 +47,34 @@ The Gateway supports 15+ protocol adapters grouped by architectural family. Each
 
 ## 5. Settlement Rail Family
 
-| Rail | Status | Notes |
-|------|--------|-------|
-| **Lightning** | ✅ Live | 806-line handler; NWC NIP-47 relay-settle |
-| **sBTC** | ✅ Live | 441-line adapter; deposit/withdrawal/proof verification |
-| **Fiat (ISO 20022)** | ✅ Live | SPFS, PAPSS, CIPS, mBridge, CAMT.053 |
-| **x402** | ✅ Live | HTTP 402 payment protocol |
+| Rail | Status | Lines | Notes |
+|------|--------|-------|-------|
+| **Lightning** | ✅ Live | 2,600 | 806-line handler + NWC NIP-47 relay-settle + X402 middleware + M2M; [full research](LIGHTNING_SETTLEMENT_RAIL_RESEARCH.md) |
+| **sBTC** | ✅ Live | 441 | Deposit/withdrawal lifecycle monitor via Emily API; Treasury/SYI integration; [full research](SBTC_SETTLEMENT_RAIL_RESEARCH.md) |
+| **Fiat (ISO 20022)** | ✅ Live | 776 | SPFS, PAPSS, CIPS, mBridge, CAMT.053 |
+| **x402** | ✅ Live | 776 | HTTP 402 payment protocol |
+
+### Lightning Network Detail
+
+Three backends implement the `LightningBackend` trait:
+
+| Backend | Status | Use Case |
+|---------|--------|----------|
+| `SimulatedLightningBackend` | Default | Development/testing; deterministic settlement |
+| `NwcLightningBackend` | Production-capable | NIP-47 relay to any compliant wallet (Alby, Zeus, Mutiny) |
+| `ProductionLightningBackend` | Stub | Reserved for direct LND/CLN integration (G-LN1) |
+
+Decision gates: G-LN1 (direct LND/CLN), G-LN2 (BOLT 12 Offers), G-LN3 (channel liquidity).
+See [LIGHTNING_SETTLEMENT_RAIL_RESEARCH.md](LIGHTNING_SETTLEMENT_RAIL_RESEARCH.md) for full evidence,
+implementation analysis, and security assessment.
+
+### sBTC Detail
+
+Read-only bridge monitor polling the Emily API. Does not custody BTC or sBTC.
+
+Decision gates: G-SB1 (peg initiation), G-SB2 (signer set monitoring), G-SB3 (L1 proof verification).
+See [SBTC_SETTLEMENT_RAIL_RESEARCH.md](SBTC_SETTLEMENT_RAIL_RESEARCH.md) for full evidence,
+trust model analysis, and integration roadmap.
 
 ## 6. Trust Tiers and Readiness
 
