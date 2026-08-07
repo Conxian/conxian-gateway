@@ -607,6 +607,59 @@ pub fn verify_eots_signature(pubkey_hex: &str, block_hash: &str, sig_hex: &str) 
     secp.verify_schnorr(&sig, &msg, &pubkey).is_ok()
 }
 
+/// G-BB3: Babylon staking lifecycle state machine.
+///
+/// Tracks staking operations through their full lifecycle: Locked → Active →
+/// Unbonding → Withdrawn. Each transition requires on-chain evidence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum StakingLifecycle {
+    /// Stake locked but not yet active (waiting for Babylon finality)
+    Locked,
+    /// Stake is active and earning rewards
+    Active,
+    /// Stake is in unbonding period (timelock countdown)
+    Unbonding,
+    /// Stake fully withdrawn
+    Withdrawn,
+}
+
+/// G-BB3: Tracked staking position with lifecycle state.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StakingPosition {
+    pub staker_pubkey: String,
+    pub finality_provider_pubkey: String,
+    pub amount_sats: u64,
+    pub lock_time_blocks: u32,
+    pub state: StakingLifecycle,
+    pub locked_at_height: Option<u64>,
+    pub unbonding_at_height: Option<u64>,
+}
+
+impl StakingPosition {
+    /// Determine the lifecycle state based on current BTC height.
+    ///
+    /// Transitions:
+    /// - Locked → Active: when `current_height >= locked_at_height`
+    /// - Active → Unbonding: when `unbonding_at_height` is set
+    /// - Unbonding → Withdrawn: when `current_height >= unbonding_at_height + lock_time_blocks`
+    pub fn determine_state(&self, current_height: u64) -> StakingLifecycle {
+        let locked_at = self.locked_at_height.unwrap_or(0);
+        let unbonding_at = self.unbonding_at_height.unwrap_or(u64::MAX);
+
+        if unbonding_at < u64::MAX && current_height >= unbonding_at {
+            if current_height >= unbonding_at.saturating_add(self.lock_time_blocks as u64) {
+                StakingLifecycle::Withdrawn
+            } else {
+                StakingLifecycle::Unbonding
+            }
+        } else if current_height >= locked_at && locked_at > 0 {
+            StakingLifecycle::Active
+        } else {
+            StakingLifecycle::Locked
+        }
+    }
+}
+
 fn validate_height_range(from_height: u64, to_height: u64) -> ConxianResult<u64> {
     if from_height > to_height {
         return Err(ConxianError::Internal(
@@ -1532,5 +1585,112 @@ mod tests {
             block_hash,
             &tampered_sig_hex
         ));
+    }
+
+    // ── G-BB3: Staking lifecycle tests ──
+
+    #[test]
+    fn staking_lifecycle_locked_initial_state() {
+        let pos = StakingPosition {
+            staker_pubkey: "staker1".into(),
+            finality_provider_pubkey: "fp1".into(),
+            amount_sats: 100_000,
+            lock_time_blocks: 144,
+            state: StakingLifecycle::Locked,
+            locked_at_height: Some(800_000),
+            unbonding_at_height: None,
+        };
+        // Before locked_at_height
+        assert_eq!(pos.determine_state(799_999), StakingLifecycle::Locked);
+        // At locked_at_height: becomes active
+        assert_eq!(pos.determine_state(800_000), StakingLifecycle::Active);
+        assert_eq!(pos.determine_state(810_000), StakingLifecycle::Active);
+    }
+
+    #[test]
+    fn staking_lifecycle_unbonding_transition() {
+        let pos = StakingPosition {
+            staker_pubkey: "staker1".into(),
+            finality_provider_pubkey: "fp1".into(),
+            amount_sats: 100_000,
+            lock_time_blocks: 144,
+            state: StakingLifecycle::Active,
+            locked_at_height: Some(800_000),
+            unbonding_at_height: Some(810_000),
+        };
+        // Before unbonding starts
+        assert_eq!(pos.determine_state(800_000), StakingLifecycle::Active);
+        // At unbonding height
+        assert_eq!(pos.determine_state(810_000), StakingLifecycle::Unbonding);
+    }
+
+    #[test]
+    fn staking_lifecycle_withdrawn_after_unbonding_period() {
+        let pos = StakingPosition {
+            staker_pubkey: "staker1".into(),
+            finality_provider_pubkey: "fp1".into(),
+            amount_sats: 100_000,
+            lock_time_blocks: 144,
+            state: StakingLifecycle::Unbonding,
+            locked_at_height: Some(800_000),
+            unbonding_at_height: Some(810_000),
+        };
+        // During unbonding
+        assert_eq!(
+            pos.determine_state(810_000 + 143),
+            StakingLifecycle::Unbonding
+        );
+        // After unbonding period
+        assert_eq!(
+            pos.determine_state(810_000 + 144),
+            StakingLifecycle::Withdrawn
+        );
+        assert_eq!(pos.determine_state(820_000), StakingLifecycle::Withdrawn);
+    }
+
+    #[test]
+    fn staking_lifecycle_no_locked_height_stays_locked() {
+        let pos = StakingPosition {
+            staker_pubkey: "staker1".into(),
+            finality_provider_pubkey: "fp1".into(),
+            amount_sats: 100_000,
+            lock_time_blocks: 144,
+            state: StakingLifecycle::Locked,
+            locked_at_height: None,
+            unbonding_at_height: None,
+        };
+        assert_eq!(pos.determine_state(900_000), StakingLifecycle::Locked);
+    }
+
+    #[test]
+    fn staking_lifecycle_serde_roundtrip() {
+        let pos = StakingPosition {
+            staker_pubkey: "sp1".into(),
+            finality_provider_pubkey: "fp1".into(),
+            amount_sats: 500_000,
+            lock_time_blocks: 200,
+            state: StakingLifecycle::Active,
+            locked_at_height: Some(800_000),
+            unbonding_at_height: None,
+        };
+        let json = serde_json::to_string(&pos).unwrap();
+        let back: StakingPosition = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.staker_pubkey, "sp1");
+        assert_eq!(back.amount_sats, 500_000);
+        assert!(matches!(back.state, StakingLifecycle::Active));
+    }
+
+    #[test]
+    fn staking_lifecycle_all_states_serializable() {
+        for state in [
+            StakingLifecycle::Locked,
+            StakingLifecycle::Active,
+            StakingLifecycle::Unbonding,
+            StakingLifecycle::Withdrawn,
+        ] {
+            let json = serde_json::to_string(&state).unwrap();
+            let back: StakingLifecycle = serde_json::from_str(&json).unwrap();
+            assert_eq!(back, state);
+        }
     }
 }
