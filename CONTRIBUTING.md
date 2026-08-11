@@ -12,8 +12,27 @@ Thank you for your interest in contributing to Conxian! We welcome contributions
 1. Fork the repository and clone it to your local machine.
 2. Install the latest stable Rust toolchain: `rustup update stable`.
 3. Install Node.js (v20+) and PNPM: `npm install -g pnpm`.
-4. Build the project: `cargo build` and `pnpm install && pnpm build`.
-5. Run tests: `cargo test --workspace` and `pnpm test`.
+4. Install and build workspace dependencies cleanly using frozen lockfiles:
+   ```bash
+   pnpm install --frozen-lockfile
+   pnpm build
+   ```
+5. Install Playwright browser dependencies:
+   ```bash
+   pnpm exec playwright install --with-deps chromium
+   ```
+6. Build and run tests across the workspace:
+   - To build the Rust gateway: `cargo build`
+   - To run Rust tests: `cargo test --workspace`
+   - To run TypeScript tests (must set `NEXTAUTH_SECRET` for control plane smoke tests):
+     ```bash
+     NEXTAUTH_SECRET=sentinel_nextauth_secret pnpm test
+     ```
+7. Verify quality-gating and hygiene checks pass before submitting:
+   ```bash
+   python3 scripts/verify_contamination_guard.py
+   python3 scripts/verify_tracked_artifacts.py
+   ```
 
 ## Submission Process
 1. Create a new branch for your changes: `git checkout -b my-feature`.

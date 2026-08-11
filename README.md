@@ -40,14 +40,54 @@ crash recovery, backup, mempool reconciliation, and shutdown procedures in
 - `/pkg/conxian-core`: Shared Rust primitives and resilience models.
 
 ## Development
-```bash
-# Rust Gateway
-cargo build --release
-cargo test --workspace
 
-# TypeScript SDK & Dashboard
-pnpm install
+Follow these steps to set up, build, and test the entire multi-language workspace.
+
+### 1. Rust Gateway Setup
+The core Gateway services are implemented in asynchronous Rust.
+```bash
+# Build production release binary
+cargo build --release
+
+# Run entire Rust workspace test suite
+cargo test --workspace
+```
+
+### 2. TypeScript SDK & Dashboard Setup
+The monorepo contains multiple TypeScript packages/applications managed via `pnpm` workspaces (e.g., `@conxian/schemas`, `@conxian/client-sdk`, and the `control-plane` dashboard).
+
+To ensure deterministic dependency resolution in CI/CD and local environments, always use `--frozen-lockfile`:
+```bash
+# Install workspace dependencies cleanly
+pnpm install --frozen-lockfile
+
+# Build TypeScript workspaces in proper topological order
 pnpm build
+```
+
+### 3. Running Workspace Tests
+The full test suite includes Playwright browser testing for the Next.js control-plane dashboard.
+
+Before executing tests, you must download the required headless browser binaries:
+```bash
+# Install Playwright browser engines and system dependencies
+pnpm exec playwright install --with-deps chromium
+```
+
+To run all TypeScript workspace tests (including the dashboard smoke tests), you must define the `NEXTAUTH_SECRET` environment variable to initialize NextAuth:
+```bash
+# Run all vitest and playwright tests across the workspace
+NEXTAUTH_SECRET=sentinel_nextauth_secret pnpm test
+```
+
+### 4. Running Python Quality Checks
+We maintain several quality-gating and audit scripts in the `scripts/` directory to prevent stubs, unpinned actions, or accidental leak of generated artifacts:
+```bash
+# Run the strict contamination guard (scans for stubs/mocks/placeholders)
+python3 scripts/verify_contamination_guard.py
+
+# Check for accidentally tracked runtime artifacts or python caches
+python3 scripts/verify_tracked_artifacts.py
 ```
 
 ## Governance & Mainnet Readiness

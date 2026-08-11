@@ -5,13 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [v0.1.5] - 2026-08-07
-
-### Changed
-- Bumped `lib-conxian-core` dependency to v0.3.2 (tag `v0.3.2`, published to crates.io).
-- Updated `Cargo.lock` to resolve `lib-conxian-core` from crates.io via direct-source git tag.
-
 ## [Unreleased]
+
+- No unreleased changes yet.
+
+## [v0.1.5] - 2026-08-07
 
 ### Added
 - Implemented 7 missing Python validation scripts in `scripts/` to close CI coverage gaps (CON-1322).
@@ -27,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `docs/research/UNIVERSAL_CHAIN_RESEARCH.md` covering multi-chain adapter patterns and event bus delivery logic.
 
 ### Changed
+- Bumped `lib-conxian-core` dependency to v0.3.2 (tag `v0.3.2`, published to crates.io).
+- Updated `Cargo.lock` to resolve `lib-conxian-core` from crates.io via direct-source git tag.
 - Standardized `actions/checkout` version to `v4.2.2` (pinned by SHA) across all local workflows (CON-1324).
 - Centralized `CHANGELOG.md` as a canonical release history record in the repository root.
 - **Hardened CI/CD Pipelines**: Integrated mandatory `contamination_guard` in Rust CI and expanded Node.js CI to include Playwright browser installation and full workspace testing.
