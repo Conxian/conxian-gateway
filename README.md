@@ -83,7 +83,7 @@ NEXTAUTH_SECRET=sentinel_nextauth_secret pnpm test
 ### 4. Running Python Quality Checks
 We maintain several quality-gating and audit scripts in the `scripts/` directory to prevent stubs, unpinned actions, or accidental leak of generated artifacts:
 ```bash
-# Run the strict contamination guard (scans for stubs/mocks/placeholders)
+# Run the strict contamination guard (scans Rust and TypeScript production sources in cmd/, internal/, pkg/, apps/, and packages/ for stubs/placeholders)
 python3 scripts/verify_contamination_guard.py
 
 # Check for accidentally tracked runtime artifacts or python caches
