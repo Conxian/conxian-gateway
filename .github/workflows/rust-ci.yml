@@ -51,6 +51,11 @@ jobs:
           python3 scripts/verify_github_action_pins.py
           python3 tests/test_verify_github_action_pins.py
 
+      - name: Verify no prohibited tracked artifacts
+        run: |
+          python3 scripts/verify_tracked_artifacts.py
+          python3 tests/test_verify_tracked_artifacts.py
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
         with:
