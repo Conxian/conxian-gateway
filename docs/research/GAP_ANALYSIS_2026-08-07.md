@@ -41,7 +41,7 @@ improvement) and ranked by estimated effort vs. strategic impact.
 
 | ID | Adapter | Gap | Effort |
 |----|---------|-----|--------|
-| **G-FI1** | Fiat/ISO 20022 | CAMT XML schema validation — generated XML is not validated against ISO 20022 XSD. Banks reject non-compliant messages silently. Partially addressed by xml_escape() fix (Session 49), but structural validation remains. | 2-3 days |
+| **G-FI1** | Fiat/ISO 20022 | ✅ CLOSED — ISO 20022 XML schema validation & XSD structure hardening implemented in `internal/compliance/src/zkc.rs` with unit & integration tests. ~~2-3 days~~ |
 | **G-FI2** | Fiat/ISO 20022 | pacs.008 credit transfer — core ISO 20022 message for initiating cross-border payments. Without it, the Gateway cannot send fiat payments, only generate statements. | 3-5 days |
 | **G-FI3** | Fiat/ISO 20022 | BRICS corridor protocol integration — SPFS, PAPSS, CIPS, mBridge referenced in routing but not implemented. Requires per-corridor adapter with protocol-specific message formats. | 7-10 days |
 | **G-BB2** | Babylon | Finality gadget verification — BTC-anchored checkpoint consensus parsing. Provides stronger finality guarantees than header-chain SPV alone. | 5-7 days |
@@ -176,7 +176,7 @@ Each gap is scored on 3 axes (1-5 scale):
 |----|----------------|----------------|---------------|-----------|--------|
 | **G-BB1** | 5 (T1 promotion) | 3 (EOTS research) | 2 (algorithm clarity) | **10** | P1 |
 | ~~G-DL1~~ | 5 | 5 | 1 | 11 | ✅ |
-| **G-FI1** | 4 (bank compliance) | 4 (XSD fixtures needed) | 1 (no dependencies) | **9** | P2 |
+| ~~G-FI1~~ | 4 | 5 | 1 | 9 | ✅ |
 | **G-FM1** | 4 (T1 promotion) | 3 (SDK evaluation) | 3 (license check) | **10** | P2 |
 | **G-FI2** | 4 (payment initiation) | 3 (new message format) | 2 (bank sandbox) | **9** | P2 |
 | **G-SB3** | 3 (defense-in-depth) | 4 (BitcoinListener exists) | 1 (no dependencies) | **8** | P2 |
