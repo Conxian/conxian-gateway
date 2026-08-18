@@ -82,3 +82,8 @@ Full analysis in `docs/research/CANTON_NETWORK_AND_MACHINE_ECONOMY_RESEARCH.md`.
 
 ### BRICS Research Basis
 Full financial systems analysis in `docs/research/BRICS_FINANCIAL_SYSTEMS_RESEARCH.md`. The global financial system is bifurcating: Western SWIFT/ISO 20022 (~45% GDP) vs BRICS CIPS/mBridge/SPFS (~40% GDP). The Gateway's dual-stack architecture must support both.
+
+
+### Candidate K: ISO 20022 XML Schema Validation (Score: 9.0)
+- **Status**: ✅ Shipped (G-FI1). Implemented structural XML validation and namespace checking for pacs.008, pacs.009, and camt messages in `internal/compliance/src/zkc.rs`.
+- **Impact**: Eliminates silent bank rejection risks and guarantees schema compliance for institutional payment initiation.

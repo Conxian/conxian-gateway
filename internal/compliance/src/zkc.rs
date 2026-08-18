@@ -134,12 +134,74 @@ impl ZkcVerifier {
         Ok(att)
     }
 
+    pub fn validate_iso20022_xml_structure(&self, xml_str: &str) -> ConxianResult<()> {
+        if xml_str.trim().is_empty() {
+            return Err(ConxianError::Compliance(
+                "ISO 20022 XML payload cannot be empty".to_string(),
+            ));
+        }
+
+        let mut reader = quick_xml::Reader::from_str(xml_str);
+        reader.config_mut().trim_text(true);
+
+        let mut has_document_root = false;
+        let mut valid_namespace = false;
+        let mut buf = Vec::new();
+
+        loop {
+            match reader.read_event_into(&mut buf) {
+                Ok(quick_xml::events::Event::Start(e)) | Ok(quick_xml::events::Event::Empty(e)) => {
+                    let name = e.name();
+                    if name.as_ref() == b"Document" {
+                        has_document_root = true;
+                        for attr in e.attributes().flatten() {
+                            if attr.key.as_ref() == b"xmlns" {
+                                let val = String::from_utf8_lossy(&attr.value);
+                                if val.contains("urn:iso:std:iso:20022:tech:xsd:pacs.008")
+                                    || val.contains("urn:iso:std:iso:20022:tech:xsd:pacs.009")
+                                    || val.contains("urn:iso:std:iso:20022:tech:xsd:camt.")
+                                {
+                                    valid_namespace = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                Ok(quick_xml::events::Event::Eof) => break,
+                Err(e) => {
+                    return Err(ConxianError::Compliance(format!(
+                        "ISO 20022 XML syntax error: {}",
+                        e
+                    )));
+                }
+                _ => {}
+            }
+            buf.clear();
+        }
+
+        if !has_document_root {
+            return Err(ConxianError::Compliance(
+                "ISO 20022 XML missing required <Document> root element".to_string(),
+            ));
+        }
+
+        if !valid_namespace {
+            return Err(ConxianError::Compliance(
+                "ISO 20022 XML contains invalid or missing namespace (pacs.008, pacs.009, or camt required)".to_string(),
+            ));
+        }
+
+        Ok(())
+    }
+
     pub fn normalize_iso20022_ingress(
         &self,
-        _raw_xml: &str,
+        raw_xml: &str,
         tx_hash: String,
     ) -> ConxianResult<SettlementEnvelope> {
         info!("Normalizing ISO 20022 XML payload");
+        self.validate_iso20022_xml_structure(raw_xml)?;
+
         Ok(SettlementEnvelope {
             version: "1.0".to_string(),
             payload: NormalizedSettlement {
@@ -771,5 +833,70 @@ mod brics_tests {
         assert_eq!(result.payload.transaction_id, "MBR123");
         assert_eq!(result.payload.amount_minor, 2000);
         assert_eq!(result.payload.source, SettlementSource::MBridge);
+    }
+}
+
+#[cfg(test)]
+mod zkc_iso20022_tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_iso20022_xml_structure_valid_pacs008() {
+        let verifier = ZkcVerifier::new();
+        let valid_xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pacs.008.001.08">
+    <FIToFICstmrCdtTrf>
+        <GrpHdr><MsgId>MSG-123</MsgId></GrpHdr>
+    </FIToFICstmrCdtTrf>
+</Document>"#;
+        assert!(verifier.validate_iso20022_xml_structure(valid_xml).is_ok());
+    }
+
+    #[test]
+    fn test_validate_iso20022_xml_structure_valid_pacs009() {
+        let verifier = ZkcVerifier::new();
+        let valid_xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pacs.009.001.08">
+    <FICstmrCdtTrf>
+        <GrpHdr><MsgId>MSG-456</MsgId></GrpHdr>
+    </FICstmrCdtTrf>
+</Document>"#;
+        assert!(verifier.validate_iso20022_xml_structure(valid_xml).is_ok());
+    }
+
+    #[test]
+    fn test_validate_iso20022_xml_structure_invalid_namespace() {
+        let verifier = ZkcVerifier::new();
+        let invalid_ns_xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:unauthorized:namespace">
+    <Data>test</Data>
+</Document>"#;
+        let res = verifier.validate_iso20022_xml_structure(invalid_ns_xml);
+        assert!(res.is_err());
+        assert!(res.unwrap_err().to_string().contains("namespace"));
+    }
+
+    #[test]
+    fn test_validate_iso20022_xml_structure_missing_document_root() {
+        let verifier = ZkcVerifier::new();
+        let no_doc_xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<Root xmlns="urn:iso:std:iso:20022:tech:xsd:pacs.008.001.08">
+    <Data>test</Data>
+</Root>"#;
+        let res = verifier.validate_iso20022_xml_structure(no_doc_xml);
+        assert!(res.is_err());
+        assert!(res.unwrap_err().to_string().contains("Document"));
+    }
+
+    #[test]
+    fn test_validate_iso20022_xml_structure_syntax_error() {
+        let verifier = ZkcVerifier::new();
+        let bad_syntax_xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pacs.008.001.08">
+    <UnclosedTag>
+</Document>"#;
+        let res = verifier.validate_iso20022_xml_structure(bad_syntax_xml);
+        assert!(res.is_err());
+        assert!(res.unwrap_err().to_string().contains("syntax error"));
     }
 }
