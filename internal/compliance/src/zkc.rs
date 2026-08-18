@@ -836,7 +836,6 @@ mod brics_tests {
     }
 }
 
-
 #[cfg(test)]
 mod zkc_iso20022_tests {
     use super::*;
