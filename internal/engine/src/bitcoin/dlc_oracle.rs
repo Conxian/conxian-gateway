@@ -7,9 +7,9 @@ use tracing::{info, warn};
 
 /// HTTP oracle scaffold for DLC-shaped event and attestation payloads.
 ///
-/// Cryptographic Schnorr (BIP340) verification is now active via
-/// `verify_schnorr_attestation`. Multi-oracle threshold remains
-/// payload-consistency only (tracked in issue #220).
+/// Cryptographic Schnorr (BIP340) verification is active via
+/// `verify_schnorr_attestation` and multi-oracle threshold quorum
+/// coordination (`check_threshold_outcome`).
 pub struct DlcOracleClient {
     pub oracle_url: String,
     pub oracle_pubkey: String,
@@ -205,19 +205,57 @@ impl ThresholdOracleCoordinator {
         Ok(events)
     }
 
-    /// Check whether fetched attestation payloads agree on an outcome.
+    /// Check whether fetched attestation payloads agree on an outcome AND pass
+    /// cryptographic BIP340 Schnorr signature verification.
     ///
-    /// This counts matching payloads without cryptographic attestation
-    /// verification; the verification follow-up is tracked in issue #220.
-    pub async fn check_threshold_outcome(&self, event_id: &str) -> ConxianResult<Option<String>> {
+    /// Only attestations whose 64-byte Schnorr signature verifies over
+    /// `SHA256(event_id || outcome)` against the oracle's x-only pubkey are
+    /// counted toward the quorum threshold `k`.
+    pub async fn check_threshold_outcome(
+        &self,
+        secp: &Secp256k1<VerifyOnly>,
+        event_id: &str,
+    ) -> ConxianResult<Option<String>> {
         let mut outcome_votes: HashMap<String, usize> = HashMap::new();
 
         for oracle in &self.oracles {
             match oracle.get_attestation(event_id).await {
                 Ok(attestation) => {
-                    *outcome_votes
-                        .entry(attestation.outcome.clone())
-                        .or_default() += 1;
+                    let dummy_ann = OracleAnnouncement {
+                        event_id: event_id.to_string(),
+                        oracle_pubkey: oracle.oracle_pubkey.clone(),
+                        nonces: vec![],
+                        outcomes: vec![attestation.outcome.clone()],
+                        event_maturity_epoch: 0,
+                        event_descriptor: String::new(),
+                    };
+
+                    match DlcOracleClient::verify_schnorr_attestation(
+                        secp,
+                        &dummy_ann,
+                        &attestation,
+                    ) {
+                        Ok(true) => {
+                            *outcome_votes
+                                .entry(attestation.outcome.clone())
+                                .or_default() += 1;
+                        }
+                        Ok(false) => {
+                            warn!(
+                                oracle_pubkey = %oracle.oracle_pubkey,
+                                event_id = %event_id,
+                                "Multi-oracle attestation signature verification failed"
+                            );
+                        }
+                        Err(e) => {
+                            warn!(
+                                error = %e,
+                                oracle_pubkey = %oracle.oracle_pubkey,
+                                event_id = %event_id,
+                                "Multi-oracle attestation signature error"
+                            );
+                        }
+                    }
                 }
                 Err(_) => continue,
             }
@@ -227,6 +265,43 @@ impl ThresholdOracleCoordinator {
             .into_iter()
             .find(|(_, count)| *count >= self.threshold)
             .map(|(outcome, _)| outcome))
+    }
+
+    /// Cryptographically verify a slice of collected attestations against a threshold.
+    ///
+    /// Returns `true` if at least `self.threshold` attestations carry valid Schnorr
+    /// signatures agreeing on `expected_outcome`.
+    pub fn verify_threshold_attestations(
+        &self,
+        secp: &Secp256k1<VerifyOnly>,
+        event_id: &str,
+        expected_outcome: &str,
+        attestations: &[OracleAttestation],
+    ) -> ConxianResult<bool> {
+        let mut valid_votes = 0;
+
+        for attestation in attestations {
+            if attestation.event_id != event_id || attestation.outcome != expected_outcome {
+                continue;
+            }
+
+            let dummy_ann = OracleAnnouncement {
+                event_id: event_id.to_string(),
+                oracle_pubkey: attestation.oracle_pubkey.clone(),
+                nonces: vec![],
+                outcomes: vec![expected_outcome.to_string()],
+                event_maturity_epoch: 0,
+                event_descriptor: String::new(),
+            };
+
+            if let Ok(true) =
+                DlcOracleClient::verify_schnorr_attestation(secp, &dummy_ann, attestation)
+            {
+                valid_votes += 1;
+            }
+        }
+
+        Ok(valid_votes >= self.threshold)
     }
 }
 
@@ -424,5 +499,73 @@ mod tests {
     fn test_threshold_oracle_coordinator_requires_valid_threshold() {
         let oracle = DlcOracleClient::new("http://localhost:8080".into(), "pk1".into());
         ThresholdOracleCoordinator::new(vec![oracle], 0);
+    }
+
+    #[test]
+    fn threshold_oracle_coordinator_verifies_valid_multisig_attestations() {
+        let secp = test_secp();
+        let ssecp = signing_secp();
+        let mut rng = rand::thread_rng();
+
+        let (sk1, _) = ssecp.generate_keypair(&mut rng);
+        let kp1 = Keypair::from_secret_key(&ssecp, &sk1);
+        let pk1_hex = hex::encode(kp1.x_only_public_key().0.serialize());
+
+        let (sk2, _) = ssecp.generate_keypair(&mut rng);
+        let kp2 = Keypair::from_secret_key(&ssecp, &sk2);
+        let pk2_hex = hex::encode(kp2.x_only_public_key().0.serialize());
+
+        let (sk3, _) = ssecp.generate_keypair(&mut rng);
+        let kp3 = Keypair::from_secret_key(&ssecp, &sk3);
+        let pk3_hex = hex::encode(kp3.x_only_public_key().0.serialize());
+
+        let o1 = DlcOracleClient::new("http://o1".into(), pk1_hex.clone());
+        let o2 = DlcOracleClient::new("http://o2".into(), pk2_hex.clone());
+        let o3 = DlcOracleClient::new("http://o3".into(), pk3_hex.clone());
+
+        let coordinator = ThresholdOracleCoordinator::new(vec![o1, o2, o3], 2);
+
+        let att1 = sign_attestation("btc-usd-2026q3", "up", &kp1);
+        let att2 = sign_attestation("btc-usd-2026q3", "up", &kp2);
+
+        assert!(coordinator
+            .verify_threshold_attestations(
+                &secp,
+                "btc-usd-2026q3",
+                "up",
+                &[att1.clone(), att2.clone()]
+            )
+            .unwrap());
+    }
+
+    #[test]
+    fn threshold_oracle_coordinator_rejects_forged_attestations() {
+        let secp = test_secp();
+        let ssecp = signing_secp();
+        let mut rng = rand::thread_rng();
+
+        let (sk1, _) = ssecp.generate_keypair(&mut rng);
+        let kp1 = Keypair::from_secret_key(&ssecp, &sk1);
+        let pk1_hex = hex::encode(kp1.x_only_public_key().0.serialize());
+
+        let (sk2, _) = ssecp.generate_keypair(&mut rng);
+        let kp2 = Keypair::from_secret_key(&ssecp, &sk2);
+        let pk2_hex = hex::encode(kp2.x_only_public_key().0.serialize());
+
+        let o1 = DlcOracleClient::new("http://o1".into(), pk1_hex.clone());
+        let o2 = DlcOracleClient::new("http://o2".into(), pk2_hex.clone());
+
+        let coordinator = ThresholdOracleCoordinator::new(vec![o1, o2], 2);
+
+        let att1 = sign_attestation("btc-usd-2026q3", "up", &kp1);
+
+        let (rogue_sk, _) = ssecp.generate_keypair(&mut rng);
+        let rogue_kp = Keypair::from_secret_key(&ssecp, &rogue_sk);
+        let mut forged_att2 = sign_attestation("btc-usd-2026q3", "up", &rogue_kp);
+        forged_att2.oracle_pubkey = pk2_hex;
+
+        assert!(!coordinator
+            .verify_threshold_attestations(&secp, "btc-usd-2026q3", "up", &[att1, forged_att2])
+            .unwrap());
     }
 }
