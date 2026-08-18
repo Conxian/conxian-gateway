@@ -240,3 +240,10 @@ Each gap is scored on 3 axes (1-5 scale):
 5. **G-FM3 (e-cash audit) is a governance decision, not an engineering task.**
    Chaumian e-cash privacy vs. BRICS sanctions compliance requires ExCo
    guidance. Do not invest engineering time until resolved.
+
+
+---
+
+## 8. Session 51 Gap Resolution Update (2026-08-18)
+
+- **G-DL3 (DLC Multi-Oracle Threshold Verification):** ✅ CLOSED. Upgraded `ThresholdOracleCoordinator` in `internal/engine/src/bitcoin/dlc_oracle.rs` to cryptographically verify 64-byte BIP340 Schnorr signatures for each oracle using `DlcOracleClient::verify_schnorr_attestation()`. Only validly signed attestations are counted toward quorum threshold `k`.

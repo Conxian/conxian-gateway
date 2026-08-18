@@ -179,19 +179,22 @@ payments — requires CET construction with adaptor signatures.
 3. 13 rejection cases pass
 4. Regtest deployment with two-party DLC lifecycle
 
-### 4.3 G-DL3: Multi-Oracle Threshold (Stage 3+)
+### 4.3 G-DL3: Multi-Oracle Threshold (Stage 3+) — ✅ CLOSED (Session 51)
 
-**Current:** `ThresholdOracleCoordinator` fetches attestations across N
-oracles but does not verify cryptographic signatures.
+**Current:** `ThresholdOracleCoordinator::check_threshold_outcome()` now
+cryptographically verifies each oracle's 64-byte BIP340 Schnorr signature
+using `DlcOracleClient::verify_schnorr_attestation()` before incrementing
+outcome votes towards the quorum threshold k.
 
-**Gap:** Production DLCs typically use k-of-n oracle thresholds. The
-coordinator must verify signatures from at least k distinct oracles.
+**Verification:** Multi-oracle threshold unit tests verify valid k-of-n
+consensus, rejection of forged/corrupt signatures, and fail-closed operation
+when the cryptographic quorum is not met.
 
 **Promotion gates:**
-1. Implement per-oracle Schnorr verification (G-DL1)
-2. Count valid signatures against threshold
-3. Return aggregated outcome when threshold met
-4. Fail-closed when threshold not met
+1. Implement per-oracle Schnorr verification (G-DL1) ✅
+2. Count valid signatures against threshold ✅
+3. Return aggregated outcome when threshold met ✅
+4. Fail-closed when threshold not met ✅
 
 ---
 
@@ -204,7 +207,7 @@ coordinator must verify signatures from at least k distinct oracles.
 | Deterministic fixture | ✅ Complete | — |
 | Oracle Schnorr (Stage 2) | ✅ Session 50 | — |
 | CET construction (Stage 3) | ❌ G-DL2 | Stage 4+ |
-| Multi-oracle threshold | ❌ G-DL3 | Stage 4+ |
+| Multi-oracle threshold | ✅ G-DL3 (Session 51) | Stage 4+ |
 | Dependency in workspace | ❌ Rejected | rust-dlc not added |
 
 ---
