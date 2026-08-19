@@ -575,3 +575,107 @@ mod tests {
         .expect("Full camt.054 pipeline validation should pass");
     }
 }
+
+/// Request to generate a pacs.008 FI-to-FI Customer Credit Transfer
+#[derive(Debug, Deserialize)]
+pub struct Pacs008Request {
+    pub end_to_end_id: String,
+    pub debtor_name: String,
+    pub creditor_name: String,
+    pub amount: String,
+    pub currency: String,
+    pub debtor_agent_bic: String,
+    pub creditor_agent_bic: String,
+}
+
+/// Generate a pacs.008 customer credit transfer payment initiation
+pub async fn generate_pacs008(
+    State(_state): State<AppState>,
+    Json(payload): Json<Pacs008Request>,
+) -> Result<Json<CamtResponse>, (StatusCode, String)> {
+    let message_id = format!("pacs008-{}", uuid::Uuid::new_v4());
+    info!(
+        end_to_end_id = %payload.end_to_end_id,
+        message_id = %message_id,
+        "Generating pacs.008 credit transfer"
+    );
+
+    let xml = build_pacs008_xml(&message_id, &payload)?;
+    validate_camt_xml(
+        &xml,
+        "urn:iso:std:iso:20022:tech:xsd:pacs.008.001.08",
+        &[
+            "FIToFICstmrCdtTrf",
+            "GrpHdr",
+            "CdtTrfTxInf",
+            "PmtId",
+            "IntrBkSttlmAmt",
+            "Dbtr",
+            "Cdtr",
+        ],
+    )?;
+
+    Ok(Json(CamtResponse {
+        message_id,
+        message_type: "pacs.008.001.08".into(),
+        xml_payload: xml,
+        created_at: now_iso8601(),
+    }))
+}
+
+/// Build pacs.008 ISO 20022 XML string
+pub fn build_pacs008_xml(
+    message_id: &str,
+    req: &Pacs008Request,
+) -> Result<String, (StatusCode, String)> {
+    let now = now_iso8601();
+
+    let msg_id_esc = xml_escape(message_id);
+    let end_to_end_esc = xml_escape(&req.end_to_end_id);
+    let dbtr_esc = xml_escape(&req.debtor_name);
+    let cdtr_esc = xml_escape(&req.creditor_name);
+    let amt_esc = xml_escape(&req.amount);
+    let ccy_esc = xml_escape(&req.currency);
+    let dbtr_agent_esc = xml_escape(&req.debtor_agent_bic);
+    let cdtr_agent_esc = xml_escape(&req.creditor_agent_bic);
+
+    let xml = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pacs.008.001.08">
+    <FIToFICstmrCdtTrf>
+        <GrpHdr>
+            <MsgId>{msg_id_esc}</MsgId>
+            <CreDtTm>{now}</CreDtTm>
+            <NbOfTxs>1</NbOfTxs>
+            <SttlmInf>
+                <SttlmMtd>CLRG</SttlmMtd>
+            </SttlmInf>
+        </GrpHdr>
+        <CdtTrfTxInf>
+            <PmtId>
+                <EndToEndId>{end_to_end_esc}</EndToEndId>
+            </PmtId>
+            <IntrBkSttlmAmt Ccy="{ccy_esc}">{amt_esc}</IntrBkSttlmAmt>
+            <Dbtr>
+                <Nm>{dbtr_esc}</Nm>
+            </Dbtr>
+            <DbtrAgt>
+                <FinInstnId>
+                    <BICFI>{dbtr_agent_esc}</BICFI>
+                </FinInstnId>
+            </DbtrAgt>
+            <CdtrAgt>
+                <FinInstnId>
+                    <BICFI>{cdtr_agent_esc}</BICFI>
+                </FinInstnId>
+            </CdtrAgt>
+            <Cdtr>
+                <Nm>{cdtr_esc}</Nm>
+            </Cdtr>
+        </CdtTrfTxInf>
+    </FIToFICstmrCdtTrf>
+</Document>"#
+    );
+
+    Ok(xml)
+}
