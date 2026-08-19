@@ -87,3 +87,7 @@ Full financial systems analysis in `docs/research/BRICS_FINANCIAL_SYSTEMS_RESEAR
 ### Candidate K: ISO 20022 XML Schema Validation (Score: 9.0)
 - **Status**: ✅ Shipped (G-FI1). Implemented structural XML validation and namespace checking for pacs.008, pacs.009, and camt messages in `internal/compliance/src/zkc.rs`.
 - **Impact**: Eliminates silent bank rejection risks and guarantees schema compliance for institutional payment initiation.
+
+### Candidate L: ISO 20022 pacs.008 Payment Initiation (Score: 9.2)
+- **Status**: ✅ Shipped (G-FI2). Implemented `pacs.008.001.08` FI-to-FI Customer Credit Transfer XML builder, structural validation, and compliance normalization.
+- **Impact**: Enables cross-border payment initiation and settlement envelope construction for institutional banking networks.

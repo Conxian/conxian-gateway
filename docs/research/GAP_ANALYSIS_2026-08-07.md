@@ -247,3 +247,9 @@ Each gap is scored on 3 axes (1-5 scale):
 ## 8. Session 51 Gap Resolution Update (2026-08-18)
 
 - **G-DL3 (DLC Multi-Oracle Threshold Verification):** ✅ CLOSED. Upgraded `ThresholdOracleCoordinator` in `internal/engine/src/bitcoin/dlc_oracle.rs` to cryptographically verify 64-byte BIP340 Schnorr signatures for each oracle using `DlcOracleClient::verify_schnorr_attestation()`. Only validly signed attestations are counted toward quorum threshold `k`.
+
+---
+
+## 9. Session 52 Gap Resolution Update (2026-08-19)
+
+- **G-FI2 (ISO 20022 pacs.008 Payment Initiation):** ✅ CLOSED. Implemented `pacs.008.001.08` (FI-to-FI Customer Credit Transfer) message builder and XML validator in `internal/api/src/camt.rs`, integrated `pacs.008` schema verification and normalization in `internal/compliance/src/zkc.rs`, and exposed `/api/v1/fiat/pacs008/generate` in `internal/api/src/handlers.rs`.
