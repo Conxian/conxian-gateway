@@ -17,13 +17,13 @@ use conxian_api::{configure_routes, AppState};
 use conxian_compliance::ZkcVerifier;
 use http_body_util::BodyExt;
 use serde_json::json;
+use sha2::Digest;
 use std::{
     collections::HashSet,
     sync::{Arc, Mutex, RwLock},
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
 use tower::ServiceExt;
-use sha2::Digest;
 
 const TEST_TOKEN: &str = "valid_test_token_123456";
 
@@ -53,7 +53,6 @@ fn make_attestation_header(device_id: &str, payload_hash: &str) -> String {
     serde_json::to_string(&conxian_core::AttestationRequest::Ecdsa(att)).unwrap()
 }
 
-
 struct SimulatedOfflineQueue {
     replay_claims: Mutex<HashSet<String>>,
 }
@@ -78,7 +77,11 @@ impl conxian_core::OfflineQueue for SimulatedOfflineQueue {
         Ok(())
     }
 
-    fn claim_replay_key(&self, _replay_key: &str, _ttl_seconds: u64) -> conxian_core::ConxianResult<bool> {
+    fn claim_replay_key(
+        &self,
+        _replay_key: &str,
+        _ttl_seconds: u64,
+    ) -> conxian_core::ConxianResult<bool> {
         Ok(true)
     }
 }
@@ -215,7 +218,9 @@ async fn test_enterprise_workflow_1_swift_cbpr_iso20022_pain001() {
     let response = app.clone().oneshot(gen_req).await.unwrap();
     let status = response.status();
     let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
-    if status != 200 { println!("RESPONSE BODY: {}", String::from_utf8_lossy(&body_bytes)); }
+    if status != 200 {
+        println!("RESPONSE BODY: {}", String::from_utf8_lossy(&body_bytes));
+    }
     assert_eq!(status, 200);
     let gen_res: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
     let xml = gen_res["xml"].as_str().unwrap();
@@ -225,7 +230,10 @@ async fn test_enterprise_workflow_1_swift_cbpr_iso20022_pain001() {
     let mut hasher = sha2::Sha256::new();
     hasher.update(xml.as_bytes());
     let payload_hash = hex::encode(hasher.finalize());
-    let device_id = format!("{}test-device", conxian_compliance::zkc::TEE_DEVICE_ID_PREFIX);
+    let device_id = format!(
+        "{}test-device",
+        conxian_compliance::zkc::TEE_DEVICE_ID_PREFIX
+    );
     let att_header = make_attestation_header(&device_id, &payload_hash);
 
     let ingress_req = Request::builder()
@@ -242,7 +250,12 @@ async fn test_enterprise_workflow_1_swift_cbpr_iso20022_pain001() {
     let ingress_res = app.oneshot(ingress_req).await.unwrap();
     let status = ingress_res.status();
     let res_bytes = ingress_res.into_body().collect().await.unwrap().to_bytes();
-    if status != 200 { println!("INGRESS TEST 1 ERROR BODY: {}", String::from_utf8_lossy(&res_bytes)); }
+    if status != 200 {
+        println!(
+            "INGRESS TEST 1 ERROR BODY: {}",
+            String::from_utf8_lossy(&res_bytes)
+        );
+    }
     assert_eq!(status, 200);
 
     let proposal: serde_json::Value = serde_json::from_slice(&res_bytes).unwrap();
@@ -277,7 +290,9 @@ async fn test_enterprise_workflow_2_retail_pos_event_normalization() {
     let response = app.oneshot(req).await.unwrap();
     let status = response.status();
     let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
-    if status != 200 { println!("RESPONSE BODY: {}", String::from_utf8_lossy(&body_bytes)); }
+    if status != 200 {
+        println!("RESPONSE BODY: {}", String::from_utf8_lossy(&body_bytes));
+    }
     assert_eq!(status, 200);
     let res: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
     assert_eq!(res["status"], "SETTLED");
@@ -311,7 +326,9 @@ async fn test_enterprise_workflow_3_logistics_edi_purchase_order() {
     let response = app.oneshot(req).await.unwrap();
     let status = response.status();
     let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
-    if status != 200 { println!("RESPONSE BODY: {}", String::from_utf8_lossy(&body_bytes)); }
+    if status != 200 {
+        println!("RESPONSE BODY: {}", String::from_utf8_lossy(&body_bytes));
+    }
     assert_eq!(status, 200);
     let res: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
     assert_eq!(res["status"], "INGESTED");
@@ -360,7 +377,9 @@ async fn test_enterprise_workflow_4_sme_ubl_invoice_escrow_sync() {
     let response = app.oneshot(req).await.unwrap();
     let status = response.status();
     let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
-    if status != 200 { println!("RESPONSE BODY: {}", String::from_utf8_lossy(&body_bytes)); }
+    if status != 200 {
+        println!("RESPONSE BODY: {}", String::from_utf8_lossy(&body_bytes));
+    }
     assert_eq!(status, 200);
     let res: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
     assert_eq!(res["status"], "PROVISIONAL_ESCROW_LOCKED");
@@ -395,7 +414,9 @@ async fn test_enterprise_workflow_5_compliance_zk_kyc_extraction() {
     let response = app.oneshot(req).await.unwrap();
     let status = response.status();
     let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
-    if status != 200 { println!("RESPONSE BODY: {}", String::from_utf8_lossy(&body_bytes)); }
+    if status != 200 {
+        println!("RESPONSE BODY: {}", String::from_utf8_lossy(&body_bytes));
+    }
     assert_eq!(status, 200);
     let res: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
     assert_eq!(res["status"], "SANITIZED");

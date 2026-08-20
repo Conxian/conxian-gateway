@@ -231,7 +231,6 @@ impl ZkcVerifier {
         })
     }
 
-
     pub fn format_iso20022_pain001_v8(&self, job_card: &ConxianJobCard) -> ConxianResult<String> {
         use std::fmt::Write;
 
@@ -285,9 +284,19 @@ impl ZkcVerifier {
         writeln!(xml, r#"      </Dbtr>"#).unwrap();
         writeln!(xml, r#"      <CdtTrfTxInf>"#).unwrap();
         writeln!(xml, r#"        <PmtId>"#).unwrap();
-        writeln!(xml, r#"          <EndToEndId>{}</EndToEndId>"#, e(&end_to_end_id)).unwrap();
+        writeln!(
+            xml,
+            r#"          <EndToEndId>{}</EndToEndId>"#,
+            e(&end_to_end_id)
+        )
+        .unwrap();
         writeln!(xml, r#"        </PmtId>"#).unwrap();
-        writeln!(xml, r#"        <Amt><InstdAmt Ccy="SAT">{}</InstdAmt></Amt>"#, e(&amount)).unwrap();
+        writeln!(
+            xml,
+            r#"        <Amt><InstdAmt Ccy="SAT">{}</InstdAmt></Amt>"#,
+            e(&amount)
+        )
+        .unwrap();
         writeln!(xml, r#"        <Cdtr>"#).unwrap();
         writeln!(xml, r#"          <Nm>{}</Nm>"#, e(creditor)).unwrap();
         writeln!(xml, r#"        </Cdtr>"#).unwrap();
@@ -502,7 +511,7 @@ impl ZkcVerifier {
         })
     }
 
-pub fn format_iso20022_pacs008_v8(&self, job_card: &ConxianJobCard) -> ConxianResult<String> {
+    pub fn format_iso20022_pacs008_v8(&self, job_card: &ConxianJobCard) -> ConxianResult<String> {
         use std::fmt::Write;
 
         let e = |s: &str| -> String {

@@ -2047,27 +2047,6 @@ pub async fn settle_m2m(
     }
 }
 
-#[cfg(test)]
-mod settlement_tests {
-    use super::finalize_job_card_settlement;
-    use conxian_core::ConxianError;
-    use std::sync::atomic::{AtomicBool, Ordering};
-
-    #[test]
-    fn unavailable_verifier_never_commits_job_card() {
-        let commit_called = AtomicBool::new(false);
-
-        let result = finalize_job_card_settlement(Err(ConxianError::VerifierUnavailable), || {
-            commit_called.store(true, Ordering::SeqCst);
-            Ok(())
-        });
-
-        assert!(matches!(result, Err(ConxianError::VerifierUnavailable)));
-        assert!(!commit_called.load(Ordering::SeqCst));
-    }
-}
-
-
 pub async fn generate_iso_pain001_payment(
     State(state): State<AppState>,
     Json(payload): Json<Value>,
@@ -2178,7 +2157,10 @@ pub async fn ingress_pos_event(
         ));
     }
 
-    info!("Successfully normalized POS event for state channel settlement: {}", tx_id);
+    info!(
+        "Successfully normalized POS event for state channel settlement: {}",
+        tx_id
+    );
 
     Ok(Json(json!({
         "status": "SETTLED",
@@ -2195,7 +2177,10 @@ pub async fn ingress_edi_purchase_order(
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     enforce_ingress_trust_policy(&state, &headers)?;
 
-    match state.compliance.normalize_edi_purchase_order_ingress(&payload) {
+    match state
+        .compliance
+        .normalize_edi_purchase_order_ingress(&payload)
+    {
         Ok((envelope, doc_hash)) => {
             if let Err(e) = state.compliance.screen_sanctions(&envelope) {
                 return Err((
@@ -2306,5 +2291,25 @@ pub async fn extract_zk_kyc_commitment(
             StatusCode::BAD_REQUEST,
             Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
         )),
+    }
+}
+
+#[cfg(test)]
+mod settlement_tests {
+    use super::finalize_job_card_settlement;
+    use conxian_core::ConxianError;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    #[test]
+    fn unavailable_verifier_never_commits_job_card() {
+        let commit_called = AtomicBool::new(false);
+
+        let result = finalize_job_card_settlement(Err(ConxianError::VerifierUnavailable), || {
+            commit_called.store(true, Ordering::SeqCst);
+            Ok(())
+        });
+
+        assert!(matches!(result, Err(ConxianError::VerifierUnavailable)));
+        assert!(!commit_called.load(Ordering::SeqCst));
     }
 }

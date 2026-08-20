@@ -109,7 +109,12 @@ impl SettlementSource {
     pub fn sanctions_risk(&self) -> SanctionsRisk {
         match self {
             // G7-aligned rails — standard compliance profile
-            Self::Iso20022Pacs008 | Self::Iso20022Pacs009 | Self::Iso20022Pain001 | Self::Erp | Self::EdiPurchaseOrder | Self::UblInvoice => SanctionsRisk::Low,
+            Self::Iso20022Pacs008
+            | Self::Iso20022Pacs009
+            | Self::Iso20022Pain001
+            | Self::Erp
+            | Self::EdiPurchaseOrder
+            | Self::UblInvoice => SanctionsRisk::Low,
             // Regional payment systems — moderate exposure
             Self::Papss | Self::Cips => SanctionsRisk::Medium,
             // CBDC bridge — post-BIS exit, being repositioned as BRICS Bridge
@@ -422,7 +427,6 @@ impl SettlementProposal {
         })
     }
 }
-
 
 /// Payload for Retail & POS webhook event normalization
 #[derive(Debug, Serialize, Deserialize, Clone)]

@@ -71,7 +71,10 @@ pub fn configure_routes(
         .route("/erp/sync", post(handlers::sync_erp_ledger))
         .route("/settle", post(handlers::settle_job_card))
         .route("/iso20022/payment", post(handlers::generate_iso_payment))
-        .route("/iso20022/pain001", post(handlers::generate_iso_pain001_payment))
+        .route(
+            "/iso20022/pain001",
+            post(handlers::generate_iso_pain001_payment),
+        )
         .route("/iso20022/pacs008", post(handlers::ingress_iso20022))
         .route("/iso20022/pacs009", post(handlers::ingress_iso20022))
         .route("/settlement/papss", post(handlers::ingress_papss))
@@ -101,7 +104,10 @@ pub fn configure_routes(
         .route("/supply/edi", post(handlers::ingress_edi_purchase_order))
         .route("/invoicing/ubl", post(handlers::ingress_ubl_invoice))
         .route("/ingress/invoice", post(handlers::ingress_ubl_invoice))
-        .route("/compliance/zk-kyc", post(handlers::extract_zk_kyc_commitment))
+        .route(
+            "/compliance/zk-kyc",
+            post(handlers::extract_zk_kyc_commitment),
+        )
         .route("/ingress/kyc", post(handlers::extract_zk_kyc_commitment))
         .route("/pos/sync", post(handlers::sync_offline_receipts))
         .route("/handoff/status", get(handlers::get_handoff_status))
