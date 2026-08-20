@@ -35,9 +35,23 @@ Before submitting changes:
 1. `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 2. `cargo fmt --all -- --check`
 3. `cargo test --workspace && cargo test --workspace --features mock-integrations`
-4. `pnpm install && pnpm build && pnpm test`
-5. `GET /api/v1/health` returns HTTP 200 with `{"status":"ok"}`
-6. `python3 scripts/verify_contamination_guard.py`
+4. `./scripts/mcp_test_runner.sh --test wiremock_simulation_tests`
+5. `pnpm install && pnpm build && pnpm test`
+6. `GET /api/v1/health` returns HTTP 200 with `{"status":"ok"}`
+7. `python3 scripts/verify_contamination_guard.py`
+
+## API Virtualization, WireMock & Chaos Testing Conventions
+- **Stateful API Virtualization**: Use `wiremock` (`MockServer`) following WireMock Cloud / Proxymock methodologies to virtualize external financial and blockchain dependencies (e.g. ISO 20022 clearing gateways, X402 settlement LND nodes, World ID, Web3.bio).
+- **Proxymock / WireMock Scenarios**: External mock dependencies must model stateful transitions (`IN_FLIGHT` -> `CLEARED`, or invoice creation -> settlement preimage receipt) using scenario state machines.
+- **ISO 20022 (pacs.008) Pathways**: Test FI-to-FI Customer Credit Transfer XML generation (`pacs.008.001.08`) and stateful clearing verification via WireMock virtualized clearing networks.
+- **X402 Settlement Middleware**: Test protected capability endpoints (`/api/v1/canton/cbtc/verify`, `/api/v1/dlc/bond`, `/api/v1/m2m/settle`) against virtualized Lightning / Settlement backends with header validation (`x-402-payment`, `payment-required`, `payment-signature`).
+- **Chaos Fault Injection**: Test suites MUST simulate failure modes:
+  - **Server Faults**: HTTP 500 Internal Server Error injection asserting gateway error propagation (e.g., HTTP 503 `lightning_backend_unavailable`).
+  - **High Latency**: Network lag delay injection (e.g., 1500ms delay) asserting timeout handling (e.g., HTTP 504 `lightning_backend_timeout`).
+  - **Rate Limiting**: HTTP 429 Too Many Requests response handling.
+- **Model Context Protocol (MCP) Execution**: Use `scripts/mcp_test_runner.sh` for agentic test runner execution:
+  - Command: `./scripts/mcp_test_runner.sh --test wiremock_simulation_tests`
+  - Output: Structured JSON containing execution status, pass/fail test counts, duration, and exit code.
 
 ## CI/CD Pipelines
 - **rust-ci.yml**: Format, clippy, test (incl. mock-integrations), release build.
