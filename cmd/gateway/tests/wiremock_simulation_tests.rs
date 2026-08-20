@@ -118,6 +118,20 @@ impl Persistence for StaticPersistence {
     }
 }
 
+struct SimulatedStacksRpc;
+
+#[async_trait]
+impl conxian_core::SimulatedStacksRpcTrait for SimulatedStacksRpc {
+    async fn call_read_only(
+        &self,
+        _contract: &str,
+        _function: &str,
+        _args: Vec<serde_json::Value>,
+    ) -> ConxianResult<serde_json::Value> {
+        Ok(json!({ "value": "SP2JZZSBY0S3FJH7WJT2787YTYT8Y6725F7T8E62" }))
+    }
+}
+
 struct SimulatedOfflineQueue {
     replay_claims: Mutex<HashSet<String>>,
 }
@@ -161,7 +175,9 @@ fn create_test_app_with_lightning(lightning: Arc<LightningAdapter>) -> axum::Rou
         "test-infobip".to_string(),
         "test-hmac".to_string(),
     ));
-    let identity = Arc::new(IdentityManager::new());
+    let identity = Arc::new(IdentityManager::with_stacks_rpc(Box::new(
+        SimulatedStacksRpc,
+    )));
     let compliance = Arc::new(ZkcVerifier::new());
     let alex = Arc::new(conxian_engine::stacks::alex::SimulatedAlexClient);
     let mut multi_chain: HashMap<String, Arc<dyn conxian_core::ChainAdapter>> = HashMap::new();
