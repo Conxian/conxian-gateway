@@ -91,3 +91,8 @@ Full financial systems analysis in `docs/research/BRICS_FINANCIAL_SYSTEMS_RESEAR
 ### Candidate L: ISO 20022 pacs.008 Payment Initiation (Score: 9.2)
 - **Status**: ✅ Shipped (G-FI2). Implemented `pacs.008.001.08` FI-to-FI Customer Credit Transfer XML builder, structural validation, and compliance normalization.
 - **Impact**: Enables cross-border payment initiation and settlement envelope construction for institutional banking networks.
+
+
+### Candidate M: Babylon EOTS Verification & Double-Sign Key Extraction (Score: 9.5)
+- **Status**: ✅ Shipped (G-BB1). Implemented Schnorr attestation verification, double-sign detection, and algebraic secret key extraction $x = (s_1 - s_2)/(e_1 - e_2) \pmod n$ in `internal/engine/src/bitcoin/babylon_adapter.rs`.
+- **Impact**: Resolves sole remaining P1 gap and enables independent slashability verification for Babylon BTC staking finality providers.

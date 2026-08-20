@@ -253,3 +253,10 @@ Each gap is scored on 3 axes (1-5 scale):
 ## 9. Session 52 Gap Resolution Update (2026-08-19)
 
 - **G-FI2 (ISO 20022 pacs.008 Payment Initiation):** ✅ CLOSED. Implemented `pacs.008.001.08` (FI-to-FI Customer Credit Transfer) message builder and XML validator in `internal/api/src/camt.rs`, integrated `pacs.008` schema verification and normalization in `internal/compliance/src/zkc.rs`, and exposed `/api/v1/fiat/pacs008/generate` in `internal/api/src/handlers.rs`.
+
+
+---
+
+## 10. Session 53 Gap Resolution Update (2026-08-20)
+
+- **G-BB1 (Babylon EOTS Verification & Double-Sign Key Extraction):** ✅ CLOSED. Implemented full `extract_eots_secret_key()` in `internal/engine/src/bitcoin/babylon_adapter.rs` calculating finality provider private key $x = (s_1 - s_2) / (e_1 - e_2) \pmod n$ from double-signing evidence $(R, s_1)$ and $(R, s_2)$ under secp256k1 curve order $n$. Wired double-sign key extraction and Schnorr verification into `verify_state_proof()` with 9 unit tests.
