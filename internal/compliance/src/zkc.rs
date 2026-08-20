@@ -157,7 +157,8 @@ impl ZkcVerifier {
                         for attr in e.attributes().flatten() {
                             if attr.key.as_ref() == b"xmlns" {
                                 let val = String::from_utf8_lossy(&attr.value);
-                                if val.contains("urn:iso:std:iso:20022:tech:xsd:pacs.008")
+                                if val.contains("urn:iso:std:iso:20022:tech:xsd:pain.001")
+                                    || val.contains("urn:iso:std:iso:20022:tech:xsd:pacs.008")
                                     || val.contains("urn:iso:std:iso:20022:tech:xsd:pacs.009")
                                     || val.contains("urn:iso:std:iso:20022:tech:xsd:camt.")
                                 {
@@ -187,7 +188,7 @@ impl ZkcVerifier {
 
         if !valid_namespace {
             return Err(ConxianError::Compliance(
-                "ISO 20022 XML contains invalid or missing namespace (pacs.008, pacs.009, or camt required)".to_string(),
+                "ISO 20022 XML contains invalid or missing namespace (pain.001, pacs.008, pacs.009, or camt required)".to_string(),
             ));
         }
 
@@ -202,10 +203,16 @@ impl ZkcVerifier {
         info!("Normalizing ISO 20022 XML payload");
         self.validate_iso20022_xml_structure(raw_xml)?;
 
+        let source = if raw_xml.contains("pain.001") {
+            SettlementSource::Iso20022Pain001
+        } else {
+            SettlementSource::Iso20022Pacs008
+        };
+
         Ok(SettlementEnvelope {
             version: "1.0".to_string(),
             payload: NormalizedSettlement {
-                source: SettlementSource::Iso20022Pacs008,
+                source,
                 transaction_id: "ISO-SIM-123".into(),
                 amount_minor: 5000,
                 amount_scale: 2,
@@ -224,7 +231,278 @@ impl ZkcVerifier {
         })
     }
 
-    pub fn format_iso20022_pacs008_v8(&self, job_card: &ConxianJobCard) -> ConxianResult<String> {
+
+    pub fn format_iso20022_pain001_v8(&self, job_card: &ConxianJobCard) -> ConxianResult<String> {
+        use std::fmt::Write;
+
+        let e = |s: &str| -> String {
+            s.chars()
+                .map(|c| match c {
+                    '&' => "&amp;".to_string(),
+                    '<' => "&lt;".to_string(),
+                    '>' => "&gt;".to_string(),
+                    '"' => "&quot;".to_string(),
+                    '\'' => "&apos;".to_string(),
+                    _ => c.to_string(),
+                })
+                .collect()
+        };
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or_default();
+        let minutes = (now / 60) % 60;
+        let hours = (now / 3600) % 24;
+        let cre_dt_tm = format!("2026-08-07T{hours:02}:{minutes:02}:00");
+
+        let msg_id = format!("pain001-{}", uuid::Uuid::new_v4());
+        let pmt_inf_id = format!("pmt-{}", uuid::Uuid::new_v4());
+        let end_to_end_id = format!("e2e-{}", uuid::Uuid::new_v4());
+
+        let debtor = &job_card.work_intent.sender_address;
+        let creditor = &job_card.work_intent.receiver_address;
+        let amount = job_card.work_intent.amount_sbtc.to_string();
+
+        let mut xml = String::with_capacity(2048);
+        writeln!(xml, r#"<?xml version="1.0" encoding="UTF-8"?>"#).unwrap();
+        writeln!(
+            xml,
+            r#"<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pain.001.001.08">"#
+        )
+        .unwrap();
+        writeln!(xml, r#"  <CstmrCdtTrfInitn>"#).unwrap();
+        writeln!(xml, r#"    <GrpHdr>"#).unwrap();
+        writeln!(xml, r#"      <MsgId>{}</MsgId>"#, e(&msg_id)).unwrap();
+        writeln!(xml, r#"      <CreDtTm>{}</CreDtTm>"#, e(&cre_dt_tm)).unwrap();
+        writeln!(xml, r#"      <NbOfTxs>1</NbOfTxs>"#).unwrap();
+        writeln!(xml, r#"    </GrpHdr>"#).unwrap();
+        writeln!(xml, r#"    <PmtInf>"#).unwrap();
+        writeln!(xml, r#"      <PmtInfId>{}</PmtInfId>"#, e(&pmt_inf_id)).unwrap();
+        writeln!(xml, r#"      <PmtMtd>TRF</PmtMtd>"#).unwrap();
+        writeln!(xml, r#"      <Dbtr>"#).unwrap();
+        writeln!(xml, r#"        <Nm>{}</Nm>"#, e(debtor)).unwrap();
+        writeln!(xml, r#"      </Dbtr>"#).unwrap();
+        writeln!(xml, r#"      <CdtTrfTxInf>"#).unwrap();
+        writeln!(xml, r#"        <PmtId>"#).unwrap();
+        writeln!(xml, r#"          <EndToEndId>{}</EndToEndId>"#, e(&end_to_end_id)).unwrap();
+        writeln!(xml, r#"        </PmtId>"#).unwrap();
+        writeln!(xml, r#"        <Amt><InstdAmt Ccy="SAT">{}</InstdAmt></Amt>"#, e(&amount)).unwrap();
+        writeln!(xml, r#"        <Cdtr>"#).unwrap();
+        writeln!(xml, r#"          <Nm>{}</Nm>"#, e(creditor)).unwrap();
+        writeln!(xml, r#"        </Cdtr>"#).unwrap();
+        writeln!(xml, r#"      </CdtTrfTxInf>"#).unwrap();
+        writeln!(xml, r#"    </PmtInf>"#).unwrap();
+        writeln!(xml, r#"  </CstmrCdtTrfInitn>"#).unwrap();
+        writeln!(xml, r#"</Document>"#).unwrap();
+
+        Ok(xml)
+    }
+
+    pub fn normalize_edi_purchase_order_ingress(
+        &self,
+        payload: &conxian_core::EdiPurchaseOrderPayload,
+    ) -> ConxianResult<(SettlementEnvelope, String)> {
+        if payload.po_number.trim().is_empty() {
+            return Err(ConxianError::Compliance(
+                "PO number is required".to_string(),
+            ));
+        }
+
+        let mut hasher = Sha256::new();
+        hasher.update(payload.po_number.as_bytes());
+        hasher.update(payload.buyer_id.as_bytes());
+        hasher.update(payload.seller_id.as_bytes());
+        hasher.update(payload.document_raw.as_bytes());
+        let doc_hash = hex::encode(hasher.finalize());
+
+        let envelope = SettlementEnvelope {
+            version: conxian_core::SETTLEMENT_ENVELOPE_VERSION_CURRENT.to_string(),
+            payload: NormalizedSettlement {
+                source: SettlementSource::EdiPurchaseOrder,
+                transaction_id: format!("EDI-PO-{}", payload.po_number),
+                amount_minor: payload.total_amount,
+                amount_scale: 2,
+                currency: payload.currency.clone(),
+                sender: payload.buyer_id.clone(),
+                receiver: payload.seller_id.clone(),
+                timestamp: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or_default(),
+                status: SettlementStatus::Ingested,
+                rail: Some(conxian_core::SettlementRail {
+                    family: conxian_core::SettlementRailFamily::Other,
+                    name: "MERKLE_TREE_STORAGE".to_string(),
+                    region: "GLOBAL".to_string(),
+                }),
+                finality: SettlementFinality::Final,
+                settled_at: None,
+                identifiers: SettlementIdentifiers {
+                    message_id: Some(payload.po_number.clone()),
+                    transaction_reference: Some(format!("BUYER-{}", payload.buyer_id)),
+                    settlement_reference: Some(format!("SELLER-{}", payload.seller_id)),
+                    end_to_end_id: Some(doc_hash.clone()),
+                    settlement_amount: payload.total_amount.to_string(),
+                    settlement_currency: payload.currency.clone(),
+                    settlement_date: "2026-08-20".to_string(),
+                },
+                raw_payload_hash: doc_hash.clone(),
+                industrial_intent: conxian_core::IndustrialIntent {
+                    sector: "LOGISTICS_SUPPLY".to_string(),
+                    project_id: payload.po_number.clone(),
+                    x402_payment_required: false,
+                    invoice_id: None,
+                    device_id: None,
+                },
+            },
+        };
+
+        Ok((envelope, doc_hash))
+    }
+
+    pub fn normalize_ubl_invoice_ingress(
+        &self,
+        payload: &conxian_core::UblInvoicePayload,
+    ) -> ConxianResult<SettlementEnvelope> {
+        if payload.invoice_id.trim().is_empty() {
+            return Err(ConxianError::Compliance(
+                "Invoice ID is required".to_string(),
+            ));
+        }
+
+        if payload.line_items.is_empty() {
+            return Err(ConxianError::Compliance(
+                "At least one line item is required for invoice state sync".to_string(),
+            ));
+        }
+
+        let mut calculated_total: u64 = 0;
+        for line in &payload.line_items {
+            calculated_total = calculated_total.saturating_add(line.total_minor);
+        }
+
+        let tx_id = format!("INV-{}", payload.invoice_id);
+        let mut hasher = Sha256::new();
+        hasher.update(tx_id.as_bytes());
+        let raw_payload_hash = hex::encode(hasher.finalize());
+
+        let envelope = SettlementEnvelope {
+            version: conxian_core::SETTLEMENT_ENVELOPE_VERSION_CURRENT.to_string(),
+            payload: NormalizedSettlement {
+                source: SettlementSource::UblInvoice,
+                transaction_id: tx_id.clone(),
+                amount_minor: payload.total_amount_minor,
+                amount_scale: 2,
+                currency: payload.currency.clone(),
+                sender: payload.supplier_id.clone(),
+                receiver: payload.customer_id.clone(),
+                timestamp: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or_default(),
+                status: SettlementStatus::Accepted,
+                rail: Some(conxian_core::SettlementRail {
+                    family: conxian_core::SettlementRailFamily::Ach,
+                    name: "ESCROW_CONTRACT".to_string(),
+                    region: "GLOBAL".to_string(),
+                }),
+                finality: SettlementFinality::Provisional,
+                settled_at: None,
+                identifiers: SettlementIdentifiers {
+                    message_id: Some(payload.invoice_id.clone()),
+                    transaction_reference: Some(format!("SUPPLIER-{}", payload.supplier_id)),
+                    settlement_reference: Some(format!("ESCROW-INV-{}", payload.invoice_id)),
+                    end_to_end_id: Some(tx_id.clone()),
+                    settlement_amount: payload.total_amount_minor.to_string(),
+                    settlement_currency: payload.currency.clone(),
+                    settlement_date: payload.issue_date.clone(),
+                },
+                raw_payload_hash,
+                industrial_intent: conxian_core::IndustrialIntent {
+                    sector: "SME_INVOICING".to_string(),
+                    project_id: payload.invoice_id.clone(),
+                    x402_payment_required: false,
+                    invoice_id: Some(payload.invoice_id.clone()),
+                    device_id: None,
+                },
+            },
+        };
+
+        Ok(envelope)
+    }
+
+    pub fn extract_and_sanitize_kyc_address(
+        &self,
+        xml_str: &str,
+    ) -> ConxianResult<conxian_core::SanitizedKycAddress> {
+        if xml_str.trim().is_empty() {
+            return Err(ConxianError::Compliance(
+                "XML payload cannot be empty for KYC extraction".to_string(),
+            ));
+        }
+
+        let mut reader = quick_xml::Reader::from_str(xml_str);
+        reader.config_mut().trim_text(true);
+
+        let mut country = String::from("UNKNOWN");
+        let mut town_name = String::from("UNKNOWN");
+        let mut street_name = String::new();
+        let mut building_nb = String::new();
+        let mut post_code = String::new();
+
+        let mut current_tag = String::new();
+        let mut buf = Vec::new();
+
+        loop {
+            match reader.read_event_into(&mut buf) {
+                Ok(quick_xml::events::Event::Start(e)) => {
+                    current_tag = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                }
+                Ok(quick_xml::events::Event::Text(e)) => {
+                    let text = String::from_utf8_lossy(e.as_ref()).trim().to_string();
+                    match current_tag.as_str() {
+                        "Ctry" => country = text,
+                        "TwnNm" => town_name = text,
+                        "StrtNm" => street_name = text,
+                        "BldgNb" => building_nb = text,
+                        "PstCd" => post_code = text,
+                        _ => {}
+                    }
+                }
+                Ok(quick_xml::events::Event::Eof) => break,
+                Err(e) => {
+                    return Err(ConxianError::Compliance(format!(
+                        "KYC XML parsing error: {}",
+                        e
+                    )));
+                }
+                _ => {}
+            }
+            buf.clear();
+        }
+
+        let pii_raw = format!("{}:{}:{}", street_name, building_nb, post_code);
+        let mut hasher = Sha256::new();
+        hasher.update(pii_raw.as_bytes());
+        let sanitized_address_hash = hex::encode(hasher.finalize());
+
+        let mut zk_hasher = Sha256::new();
+        zk_hasher.update(b"ZK_KYC_AUDIT_COMMITMENT_V1");
+        zk_hasher.update(country.as_bytes());
+        zk_hasher.update(town_name.as_bytes());
+        zk_hasher.update(sanitized_address_hash.as_bytes());
+        let zk_commitment = hex::encode(zk_hasher.finalize());
+
+        Ok(conxian_core::SanitizedKycAddress {
+            country,
+            town_name,
+            sanitized_address_hash,
+            zk_commitment,
+        })
+    }
+
+pub fn format_iso20022_pacs008_v8(&self, job_card: &ConxianJobCard) -> ConxianResult<String> {
         use std::fmt::Write;
 
         let e = |s: &str| -> String {

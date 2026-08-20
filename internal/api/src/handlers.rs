@@ -2066,3 +2066,245 @@ mod settlement_tests {
         assert!(!commit_called.load(Ordering::SeqCst));
     }
 }
+
+
+pub async fn generate_iso_pain001_payment(
+    State(state): State<AppState>,
+    Json(payload): Json<Value>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let amount_sbtc = payload["amount_sbtc"].as_f64().ok_or((
+        StatusCode::BAD_REQUEST,
+        Json(json!({ "error": "amount_sbtc is required" })),
+    ))?;
+
+    let amount_satoshis = amount_sbtc_to_satoshis(amount_sbtc)
+        .map_err(|e| (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))))?;
+
+    let receiver = payload["receiver"].as_str().ok_or((
+        StatusCode::BAD_REQUEST,
+        Json(json!({ "error": "receiver is required" })),
+    ))?;
+
+    let job_card = conxian_core::ConxianJobCard {
+        context: "https://conxian.org/ns/job-card/v2".to_string(),
+        r#type: "PaymentJob".to_string(),
+        work_intent: conxian_core::WorkIntent {
+            sender_address: "GENERATED".to_string(),
+            receiver_address: receiver.to_string(),
+            amount_sbtc: amount_satoshis,
+            town_name: None,
+            country_code: None,
+        },
+    };
+
+    match state.compliance.format_iso20022_pain001_v8(&job_card) {
+        Ok(xml) => Ok(Json(json!({ "xml": xml }))),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
+        )),
+    }
+}
+
+pub async fn ingress_pos_event(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Json(payload): Json<conxian_core::PosEventPayload>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    enforce_ingress_trust_policy(&state, &headers)?;
+
+    if payload.amount_minor == 0 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "Amount must be greater than zero" })),
+        ));
+    }
+
+    if payload.terminal_id.trim().is_empty() || payload.merchant_id.trim().is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "terminal_id and merchant_id are required" })),
+        ));
+    }
+
+    let tx_id = format!("POS-{}-{}", payload.terminal_id, payload.timestamp);
+    let raw_payload_hash = sha256_hex(tx_id.as_bytes());
+
+    let normalized = conxian_core::NormalizedSettlement {
+        source: conxian_core::SettlementSource::Erp,
+        transaction_id: tx_id.clone(),
+        amount_minor: payload.amount_minor,
+        amount_scale: 2,
+        currency: payload.currency.clone(),
+        sender: payload.terminal_id.clone(),
+        receiver: payload.merchant_id.clone(),
+        timestamp: payload.timestamp,
+        status: conxian_core::SettlementStatus::Accepted,
+        rail: Some(conxian_core::SettlementRail {
+            family: conxian_core::SettlementRailFamily::Instant,
+            name: "L2_STATE_CHANNEL".to_string(),
+            region: "GLOBAL".to_string(),
+        }),
+        finality: conxian_core::SettlementFinality::Final,
+        settled_at: Some(now_unix()),
+        identifiers: conxian_core::SettlementIdentifiers {
+            message_id: Some(tx_id.clone()),
+            transaction_reference: Some(format!("MERCHANT-{}", payload.merchant_id)),
+            settlement_reference: Some(format!("CHANNEL-{}", payload.terminal_id)),
+            end_to_end_id: Some(tx_id.clone()),
+            settlement_amount: payload.amount_minor.to_string(),
+            settlement_currency: payload.currency,
+            settlement_date: format!("{}", payload.timestamp),
+        },
+        raw_payload_hash: raw_payload_hash.clone(),
+        industrial_intent: conxian_core::IndustrialIntent {
+            sector: "RETAIL_POS".to_string(),
+            project_id: payload.merchant_id,
+            x402_payment_required: false,
+            invoice_id: None,
+            device_id: Some(payload.terminal_id),
+        },
+    };
+
+    let envelope = conxian_core::SettlementEnvelope {
+        version: conxian_core::SETTLEMENT_ENVELOPE_VERSION_CURRENT.to_string(),
+        payload: normalized,
+    };
+
+    if let Err(e) = state.compliance.screen_sanctions(&envelope) {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": e.to_string() })),
+        ));
+    }
+
+    info!("Successfully normalized POS event for state channel settlement: {}", tx_id);
+
+    Ok(Json(json!({
+        "status": "SETTLED",
+        "settlement_id": tx_id,
+        "target_rail": "L2_STATE_CHANNEL",
+        "envelope": envelope,
+    })))
+}
+
+pub async fn ingress_edi_purchase_order(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Json(payload): Json<conxian_core::EdiPurchaseOrderPayload>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    enforce_ingress_trust_policy(&state, &headers)?;
+
+    match state.compliance.normalize_edi_purchase_order_ingress(&payload) {
+        Ok((envelope, doc_hash)) => {
+            if let Err(e) = state.compliance.screen_sanctions(&envelope) {
+                return Err((
+                    StatusCode::FORBIDDEN,
+                    Json(json!({ "error": e.to_string() })),
+                ));
+            }
+
+            info!(
+                "Successfully normalized EDI PO for Merkle provenance storage: {}",
+                envelope.payload.transaction_id
+            );
+
+            Ok(Json(json!({
+                "status": "INGESTED",
+                "po_number": payload.po_number,
+                "document_hash": doc_hash,
+                "merkle_target": "mmr_nodes",
+                "envelope": envelope,
+            })))
+        }
+        Err(e) => Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
+        )),
+    }
+}
+
+pub async fn ingress_ubl_invoice(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Json(payload): Json<conxian_core::UblInvoicePayload>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    enforce_ingress_trust_policy(&state, &headers)?;
+
+    match state.compliance.normalize_ubl_invoice_ingress(&payload) {
+        Ok(envelope) => {
+            if let Err(e) = state.compliance.screen_sanctions(&envelope) {
+                return Err((
+                    StatusCode::FORBIDDEN,
+                    Json(json!({ "error": e.to_string() })),
+                ));
+            }
+
+            info!(
+                "Successfully synchronized invoice line items for Escrow release: {}",
+                envelope.payload.transaction_id
+            );
+
+            Ok(Json(json!({
+                "status": "PROVISIONAL_ESCROW_LOCKED",
+                "invoice_id": payload.invoice_id,
+                "line_items_count": payload.line_items.len(),
+                "escrow_target": "ESCROW_CONTRACT",
+                "envelope": envelope,
+            })))
+        }
+        Err(e) => Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
+        )),
+    }
+}
+
+pub async fn extract_zk_kyc_commitment(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    body: Body,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    enforce_ingress_trust_policy(&state, &headers)?;
+
+    let raw_payload = body
+        .collect()
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": format!("Body collection failed: {}", e) })),
+            )
+        })?
+        .to_bytes();
+
+    let xml_str = String::from_utf8(raw_payload.to_vec()).map_err(|_| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "Invalid UTF-8 in XML payload" })),
+        )
+    })?;
+
+    match state.compliance.extract_and_sanitize_kyc_address(&xml_str) {
+        Ok(sanitized) => {
+            info!(
+                country = %sanitized.country,
+                zk_commitment = %sanitized.zk_commitment,
+                "Extracted and sanitized KYC address for ZK verifier audit"
+            );
+
+            Ok(Json(json!({
+                "status": "SANITIZED",
+                "target_verifier": "ZK_VERIFIER_CONTRACT",
+                "country": sanitized.country,
+                "town_name": sanitized.town_name,
+                "sanitized_address_hash": sanitized.sanitized_address_hash,
+                "zk_commitment": sanitized.zk_commitment,
+            })))
+        }
+        Err(e) => Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": <conxian_core::ConxianError as ToString>::to_string(&e) })),
+        )),
+    }
+}

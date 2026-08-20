@@ -32,6 +32,9 @@ pub enum SanctionsRisk {
 pub enum SettlementSource {
     Iso20022Pacs008,
     Iso20022Pacs009,
+    Iso20022Pain001,
+    EdiPurchaseOrder,
+    UblInvoice,
     /// CIPS (Cross-Border Interbank Payment System) — China-led,
     /// $24.47T in 2024, 1,690 participants. Uses ISO 20022 with CIPS extensions.
     Cips,
@@ -86,7 +89,9 @@ pub enum MachineService {
 impl SettlementSource {
     pub fn as_rail_name(&self) -> &'static str {
         match self {
-            Self::Iso20022Pacs008 | Self::Iso20022Pacs009 => "ISO20022",
+            Self::Iso20022Pacs008 | Self::Iso20022Pacs009 | Self::Iso20022Pain001 => "ISO20022",
+            Self::EdiPurchaseOrder => "EDI_PO",
+            Self::UblInvoice => "UBL_INVOICE",
             Self::Cips => "CIPS",
             Self::Papss => "PAPSS",
             Self::Brics => "BRICS",
@@ -104,7 +109,7 @@ impl SettlementSource {
     pub fn sanctions_risk(&self) -> SanctionsRisk {
         match self {
             // G7-aligned rails — standard compliance profile
-            Self::Iso20022Pacs008 | Self::Iso20022Pacs009 | Self::Erp => SanctionsRisk::Low,
+            Self::Iso20022Pacs008 | Self::Iso20022Pacs009 | Self::Iso20022Pain001 | Self::Erp | Self::EdiPurchaseOrder | Self::UblInvoice => SanctionsRisk::Low,
             // Regional payment systems — moderate exposure
             Self::Papss | Self::Cips => SanctionsRisk::Medium,
             // CBDC bridge — post-BIS exit, being repositioned as BRICS Bridge
@@ -416,4 +421,61 @@ impl SettlementProposal {
             ops_loan: None,
         })
     }
+}
+
+
+/// Payload for Retail & POS webhook event normalization
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PosEventPayload {
+    pub terminal_id: String,
+    pub merchant_id: String,
+    pub amount_minor: u64,
+    pub currency: String,
+    pub payment_method: String,
+    #[serde(default)]
+    pub signature: Option<String>,
+    pub timestamp: u64,
+}
+
+/// Payload for Logistics & Supply EDI Purchase Order provenance
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct EdiPurchaseOrderPayload {
+    pub po_number: String,
+    pub buyer_id: String,
+    pub seller_id: String,
+    pub total_amount: u64,
+    pub currency: String,
+    pub line_items_count: u32,
+    pub document_raw: String,
+}
+
+/// Individual line item in an SME invoice
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct InvoiceLineItem {
+    pub line_id: String,
+    pub item_name: String,
+    pub quantity: u64,
+    pub unit_price_minor: u64,
+    pub total_minor: u64,
+}
+
+/// Payload for SME UBL / CSV / REST Invoice state synchronization
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct UblInvoicePayload {
+    pub invoice_id: String,
+    pub supplier_id: String,
+    pub customer_id: String,
+    pub issue_date: String,
+    pub total_amount_minor: u64,
+    pub currency: String,
+    pub line_items: Vec<InvoiceLineItem>,
+}
+
+/// Sanitized KYC PostalAddress extraction and ZK commitment output
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SanitizedKycAddress {
+    pub country: String,
+    pub town_name: String,
+    pub sanitized_address_hash: String,
+    pub zk_commitment: String,
 }
