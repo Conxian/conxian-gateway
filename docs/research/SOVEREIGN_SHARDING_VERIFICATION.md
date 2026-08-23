@@ -29,3 +29,30 @@ The detailed, dated evidence record is [`BITVM3_BITVMX_RESEARCH_EXPANSION.md`](.
 - **BitVMX-CPU** is covered only by the isolated [`tools/bitvmx-eval`](../../tools/bitvmx-eval/) lane. It is not BitVM3, BitVMX-GC, garbled-circuit verification, or Groth16 verification.
 - **BitVMX-GC and GOATNetwork/`bitvm2-gc`** remain research/reference material pending a stable public target, license review, reproducible build, independent vectors, resource fit, and security review.
 - **Recursive SNARK/IVC systems such as Nova** are a separate research track and must not be treated as interchangeable with BitVM3, BitVMX-GC, or the current Gateway verifier boundary.
+
+## 6. Zero-Mock Production Alignment Strategy & Mock/Placeholder Audit
+
+To guarantee institutional mainnet integrity, the Conxian Gateway enforces strict separation between production code paths and simulation/test-only scaffolds:
+
+### 6.1 Audit of Mock Scaffolds & Research Placeholders
+1. **Groth16 Verifier Boundary (`MockGroth16Verifier`)**:
+   - *Status*: Test-only fixture verifier.
+   - *Gating*: Strictly gated behind `#[cfg(any(test, feature = "mock-integrations"))]`.
+   - *Production Pathway*: Production flows require an injected cryptographic pairing backend (e.g., `ark-groth16` / `ark-bn254` with hardware acceleration or trusted setup verification).
+
+2. **DLC CET & Bond Manager Scaffold**:
+   - *Status*: Scaffolding with cryptographic Schnorr oracle verification implemented; funding, CET, refund, adaptor-signature construction, and real bond state management remain research-gated.
+   - *Production Pathway*: Transition from UUID/mock bond identifiers to full cryptographic Discreet Log Contract transaction building (`bdk_wallet` / `rust-dlc`) prior to mainnet value-bearing enablement.
+
+3. **ALEX Swap & Quote Scaffold**:
+   - *Status*: Read-only quote/venue manifest evaluation.
+   - *Gating*: Execution disabled (`POST /api/v1/alex/swap` is stably execution-disabled).
+   - *Production Pathway*: Requires full venue manifest attestation and verified Stacks smart contract execution before enabling production liquidity routing.
+
+4. **BitVM & Babylon State Proof Verification**:
+   - *Status*: Metadata-only / header-chain verification (recency checks and double-sign key extraction).
+   - *Production Pathway*: Full BitVM dispute resolution protocol and EOTS finality provider key extraction implemented; complete multi-step challenge-response flows remain gated behind dedicated validator infrastructure.
+
+### 6.2 Production Promotion Criteria
+- **Zero-Contamination Enforcement**: Continuous integration automatically runs `python3 scripts/verify_contamination_guard.py` to ensure no `stub`, `placeholder`, or `changeme` keywords exist in `cmd/`, `internal/`, `pkg/`, `apps/`, or `packages/`.
+- **Fail-Closed Runtime Architecture**: Any feature flag or unconfigured dependency fails closed with standard HTTP status codes (`503 Service Unavailable` or `400 Bad Request`) rather than falling back to unauthenticated or mock responses in production binaries.

@@ -8,15 +8,15 @@ describe('ConxianClient', () => {
 
     beforeEach(() => {
         client = new ConxianClient(baseUrl, apiToken);
-        // Mock global fetch
+        // Virtualize global fetch for unit test isolated execution
         global.fetch = vi.fn();
     });
 
     it('should return the exact health response from the liveness endpoint', async () => {
-        const mockResponse = { status: 'ok' } as const;
+        const expectedResponse = { status: 'ok' } as const;
         (global.fetch as any).mockResolvedValue({
             ok: true,
-            json: async () => mockResponse,
+            json: async () => expectedResponse,
         });
 
         const result = await client.getHealth();
@@ -34,10 +34,10 @@ describe('ConxianClient', () => {
     });
 
     it('should verify state proof via UCV-1 endpoint', async () => {
-        const mockResponse = { chain: 'bitvm', verified: true };
+        const expectedResponse = { chain: 'bitvm', verified: true };
         (global.fetch as any).mockResolvedValue({
             ok: true,
-            json: async () => mockResponse,
+            json: async () => expectedResponse,
         });
 
         const result = await client.verifyStateProof('bitvm', { root_hash: '0xabc123' });
@@ -53,6 +53,6 @@ describe('ConxianClient', () => {
                 body: JSON.stringify({ root_hash: '0xabc123' }),
             })
         );
-        expect(result).toEqual(mockResponse);
+        expect(result).toEqual(expectedResponse);
     });
 });
