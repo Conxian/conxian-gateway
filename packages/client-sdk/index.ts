@@ -8,7 +8,11 @@ import {
     PreparedTransaction,
     StateProofVerificationResponse,
     DlcBond,
-    MuSig2AggregatedKey
+    MuSig2AggregatedKey,
+    Pacs008PaymentResponse,
+    IdentityResolutionResponse,
+    SyiResponse,
+    CbtcVerificationResponse
 } from "@conxian/schemas";
 
 export const GATEWAY_API_VERSION = "v1";
@@ -87,6 +91,43 @@ export class ConxianClient {
         return this.request<MuSig2AggregatedKey>("/musig2/aggregate-keys", {
             method: "POST",
             body: JSON.stringify({ pubkeys }),
+        });
+    }
+
+    /**
+     * G-FI2: Generate ISO 20022 pacs.008 customer credit transfer payment XML.
+     */
+    async generatePacs008Payment(receiver: string, amountSbtc: number): Promise<Pacs008PaymentResponse> {
+        return this.request<Pacs008PaymentResponse>("/fiat/pacs008/generate", {
+            method: "POST",
+            body: JSON.stringify({ receiver, amount_sbtc: amountSbtc }),
+        });
+    }
+
+    /**
+     * Tier 1 Identity Resolution (BNS, Web3.bio, World ID).
+     */
+    async resolveIdentity(identifier: string): Promise<IdentityResolutionResponse> {
+        return this.request<IdentityResolutionResponse>("/identity/resolve", {
+            method: "POST",
+            body: JSON.stringify({ identifier }),
+        });
+    }
+
+    /**
+     * Fetch real-time Sovereign Yield Index (SYI) rate and market quotes.
+     */
+    async getSovereignYieldIndex(): Promise<SyiResponse> {
+        return this.request<SyiResponse>("/treasury/syi");
+    }
+
+    /**
+     * Canton Network cBTC non-custodial attestation verification.
+     */
+    async verifyCbtcAttestation(attestationProof: any): Promise<CbtcVerificationResponse> {
+        return this.request<CbtcVerificationResponse>("/canton/cbtc/verify", {
+            method: "POST",
+            body: JSON.stringify({ attestation_proof: attestationProof }),
         });
     }
 

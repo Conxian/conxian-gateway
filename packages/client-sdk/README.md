@@ -16,6 +16,10 @@ Provides a shared interface for applications and internal services to call curre
 - **Verification route client**: `verifyStateProof` sends metadata to a chain-specific Gateway route; availability and verification strength depend on the server adapter.
 - **Chain Metadata**: Easy access to latest heights and identities across supported chains.
 - **Transaction Preparation**: Builds unsigned payloads ready for local-first signing.
+- **ISO 20022 Payment Initiation**: `generatePacs008Payment` constructs compliant `pacs.008.001.08` customer credit transfer XML documents for institutional banking rails.
+- **Identity Resolution**: `resolveIdentity` resolves BNS, Web3.bio profiles, and World ID verification states across Tier 1 identity providers.
+- **Treasury & Sovereign Yield**: `getSovereignYieldIndex` retrieves real-time SYI interest rate indices and sBTC/STX market quotes.
+- **Canton Network Attestation**: `verifyCbtcAttestation` verifies cBTC non-custodial attestation proofs for institutional DLTs.
 
 ## Verification boundaries
 
@@ -46,6 +50,15 @@ const client = new ConxianClient(
   apiToken,
 );
 const chains = await client.getSupportedChains();
+
+// Generate ISO 20022 pacs.008 payment XML
+const payment = await client.generatePacs008Payment('bc1q...', 1.5);
+
+// Resolve Tier 1 identity
+const identity = await client.resolveIdentity('satoshi.btc');
+
+// Retrieve Sovereign Yield Index (SYI)
+const syi = await client.getSovereignYieldIndex();
 ```
 
 For the short health → supported chains → Babylon rehearsal-validation path, see the [developer sandbox](../../examples/developer-sandbox/README.md). A live run requires an operator-provided Gateway URL and valid token; mocked tests are contract checks, not live proof evidence. No hosted/free public sandbox URL or token is currently provided.
