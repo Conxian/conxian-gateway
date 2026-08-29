@@ -223,10 +223,13 @@ def write_workflow_archive(path: Path, directory: Path, commit: str = COMMIT) ->
     stage_directory.mkdir()
     stage_root = stage_directory / ROOT
     stage_root.mkdir()
+    stage_root.chmod(0o755)
     gateway = b"\x7fELF" + bytes([2]) + b"\0" * 13 + (62).to_bytes(2, "little") + b"gateway"
     (stage_root / "gateway").write_bytes(gateway)
     (stage_root / "gateway").chmod(0o755)
-    (stage_root / "RELEASE-METADATA.txt").write_text(metadata_text(commit), encoding="utf-8")
+    metadata_file = stage_root / "RELEASE-METADATA.txt"
+    metadata_file.write_text(metadata_text(commit), encoding="utf-8")
+    metadata_file.chmod(0o644)
     tar_result = subprocess.run(
         [
             "tar",

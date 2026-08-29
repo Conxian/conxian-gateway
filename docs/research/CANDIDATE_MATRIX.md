@@ -10,14 +10,14 @@ This matrix tracks the maturity of core components and identifies the best candi
 | **BIP-322 Message Signing** | 9 | Urgent | Production | Integrated into Identity API |
 | **ALEX Swap Integration** | 8 | High | Production | Signer Enclave cutover pending |
 | **Identity Resolution (ENS/Web3.bio)** | 8 | High | Production | Integrated live APIs |
-| **DLC Orchestration** | 7 | Medium | Research / Spike | API scaffold only; no cryptographic oracle verification or CET construction. See [`DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md`](DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md) |
+| **DLC Orchestration** | 8 | Medium | Research / Spike | Cryptographic BIP340 Schnorr oracle verification and multi-oracle threshold quorum active; CET construction in research spike. |
 | **MuSig2 Aggregation** | 6 | High | Production | Primitives and Aggregator active |
 | **Mempool Orchestrator** | 7 | High | Production | Industrial Intent integration |
 | **Identity Resolution (BNS)** | 7 | Medium | Production | Full resolver active with RPC fallback |
 | **Identity Resolution (World ID)** | 4 | High | Development | Transitioning from placeholder to live API |
 | **Blake2s (Ark Alignment)** | 2 | High | Research | Required for V-UTXO PRF (CON-1282) |
 | **Silent Payments (BIP-352)** | 1 | High | Research | Native scanning integration planned (CON-1281) |
-| **Nostr Wallet Connect (NWC)** | 1 | High | Research | Protocol transport defined (CON-1267) |
+| **Nostr Wallet Connect (NWC)** | 7 | High | Production | NIP-47 relay-settle integrated; 5 API tests passing. See `internal/api/src/nwc_backend.rs` |
 
 ## 2. Best Candidates for Implementation
 
@@ -31,9 +31,8 @@ This matrix tracks the maturity of core components and identifies the best candi
 - **Readiness**: High. Deterministic hashing required for V-UTXO; implementation is self-contained.
 - **Impact**: Unblocks Ark protocol compliance and recovery model.
 
-### Candidate C: Nostr Wallet Connect (NWC) (Score: 7.5)
-- **Urgency**: High (CON-1267).
-- **Readiness**: Medium. Requires NIP-47 transport logic.
+### Candidate C: Nostr Wallet Connect (NWC) (Score: N/A — Shipped)
+- **Status**: ✅ Shipped. NIP-47 relay-settle integrated with 5 passing API tests.
 - **Impact**: Enables non-custodial authorization of Lightning payments.
 
 ## 2. Best Candidates for Implementation (Continued)
@@ -83,3 +82,17 @@ Full analysis in `docs/research/CANTON_NETWORK_AND_MACHINE_ECONOMY_RESEARCH.md`.
 
 ### BRICS Research Basis
 Full financial systems analysis in `docs/research/BRICS_FINANCIAL_SYSTEMS_RESEARCH.md`. The global financial system is bifurcating: Western SWIFT/ISO 20022 (~45% GDP) vs BRICS CIPS/mBridge/SPFS (~40% GDP). The Gateway's dual-stack architecture must support both.
+
+
+### Candidate K: ISO 20022 XML Schema Validation (Score: 9.0)
+- **Status**: ✅ Shipped (G-FI1). Implemented structural XML validation and namespace checking for pacs.008, pacs.009, and camt messages in `internal/compliance/src/zkc.rs`.
+- **Impact**: Eliminates silent bank rejection risks and guarantees schema compliance for institutional payment initiation.
+
+### Candidate L: ISO 20022 pacs.008 Payment Initiation (Score: 9.2)
+- **Status**: ✅ Shipped (G-FI2). Implemented `pacs.008.001.08` FI-to-FI Customer Credit Transfer XML builder, structural validation, and compliance normalization.
+- **Impact**: Enables cross-border payment initiation and settlement envelope construction for institutional banking networks.
+
+
+### Candidate M: Babylon EOTS Verification & Double-Sign Key Extraction (Score: 9.5)
+- **Status**: ✅ Shipped (G-BB1). Implemented Schnorr attestation verification, double-sign detection, and algebraic secret key extraction $x = (s_1 - s_2)/(e_1 - e_2) \pmod n$ in `internal/engine/src/bitcoin/babylon_adapter.rs`.
+- **Impact**: Resolves sole remaining P1 gap and enables independent slashability verification for Babylon BTC staking finality providers.

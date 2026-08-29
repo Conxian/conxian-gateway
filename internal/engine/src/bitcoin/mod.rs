@@ -10,11 +10,11 @@ pub use mempool_orchestrator::MempoolOrchestrator;
 pub use rpc::{BitcoinRpc, BitcoinRpcClient};
 pub use shadow_observation::{
     BitcoinCoreShadowObservation, BitcoinCoreShadowObserver, BitcoinCoreShadowObserverClient,
-    CoreBestBlockStats, CoreBlockchainInfo, CoreMempoolInfo, CoreNetworkInfo, DeploymentAlias,
-    DeploymentObservation, DeploymentObservationStatus, DeploymentReportedState,
+    CalibrationMeta, CoreBestBlockStats, CoreBlockchainInfo, CoreMempoolInfo, CoreNetworkInfo,
+    DeploymentAlias, DeploymentObservation, DeploymentObservationStatus, DeploymentReportedState,
     DeploymentSourceScope, FeeEstimateAvailability, FeeEstimateObservation, FeeRateUnit,
-    ObservationAvailability, ObservationErrorCategory, ShadowObserverFailure, SourceObservation,
-    SHADOW_FEE_TARGETS,
+    ObservationAvailability, ObservationErrorCategory, RouteConfidence, ShadowObserverFailure,
+    SourceObservation, SHADOW_FEE_TARGETS,
 };
 pub mod rgb_adapter;
 pub use rgb_adapter::NodeRgbAdapter;
@@ -27,6 +27,8 @@ pub use babylon_adapter::{
 };
 pub mod bitvm_adapter;
 pub use bitvm_adapter::BitVmAdapter;
+pub mod bitvm3_adapter;
+pub use bitvm3_adapter::BitVm3Adapter;
 pub mod fedimint_adapter;
 pub use fedimint_adapter::FedimintAdapter;
 pub mod strata_adapter;

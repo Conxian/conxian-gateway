@@ -7,9 +7,11 @@ use bitcoin::BlockHash;
 use conxian_core::{BlockInfo, ChainAdapter, ConxianError, ConxianResult};
 use lib_conxian_core::babylon::StakingIntent;
 use lib_conxian_core::control_model::TrustTier;
+use secp256k1::{schnorr, Message, Secp256k1, XOnlyPublicKey};
 use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 #[cfg(test)]
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashSet};
@@ -515,10 +517,22 @@ impl ChainAdapter for BabylonAdapter {
     async fn verify_state_proof(&self, proof_metadata: Value) -> ConxianResult<bool> {
         info!(chain = "babylon", "Verifying Babylon finality proof");
 
+        // G-BB1: EOTS verification — if proof metadata includes an EOTS
+        // signature and finality-provider pubkey, perform full Schnorr
+        // verification before the height-recency check.
+        if let (Some(pubkey_hex), Some(sig_hex), Some(block_hash)) = (
+            proof_metadata["eots_pubkey"].as_str(),
+            proof_metadata["eots_signature"].as_str(),
+            proof_metadata["block_hash"].as_str(),
+        ) {
+            if !verify_eots_signature(pubkey_hex, block_hash, sig_hex) {
+                warn!(chain = "babylon", "EOTS signature verification failed");
+                return Ok(false);
+            }
+        }
+
         // If a Babylon source is configured, require explicit BTC height
         // metadata and use the canonical tip for the bounded recency check.
-        // EOTS and full finality verification remain outside this issue's
-        // scope. Never fall through to rehearsal-mode acceptance here.
         if self.header_source.is_some() {
             let Some(proof_height) = proof_metadata["btc_height"]
                 .as_u64()
@@ -535,6 +549,114 @@ impl ChainAdapter for BabylonAdapter {
         // that have not supplied Babylon BTC proof metadata yet.
         let proof_type = proof_metadata["type"].as_str().unwrap_or("unknown");
         Ok(proof_type == "finality_gadget")
+    }
+}
+
+/// G-BB1: Verify a Babylon EOTS (Extractable One-Time Signature) attestation.
+///
+/// EOTS is a Schnorr-based signature scheme where a finality provider signs
+/// block hashes. If the provider double-signs (signs two different blocks at
+/// the same height), anyone can extract the secret key from the two signatures
+/// and slash the provider's stake.
+///
+/// This function verifies a single EOTS signature against a finality provider's
+/// x-only public key and a block hash. It returns `true` iff the Schnorr
+/// signature is valid under BIP340 rules.
+pub fn verify_eots_signature(pubkey_hex: &str, block_hash: &str, sig_hex: &str) -> bool {
+    let secp = Secp256k1::verification_only();
+
+    let pubkey_bytes: Vec<u8> = match <Vec<u8> as bitcoin::hex::FromHex>::from_hex(pubkey_hex) {
+        Ok(b) if b.len() == 32 => b,
+        _ => {
+            warn!("EOTS: invalid pubkey hex length");
+            return false;
+        }
+    };
+
+    let pubkey = match XOnlyPublicKey::from_slice(&pubkey_bytes) {
+        Ok(pk) => pk,
+        Err(e) => {
+            warn!("EOTS: invalid pubkey: {e}");
+            return false;
+        }
+    };
+
+    let sig_bytes: Vec<u8> = match <Vec<u8> as bitcoin::hex::FromHex>::from_hex(sig_hex) {
+        Ok(b) if b.len() == 64 => b,
+        _ => {
+            warn!("EOTS: invalid signature hex length");
+            return false;
+        }
+    };
+
+    let sig = match schnorr::Signature::from_slice(&sig_bytes) {
+        Ok(s) => s,
+        Err(e) => {
+            warn!("EOTS: invalid signature: {e}");
+            return false;
+        }
+    };
+
+    // EOTS signs SHA256(finality_provider_pubkey || block_hash)
+    let mut hasher = Sha256::new();
+    hasher.update(&pubkey_bytes);
+    hasher.update(block_hash.as_bytes());
+    let msg_hash: [u8; 32] = hasher.finalize().into();
+    let msg = Message::from_digest(msg_hash);
+
+    secp.verify_schnorr(&sig, &msg, &pubkey).is_ok()
+}
+
+/// G-BB3: Babylon staking lifecycle state machine.
+///
+/// Tracks staking operations through their full lifecycle: Locked → Active →
+/// Unbonding → Withdrawn. Each transition requires on-chain evidence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum StakingLifecycle {
+    /// Stake locked but not yet active (waiting for Babylon finality)
+    Locked,
+    /// Stake is active and earning rewards
+    Active,
+    /// Stake is in unbonding period (timelock countdown)
+    Unbonding,
+    /// Stake fully withdrawn
+    Withdrawn,
+}
+
+/// G-BB3: Tracked staking position with lifecycle state.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StakingPosition {
+    pub staker_pubkey: String,
+    pub finality_provider_pubkey: String,
+    pub amount_sats: u64,
+    pub lock_time_blocks: u32,
+    pub state: StakingLifecycle,
+    pub locked_at_height: Option<u64>,
+    pub unbonding_at_height: Option<u64>,
+}
+
+impl StakingPosition {
+    /// Determine the lifecycle state based on current BTC height.
+    ///
+    /// Transitions:
+    /// - Locked → Active: when `current_height >= locked_at_height`
+    /// - Active → Unbonding: when `unbonding_at_height` is set
+    /// - Unbonding → Withdrawn: when `current_height >= unbonding_at_height + lock_time_blocks`
+    pub fn determine_state(&self, current_height: u64) -> StakingLifecycle {
+        let locked_at = self.locked_at_height.unwrap_or(0);
+        let unbonding_at = self.unbonding_at_height.unwrap_or(u64::MAX);
+
+        if unbonding_at < u64::MAX && current_height >= unbonding_at {
+            if current_height >= unbonding_at.saturating_add(self.lock_time_blocks as u64) {
+                StakingLifecycle::Withdrawn
+            } else {
+                StakingLifecycle::Unbonding
+            }
+        } else if current_height >= locked_at && locked_at > 0 {
+            StakingLifecycle::Active
+        } else {
+            StakingLifecycle::Locked
+        }
     }
 }
 
@@ -1307,5 +1429,268 @@ mod tests {
             "4295032832"
         );
         assert!(checked_sub_work(Work::from_be_bytes([0; 32]), one).is_none());
+    }
+
+    // ── G-BB1: EOTS verification tests ──
+
+    #[test]
+    fn eots_verifies_valid_signature() {
+        use secp256k1::{Keypair, Secp256k1};
+
+        let secp = Secp256k1::new();
+        let (sk, _parity) = secp.generate_keypair(&mut secp256k1::rand::thread_rng());
+        let kp = Keypair::from_secret_key(&secp, &sk);
+        let (xonly, _parity) = kp.x_only_public_key();
+        let pubkey_hex = hex::encode(xonly.serialize());
+        let block_hash = "00000000000000000002aabbccddeeff00112233445566778899aabbccddeeff";
+
+        // Sign: SHA256(pubkey || block_hash)
+        let mut hasher = Sha256::new();
+        hasher.update(xonly.serialize());
+        hasher.update(block_hash.as_bytes());
+        let msg_hash: [u8; 32] = hasher.finalize().into();
+        let msg = Message::from_digest(msg_hash);
+        let sig = secp.sign_schnorr(&msg, &kp);
+        let sig_hex = hex::encode(sig.serialize());
+
+        assert!(verify_eots_signature(&pubkey_hex, block_hash, &sig_hex));
+    }
+
+    #[test]
+    fn eots_rejects_wrong_block_hash() {
+        use secp256k1::{Keypair, Secp256k1};
+
+        let secp = Secp256k1::new();
+        let (sk, _parity) = secp.generate_keypair(&mut secp256k1::rand::thread_rng());
+        let kp = Keypair::from_secret_key(&secp, &sk);
+        let (xonly, _parity) = kp.x_only_public_key();
+        let pubkey_hex = hex::encode(xonly.serialize());
+        let block_hash = "00000000000000000002aabbccddeeff00112233445566778899aabbccddeeff";
+
+        // Sign block_hash, but verify against a different hash
+        let mut hasher = Sha256::new();
+        hasher.update(xonly.serialize());
+        hasher.update(block_hash.as_bytes());
+        let msg_hash: [u8; 32] = hasher.finalize().into();
+        let msg = Message::from_digest(msg_hash);
+        let sig = secp.sign_schnorr(&msg, &kp);
+        let sig_hex = hex::encode(sig.serialize());
+
+        let wrong_hash = "11111111111111111111aaaaaaaaaaaaaaaa11111111111111111111aaaaaaaa";
+        assert!(!verify_eots_signature(&pubkey_hex, wrong_hash, &sig_hex));
+    }
+
+    #[test]
+    fn eots_rejects_wrong_pubkey() {
+        use secp256k1::{Keypair, Secp256k1};
+
+        let secp = Secp256k1::new();
+        let (sk, _parity) = secp.generate_keypair(&mut secp256k1::rand::thread_rng());
+        let kp = Keypair::from_secret_key(&secp, &sk);
+        let (xonly, _parity) = kp.x_only_public_key();
+        let block_hash = "00000000000000000002aabbccddeeff00112233445566778899aabbccddeeff";
+
+        let mut hasher = Sha256::new();
+        hasher.update(xonly.serialize());
+        hasher.update(block_hash.as_bytes());
+        let msg_hash: [u8; 32] = hasher.finalize().into();
+        let msg = Message::from_digest(msg_hash);
+        let sig = secp.sign_schnorr(&msg, &kp);
+        let sig_hex = hex::encode(sig.serialize());
+
+        // Use a different keypair's pubkey
+        let (sk2, _parity2) = secp.generate_keypair(&mut secp256k1::rand::thread_rng());
+        let kp2 = Keypair::from_secret_key(&secp, &sk2);
+        let (xonly2, _parity2) = kp2.x_only_public_key();
+        let wrong_pubkey_hex = hex::encode(xonly2.serialize());
+
+        assert!(!verify_eots_signature(
+            &wrong_pubkey_hex,
+            block_hash,
+            &sig_hex
+        ));
+    }
+
+    #[test]
+    fn eots_rejects_invalid_pubkey_hex() {
+        assert!(!verify_eots_signature(
+            "not-hex",
+            "00000000000000000002aabbccddeeff00112233445566778899aabbccddeeff",
+            "aabbccddaabbccddaabbccddaabbccddaabbccddaabbccddaabbccddaabbccdd"
+        ));
+    }
+
+    #[test]
+    fn eots_rejects_short_pubkey() {
+        // 31 bytes instead of 32
+        let short_pubkey = "aabbccddaabbccddaabbccddaabbccddaabbccddaabbccddaabbccddaabbcc";
+        assert!(!verify_eots_signature(
+            short_pubkey,
+            "00000000000000000002aabbccddeeff00112233445566778899aabbccddeeff",
+            "aabbccddaabbccddaabbccddaabbccddaabbccddaabbccddaabbccddaabbccdd"
+        ));
+    }
+
+    #[test]
+    fn eots_rejects_invalid_signature_hex() {
+        assert!(!verify_eots_signature(
+            "aabbccddaabbccddaabbccddaabbccddaabbccddaabbccddaabbccddaabbccdd",
+            "00000000000000000002aabbccddeeff00112233445566778899aabbccddeeff",
+            "not-a-signature"
+        ));
+    }
+
+    #[test]
+    fn eots_rejects_short_signature() {
+        // 63 bytes instead of 64
+        let short_sig = "aabbccddaabbccddaabbccddaabbccddaabbccddaabbccddaabbccddaabbcc";
+        assert!(!verify_eots_signature(
+            "aabbccddaabbccddaabbccddaabbccddaabbccddaabbccddaabbccddaabbccdd",
+            "0000000000000000000000000000000000000000000000000000000000000000",
+            short_sig
+        ));
+    }
+
+    #[test]
+    fn eots_tampered_signature_fails() {
+        use secp256k1::{Keypair, Secp256k1};
+
+        let secp = Secp256k1::new();
+        let (sk, _parity) = secp.generate_keypair(&mut secp256k1::rand::thread_rng());
+        let kp = Keypair::from_secret_key(&secp, &sk);
+        let (xonly, _parity) = kp.x_only_public_key();
+        let pubkey_hex = hex::encode(xonly.serialize());
+        let block_hash = "00000000000000000002aabbccddeeff00112233445566778899aabbccddeeff";
+
+        let mut hasher = Sha256::new();
+        hasher.update(xonly.serialize());
+        hasher.update(block_hash.as_bytes());
+        let msg_hash: [u8; 32] = hasher.finalize().into();
+        let msg = Message::from_digest(msg_hash);
+        let sig = secp.sign_schnorr(&msg, &kp);
+        let mut sig_bytes = sig.serialize();
+
+        // Flip a bit in the signature
+        sig_bytes[10] ^= 0x01;
+        let tampered_sig = match schnorr::Signature::from_slice(&sig_bytes) {
+            Ok(s) => s,
+            Err(_) => {
+                // If the bit flip makes the signature invalid structurally, that's also a fail
+                return;
+            }
+        };
+        let tampered_sig_hex = hex::encode(tampered_sig.serialize());
+        assert!(!verify_eots_signature(
+            &pubkey_hex,
+            block_hash,
+            &tampered_sig_hex
+        ));
+    }
+
+    // ── G-BB3: Staking lifecycle tests ──
+
+    #[test]
+    fn staking_lifecycle_locked_initial_state() {
+        let pos = StakingPosition {
+            staker_pubkey: "staker1".into(),
+            finality_provider_pubkey: "fp1".into(),
+            amount_sats: 100_000,
+            lock_time_blocks: 144,
+            state: StakingLifecycle::Locked,
+            locked_at_height: Some(800_000),
+            unbonding_at_height: None,
+        };
+        // Before locked_at_height
+        assert_eq!(pos.determine_state(799_999), StakingLifecycle::Locked);
+        // At locked_at_height: becomes active
+        assert_eq!(pos.determine_state(800_000), StakingLifecycle::Active);
+        assert_eq!(pos.determine_state(810_000), StakingLifecycle::Active);
+    }
+
+    #[test]
+    fn staking_lifecycle_unbonding_transition() {
+        let pos = StakingPosition {
+            staker_pubkey: "staker1".into(),
+            finality_provider_pubkey: "fp1".into(),
+            amount_sats: 100_000,
+            lock_time_blocks: 144,
+            state: StakingLifecycle::Active,
+            locked_at_height: Some(800_000),
+            unbonding_at_height: Some(810_000),
+        };
+        // Before unbonding starts
+        assert_eq!(pos.determine_state(800_000), StakingLifecycle::Active);
+        // At unbonding height
+        assert_eq!(pos.determine_state(810_000), StakingLifecycle::Unbonding);
+    }
+
+    #[test]
+    fn staking_lifecycle_withdrawn_after_unbonding_period() {
+        let pos = StakingPosition {
+            staker_pubkey: "staker1".into(),
+            finality_provider_pubkey: "fp1".into(),
+            amount_sats: 100_000,
+            lock_time_blocks: 144,
+            state: StakingLifecycle::Unbonding,
+            locked_at_height: Some(800_000),
+            unbonding_at_height: Some(810_000),
+        };
+        // During unbonding
+        assert_eq!(
+            pos.determine_state(810_000 + 143),
+            StakingLifecycle::Unbonding
+        );
+        // After unbonding period
+        assert_eq!(
+            pos.determine_state(810_000 + 144),
+            StakingLifecycle::Withdrawn
+        );
+        assert_eq!(pos.determine_state(820_000), StakingLifecycle::Withdrawn);
+    }
+
+    #[test]
+    fn staking_lifecycle_no_locked_height_stays_locked() {
+        let pos = StakingPosition {
+            staker_pubkey: "staker1".into(),
+            finality_provider_pubkey: "fp1".into(),
+            amount_sats: 100_000,
+            lock_time_blocks: 144,
+            state: StakingLifecycle::Locked,
+            locked_at_height: None,
+            unbonding_at_height: None,
+        };
+        assert_eq!(pos.determine_state(900_000), StakingLifecycle::Locked);
+    }
+
+    #[test]
+    fn staking_lifecycle_serde_roundtrip() {
+        let pos = StakingPosition {
+            staker_pubkey: "sp1".into(),
+            finality_provider_pubkey: "fp1".into(),
+            amount_sats: 500_000,
+            lock_time_blocks: 200,
+            state: StakingLifecycle::Active,
+            locked_at_height: Some(800_000),
+            unbonding_at_height: None,
+        };
+        let json = serde_json::to_string(&pos).unwrap();
+        let back: StakingPosition = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.staker_pubkey, "sp1");
+        assert_eq!(back.amount_sats, 500_000);
+        assert!(matches!(back.state, StakingLifecycle::Active));
+    }
+
+    #[test]
+    fn staking_lifecycle_all_states_serializable() {
+        for state in [
+            StakingLifecycle::Locked,
+            StakingLifecycle::Active,
+            StakingLifecycle::Unbonding,
+            StakingLifecycle::Withdrawn,
+        ] {
+            let json = serde_json::to_string(&state).unwrap();
+            let back: StakingLifecycle = serde_json::from_str(&json).unwrap();
+            assert_eq!(back, state);
+        }
     }
 }

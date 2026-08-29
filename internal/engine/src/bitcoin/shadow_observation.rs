@@ -50,6 +50,8 @@ pub struct SourceObservation<T> {
     pub data: Option<T>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error_category: Option<ObservationErrorCategory>,
+    /// Unix timestamp (seconds) when this observation was captured
+    pub observed_at_unix: u64,
 }
 
 impl<T> SourceObservation<T> {
@@ -58,6 +60,7 @@ impl<T> SourceObservation<T> {
             availability: ObservationAvailability::Observed,
             data: Some(data),
             error_category: None,
+            observed_at_unix: now_unix(),
         }
     }
 
@@ -66,6 +69,7 @@ impl<T> SourceObservation<T> {
             availability: ObservationAvailability::Unavailable,
             data: None,
             error_category: Some(category),
+            observed_at_unix: now_unix(),
         }
     }
 
@@ -74,8 +78,16 @@ impl<T> SourceObservation<T> {
             availability: ObservationAvailability::DependencyUnavailable,
             data: None,
             error_category: None,
+            observed_at_unix: now_unix(),
         }
     }
+}
+
+fn now_unix() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -107,6 +119,8 @@ pub struct FeeEstimateObservation {
     pub fee_rate_sat_vb: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error_category: Option<ObservationErrorCategory>,
+    /// Unix timestamp (seconds) when this fee estimate was captured
+    pub observed_at_unix: u64,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -184,6 +198,33 @@ pub struct DeploymentObservation {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+/// Tracks the confidence and calibration metadata for shadow-observed data
+/// used in fee-bump decisions, route selection, and BIP-110 deployment tracking.
+///
+/// See [#245](https://github.com/Conxian/conxian-gateway/issues/245).
+pub struct RouteConfidence {
+    /// Unix timestamp (seconds) of when the observation was captured
+    pub observed_at_unix: u64,
+    /// How fresh the fee-estimate source is, in milliseconds since observation
+    pub source_freshness_ms: u64,
+    /// Fraction of advertised mempool / network peers covered (0.0–1.0).
+    /// Always 1.0 for a single, directly-configured Bitcoin Core node.
+    pub coverage_fraction: f64,
+    /// Optional calibration metadata (source version, network, peer count)
+    pub calibration: Option<CalibrationMeta>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CalibrationMeta {
+    /// Bitcoin Core version string (e.g. "280000")
+    pub version: String,
+    /// Network name (e.g. "main", "test", "signet")
+    pub network: String,
+    /// Number of peers connected at observation time
+    pub connections: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct BitcoinCoreShadowObservation {
     pub network_info: SourceObservation<CoreNetworkInfo>,
     pub blockchain_info: SourceObservation<CoreBlockchainInfo>,
@@ -191,6 +232,8 @@ pub struct BitcoinCoreShadowObservation {
     pub mempool_info: SourceObservation<CoreMempoolInfo>,
     pub best_block_stats: SourceObservation<CoreBestBlockStats>,
     pub deployment: DeploymentObservation,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub route_confidence: Option<RouteConfidence>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -514,12 +557,33 @@ impl BitcoinCoreShadowObserver for BitcoinCoreShadowObserverClient {
         let best_block_stats = self.observe_block_stats(&blockchain_info).await;
 
         Ok(BitcoinCoreShadowObservation {
-            network_info,
-            blockchain_info,
+            network_info: network_info.clone(),
+            blockchain_info: blockchain_info.clone(),
             fee_estimates: [estimate_2, estimate_6, estimate_12],
             mempool_info,
             best_block_stats,
             deployment,
+            route_confidence: Some(RouteConfidence {
+                observed_at_unix: network_info.observed_at_unix,
+                source_freshness_ms: estimate_2
+                    .observed_at_unix
+                    .saturating_sub(network_info.observed_at_unix)
+                    .saturating_mul(1000),
+                coverage_fraction: 1.0,
+                calibration: Some(CalibrationMeta {
+                    version: network_info
+                        .data
+                        .as_ref()
+                        .map(|n| n.version.to_string())
+                        .unwrap_or_default(),
+                    network: blockchain_info
+                        .data
+                        .as_ref()
+                        .map(|b| b.chain.clone())
+                        .unwrap_or_default(),
+                    connections: 0,
+                }),
+            }),
         })
     }
 }
@@ -624,6 +688,7 @@ fn parse_fee_estimate(
         availability: FeeEstimateAvailability::Observed,
         fee_rate_sat_vb: Some(fee_rate_sat_vb),
         error_category: None,
+        observed_at_unix: now_unix(),
     })
 }
 
@@ -634,6 +699,7 @@ fn no_fee_estimate(target_blocks: u16) -> FeeEstimateObservation {
         availability: FeeEstimateAvailability::NoEstimate,
         fee_rate_sat_vb: None,
         error_category: None,
+        observed_at_unix: now_unix(),
     }
 }
 
@@ -647,6 +713,7 @@ fn unavailable_fee_estimate(
         availability: FeeEstimateAvailability::Unavailable,
         fee_rate_sat_vb: None,
         error_category: Some(category),
+        observed_at_unix: now_unix(),
     }
 }
 

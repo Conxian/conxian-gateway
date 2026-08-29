@@ -71,6 +71,10 @@ pub fn configure_routes(
         .route("/erp/sync", post(handlers::sync_erp_ledger))
         .route("/settle", post(handlers::settle_job_card))
         .route("/iso20022/payment", post(handlers::generate_iso_payment))
+        .route(
+            "/iso20022/pain001",
+            post(handlers::generate_iso_pain001_payment),
+        )
         .route("/iso20022/pacs008", post(handlers::ingress_iso20022))
         .route("/iso20022/pacs009", post(handlers::ingress_iso20022))
         .route("/settlement/papss", post(handlers::ingress_papss))
@@ -79,6 +83,7 @@ pub fn configure_routes(
         .route("/settlement/spfs", post(handlers::ingress_spfs))
         .route("/settlement/mbridge", post(handlers::ingress_mbridge))
         .route("/ingress/iso20022", post(handlers::ingress_iso20022))
+        .route("/ingress/pain001", post(handlers::ingress_iso20022))
         .route("/ingress/papss", post(handlers::ingress_papss))
         .route("/ingress/brics", post(handlers::ingress_brics))
         .route("/ingress/cips", post(handlers::ingress_cips))
@@ -93,6 +98,17 @@ pub fn configure_routes(
             post(handlers::toggle_bounty_payouts),
         )
         .route("/pos/offline", post(handlers::handle_offline_pos))
+        .route("/pos/event", post(handlers::ingress_pos_event))
+        .route("/ingress/pos", post(handlers::ingress_pos_event))
+        .route("/ingress/edi", post(handlers::ingress_edi_purchase_order))
+        .route("/supply/edi", post(handlers::ingress_edi_purchase_order))
+        .route("/invoicing/ubl", post(handlers::ingress_ubl_invoice))
+        .route("/ingress/invoice", post(handlers::ingress_ubl_invoice))
+        .route(
+            "/compliance/zk-kyc",
+            post(handlers::extract_zk_kyc_commitment),
+        )
+        .route("/ingress/kyc", post(handlers::extract_zk_kyc_commitment))
         .route("/pos/sync", post(handlers::sync_offline_receipts))
         .route("/handoff/status", get(handlers::get_handoff_status))
         .route("/handoff/update", post(handlers::update_handoff_state))

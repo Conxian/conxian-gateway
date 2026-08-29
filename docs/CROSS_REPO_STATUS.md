@@ -289,3 +289,14 @@ Before starting work on any repo, verify:
 
 *This file is maintained by agent sessions as a timestamped snapshot.*
 *Last Major Update: 2026-07-22T14:42:43Z (timestamped #245/#222 audit snapshot; PR #274 merged at observation time; #216/#219 milestones, #258, #268, #272, #273, and #274 merged; six Gateway issues open)*
+
+---
+
+## Session Update — 2026-08-19 (Session 52)
+- **G-FI2 Closed**: Shipped ISO 20022 `pacs.008.001.08` customer credit transfer XML builder, validator, compliance normalization, and API endpoint (`/api/v1/fiat/pacs008/generate`).
+- **Research Expansion**: Updated candidate matrices, gap analysis, and cross-repo status logs for end-to-end audit continuity across Conxian repositories.
+
+## Session Update — 2026-08-20 (Session 53 & 54)
+- **G-BB1 Closed**: Implemented Babylon EOTS Schnorr attestation verification and double-sign key extraction $x = (s_1 - s_2)/(e_1 - e_2) \pmod n$ in `internal/engine/src/bitcoin/babylon_adapter.rs`.
+- **SDK Alignment & Feature Expansion**: Updated `@conxian/client-sdk` and `@conxian/schemas` with full TypeScript interfaces and client methods for `generatePacs008Payment`, `resolveIdentity`, `getSovereignYieldIndex`, and `verifyCbtcAttestation`.
+- **Knowledge Base Synchronization**: Validated and updated cross-repo knowledge bases, candidate matrices, and gap analysis logs.

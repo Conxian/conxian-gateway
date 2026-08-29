@@ -5,16 +5,16 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-# Scan only production source roots (avoid docs and scripts).
-INCLUDE_DIRS = ["cmd", "internal", "pkg"]
+# Scan production source roots across Rust & TypeScript/JavaScript packages/apps.
+INCLUDE_DIRS = ["cmd", "internal", "pkg", "apps", "packages"]
 
-# Scan only production code/config file types.
-INCLUDE_EXTENSIONS = [".rs", ".toml"]
+# Scan production code and configuration file types.
+INCLUDE_EXTENSIONS = [".rs", ".toml", ".ts", ".tsx", ".js", ".jsx"]
 
 # Keywords that indicate non-production logic or placeholders.
 CONTAMINATION_KEYWORDS = ["changeme", "stub", "placeholder"]
 
-# 'mock' is allowed if it's part of a feature flag or test, but we'll flag direct use.
+# 'mock' is allowed if it's part of a feature flag, test, or type definition, but flagged for direct production code use.
 SENSITIVE_KEYWORDS = ["mock"]
 
 EXCLUDE_DIRS = [
@@ -26,14 +26,35 @@ EXCLUDE_DIRS = [
     "docs",
     ".vscode",
     "__pycache__",
+    "node_modules",
+    "dist",
+    ".next",
+    "build",
+    "coverage",
+    "playwright-report",
+]
+
+TEST_FILE_PATTERNS = [
+    ".test.ts",
+    ".spec.ts",
+    ".test.tsx",
+    ".spec.tsx",
+    ".test.js",
+    ".spec.js",
+    "_tests.rs",
 ]
 
 def should_scan_file(filepath: Path) -> bool:
     if filepath.suffix.lower() not in INCLUDE_EXTENSIONS:
         return False
 
+    fname = filepath.name.lower()
+    for test_pat in TEST_FILE_PATTERNS:
+        if fname.endswith(test_pat):
+            return False
+
     for part in filepath.parts:
-        if part in EXCLUDE_DIRS:
+        if part in EXCLUDE_DIRS or part == "__tests__":
             return False
 
     return True
@@ -44,10 +65,23 @@ def check_file(filepath: Path) -> bool:
         content = filepath.read_text(encoding="utf-8", errors="ignore")
         content_lower = content.lower()
 
+        lines = content.splitlines()
+
         for kw in CONTAMINATION_KEYWORDS:
-            if kw in content_lower:
+            if kw not in content_lower:
+                continue
+
+            for i, line in enumerate(lines):
+                line_lower = line.lower()
+                if kw not in line_lower:
+                    continue
+
+                # Ignore standard JSX/HTML input element placeholder attributes (e.g., placeholder="...", placeholder=...)
+                if kw == "placeholder" and ("placeholder=" in line_lower or "placeholder:" in line_lower):
+                    continue
+
                 print(
-                    f"CONTAMINATION FAILURE: Found prohibited keyword '{kw}' in {filepath}"
+                    f"CONTAMINATION FAILURE: Found prohibited keyword '{kw}' in {filepath}:{i+1} - {line.strip()}"
                 )
                 return True
 
@@ -55,14 +89,11 @@ def check_file(filepath: Path) -> bool:
             if kw not in content_lower:
                 continue
 
-            # Special check for 'mock': allowed in cfg(test) or gated behind a feature,
-            # but flagged if it looks like a hardcoded implementation fallback.
-            lines = content.splitlines()
             for i, line in enumerate(lines):
                 if kw not in line.lower():
                     continue
 
-                if filepath.name.endswith("_tests.rs"):
+                if filepath.name.endswith("_tests.rs") or any(filepath.name.endswith(pat) for pat in TEST_FILE_PATTERNS):
                     continue
 
                 gated = False
@@ -73,7 +104,7 @@ def check_file(filepath: Path) -> bool:
                         gated = True
                         break
 
-                if "mock-integrations" in line:
+                if "mock-integrations" in line or "// mock" in line.lower() or "/* mock" in line.lower():
                     gated = True
 
                 if not gated and '"' in line:

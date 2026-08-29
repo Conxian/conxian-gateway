@@ -99,6 +99,7 @@
 - Historical evidence record: [`BITVM3_BITVMX_RESEARCH_EXPANSION.md`](./BITVM3_BITVMX_RESEARCH_EXPANSION.md).
 - [`tools/bitvmx-eval/`](../../tools/bitvmx-eval/) and [`BITVMX_EVAL.md`](./BITVMX_EVAL.md) are isolated, feature-gated BitVMX-CPU evaluation tooling; they are not BitVM3, BitVMX-GC, garbled-circuit verification, Groth16 verification, settlement, or compliance paths.
 - [`bitvm_adapter.rs`](../../internal/engine/src/bitcoin/bitvm_adapter.rs) parses and validates the canonical envelope and delegates to an injected verifier. Its legacy state-proof method remains metadata-only.
+- [`bitvm3_adapter.rs`](../../internal/engine/src/bitcoin/bitvm3_adapter.rs) is a research-only structural placeholder (Session 57+, PR #322). It implements `ChainAdapter` with fail-closed verification and research markers; no garbled-circuit or recursive-proof backend is wired.
 - [`groth16_verifier.rs`](../../internal/engine/src/bitcoin/groth16_verifier.rs) defines a backend-neutral boundary and a deterministic fixture mock; it does not perform cryptographic Groth16 pairings.
 - [`UniversalVerifier`](../../internal/compliance/src/verifier.rs) has no special production Groth16, BitVM3, BitVMX-GC, or recursive SNARK wiring.
 - The upstream BitVMX Bitcoin mainnet SNARK transaction and BitVM signet demo are separately classified in the canonical refresh; neither is BitVM3-GC or Conxian production evidence.

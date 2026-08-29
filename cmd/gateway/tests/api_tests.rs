@@ -239,6 +239,7 @@ fn observed<T>(data: T) -> SourceObservation<T> {
         availability: ObservationAvailability::Observed,
         data: Some(data),
         error_category: None,
+        observed_at_unix: 0,
     }
 }
 
@@ -258,6 +259,7 @@ fn sample_shadow_observation() -> BitcoinCoreShadowObservation {
                 availability: FeeEstimateAvailability::Observed,
                 fee_rate_sat_vb: Some(25.0),
                 error_category: None,
+                observed_at_unix: 0,
             },
             FeeEstimateObservation {
                 target_blocks: 6,
@@ -265,6 +267,7 @@ fn sample_shadow_observation() -> BitcoinCoreShadowObservation {
                 availability: FeeEstimateAvailability::NoEstimate,
                 fee_rate_sat_vb: None,
                 error_category: None,
+                observed_at_unix: 0,
             },
             FeeEstimateObservation {
                 target_blocks: 12,
@@ -272,6 +275,7 @@ fn sample_shadow_observation() -> BitcoinCoreShadowObservation {
                 availability: FeeEstimateAvailability::Observed,
                 fee_rate_sat_vb: Some(5.0),
                 error_category: None,
+                observed_at_unix: 0,
             },
         ],
         mempool_info: observed(CoreMempoolInfo {
@@ -301,6 +305,7 @@ fn sample_shadow_observation() -> BitcoinCoreShadowObservation {
             reported_state: None,
             error_category: None,
         },
+        route_confidence: None,
     }
 }
 
@@ -728,16 +733,19 @@ async fn test_core_shadow_observation_preserves_independent_partial_sources() {
         availability: ObservationAvailability::Unavailable,
         data: None,
         error_category: Some(ObservationErrorCategory::Transport),
+        observed_at_unix: 0,
     };
     observation.best_block_stats = SourceObservation {
         availability: ObservationAvailability::DependencyUnavailable,
         data: None,
         error_category: None,
+        observed_at_unix: 0,
     };
     observation.mempool_info = SourceObservation {
         availability: ObservationAvailability::Unavailable,
         data: None,
         error_category: Some(ObservationErrorCategory::InvalidResponse),
+        observed_at_unix: 0,
     };
     let observer = Arc::new(StaticShadowObserver {
         result: Ok(observation),
@@ -2670,6 +2678,263 @@ async fn test_admin_routes_unauthorized_rejection() {
             StatusCode::UNAUTHORIZED,
             "Endpoint {} should require authentication",
             uri
+        );
+    }
+}
+
+// ── Admin Endpoint Tests ────────────────────────────────────────────────
+
+#[tokio::test]
+async fn admin_release_request_approval_requires_auth() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/admin/v1/releases/request-approval")
+                .method("POST")
+                .header("Content-Type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&json!({
+                        "release_id": "v0.1.6",
+                        "artifact_hash": "abc123",
+                        "environment": "staged",
+                        "requester": "ci-bot"
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn admin_release_request_approval_rejects_invalid_token() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/admin/v1/releases/request-approval")
+                .method("POST")
+                .header("Content-Type", "application/json")
+                .header("Authorization", "Bearer wrong-token")
+                .body(Body::from(
+                    serde_json::to_vec(&json!({
+                        "release_id": "v0.1.6",
+                        "artifact_hash": "abc123",
+                        "environment": "staged",
+                        "requester": "ci-bot"
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn admin_release_request_approval_succeeds_with_valid_token() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/admin/v1/releases/request-approval")
+                .method("POST")
+                .header("Content-Type", "application/json")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .body(Body::from(
+                    serde_json::to_vec(&json!({
+                        "release_id": "v0.1.6",
+                        "artifact_hash": "abc123",
+                        "environment": "staged",
+                        "requester": "ci-bot"
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let val: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(val["status"], "pending");
+    assert!(val["action_id"].as_str().unwrap().starts_with("req-"));
+    assert!(val["audit_event_id"]
+        .as_str()
+        .unwrap()
+        .starts_with("audit-"));
+}
+
+#[tokio::test]
+async fn admin_release_decision_requires_auth() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/admin/v1/releases/decision")
+                .method("POST")
+                .header("Content-Type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&json!({
+                        "release_id": "v0.1.6",
+                        "decision": "approved",
+                        "approver": "alice"
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn admin_release_decision_succeeds_with_valid_token() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/admin/v1/releases/decision")
+                .method("POST")
+                .header("Content-Type", "application/json")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .body(Body::from(
+                    serde_json::to_vec(&json!({
+                        "release_id": "v0.1.6",
+                        "decision": "approved",
+                        "approver": "alice"
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let val: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(val["status"], "approved");
+    assert!(val["action_id"].as_str().unwrap().starts_with("dec-"));
+}
+
+#[tokio::test]
+async fn admin_governance_decision_succeeds_with_valid_token() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/admin/v1/governance/decision")
+                .method("POST")
+                .header("Content-Type", "application/json")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .body(Body::from(
+                    serde_json::to_vec(&json!({
+                        "proposal_id": "CON-229",
+                        "decision": "accepted",
+                        "voter": "bob",
+                        "signature": "tee-sig-abc123"
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let val: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(val["status"], "accepted");
+    assert!(val["action_id"].as_str().unwrap().starts_with("gov-"));
+    assert!(val["audit_event_id"]
+        .as_str()
+        .unwrap()
+        .starts_with("audit-"));
+}
+
+#[tokio::test]
+async fn admin_governance_decision_records_rejected_vote() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/admin/v1/governance/decision")
+                .method("POST")
+                .header("Content-Type", "application/json")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .body(Body::from(
+                    serde_json::to_vec(&json!({
+                        "proposal_id": "CON-400",
+                        "decision": "rejected",
+                        "voter": "carol",
+                        "signature": "eoc-sig-xyz789"
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let val: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(val["status"], "rejected");
+}
+
+#[tokio::test]
+async fn admin_endpoints_reject_malformed_json() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    for uri in &[
+        "/admin/v1/releases/request-approval",
+        "/admin/v1/releases/decision",
+        "/admin/v1/governance/decision",
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(*uri)
+                    .method("POST")
+                    .header("Content-Type", "application/json")
+                    .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                    .body(Body::from("not-json"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert!(
+            response.status().is_client_error(),
+            "Endpoint {} should reject malformed JSON, got {}",
+            uri,
+            response.status()
         );
     }
 }

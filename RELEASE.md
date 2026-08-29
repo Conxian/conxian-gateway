@@ -260,6 +260,38 @@ tag.
 
 ## 7. External and admin-only controls
 
+The release pipeline (`release.yml`) is complete and fail-closed. The remaining
+governance items are GitHub-side configuration changes tracked in
+[#222](https://github.com/Conxian/conxian-gateway/issues/222):
+
+### Required branch protection on `main`
+- Require the 5 baseline checks: `baseline-rust`, `baseline-node`,
+  `baseline-cargo-audit`, `baseline-secret-scan`, `baseline-lightning`
+- Require PR-scoped workflows: `rust-ci`, `node-ci`, `rgb-regtest-e2e`,
+  `liquid-e2e`
+- Require at least one approving review before merge
+- Require branches to be up to date before merging
+
+### `release` environment protection
+- Add required reviewers (minimum 2)
+- Restrict to protected branches/tags only
+- Enable tag force-update protection for `v*` tags
+
+### Tag protection
+- Prevent force-pushes to `v*` tags
+- Require tag creator to have write access
+
+### Live release rehearsal
+- Push a `v0.1.0-rc1` tag to trigger the full pipeline
+- Verify: artifact set, checksum manifest, CycloneDX SBOM, SLSA attestation,
+  GitHub Release assets, verifier output (`verify_release_artifacts.py`)
+
+### crates.io publication (when ready)
+- Replace internal `path = "..."` dependencies with publishable version
+  requirements before `cargo publish` can succeed
+- Configure `CARGO_REGISTRY_TOKEN` in the `release` environment
+- The `publish-crates-io` workflow is manual `workflow_dispatch` only
+
 This repository change does not claim to have configured:
 
 - required status checks or branch protection/rulesets for `main`;

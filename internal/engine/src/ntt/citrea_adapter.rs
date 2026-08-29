@@ -86,8 +86,25 @@ impl ChainAdapter for CitreaAdapter {
 
     async fn verify_state_proof(&self, proof_metadata: Value) -> ConxianResult<bool> {
         info!(chain = "citrea", "Verifying Citrea ZK-proof");
-        // Shadow mode: check for ZK-proof commitment in metadata
-        let proof = proof_metadata["zk_proof"].as_str();
-        Ok(proof.is_some())
+
+        // G-CT1: Validate zk_proof is a well-formed hex commitment (32+ bytes)
+        let proof = proof_metadata["zk_proof"].as_str().unwrap_or("");
+        if proof.is_empty() {
+            warn!(chain = "citrea", "Missing zk_proof in metadata");
+            return Ok(false);
+        }
+        let proof_bytes: Vec<u8> = match <Vec<u8> as bitcoin::hex::FromHex>::from_hex(proof) {
+            Ok(b) if b.len() >= 32 => b,
+            _ => {
+                warn!(chain = "citrea", "Invalid zk_proof hex or too short");
+                return Ok(false);
+            }
+        };
+        info!(
+            chain = "citrea",
+            proof_len = proof_bytes.len(),
+            "ZK-proof structurally valid"
+        );
+        Ok(true)
     }
 }

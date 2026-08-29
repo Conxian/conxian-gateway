@@ -9,7 +9,7 @@ members = [
 ]
 
 [workspace.package]
-rust-version = "1.96"
+rust-version = "1.97"
 version = "0.1.5"
 edition = "2021"
 authors = ["Conxian Gateway Contributors"]
@@ -17,7 +17,7 @@ license = "MIT"
 description = "Institutional-grade Bitcoin/Stacks Gateway"
 
 [workspace.dependencies]
-lib-conxian-core = { path = "../lib-conxian-core" }
+lib-conxian-core = { git = "https://github.com/Conxian/lib-conxian-core", tag = "v0.3.2" }
 urlencoding = "2.1.3"
 blake2 = "0.10.6"
 minreq = { version = "3.0.0", features = ["https"] }
@@ -44,6 +44,7 @@ axum = { version = "0.8.4" }
 tower = { version = "0.5.2", features = ["util"] }
 tower-http = { version = "0.7.0", features = ["cors", "trace"] }
 axum-test = "21.0.0"
+wiremock = "0.6.2"
 hyper = { version = "1.10.1", features = ["full"] }
 url = "2.5.8"
 redis = { version = "1.3.0", features = ["tokio-rustls-comp", "json"] }

@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Implemented ISO 20022 XML Schema Validation & XSD structure hardening (`validate_iso20022_xml_structure`) in `internal/compliance/src/zkc.rs` (G-FI1).
+- Added XML structure, namespace verification (pacs.008, pacs.009, camt), and syntax error checks for ISO 20022 ingress normalization.
+- Added comprehensive unit tests in `zkc_iso20022_tests` and updated research knowledge base (`GAP_ANALYSIS_2026-08-07.md`, `CANDIDATE_MATRIX.md`).
+
+## [v0.1.5] - 2026-08-07
+
+### Added
 - Implemented 7 missing Python validation scripts in `scripts/` to close CI coverage gaps (CON-1322).
 - Created `docs/audit/GAP_ANALYSIS_AND_SCORING.md` for prioritized risk management.
 - Added `docs/research/OPPORTUNITY_MAP_AND_EXPANSION.md` covering BitVM3 and local-first verification.
@@ -21,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `docs/research/UNIVERSAL_CHAIN_RESEARCH.md` covering multi-chain adapter patterns and event bus delivery logic.
 
 ### Changed
+- Bumped `lib-conxian-core` dependency to v0.3.2 (tag `v0.3.2`, published to crates.io).
+- Updated `Cargo.lock` to resolve `lib-conxian-core` from crates.io via direct-source git tag.
 - Standardized `actions/checkout` version to `v4.2.2` (pinned by SHA) across all local workflows (CON-1324).
 - Centralized `CHANGELOG.md` as a canonical release history record in the repository root.
 - **Hardened CI/CD Pipelines**: Integrated mandatory `contamination_guard` in Rust CI and expanded Node.js CI to include Playwright browser installation and full workspace testing.

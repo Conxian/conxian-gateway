@@ -196,6 +196,7 @@ pub async fn x402_filter(
 fn is_strictly_protected_path(path: &str) -> bool {
     path.ends_with("/settle")
         || path.ends_with("/ingress/iso20022")
+        || path.ends_with("/ingress/pain001")
         || path.ends_with("/ingress/papss")
         || path.ends_with("/ingress/brics")
         || path.ends_with("/erp/sync")

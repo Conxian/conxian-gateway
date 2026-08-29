@@ -111,3 +111,54 @@ export interface DlcBond {
     maturity_date: number;
     sovereign_alignment: boolean;
 }
+
+/**
+ * G-FI2: ISO 20022 pacs.008 Payment Initiation structures.
+ */
+export interface Pacs008PaymentRequest {
+    receiver: string;
+    amount_sbtc: number;
+}
+
+export interface Pacs008PaymentResponse {
+    xml: string;
+}
+
+/**
+ * Tier 1 Identity Resolution structures.
+ */
+export interface IdentityResolutionRequest {
+    identifier: string;
+}
+
+export interface IdentityResolutionResponse {
+    identifier: string;
+    address?: string;
+    bns_name?: string;
+    world_id_verified?: boolean;
+    web3_bio_profile?: any;
+    error?: string;
+}
+
+/**
+ * Sovereign Yield Index (SYI) Treasury structures.
+ */
+export interface SyiResponse {
+    syi_rate: number;
+    btc_quote: number;
+    stx_quote: number;
+    timestamp: number;
+}
+
+/**
+ * Canton cBTC Non-Custodial Verification structures.
+ */
+export interface CbtcVerificationRequest {
+    attestation_proof: any;
+}
+
+export interface CbtcVerificationResponse {
+    verified: boolean;
+    attestation_id?: string;
+    error?: string;
+}
