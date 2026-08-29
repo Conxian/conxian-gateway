@@ -41,7 +41,7 @@ This document defines the required readiness gates across four control domains f
 ### Layer 3: Shared Runtime & SDKs
 *Infrastructure and developer surfaces supporting the stack.*
 
-- **lib-conxian-core / lib-conclave-sdk**
+- **lib-conxian-core / conxius-enclave-sdk**
   - [x] **Legal**: Public exposure of SDK interfaces approved.
   - [x] **Security**: No hardcoded secrets or sentinel values in code.
   - [x] **Technical**: API stability and semver consistency verified.

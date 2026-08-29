@@ -27,7 +27,7 @@ This document serves as the canonical inventory and classification for the Conxi
 | Repository | Role | Production Path | Evaluation Standard |
 | :--- | :--- | :--- | :--- |
 | **lib-conxian-core** | Common models, types, and persistence logic. | `main` (Shared) | Strict semver, backwards compatibility. |
-| **lib-conclave-sdk** | Public developer SDK for Conxian integration. | `main` (Public) | API stability, comprehensive documentation. |
+| **conxius-enclave-sdk** | Public developer SDK for Conxian integration. | `main` (Public) | API stability, comprehensive documentation. |
 | **conxius-platform** | Orchestration, automation, and platform coordination. | `main` (Internal) | Workflow reliability, secret-safe CI. |
 | **stacksorbit** | Deployment automation and infrastructure tools. | `main` (Internal) | Repeatable deployments, audit-ready config. |
 
@@ -59,7 +59,7 @@ This document serves as the canonical inventory and classification for the Conxi
 
 ## 3. Dependency Map
 - **lib-conxian-core** is the foundation for almost all Rust-based L1 and L3 repos.
-- **conxius-wallet** depends on **conxian-gateway** for state and **lib-conclave-sdk** for logic.
+- **conxius-wallet** depends on **conxian-gateway** for state and **conxius-enclave-sdk** for logic.
 - **conxian-nexus** coordinates state across the gateway and protocol layers.
 - **conxius-platform** automates the deployment of **conxian-gateway** and **stacksorbit**.
 

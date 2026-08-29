@@ -67,7 +67,7 @@ pending review/merge and is not part of `main` until it lands.
 | Repository | Production Path | Last Session | W29 Status |
 |------------|-----------------|--------------|------------|
 | **lib-conxian-core** | main (Shared) | ⏳ Not reviewed | - |
-| **lib-conclave-sdk** | main (Public) | ⏳ Not reviewed | - |
+| **conxius-enclave-sdk** | main (Public) | ⏳ Not reviewed | - |
 | **conxius-platform** | main (Internal) | ⏳ Not reviewed | - |
 | **stacksorbit** | main (Internal) | ⏳ Not reviewed | - |
 
@@ -85,7 +85,7 @@ pending review/merge and is not part of `main` until it lands.
 ```
 lib-conxian-core  ←  required (L3 foundation)
 conxius-wallet    →  depends on gateway API (L2)
-lib-conclave-sdk  ←  shares types with SDK (L3)
+conxius-enclave-sdk  ←  shares types with SDK (L3)
 ```
 
 ### Dependency Status

@@ -75,7 +75,7 @@
 | Conxian_UI | ⏳ Not reviewed | Schedule review |
 | conxian-labs-site | ⏳ Not reviewed | Schedule review |
 | lib-conxian-core | ⏳ Not reviewed | Verify types alignment |
-| lib-conclave-sdk | ⏳ Not reviewed | Schedule review |
+| conxius-enclave-sdk | ⏳ Not reviewed | Schedule review |
 | conxius-platform | ⏳ Not reviewed | Schedule review |
 | stacksorbit | ⏳ Not reviewed | Schedule review |
 | conxian-business | ⏳ Not reviewed | Schedule review |
