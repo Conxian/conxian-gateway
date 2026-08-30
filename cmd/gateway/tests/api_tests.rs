@@ -169,6 +169,10 @@ fn setup_app_with_lightning_and_persistence(
         "bitvm".to_string(),
         Arc::new(conxian_engine::BitVmAdapter::new("simulated".to_string())),
     );
+    multi_chain.insert(
+        "bitvm3".to_string(),
+        Arc::new(conxian_engine::BitVm3Adapter::new("simulated".to_string())),
+    );
     let verifier = Arc::new(UniversalVerifier::new(
         compliance.clone() as Arc<dyn CoreVerifier>,
         multi_chain.clone(),
@@ -1821,6 +1825,14 @@ async fn test_list_supported_chains() {
     let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
     let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
     assert!(body["supported_chains"].is_array());
+    let chains: Vec<&str> = body["supported_chains"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|value| value.as_str().unwrap())
+        .collect();
+    assert!(chains.contains(&"bitvm"));
+    assert!(chains.contains(&"bitvm3"));
 }
 
 #[tokio::test]
@@ -1909,6 +1921,96 @@ async fn test_verify_state_proof_bitvm_returns_typed_unavailable() {
     assert_eq!(body["code"], "verifier_unavailable");
     assert_eq!(body["authoritative"], false);
     assert!(body.get("verified").is_none());
+}
+
+#[tokio::test]
+async fn test_verify_state_proof_bitvm3_returns_typed_unavailable() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let payload = json!({
+        "root_hash": "0xdeadbeef..."
+    });
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/chains/bitvm3/verify")
+                .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("Content-Type", "application/json")
+                .header("x-402-payment", "proof-test")
+                .body(Body::from(serde_json::to_string(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(body["chain"], "bitvm3");
+    assert_eq!(body["status"], "unsupported");
+    assert_eq!(body["code"], "verifier_unavailable");
+    assert_eq!(body["authoritative"], false);
+    assert_eq!(body["message"], "BitVM3 verification is unavailable");
+    assert!(body.get("verified").is_none());
+}
+
+#[tokio::test]
+async fn test_prepare_chain_tx_bitvm3_returns_research_only() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let payload = json!({ "dummy": true });
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/chains/bitvm3/prepare")
+                .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("Content-Type", "application/json")
+                .header("x-402-payment", "proof-test")
+                .body(Body::from(serde_json::to_string(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(body["chain"], "bitvm3");
+    assert_eq!(body["status"], "research_only");
+    assert_eq!(body["experimental"], true);
+    assert_eq!(body["production_supported"], false);
+    assert_eq!(body["cryptographic_verification"], false);
+    assert!(body["issue"].as_str().unwrap().contains("189"));
+}
+
+#[tokio::test]
+async fn test_get_bitvm3_chain_height_returns_zero() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/chains/bitvm3/height")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("x-402-payment", "proof-test")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(body["chain"], "bitvm3");
+    assert_eq!(body["height"], 0);
 }
 
 #[tokio::test]

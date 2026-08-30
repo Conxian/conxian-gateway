@@ -8,7 +8,7 @@
 
 | Component | Status | Evidence |
 |-----------|--------|----------|
-| **BitVM3 Adapter** | ✅ Research placeholder | `internal/engine/src/bitcoin/bitvm3_adapter.rs` — 144 lines, fail-closed, 4 contract tests |
+| **BitVM3 Adapter** | ✅ Research placeholder (registry-wired, fail-closed) | `internal/engine/src/bitcoin/bitvm3_adapter.rs` — fail-closed, 4 contract tests; registered as `bitvm3` in the Gateway `multi_chain` registry |
 | **BitVM Adapter (Groth16)** | 🟡 Boundary | `bitvm_adapter.rs` — BN254 envelope, backend-neutral; MockGroth16Verifier only |
 | **BitVM2 Adapter** | 🟡 Boundary | Top-level `bitvm_adapter.rs` — role/encoding/instance validation; SDK path fixed (PR #322) |
 | **BitVMX-CPU Eval** | 🔬 Research | `tools/bitvmx-eval/` — isolated subprocess evaluator; not in production dep graph |
@@ -24,9 +24,16 @@ The structural placeholder is in place. Before any production wiring:
 - **BitVMX-GC**: Targeting 2026; no stable public revision (closed source as of Feb 2026)
 - **Garbled circuit verifier**: GOAT `bitvm2-gc` and `garbled-snark-verifier` are research references with licensing, resource, and validation blockers
 
-### 2. Gateway-Internals (when SDK ships)
-- Wire `BitVm3Adapter` into `UniversalVerifier` dispatcher in `internal/compliance/src/verifier.rs`
-- Add a `bitvm3` variant to `ChainAdapter` factory in `main.rs`
+### 2. Gateway-Internals
+
+Already landed (no SDK required):
+- ✅ `BitVm3Adapter` re-exported from `conxian_engine` (`internal/engine/src/lib.rs`)
+- ✅ `bitvm3` variant registered in the `multi_chain` registry in `main.rs`, so
+  `/api/v1/chains/bitvm3/*` is acknowledged and fails closed (HTTP `501`,
+  `code: verifier_unavailable`, `authoritative: false`)
+- ✅ API-level regression tests cover verify / prepare / height for the lane
+
+Remaining (when a stable garbled-circuit SDK ships):
 - Define BitVM3-specific Groth16/GC envelope schema (extends or parallels existing BN254 envelope)
 - Add positive/negative test vectors for garbled-circuit verification
 - Add HTTP route with fail-closed semantics (follows PR #278 pattern)
