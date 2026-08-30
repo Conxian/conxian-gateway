@@ -17,7 +17,7 @@ pub use billing::{
 pub use bitcoin::Bip340IssuerPolicy;
 pub use bitcoin::{
     BabylonAdapter, BabylonHeaderInfoResponse, BabylonHeaderSource, BabylonHttpClient,
-    BabylonMainChainResponse, BabylonPagination, BabylonTipResponse, BitVmAdapter,
+    BabylonMainChainResponse, BabylonPagination, BabylonTipResponse, BitVm3Adapter, BitVmAdapter,
     BitcoinCoreShadowObservation, BitcoinCoreShadowObserver, BitcoinCoreShadowObserverClient,
     BitcoinListener, BitcoinRpc, BitcoinRpcClient, BtcHeaderInfo, CoreBestBlockStats,
     CoreBlockchainInfo, CoreMempoolInfo, CoreNetworkInfo, DeploymentAlias, DeploymentObservation,
