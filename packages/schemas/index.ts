@@ -142,12 +142,15 @@ export interface IdentityResolutionResponse {
 
 /**
  * Sovereign Yield Index (SYI) Treasury structures.
+ *
+ * BTC/STX USD price quotes are not tracked by the treasury monitor, so they
+ * are optional and omitted rather than synthesized.
  */
 export interface SyiResponse {
     syi_rate: number;
-    btc_quote: number;
-    stx_quote: number;
     timestamp: number;
+    btc_quote?: number;
+    stx_quote?: number;
 }
 
 /**

@@ -300,3 +300,21 @@ Before starting work on any repo, verify:
 - **G-BB1 Closed**: Implemented Babylon EOTS Schnorr attestation verification and double-sign key extraction $x = (s_1 - s_2)/(e_1 - e_2) \pmod n$ in `internal/engine/src/bitcoin/babylon_adapter.rs`.
 - **SDK Alignment & Feature Expansion**: Updated `@conxian/client-sdk` and `@conxian/schemas` with full TypeScript interfaces and client methods for `generatePacs008Payment`, `resolveIdentity`, `getSovereignYieldIndex`, and `verifyCbtcAttestation`.
 - **Knowledge Base Synchronization**: Validated and updated cross-repo knowledge bases, candidate matrices, and gap analysis logs.
+
+## Session Update — 2026-08-30 (Session 59)
+- **Org-wide functionality audit**: Added live-data [`ORG_WIDE_FUNCTIONALITY_AUDIT_2026-08-30.md`](ORG_WIDE_FUNCTIONALITY_AUDIT_2026-08-30.md)
+  covering all 15 repositories, dependency/version alignment, enabled-functionality
+  mapping, all 42 open issues, and a knowledge-base inventory. This supersedes the
+  stale 2026-07-22 snapshot in this file for current state.
+- **Client SDK endpoint correction**: `generatePacs008Payment` previously targeted
+  `/api/v1/fiat/pacs008/generate`, which is not wired; corrected to the actual
+  generation route `/api/v1/iso20022/payment` (`handlers::generate_iso_payment`).
+  The Session 52 note's `/fiat/pacs008/generate` endpoint reference was a
+  plan-not-shipped; the wired pacs.008 generation surface is `/iso20022/payment`.
+- **SYI endpoint wired**: Added read-only `/api/v1/treasury/syi`
+  (`handlers::get_sovereign_yield_index`) returning the real tracked SYI rate and
+  timestamp. BTC/STX USD quotes are not tracked and are omitted rather than
+  synthesized, matching the fail-closed posture.
+- **Portfolio map corrected**: `PORTFOLIO_MAP.md` stale slugs fixed
+  (`Conxian_UI` → `conxian_ui`, `stacksorbit` → `conxius-orbit` archived) and
+  `conxian_market` / `conxian.github.io` added to the Layer 2 inventory.

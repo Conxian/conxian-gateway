@@ -98,7 +98,7 @@ export class ConxianClient {
      * G-FI2: Generate ISO 20022 pacs.008 customer credit transfer payment XML.
      */
     async generatePacs008Payment(receiver: string, amountSbtc: number): Promise<Pacs008PaymentResponse> {
-        return this.request<Pacs008PaymentResponse>("/fiat/pacs008/generate", {
+        return this.request<Pacs008PaymentResponse>("/iso20022/payment", {
             method: "POST",
             body: JSON.stringify({ receiver, amount_sbtc: amountSbtc }),
         });
