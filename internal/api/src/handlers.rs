@@ -1156,10 +1156,11 @@ pub async fn verify_state_proof(
     State(state): State<AppState>,
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    // The generic BitVM route has no production cryptographic verifier. Guard
-    // at the HTTP boundary so no adapter, backend, or downstream authorization
-    // path can turn legacy metadata into a successful verification response.
-    if chain.eq_ignore_ascii_case("bitvm") {
+    // The generic BitVM and BitVM3 routes have no production cryptographic
+    // verifier. Guard at the HTTP boundary so no adapter, backend, or
+    // downstream authorization path can turn legacy metadata into a successful
+    // verification response.
+    if chain.eq_ignore_ascii_case("bitvm") || chain.eq_ignore_ascii_case("bitvm3") {
         return Err(verifier_unavailable_response(&chain));
     }
 
@@ -1174,6 +1175,11 @@ pub async fn verify_state_proof(
 }
 
 fn verifier_unavailable_response(chain: &str) -> (StatusCode, Json<Value>) {
+    let message = match chain.to_ascii_lowercase().as_str() {
+        "bitvm" => "BitVM verification is unavailable".to_string(),
+        "bitvm3" => "BitVM3 verification is unavailable".to_string(),
+        other => format!("{other} verification is unavailable"),
+    };
     (
         StatusCode::NOT_IMPLEMENTED,
         Json(json!({
@@ -1181,7 +1187,7 @@ fn verifier_unavailable_response(chain: &str) -> (StatusCode, Json<Value>) {
             "status": "unsupported",
             "code": "verifier_unavailable",
             "authoritative": false,
-            "message": "BitVM verification is unavailable"
+            "message": message
         })),
     )
 }
