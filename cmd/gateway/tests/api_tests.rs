@@ -607,6 +607,32 @@ async fn test_get_metrics_authorized() {
 }
 
 #[tokio::test]
+async fn test_get_sovereign_yield_index_returns_tracked_rate() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/treasury/syi")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert!(body["syi_rate"].is_number());
+    assert!(body["timestamp"].is_number());
+    // Quotes are not tracked by the treasury monitor and must not be synthesized.
+    assert!(body.get("btc_quote").is_none());
+    assert!(body.get("stx_quote").is_none());
+}
+
+#[tokio::test]
 async fn test_core_shadow_observation_requires_authentication() {
     let state = Arc::new(RwLock::new(GatewayState::default()));
     let observer = Arc::new(StaticShadowObserver {

@@ -66,7 +66,7 @@ describe('ConxianClient', () => {
         const result = await client.generatePacs008Payment('bc1qtestreceiver', 1.5);
 
         expect(global.fetch).toHaveBeenCalledWith(
-            `${baseUrl}/api/v1/fiat/pacs008/generate`,
+            `${baseUrl}/api/v1/iso20022/payment`,
             expect.objectContaining({
                 method: 'POST',
                 body: JSON.stringify({ receiver: 'bc1qtestreceiver', amount_sbtc: 1.5 }),
@@ -102,8 +102,6 @@ describe('ConxianClient', () => {
     it('should fetch Sovereign Yield Index rate from treasury', async () => {
         const expectedResponse = {
             syi_rate: 0.052,
-            btc_quote: 68500.0,
-            stx_quote: 1.85,
             timestamp: 1700000000,
         };
         (global.fetch as any).mockResolvedValue({

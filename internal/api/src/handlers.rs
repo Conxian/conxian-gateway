@@ -88,6 +88,20 @@ pub async fn get_metrics(State(state): State<AppState>) -> Json<Value> {
     }))
 }
 
+/// Read-only Sovereign Yield Index (SYI) endpoint.
+///
+/// Returns the real tracked SYI rate and its last-update timestamp from the
+/// treasury monitor. No quotes are fabricated: BTC/STX USD price quotes are
+/// not tracked by the treasury monitor and are therefore omitted rather than
+/// synthesized.
+pub async fn get_sovereign_yield_index(State(state): State<AppState>) -> Json<Value> {
+    let s = state.shared.read().expect("lock poisoned");
+    Json(json!({
+        "syi_rate": s.metrics.syi_index,
+        "timestamp": s.metrics.last_treasury_update,
+    }))
+}
+
 pub async fn get_mempool_telemetry(
     State(state): State<AppState>,
 ) -> Result<Json<MempoolTelemetryResponse>, (StatusCode, Json<Value>)> {
