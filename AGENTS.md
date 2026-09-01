@@ -16,12 +16,12 @@
 
 ## Current State
 - **Version**: v0.1.5 (Cargo.toml)
-- **lib-conxian-core**: v0.3.2 (tag `v0.3.2`, published to crates.io)
-- **Dependency**: `lib-conxian-core = { git = "...", tag = "v0.3.2" }`
+- **lib-conxian-core**: v0.3.3 (tag `v0.3.3`, published to crates.io)
+- **Dependency**: `lib-conxian-core = { git = "...", tag = "v0.3.3" }`
 - **Rust toolchain**: 1.97.1 effective floor (workspace baseline)
 
 ## Architecture
-The `conxian_core` crate alias maps to `lib-conxian-core` v0.3.2 via Cargo.toml. Use `conxian_core::` as the import prefix throughout gateway code.
+The `conxian_core` crate alias maps to `lib-conxian-core` v0.3.3 via Cargo.toml. Use `conxian_core::` as the import prefix throughout gateway code.
 
 ## Module Map
 - `/cmd/gateway`: Entry point, configuration, and wiring.
