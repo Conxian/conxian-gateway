@@ -8,7 +8,7 @@
 - **Compliance Pipe**: The gateway is a pass-through for compliance data (ZKC), not a storage for PII.
 
 ## Technical Standards
-- **Rust Edition**: 2021, **MSRV**: 1.96
+- **Rust Edition**: 2021, **MSRV**: 1.97
 - **Framework**: Axum (HTTP), Tokio (Runtime)
 - **Security**: Mandatory Bearer token auth for sensitive endpoints.
 - **Observability**: Prometheus metrics and structured tracing required for all new modules.
