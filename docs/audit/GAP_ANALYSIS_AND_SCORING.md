@@ -88,3 +88,14 @@ This document tracks identified gaps across the Conxian Gateway portfolio, score
 ### 🟢 RESOLVED — BRICS Sanctions & Settlement (Priority ≥ 12)
 All critical gaps in this domain (Sanctions Risk, CIPS Normalization) have been resolved in Phase 3.
 
+
+---
+
+## 6. Current Audit & Adapter Verification Resolution Update
+
+| ID | Gap Description | Domain | Resolution |
+|:---|:---|:---|:---|
+| **G-FM1** | Fedimint blind signature verification missing | Technical | ✅ Resolved — Schnorr verification against guardian pubkeys implemented in `internal/engine/src/bitcoin/fedimint_adapter.rs` |
+| **G-SB3** | sBTC L1 tx / block header verification missing | Technical | ✅ Resolved — Double-SHA256 raw tx verification & 80-byte block header PoW verification implemented in `internal/engine/src/stacks/sbtc.rs` |
+| **G-BB1** | Babylon EOTS double-sign key extraction | Technical | ✅ Resolved — Schnorr attestation & key extraction $x = (s_1 - s_2)/(e_1 - e_2) \pmod n$ implemented |
+| **G-FI2** | ISO 20022 pacs.008 payment initiation | Technical | ✅ Resolved — `pacs.008.001.08` XML builder and schema validation implemented |

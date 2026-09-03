@@ -318,3 +318,8 @@ Before starting work on any repo, verify:
 - **Portfolio map corrected**: `PORTFOLIO_MAP.md` stale slugs fixed
   (`Conxian_UI` → `conxian_ui`, `stacksorbit` → `conxius-orbit` archived) and
   `conxian_market` / `conxian.github.io` added to the Layer 2 inventory.
+
+## Session Update — Current Session
+- **G-FM1 Closed**: Delivered Schnorr blind signature verification against guardian x-only public keys in `internal/engine/src/bitcoin/fedimint_adapter.rs`.
+- **G-SB3 Closed**: Delivered Bitcoin L1 raw transaction hashing and 80-byte block header PoW verification in `internal/engine/src/stacks/sbtc.rs`.
+- **Knowledge Base & Gap Tracking**: Updated `GAP_ANALYSIS_2026-08-07.md` and `CANDIDATE_MATRIX.md` to reflect complete test coverage and gap closure across multi-chain settlement adapters.
