@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use conxian_core::{ChainAdapter, ConxianResult};
+use conxian_core::{ChainAdapter, ConxianError, ConxianResult};
 use serde_json::{json, Value};
 use tracing::{info, warn};
 
@@ -18,7 +18,14 @@ impl StrataAdapter {
 #[async_trait]
 impl ChainAdapter for StrataAdapter {
     async fn get_latest_height(&self) -> ConxianResult<u64> {
-        Ok(0)
+        warn!(
+            chain = "strata",
+            network = %self.network,
+            "Strata chain height is unavailable until a trusted RPC backend is wired"
+        );
+        // Fail closed: do not report a fabricated height (0) as a successful
+        // observation. Mirrors the BitVM3 verifier-unavailable precedent.
+        Err(ConxianError::VerifierUnavailable)
     }
 
     async fn get_chain_identity(&self) -> String {
@@ -65,5 +72,17 @@ mod tests {
         ] {
             assert!(!adapter.verify_state_proof(metadata).await.unwrap());
         }
+    }
+
+    #[tokio::test]
+    async fn get_latest_height_fails_closed() {
+        let adapter = StrataAdapter::new("regtest".to_string());
+
+        // A fabricated height must not be reported as a successful observation.
+        let err = adapter.get_latest_height().await.unwrap_err();
+        assert!(
+            matches!(err, ConxianError::VerifierUnavailable),
+            "expected VerifierUnavailable, got {err:?}"
+        );
     }
 }
