@@ -5,3 +5,12 @@ packages:
 allowBuilds:
   sharp: true
   unrs-resolver: true
+
+# Remediate high-severity transitive advisories (fail-closed on vulnerable ranges).
+# brace-expansion 2.x is not covered by either the <1.1.18 or >=4.0.0,<5.0.9
+# advisories, so it is pinned here rather than to an EOL 1.x or vulnerable 4/5.x.
+overrides:
+  js-yaml: ^4.3.1
+  postcss: ^8.5.18
+  sharp: ^0.35.0
+  brace-expansion: ^2.0.2
