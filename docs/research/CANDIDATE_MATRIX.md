@@ -96,3 +96,12 @@ Full financial systems analysis in `docs/research/BRICS_FINANCIAL_SYSTEMS_RESEAR
 ### Candidate M: Babylon EOTS Verification & Double-Sign Key Extraction (Score: 9.5)
 - **Status**: ✅ Shipped (G-BB1). Implemented Schnorr attestation verification, double-sign detection, and algebraic secret key extraction $x = (s_1 - s_2)/(e_1 - e_2) \pmod n$ in `internal/engine/src/bitcoin/babylon_adapter.rs`.
 - **Impact**: Resolves sole remaining P1 gap and enables independent slashability verification for Babylon BTC staking finality providers.
+
+
+### Candidate N: Fedimint Cryptographic Blind Signature Verification (Score: 9.3)
+- **Status**: ✅ Shipped (G-FM1). Implemented Schnorr blind signature verification against guardian x-only public keys in `verify_fedimint_blind_signature()` in `internal/engine/src/bitcoin/fedimint_adapter.rs`.
+- **Impact**: Enables cryptographic trust verification for community-governed Chaumian mints.
+
+### Candidate O: sBTC Bitcoin L1 Proof Verification (Score: 9.1)
+- **Status**: ✅ Shipped (G-SB3). Implemented raw transaction double-SHA256 hashing and 80-byte header PoW verification in `internal/engine/src/stacks/sbtc.rs`.
+- **Impact**: Provides independent Bitcoin L1 verification for sBTC peg operations without relying solely on Emily API responses.
