@@ -35,27 +35,35 @@ impl ChainAdapter for StrataAdapter {
         }))
     }
 
-    async fn verify_state_proof(&self, proof_metadata: Value) -> ConxianResult<bool> {
-        info!(chain = "strata", "Verifying Strata state proof");
-
-        // G-ST1: Validate batch_root is a well-formed 32-byte hex hash
-        let batch_root = proof_metadata["batch_root"].as_str().unwrap_or("");
-        if batch_root.is_empty() {
-            warn!(chain = "strata", "Missing batch_root in metadata");
-            return Ok(false);
-        }
-        let root_bytes: Vec<u8> = match <Vec<u8> as bitcoin::hex::FromHex>::from_hex(batch_root) {
-            Ok(b) if b.len() == 32 => b,
-            _ => {
-                warn!(chain = "strata", "Invalid batch_root hex format");
-                return Ok(false);
-            }
-        };
-        info!(
+    async fn verify_state_proof(&self, _proof_metadata: Value) -> ConxianResult<bool> {
+        warn!(
             chain = "strata",
-            batch_root_len = root_bytes.len(),
-            "Batch root structurally valid"
+            network = %self.network,
+            "Strata state-proof verification is disabled until a trusted ZK-proof backend is wired"
         );
-        Ok(true)
+        // Caller-supplied metadata is not a cryptographic proof or a trusted
+        // rollup observation, so production verification remains fail-closed.
+        Ok(false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn verify_state_proof_fails_closed() {
+        let adapter = StrataAdapter::new("regtest".to_string());
+
+        // Even a structurally well-formed 32-byte batch_root must not be
+        // accepted as verified until a real ZK-proof backend is wired.
+        for metadata in [
+            json!({}),
+            json!({"verified": true, "claim": "accepted"}),
+            json!({"batch_root": "11".repeat(32)}),
+        ] {
+            assert!(!adapter.verify_state_proof(metadata).await.unwrap());
+        }
     }
 }
