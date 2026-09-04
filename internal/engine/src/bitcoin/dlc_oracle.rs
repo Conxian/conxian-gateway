@@ -51,7 +51,6 @@ pub struct CbtcReserveAttestation {
     pub attestations: Vec<OracleAttestation>,
 }
 
-
 /// Canton Active Contract Set (ACS) payload state anchor for translation to Bitcoin UCR.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CantonStateTranslationPayload {
@@ -93,7 +92,7 @@ impl CantonStateTranslationPayload {
         let state_root_bytes: [u8; 32] = hasher.finalize().into();
         let state_root_hex = hex::encode(state_root_bytes);
 
-        let ucr_ref = format!("ucr:canton:{}:{}", &self.package_id, &state_root_hex[..16]);
+        let ucr_ref = format!("ucr:canton:{}:{}", self.package_id, &state_root_hex[..16]);
 
         Ok(CantonUcrStateTranslation {
             contract_id: self.contract_id.clone(),
@@ -748,9 +747,16 @@ mod tests {
             ledger_effective_time: 1770000000,
         };
 
-        let translation = payload.translate_to_ucr().expect("Translation should succeed");
-        assert_eq!(translation.contract_id, "00a1b2c3d4e5f607891011121314151617181920");
-        assert!(translation.ucr_reference.starts_with("ucr:canton:canton-pkg-v1:"));
+        let translation = payload
+            .translate_to_ucr()
+            .expect("Translation should succeed");
+        assert_eq!(
+            translation.contract_id,
+            "00a1b2c3d4e5f607891011121314151617181920"
+        );
+        assert!(translation
+            .ucr_reference
+            .starts_with("ucr:canton:canton-pkg-v1:"));
         assert_eq!(translation.state_root.len(), 64);
 
         let empty_id_payload = CantonStateTranslationPayload {
