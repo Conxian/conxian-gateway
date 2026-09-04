@@ -41,6 +41,16 @@ pub struct OracleAttestation {
     pub oracle_pubkey: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CbtcReserveAttestation {
+    pub cbtc_asset_id: String,
+    pub reserve_sats: u64,
+    pub reserve_txid: String,
+    pub reserve_vout: u32,
+    pub threshold_quorum: usize,
+    pub attestations: Vec<OracleAttestation>,
+}
+
 impl DlcOracleClient {
     pub fn new(oracle_url: String, oracle_pubkey: String) -> Self {
         Self {
@@ -166,6 +176,55 @@ impl DlcOracleClient {
         let msg = secp256k1::Message::from_digest(msg_hash);
 
         Ok(secp.verify_schnorr(&sig, &msg, &pubkey).is_ok())
+    }
+
+    /// Verifies a Canton-wrapped Bitcoin (CBTC) reserve attestation against threshold Schnorr attestations.
+    pub fn verify_cbtc_reserve_attestation(
+        secp: &Secp256k1<VerifyOnly>,
+        payload: &CbtcReserveAttestation,
+    ) -> ConxianResult<bool> {
+        if payload.cbtc_asset_id.is_empty() || payload.reserve_txid.is_empty() {
+            return Ok(false);
+        }
+        if payload.reserve_sats == 0 || payload.threshold_quorum == 0 {
+            return Ok(false);
+        }
+        if payload.attestations.len() < payload.threshold_quorum {
+            return Ok(false);
+        }
+
+        let mut valid_count = 0;
+        for att in &payload.attestations {
+            let pubkey_bytes = match hex::decode(&att.oracle_pubkey) {
+                Ok(b) => b,
+                Err(_) => continue,
+            };
+            let pubkey = match XOnlyPublicKey::from_slice(&pubkey_bytes) {
+                Ok(pk) => pk,
+                Err(_) => continue,
+            };
+            let sig_bytes = match hex::decode(&att.signature) {
+                Ok(b) => b,
+                Err(_) => continue,
+            };
+            let sig = match schnorr::Signature::from_slice(&sig_bytes) {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
+
+            let mut hasher = Sha256::new();
+            hasher.update(payload.cbtc_asset_id.as_bytes());
+            hasher.update(payload.reserve_txid.as_bytes());
+            hasher.update(payload.reserve_sats.to_be_bytes());
+            let msg_hash: [u8; 32] = hasher.finalize().into();
+            let msg = secp256k1::Message::from_digest(msg_hash);
+
+            if secp.verify_schnorr(&sig, &msg, &pubkey).is_ok() {
+                valid_count += 1;
+            }
+        }
+
+        Ok(valid_count >= payload.threshold_quorum)
     }
 }
 
@@ -567,5 +626,63 @@ mod tests {
         assert!(!coordinator
             .verify_threshold_attestations(&secp, "btc-usd-2026q3", "up", &[att1, forged_att2])
             .unwrap());
+    }
+
+    #[test]
+    fn cbtc_reserve_attestation_verifies_threshold_quorum() {
+        let secp = test_secp();
+        let ssecp = signing_secp();
+        let mut rng = rand::thread_rng();
+
+        let (sk1, _) = ssecp.generate_keypair(&mut rng);
+        let kp1 = Keypair::from_secret_key(&ssecp, &sk1);
+        let pk1_hex = hex::encode(kp1.x_only_public_key().0.serialize());
+
+        let (sk2, _) = ssecp.generate_keypair(&mut rng);
+        let kp2 = Keypair::from_secret_key(&ssecp, &sk2);
+        let pk2_hex = hex::encode(kp2.x_only_public_key().0.serialize());
+
+        let asset_id = "cbtc-canton-v1";
+        let txid = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        let sats = 100_000_000u64;
+
+        let mut hasher1 = Sha256::new();
+        hasher1.update(asset_id.as_bytes());
+        hasher1.update(txid.as_bytes());
+        hasher1.update(sats.to_be_bytes());
+        let msg1 = secp256k1::Message::from_digest(hasher1.finalize().into());
+        let sig1 = ssecp.sign_schnorr(&msg1, &kp1);
+
+        let mut hasher2 = Sha256::new();
+        hasher2.update(asset_id.as_bytes());
+        hasher2.update(txid.as_bytes());
+        hasher2.update(sats.to_be_bytes());
+        let msg2 = secp256k1::Message::from_digest(hasher2.finalize().into());
+        let sig2 = ssecp.sign_schnorr(&msg2, &kp2);
+
+        let att1 = OracleAttestation {
+            event_id: asset_id.into(),
+            outcome: "reserve-valid".into(),
+            signature: hex::encode(sig1.serialize()),
+            oracle_pubkey: pk1_hex,
+        };
+
+        let att2 = OracleAttestation {
+            event_id: asset_id.into(),
+            outcome: "reserve-valid".into(),
+            signature: hex::encode(sig2.serialize()),
+            oracle_pubkey: pk2_hex,
+        };
+
+        let payload = CbtcReserveAttestation {
+            cbtc_asset_id: asset_id.into(),
+            reserve_sats: sats,
+            reserve_txid: txid.into(),
+            reserve_vout: 0,
+            threshold_quorum: 2,
+            attestations: vec![att1, att2],
+        };
+
+        assert!(DlcOracleClient::verify_cbtc_reserve_attestation(&secp, &payload).unwrap());
     }
 }

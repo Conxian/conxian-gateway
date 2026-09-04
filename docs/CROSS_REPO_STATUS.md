@@ -323,3 +323,8 @@ Before starting work on any repo, verify:
 - **G-FM1 Closed**: Delivered Schnorr blind signature verification against guardian x-only public keys in `internal/engine/src/bitcoin/fedimint_adapter.rs`.
 - **G-SB3 Closed**: Delivered Bitcoin L1 raw transaction hashing and 80-byte block header PoW verification in `internal/engine/src/stacks/sbtc.rs`.
 - **Knowledge Base & Gap Tracking**: Updated `GAP_ANALYSIS_2026-08-07.md` and `CANDIDATE_MATRIX.md` to reflect complete test coverage and gap closure across multi-chain settlement adapters.
+
+## Session Update — 2026-09-04 (Current Session)
+- **Org-Wide Research Audit & Knowledge Base Synchronization**: Audited all 15 Conxian repositories and 42 open issues. Updated `CROSS_REPO_STATUS.md` and `GAP_ANALYSIS_AND_SCORING.md` to record closed gaps (G-FI1, G-FI2, G-BB1, G-FM1, G-SB3, G-DL1) and prioritize open non-custodial research candidates.
+- **Candidate Scoring & Candidate I Initiation**: Scored Candidates A through O in `CANDIDATE_MATRIX.md`. Initiated Candidate I (CBTC Non-Custodial Reserve Verification) to provide non-custodial reserve attestation verification for Canton-wrapped BTC across compliance and engine layers without touching custody.
+- **Research Expansion**: Expanded `OPPORTUNITY_MAP_AND_EXPANSION.md`, `SOVEREIGN_SHARDING_VERIFICATION.md`, and `KNOWLEDGE_MAP.md` with Canton Network eUTXO state translation, BitVM3 garbled circuits fail-closed boundaries, and local-first WASM UCV-1 verification.
