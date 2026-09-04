@@ -12,7 +12,9 @@ import {
     Pacs008PaymentResponse,
     IdentityResolutionResponse,
     SyiResponse,
-    CbtcVerificationResponse
+    CbtcVerificationResponse,
+    CantonStateTranslationRequest,
+    CantonStateTranslationResponse
 } from "@conxian/schemas";
 
 export const GATEWAY_API_VERSION = "v1";
