@@ -215,7 +215,7 @@ impl DlcOracleClient {
             let mut hasher = Sha256::new();
             hasher.update(payload.cbtc_asset_id.as_bytes());
             hasher.update(payload.reserve_txid.as_bytes());
-            hasher.update(&payload.reserve_sats.to_be_bytes());
+            hasher.update(payload.reserve_sats.to_be_bytes());
             let msg_hash: [u8; 32] = hasher.finalize().into();
             let msg = secp256k1::Message::from_digest(msg_hash);
 
@@ -226,7 +226,6 @@ impl DlcOracleClient {
 
         Ok(valid_count >= payload.threshold_quorum)
     }
-
 }
 
 /// Multi-oracle outcome-agreement scaffold.
@@ -629,7 +628,6 @@ mod tests {
             .unwrap());
     }
 
-
     #[test]
     fn cbtc_reserve_attestation_verifies_threshold_quorum() {
         let secp = test_secp();
@@ -651,14 +649,14 @@ mod tests {
         let mut hasher1 = Sha256::new();
         hasher1.update(asset_id.as_bytes());
         hasher1.update(txid.as_bytes());
-        hasher1.update(&sats.to_be_bytes());
+        hasher1.update(sats.to_be_bytes());
         let msg1 = secp256k1::Message::from_digest(hasher1.finalize().into());
         let sig1 = ssecp.sign_schnorr(&msg1, &kp1);
 
         let mut hasher2 = Sha256::new();
         hasher2.update(asset_id.as_bytes());
         hasher2.update(txid.as_bytes());
-        hasher2.update(&sats.to_be_bytes());
+        hasher2.update(sats.to_be_bytes());
         let msg2 = secp256k1::Message::from_digest(hasher2.finalize().into());
         let sig2 = ssecp.sign_schnorr(&msg2, &kp2);
 
@@ -687,5 +685,4 @@ mod tests {
 
         assert!(DlcOracleClient::verify_cbtc_reserve_attestation(&secp, &payload).unwrap());
     }
-
 }
