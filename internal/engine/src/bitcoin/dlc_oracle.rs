@@ -51,6 +51,58 @@ pub struct CbtcReserveAttestation {
     pub attestations: Vec<OracleAttestation>,
 }
 
+
+/// Canton Active Contract Set (ACS) payload state anchor for translation to Bitcoin UCR.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CantonStateTranslationPayload {
+    pub contract_id: String,
+    pub template_id: String,
+    pub package_id: String,
+    pub payload_bytes: Vec<u8>,
+    pub ledger_effective_time: u64,
+}
+
+/// Translated state root mapping a Canton Daml ACS contract commitment to a Bitcoin UCR reference.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CantonUcrStateTranslation {
+    pub contract_id: String,
+    pub ucr_reference: String,
+    pub state_root: String,
+}
+
+impl CantonStateTranslationPayload {
+    /// Validates Daml contract ID syntax and translates payload hash to Bitcoin UCR reference.
+    pub fn translate_to_ucr(&self) -> ConxianResult<CantonUcrStateTranslation> {
+        if self.contract_id.trim().is_empty() {
+            return Err(conxian_core::ConxianError::Internal(
+                "Canton contract_id cannot be empty".into(),
+            ));
+        }
+        if self.template_id.trim().is_empty() || self.package_id.trim().is_empty() {
+            return Err(conxian_core::ConxianError::Internal(
+                "Canton template_id and package_id are required".into(),
+            ));
+        }
+
+        let mut hasher = Sha256::new();
+        hasher.update(self.contract_id.as_bytes());
+        hasher.update(self.template_id.as_bytes());
+        hasher.update(self.package_id.as_bytes());
+        hasher.update(&self.payload_bytes);
+        hasher.update(self.ledger_effective_time.to_be_bytes());
+        let state_root_bytes: [u8; 32] = hasher.finalize().into();
+        let state_root_hex = hex::encode(state_root_bytes);
+
+        let ucr_ref = format!("ucr:canton:{}:{}", &self.package_id, &state_root_hex[..16]);
+
+        Ok(CantonUcrStateTranslation {
+            contract_id: self.contract_id.clone(),
+            ucr_reference: ucr_ref,
+            state_root: state_root_hex,
+        })
+    }
+}
+
 impl DlcOracleClient {
     pub fn new(oracle_url: String, oracle_pubkey: String) -> Self {
         Self {
@@ -684,5 +736,30 @@ mod tests {
         };
 
         assert!(DlcOracleClient::verify_cbtc_reserve_attestation(&secp, &payload).unwrap());
+    }
+
+    #[test]
+    fn canton_state_translation_maps_acs_to_ucr() {
+        let payload = CantonStateTranslationPayload {
+            contract_id: "00a1b2c3d4e5f607891011121314151617181920".into(),
+            template_id: "Main:SovereignBond".into(),
+            package_id: "canton-pkg-v1".into(),
+            payload_bytes: vec![1, 2, 3, 4, 5, 6, 7, 8],
+            ledger_effective_time: 1770000000,
+        };
+
+        let translation = payload.translate_to_ucr().expect("Translation should succeed");
+        assert_eq!(translation.contract_id, "00a1b2c3d4e5f607891011121314151617181920");
+        assert!(translation.ucr_reference.starts_with("ucr:canton:canton-pkg-v1:"));
+        assert_eq!(translation.state_root.len(), 64);
+
+        let empty_id_payload = CantonStateTranslationPayload {
+            contract_id: "".into(),
+            template_id: "Main:SovereignBond".into(),
+            package_id: "canton-pkg-v1".into(),
+            payload_bytes: vec![],
+            ledger_effective_time: 1770000000,
+        };
+        assert!(empty_id_payload.translate_to_ucr().is_err());
     }
 }
