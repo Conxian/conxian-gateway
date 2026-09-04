@@ -1,6 +1,6 @@
-# Gap Analysis & Risk Scoring (2026-09-04 — Comprehensive Review)
+# Conxian Gateway: Open Gap Matrix & Scoring Analysis
 
-This document tracks identified gaps across the Conxian Gateway portfolio, scored by Risk, Impact, and Effort. **Updated with Canton eUTXO / CBTC non-custodial attestation research, BRICS financial systems mapping, and full cross-repository CI/CD reconciliation.**
+This document provides a comprehensive audit of resolved and open technical gaps across all gateway layers, multi-chain adapters, and enterprise compliance modules.
 
 ---
 
@@ -39,6 +39,7 @@ This document tracks identified gaps across the Conxian Gateway portfolio, score
 | **G-FM1** | Fedimint blind signature verification missing | Technical | ✅ Schnorr blind signature verification against guardian pubkeys implemented |
 | **G-SB3** | sBTC L1 tx / block header verification missing | Technical | ✅ Double-SHA256 raw tx verification & 80-byte header PoW verification implemented |
 | **G-DL1** | DLC Schnorr oracle attestation verification | Technical | ✅ Schnorr BIP340 verification active in `dlc_oracle.rs` |
+| **G-C1** | CBTC non-custodial attestation verification | Canton | ✅ Implemented `verify_cbtc_reserve_attestation` in `dlc_oracle.rs` |
 
 ---
 
@@ -46,8 +47,7 @@ This document tracks identified gaps across the Conxian Gateway portfolio, score
 
 | ID | Gap Description | Domain | Risk | Impact | Effort | Priority | Status |
 |:---|:---|:---|:---:|:---:|:---:|:---:|:---|
-| **G-C1** | CBTC non-custodial attestation verification for Canton wrapped BTC | Canton | 2 | 5 | 2 | **10** | 🟢 Initiated (Candidate I) |
-| **G-C4** | Canton state translation adapter (Daml ACS anchor → Bitcoin UCR) | Canton | 2 | 4 | 4 | **8** | 🟡 Research |
+| **G-C4** | Canton state translation adapter (Daml ACS anchor → Bitcoin UCR) | Canton | 2 | 4 | 4 | **8** | 🟢 Initiated (Candidate J) |
 | **G-20** | BitVM3 adapter is research-only — no integration tests or verifying impl | Technical | 2 | 4 | 4 | **8** | 🟡 Fail-Closed |
 | **G-B6** | No mBridge validator node deployment capability | BRICS | 2 | 4 | 5 | **8** | 🟡 Research |
 | **G-21** | RGB adapter is stub-only (shadow mode, no rgb-core dependency) | Technical | 1 | 4 | 5 | **4** | 🟡 Research |
@@ -63,10 +63,10 @@ This document tracks identified gaps across the Conxian Gateway portfolio, score
 | `verify_contamination_guard.py` | ✅ Pass | All production paths clean (92 files scanned) |
 | `verify_tracked_artifacts.py` | ✅ Pass | Zero prohibited artifacts or cache binaries tracked |
 | `verify_release_hygiene.py` | ✅ Pass | Release hygiene verified against v0.1.5 baseline |
-| `pnpm --filter @conxian/client-sdk test` | ✅ Pass | Vitest suite 6/6 passed |
+| `pnpm --filter @conxian/client-sdk test` | ✅ Pass | Vitest suite passed |
 
 ---
 
 ## 5. Current Audit & Adapter Verification Summary
 
-All core settlement adapters (Babylon, Fedimint, sBTC, DLC, ISO 20022, World ID, Web3.bio) are active and verified with structural or cryptographic checks. High-level research candidates (CBTC Non-Custodial Reserve Verification Candidate I, Canton State Translation Candidate J) are prioritized for non-custodial institutional integration.
+All core settlement adapters (Babylon, Fedimint, sBTC, DLC, ISO 20022, World ID, Web3.bio, CBTC Non-Custodial Reserve Verification) are active and verified. Candidate J (Canton State Translation Adapter) is currently initiated to translate Daml ACS states to Bitcoin UCR references.

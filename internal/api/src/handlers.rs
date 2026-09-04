@@ -1708,10 +1708,27 @@ pub async fn translate_canton_state(
         domain: Some(payload.domain.domain_name.clone()),
     };
 
+    // Calculate state root hash from contract ID, template, and optional payload JSON
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(payload.daml_contract_id.as_bytes());
+    hasher.update(template_name.as_bytes());
+    if let Some(ref p) = payload.payload_json {
+        hasher.update(p.as_bytes());
+    }
+    let state_root_hash = hex::encode(hasher.finalize());
+
+    let ucr_uri = format!(
+        "ucr:canton:{}:{}",
+        payload.domain.domain_name, payload.daml_contract_id
+    );
+
     Ok(Json(conxian_core::CantonStateTranslationResponse {
         contract_ref,
         source_ledger: "canton".into(),
         target_ledger: payload.target_ledger,
+        state_root_hash: Some(state_root_hash),
+        ucr_uri: Some(ucr_uri),
         translation_complete: unmapped_fields.is_empty(),
         unmapped_fields,
         translated_at: now,

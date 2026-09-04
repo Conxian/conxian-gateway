@@ -141,4 +141,38 @@ describe('ConxianClient', () => {
         );
         expect(result).toEqual(expectedResponse);
     });
+
+    it('should translate Canton state to UCR reference', async () => {
+        const mockResponse = {
+            contract_ref: { ledger: 'canton', contract_id: 'ContractId:001', domain: 'global' },
+            source_ledger: 'canton',
+            target_ledger: 'bitcoin',
+            state_root_hash: 'abc123hash',
+            ucr_uri: 'ucr:canton:global:ContractId:001',
+            translation_complete: true,
+            unmapped_fields: [],
+            translated_at: 1725000000,
+        };
+
+        (global.fetch as any).mockResolvedValueOnce({
+            ok: true,
+            json: async () => mockResponse,
+        });
+
+        const res = await client.translateCantonState({
+            domain: { domain_name: 'global' },
+            daml_contract_id: 'ContractId:001',
+            template_name: 'AssetTransfer',
+            target_ledger: 'bitcoin',
+        });
+
+        expect(res.ucr_uri).toBe('ucr:canton:global:ContractId:001');
+        expect(res.translation_complete).toBe(true);
+        expect(global.fetch).toHaveBeenCalledWith(
+            `${baseUrl}/api/v1/canton/state/translate`,
+            expect.objectContaining({
+                method: 'POST',
+            })
+        );
+    });
 });

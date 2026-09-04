@@ -12,7 +12,9 @@ import {
     Pacs008PaymentResponse,
     IdentityResolutionResponse,
     SyiResponse,
-    CbtcVerificationResponse
+    CbtcVerificationResponse,
+    CantonStateTranslationRequest,
+    CantonStateTranslationResponse
 } from "@conxian/schemas";
 
 export const GATEWAY_API_VERSION = "v1";
@@ -128,6 +130,16 @@ export class ConxianClient {
         return this.request<CbtcVerificationResponse>("/canton/cbtc/verify", {
             method: "POST",
             body: JSON.stringify({ attestation_proof: attestationProof }),
+        });
+    }
+
+    /**
+     * Canton State Translation (G-C4 / Candidate J) - translate Daml ACS state to UCR.
+     */
+    async translateCantonState(req: CantonStateTranslationRequest): Promise<CantonStateTranslationResponse> {
+        return this.request<CantonStateTranslationResponse>("/canton/state/translate", {
+            method: "POST",
+            body: JSON.stringify(req),
         });
     }
 

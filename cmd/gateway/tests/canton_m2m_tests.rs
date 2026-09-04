@@ -641,6 +641,11 @@ async fn test_canton_translate_asset_transfer() {
     assert_eq!(body["translation_complete"], true);
     assert!(body["unmapped_fields"].as_array().unwrap().is_empty());
     assert_eq!(body["contract_ref"]["ledger"], "canton");
+    assert!(body["state_root_hash"].is_string());
+    assert_eq!(
+        body["ucr_uri"],
+        "ucr:canton:global:ContractId:00567abcd8901"
+    );
 }
 
 #[tokio::test]
