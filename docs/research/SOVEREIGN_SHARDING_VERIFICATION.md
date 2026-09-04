@@ -56,3 +56,16 @@ To guarantee institutional mainnet integrity, the Conxian Gateway enforces stric
 ### 6.2 Production Promotion Criteria
 - **Zero-Contamination Enforcement**: Continuous integration automatically runs `python3 scripts/verify_contamination_guard.py` to ensure no `stub`, `placeholder`, or `changeme` keywords exist in `cmd/`, `internal/`, `pkg/`, `apps/`, or `packages/`.
 - **Fail-Closed Runtime Architecture**: Any feature flag or unconfigured dependency fails closed with standard HTTP status codes (`503 Service Unavailable` or `400 Bad Request`) rather than falling back to unauthenticated or mock responses in production binaries.
+
+## 7. Canton Network eUTXO & CBTC Non-Custodial Reserve Verification (2026-09 Expansion)
+
+Canton Network employs a privacy-enabled Daml eUTXO model that is architecturally isomorphic to Bitcoin UTXOs. To bridge institutional $6T+ RWA state with permissionless Bitcoin settlement without introducing custodial risk, Conxian Gateway establishes two non-custodial verification primitives:
+
+1. **CBTC Threshold Attestation Verification (Candidate I)**:
+   - Verifies $k$-of-$n$ FROST threshold Schnorr attestation signatures emitted by BitSafe/Canton guardians.
+   - Validates the accompanying Bitcoin L1 UTXO reserve proof (TXID, output index, satoshi value, and Merkle path) against the Gateway's L1 header verifier.
+   - Operates in a strict zero-custody mode: the Gateway verifies attestation validity and reserve adequacy without holding keys or joining the guardian set.
+
+2. **Canton eUTXO State Translation (Candidate J)**:
+   - Maps Daml Active Contract Set (ACS) commitment hashes into Universal Contract References (UCR).
+   - Anchors UCR roots to Bitcoin OP_RETURN / DLC commitment transactions.

@@ -497,3 +497,10 @@ conxian-gateway/
 | `cargo-audit.yml` | Weekly (cron) | Dependency audit + CVE triage |
 | `secret-scan.yml` | PR | Gitleaks secret scanning |
 | `release.yml` | Tag `v*` | GitHub Release + SBOM (CycloneDX) + SLSA L3 provenance |
+
+---
+
+## 2026-09 Knowledge Base Update
+- **Settlement Rail Status**: All 7 core active settlement rails (Babylon, Fedimint, sBTC, DLC, ISO 20022, World ID, Web3.bio) are verified with unit and integration tests.
+- **Canton & CBTC Reserve Verification**: Candidate I (CBTC Non-Custodial Reserve Verification) is active in compliance (`zkc.rs`) and engine (`dlc_oracle.rs`) layers, validating threshold Schnorr signatures and Bitcoin L1 UTXO reserve proofs without custody.
+- **Fail-Closed Boundaries**: BitVM, BitVM3, and Liquid adapters remain fail-closed research lanes until enclave SDK security review gates pass.

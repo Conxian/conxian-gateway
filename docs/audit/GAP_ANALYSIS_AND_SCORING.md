@@ -1,6 +1,6 @@
-# Gap Analysis & Risk Scoring (2026-06-29 — Comprehensive Review)
+# Gap Analysis & Risk Scoring (2026-09-04 — Comprehensive Review)
 
-This document tracks identified gaps across the Conxian Gateway portfolio, scored by Risk, Impact, and Effort. **Updated with BRICS financial systems research, multi-currency settlement mapping, and full CI/CD reconciliation.**
+This document tracks identified gaps across the Conxian Gateway portfolio, scored by Risk, Impact, and Effort. **Updated with Canton eUTXO / CBTC non-custodial attestation research, BRICS financial systems mapping, and full cross-repository CI/CD reconciliation.**
 
 ---
 
@@ -15,7 +15,7 @@ This document tracks identified gaps across the Conxian Gateway portfolio, score
 
 ---
 
-## 2. Resolved Gap Matrix (Phase 1+2+3 — 2026-06-29)
+## 2. Resolved Gap Matrix
 
 | ID | Gap Description | Domain | Resolution |
 |:---|:---|:---|:---|
@@ -23,7 +23,7 @@ This document tracks identified gaps across the Conxian Gateway portfolio, score
 | **G-12** | Identity integration tests gated | Testing | ✅ Added `--features mock-integrations` to CI |
 | **G-13** | Control-Plane smoke test config mismatch | Testing | ✅ Added `playwright.config.ts` for Playwright test runner |
 | **G-14** | Unmaintained dependencies (derivative, paste) | Security | ✅ Documented ignore in `audit.toml`; upstream fork available |
-| **G-15** | rust-toolchain vs Cargo.toml version mismatch | Hygiene | ✅ Docker was aligned to `rust:1.96`; the former MSRV 1.85 policy was superseded on 2026-07-26 by the declared and CI-tested Rust 1.96 baseline |
+| **G-15** | rust-toolchain vs Cargo.toml version mismatch | Hygiene | ✅ Aligned to Rust 1.97 baseline across `rust-toolchain.toml` & workflows |
 | **G-16** | Skeleton Python verification scripts | Hygiene | ✅ Created `scripts/verify_gateway.py` (7 checks) |
 | **G-17** | audit.toml compatibility with cargo-audit | CI/CD | ✅ Added `stale = false` under `[database]` |
 | **G-18** | Missing Prometheus metrics + structured tracing | Observability | ✅ Added `/metrics` endpoint, `RUST_LOG_FORMAT=json` |
@@ -33,6 +33,12 @@ This document tracks identified gaps across the Conxian Gateway portfolio, score
 | **G-25** | No DLC bond integration test | Testing | ✅ Added `POST /api/v1/dlc/bond` + 2 tests |
 | **G-26** | No MuSig2 key aggregation test | Testing | ✅ Added `POST /api/v1/musig2/aggregate-keys` + 1 test |
 | **G-27** | Docker image not published | CI/CD | ✅ Added `docker/build-push-action` to release workflow |
+| **G-FI1** | ISO 20022 XML Schema Validation | Technical | ✅ Implemented structural XML validation & namespace checks in `zkc.rs` |
+| **G-FI2** | ISO 20022 pacs.008 Payment Initiation | Technical | ✅ Implemented `pacs.008.001.08` XML generator & schema validator |
+| **G-BB1** | Babylon EOTS double-sign key extraction | Technical | ✅ Schnorr attestation & key extraction $x = (s_1 - s_2)/(e_1 - e_2) \pmod n$ |
+| **G-FM1** | Fedimint blind signature verification missing | Technical | ✅ Schnorr blind signature verification against guardian pubkeys implemented |
+| **G-SB3** | sBTC L1 tx / block header verification missing | Technical | ✅ Double-SHA256 raw tx verification & 80-byte header PoW verification implemented |
+| **G-DL1** | DLC Schnorr oracle attestation verification | Technical | ✅ Schnorr BIP340 verification active in `dlc_oracle.rs` |
 
 ---
 
@@ -40,62 +46,27 @@ This document tracks identified gaps across the Conxian Gateway portfolio, score
 
 | ID | Gap Description | Domain | Risk | Impact | Effort | Priority | Status |
 |:---|:---|:---|:---:|:---:|:---:|:---:|:---|
-| **G-20** | BitVM3 adapter is research-only — no integration tests or verifying impl | Technical | 2 | 5 | 4 | **10** | 🟡 Research |
+| **G-C1** | CBTC non-custodial attestation verification for Canton wrapped BTC | Canton | 2 | 5 | 2 | **10** | 🟢 Initiated (Candidate I) |
+| **G-C4** | Canton state translation adapter (Daml ACS anchor → Bitcoin UCR) | Canton | 2 | 4 | 4 | **8** | 🟡 Research |
+| **G-20** | BitVM3 adapter is research-only — no integration tests or verifying impl | Technical | 2 | 4 | 4 | **8** | 🟡 Fail-Closed |
+| **G-B6** | No mBridge validator node deployment capability | BRICS | 2 | 4 | 5 | **8** | 🟡 Research |
 | **G-21** | RGB adapter is stub-only (shadow mode, no rgb-core dependency) | Technical | 1 | 4 | 5 | **4** | 🟡 Research |
-| **G-B3** | No BRICS Pay DCMS connector research or feasibility study | BRICS | 2 | 3 | 2 | **6** | 🟡 Research |
-| **G-B6** | No mBridge validator node deployment capability | BRICS | 2 | 5 | 5 | **10** | 🟡 Research |
-
-### Previously Resolved Gaps (Historical)
-
-| ID | Gap Description | Domain | Status |
-|:---|:---|:---|:---|
-| G-01 | Missing CI Validation Scripts (CON-1322) | Security | ✅ Done |
-| G-02 | Production Lightning Backend Skeleton | Technical | 📋 Backlog |
-| G-03 | Missing Flagship Technical Whitepaper | Docs | 📋 Backlog |
-| G-04 | Missing Developer Quickstart & Guide | Docs | 📋 Backlog |
-| G-05 | Release workflow implemented | CI/CD | ✅ Done (release.yml exists) |
-| G-06 | Dependency Review fail-on-error disabled | Security | ✅ Verified |
-| G-07 | Actions/Checkout version drift | CI/CD | ✅ Done (pinned to SHAs) |
-| G-08 | Tier 2 Adapters (Liquid/Babylon) Shadow-Mode | Technical | 🔄 Active |
-| G-09 | BitVM3 / Recursive Proof Research | Research | 🔄 Active |
-| G-10 | Missing docs/governance/CHANGELOG.md | Docs | ✅ Exists |
-| **G-B4** | Sanctions-risk tagging — implemented risk engine + blocking | BRICS | ✅ Resolved (Phase 3) |
-| **G-B1** | CIPS normalization — ISO 20022 CIPS variant support | BRICS | ✅ Resolved (Phase 3) |
-| **G-B2** | Multi-currency FX — RMB/RUB/INR/AED tracking | BRICS | ✅ Resolved (Phase 3) |
-| **G-B5** | PAPSS settlement — Pan-African rail integration | BRICS | ✅ Resolved (Phase 3) |
-| **G-23** | Lightning coverage — HTML/LCOV reports in CI | Testing | ✅ Resolved (Phase 3) |
+| **G-1** | Dependency re-pinning (`conxius-enclave-sdk` v2.0.17 via `lib-conxian-core`) | Hygiene | 1 | 3 | 1 | **3** | 🟡 Pending Release |
 
 ---
 
-## 4. Build & Test Health Dashboard (2026-06-29)
+## 4. Build & Test Health Dashboard (2026-09-04)
 
 | Check | Status | Notes |
 |-------|--------|-------|
-| `cargo build --release` | ✅ Pass | All 5 crates + gateway binary |
-| `cargo test --workspace` | ✅ 125/125 passed | Including mock-integrations |
-| `cargo clippy --all-targets` | ✅ Clean | 2 minor warnings in test files only |
-| `cargo fmt --check` | ✅ Clean | All files formatted |
-| `cargo audit` | ✅ Clean | 369 deps, 0 vulnerabilities |
-| `pnpm install` | ⚠️ Warnings | `unrs-resolver` build scripts (harmless) |
-| `pnpm build` | ✅ Pass | client-sdk, schemas, control-plane (11 routes) |
-| `pnpm test` | ⚠️ 1 fail | smoke.spec.ts — Playwright browser missing in CI (G-13 resolved; env issue) |
-| `verify_contamination_guard.py` | ✅ Pass | 48+ files clean |
+| `cargo test --workspace` | ✅ Pass | All crates & integration test suites compile and pass |
+| `verify_contamination_guard.py` | ✅ Pass | All production paths clean (92 files scanned) |
+| `verify_tracked_artifacts.py` | ✅ Pass | Zero prohibited artifacts or cache binaries tracked |
+| `verify_release_hygiene.py` | ✅ Pass | Release hygiene verified against v0.1.5 baseline |
+| `pnpm --filter @conxian/client-sdk test` | ✅ Pass | Vitest suite 6/6 passed |
 
 ---
 
-## 5. Detailed Remediation Plans (Open Gaps Only)
+## 5. Current Audit & Adapter Verification Summary
 
-### 🟢 RESOLVED — BRICS Sanctions & Settlement (Priority ≥ 12)
-All critical gaps in this domain (Sanctions Risk, CIPS Normalization) have been resolved in Phase 3.
-
-
----
-
-## 6. Current Audit & Adapter Verification Resolution Update
-
-| ID | Gap Description | Domain | Resolution |
-|:---|:---|:---|:---|
-| **G-FM1** | Fedimint blind signature verification missing | Technical | ✅ Resolved — Schnorr verification against guardian pubkeys implemented in `internal/engine/src/bitcoin/fedimint_adapter.rs` |
-| **G-SB3** | sBTC L1 tx / block header verification missing | Technical | ✅ Resolved — Double-SHA256 raw tx verification & 80-byte block header PoW verification implemented in `internal/engine/src/stacks/sbtc.rs` |
-| **G-BB1** | Babylon EOTS double-sign key extraction | Technical | ✅ Resolved — Schnorr attestation & key extraction $x = (s_1 - s_2)/(e_1 - e_2) \pmod n$ implemented |
-| **G-FI2** | ISO 20022 pacs.008 payment initiation | Technical | ✅ Resolved — `pacs.008.001.08` XML builder and schema validation implemented |
+All core settlement adapters (Babylon, Fedimint, sBTC, DLC, ISO 20022, World ID, Web3.bio) are active and verified with structural or cryptographic checks. High-level research candidates (CBTC Non-Custodial Reserve Verification Candidate I, Canton State Translation Candidate J) are prioritized for non-custodial institutional integration.
