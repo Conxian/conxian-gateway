@@ -165,3 +165,35 @@ export interface CbtcVerificationResponse {
     attestation_id?: string;
     error?: string;
 }
+
+/**
+ * Canton State Translation structures (G-C4 / Candidate J).
+ */
+export interface CantonStateTranslationRequest {
+    domain: {
+        domain_name: string;
+        synchronizer_endpoint?: string;
+        public_observer?: boolean;
+    };
+    daml_contract_id: string;
+    template_name?: string;
+    payload_json?: string;
+    target_ledger: string;
+}
+
+export interface UniversalContractRef {
+    ledger: string;
+    contract_id: string;
+    domain?: string;
+}
+
+export interface CantonStateTranslationResponse {
+    contract_ref: UniversalContractRef;
+    source_ledger: string;
+    target_ledger: string;
+    state_root_hash?: string;
+    ucr_uri?: string;
+    translation_complete: boolean;
+    unmapped_fields?: string[];
+    translated_at: number;
+}

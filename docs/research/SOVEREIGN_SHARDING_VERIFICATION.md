@@ -69,3 +69,9 @@ Canton Network employs a privacy-enabled Daml eUTXO model that is architecturall
 2. **Canton eUTXO State Translation (Candidate J)**:
    - Maps Daml Active Contract Set (ACS) commitment hashes into Universal Contract References (UCR).
    - Anchors UCR roots to Bitcoin OP_RETURN / DLC commitment transactions.
+
+## 8. BitVM3 Recursive Proof Efficiency & Canton ACS-to-UCR Translation Specs (2026-09 Expansion)
+
+- **BitVM3 Recursive Proof Efficiency Targets**: BitVM3 incorporates garbled circuit verification with Groth16 circuit folding. Targets include maintaining recursive proof verification under 200,000 gas units / cycles equivalent and sub-second verification latency for nested SNARK proofs.
+- **Canton Daml ACS to Bitcoin UCR Translation Protocol (Candidate J)**: Daml Active Contract Set (ACS) contract instances are hashed via SHA-256 to produce contract state commitments. These commitments map to Universal Contract References (UCR) format `ucr:canton:<domain>:<contract_id>` and are anchored to Bitcoin L1 UTXO outputs or DLC contract states.
+- **BRICS mBridge Validator Deployment Requirements**: Requirements include non-custodial mBridge node payload parser compatibility, ISO 20022 `pacs.008`/`camt.053` payload mapping, and dual-rail settlement fallback.

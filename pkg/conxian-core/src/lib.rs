@@ -377,6 +377,9 @@ pub struct CantonStateTranslationRequest {
     /// Daml template name (for type-aware translation)
     #[serde(default)]
     pub template_name: Option<String>,
+    /// Optional contract payload JSON string for state root commitment computation
+    #[serde(default)]
+    pub payload_json: Option<String>,
     /// Target ledger for the translated reference
     pub target_ledger: String,
 }
@@ -390,6 +393,12 @@ pub struct CantonStateTranslationResponse {
     pub source_ledger: String,
     /// Target ledger
     pub target_ledger: String,
+    /// State root SHA-256 hash derived from Daml contract ID and payload commitment
+    #[serde(default)]
+    pub state_root_hash: Option<String>,
+    /// Derived Universal Contract Reference string format (ucr:canton:<domain>:<contract_id>)
+    #[serde(default)]
+    pub ucr_uri: Option<String>,
     /// Whether translation succeeded with full fidelity
     pub translation_complete: bool,
     /// Fields that could not be mapped (if any)

@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Implemented Canton Daml ACS state translation adapter (`translate_canton_state` / Candidate J / G-C4) in `internal/api/src/handlers.rs` and `pkg/conxian-core`, adding Daml contract ID verification, state root hash computation via SHA-256 (`daml_contract_id` + `template_name` + optional `payload_json`), and UCR URI translation (`ucr:canton:<domain>:<contract_id>`).
+- Updated `@conxian/client-sdk` and `@conxian/schemas` with `translateCantonState` and supporting TypeScript interfaces (`CantonStateTranslationRequest`, `CantonStateTranslationResponse`, `UniversalContractRef`).
+- Expanded strategic research in `SOVEREIGN_SHARDING_VERIFICATION.md`, `CANTON_NETWORK_AND_MACHINE_ECONOMY_RESEARCH.md`, `CANDIDATE_MATRIX.md`, and `GAP_ANALYSIS_AND_SCORING.md` covering BitVM3 recursive proof efficiency targets, Canton Daml ACS mapping specs, and BRICS mBridge validator node requirements.
 - Implemented ISO 20022 XML Schema Validation & XSD structure hardening (`validate_iso20022_xml_structure`) in `internal/compliance/src/zkc.rs` (G-FI1).
 - Added XML structure, namespace verification (pacs.008, pacs.009, camt), and syntax error checks for ISO 20022 ingress normalization.
 - Added comprehensive unit tests in `zkc_iso20022_tests` and updated research knowledge base (`GAP_ANALYSIS_2026-08-07.md`, `CANDIDATE_MATRIX.md`).

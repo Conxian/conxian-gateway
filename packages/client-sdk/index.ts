@@ -131,6 +131,16 @@ export class ConxianClient {
         });
     }
 
+    /**
+     * Canton State Translation (G-C4 / Candidate J) - translate Daml ACS state to UCR.
+     */
+    async translateCantonState(req: CantonStateTranslationRequest): Promise<CantonStateTranslationResponse> {
+        return this.request<CantonStateTranslationResponse>("/canton/state/translate", {
+            method: "POST",
+            body: JSON.stringify(req),
+        });
+    }
+
     async getHealth(): Promise<HealthResponse> {
         return this.request<HealthResponse>("/health");
     }

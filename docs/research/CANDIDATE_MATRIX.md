@@ -1,6 +1,6 @@
 # Conxian Gateway: Candidate Maturity & Scoring Matrix
 
-This matrix tracks the maturity of core components and identifies the best candidates for next-phase implementation based on urgency, technical readiness, and institutional demand. **Updated 2026-09-04 with CBTC non-custodial reserve verification, multi-chain settlement rails, and BRICS financial system integration.**
+This matrix tracks the maturity of core components and identifies the best candidates for next-phase implementation based on urgency, technical readiness, and institutional demand. **Updated 2026-09-04 with CBTC non-custodial reserve verification, Canton Daml state translation, multi-chain settlement rails, and BRICS financial system integration.**
 
 ## 1. Component Maturity Scoring (0-10)
 
@@ -13,6 +13,7 @@ This matrix tracks the maturity of core components and identifies the best candi
 | **sBTC L1 Proof Verification** | 9.2 | High | Production | Shipped (G-SB3). Double-SHA256 tx & block header PoW verification in `sbtc.rs` |
 | **BIP-322 Message Signing** | 9.0 | Urgent | Production | Integrated into compliance and identity layer (`zkc.rs`) |
 | **CBTC Non-Custodial Reserve Verification** | 9.0 | High | Production | Initiated (Candidate I). Threshold Schnorr attestation & UTXO reserve proof check in `dlc_oracle.rs` |
+| **Canton State Translation Adapter** | 8.8 | High | Production | Initiated (Candidate J / G-C4). Daml ACS contract parsing & state root UCR translation active |
 | **DLC Orchestration & Oracle Attestation** | 8.8 | Medium | Production | Shipped (G-DL1). Cryptographic BIP340 Schnorr oracle verification active |
 | **Identity Resolution (ENS/Web3.bio/World ID)** | 8.5 | High | Production | Integrated live APIs with fail-closed fallback (`identity.rs`) |
 | **Nostr Wallet Connect (NWC)** | 8.0 | High | Production | NIP-47 relay-settle integrated (`nwc_backend.rs`) |
@@ -27,6 +28,9 @@ This matrix tracks the maturity of core components and identifies the best candi
 - **Status**: 🟢 Initiated / Active. Implemented `verify_cbtc_reserve_attestation` in `internal/engine/src/bitcoin/dlc_oracle.rs`.
 - **Urgency**: High (G-C1, Q3 2026). CBTC (Canton wrapped Bitcoin) represents institutional reserves across Canton Network ($6T+ RWAs).
 - **Impact**: Provides non-custodial, zero-custody threshold Schnorr attestation verification and Bitcoin L1 UTXO reserve proof checks.
+
+### Candidate J: Canton State Translation Adapter (Score: 8.8 — Initiated)
+- **Status**: 🟢 Initiated / Active. Daml Active Contract Set (ACS) commitment parsing, contract ID syntax verification, and state root hash mapping to Bitcoin Universal Contract References (UCR).
 
 ### Candidate K: ISO 20022 XML Schema Validation (Score: 9.0 — Shipped)
 - **Status**: ✅ Shipped (G-FI1). Structural XML validation for pacs.008, pacs.009, and camt messages in `internal/compliance/src/zkc.rs`.
@@ -43,11 +47,8 @@ This matrix tracks the maturity of core components and identifies the best candi
 ### Candidate O: sBTC Bitcoin L1 Proof Verification (Score: 9.1 — Shipped)
 - **Status**: ✅ Shipped (G-SB3). Double-SHA256 tx hashing and 80-byte header PoW verification in `sbtc.rs`.
 
-### Candidate J: Canton State Translation Adapter (Score: 8.0 — Active Research)
-- **Status**: 🟡 Research (G-C4). Map Daml Active Contract Set (ACS) changes to Universal Contract References (UCR) anchored to Bitcoin.
-
 ---
 
 ## 3. Recommended Roadmap Execution
 
-With Candidates K, L, M, N, O, A, B, C, D, E, F shipped and Candidate I initiated, the next development cycles will focus on expanding Canton state translation (Candidate J), client Wasm UCV-1 verification, and mBridge validator research.
+With Candidates K, L, M, N, O, A, B, C, D, E, F shipped and Candidates I & J active, the next development cycles will focus on client Wasm UCV-1 verification, mBridge validator node research, and BitVM3 recursive proof optimization.
