@@ -197,3 +197,49 @@ export interface CantonStateTranslationResponse {
     unmapped_fields?: string[];
     translated_at: number;
 }
+
+/**
+ * BRICS mBridge DLT Ingress structures (Candidate P / G-FI3).
+ */
+export interface MBridgeIngressPayload {
+    mbridge_id: string;
+    currency: string;
+    amount: number;
+    sender_cbdc_wallet?: string;
+    receiver_cbdc_wallet?: string;
+    consensus_signatures?: string[];
+    dlt_state_proof?: string;
+}
+
+export interface MBridgeIngressResponse {
+    status: string;
+    mbridge_id: string;
+    normalized_compliance_id?: string;
+    sanctions_clearance?: boolean;
+    error?: string;
+}
+
+/**
+ * Chainlink CCIP Canton Connector Routing structures (G-C5).
+ */
+export interface CcipMessage {
+    message_id: string;
+    source_chain: string;
+    destination_chain: string;
+    sender: string;
+    data?: string;
+    token_amounts?: Array<{ token: string; amount: string }>;
+}
+
+export interface CcipRouteRequest {
+    message: CcipMessage;
+    elevated_scrutiny?: boolean;
+}
+
+export interface CcipRouteResponse {
+    approved: boolean;
+    message_id: string;
+    risk_level: string;
+    reason?: string;
+    timestamp: number;
+}

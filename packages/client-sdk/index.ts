@@ -14,7 +14,11 @@ import {
     SyiResponse,
     CbtcVerificationResponse,
     CantonStateTranslationRequest,
-    CantonStateTranslationResponse
+    CantonStateTranslationResponse,
+    MBridgeIngressPayload,
+    MBridgeIngressResponse,
+    CcipRouteRequest,
+    CcipRouteResponse
 } from "@conxian/schemas";
 
 export const GATEWAY_API_VERSION = "v1";
@@ -138,6 +142,26 @@ export class ConxianClient {
      */
     async translateCantonState(req: CantonStateTranslationRequest): Promise<CantonStateTranslationResponse> {
         return this.request<CantonStateTranslationResponse>("/canton/state/translate", {
+            method: "POST",
+            body: JSON.stringify(req),
+        });
+    }
+
+    /**
+     * BRICS mBridge DLT Ingress Normalization (Candidate P / G-FI3).
+     */
+    async ingressMBridge(payload: MBridgeIngressPayload): Promise<MBridgeIngressResponse> {
+        return this.request<MBridgeIngressResponse>("/ingress/mbridge", {
+            method: "POST",
+            body: JSON.stringify(payload),
+        });
+    }
+
+    /**
+     * Chainlink CCIP Canton Connector Message Routing (G-C5).
+     */
+    async routeCcipMessage(req: CcipRouteRequest): Promise<CcipRouteResponse> {
+        return this.request<CcipRouteResponse>("/ccip/route", {
             method: "POST",
             body: JSON.stringify(req),
         });
