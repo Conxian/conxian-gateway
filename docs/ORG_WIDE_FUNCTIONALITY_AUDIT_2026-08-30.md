@@ -38,13 +38,13 @@ The Gateway resolves two upstream Conxian crates, both via git tags.
 
 | Dependency | Gateway source | Pinned version | Latest release | Status |
 |-----------|----------------|----------------|----------------|--------|
-| `lib-conxian-core` | workspace `Cargo.toml` (`tag = "v0.3.2"`) | v0.3.2 | v0.3.2 (2026-08-14) | ✅ Current |
+| `lib-conxian-core` | workspace `Cargo.toml` (`tag = "v0.3.3"`) | v0.3.3 | v0.3.3 (2026-08-14) | ✅ Current |
 | `conxius-enclave-sdk` | transitive via `lib-conxian-core` `full-sdk`/`sdk-blockchain` | v2.0.16 | v2.0.17 (2026-08-30) | 🟡 One patch behind (controlled by `lib-conxian-core`, not Gateway) |
 | `conxian-nexus` | not a crate dependency | n/a | v0.4.22 (README says v0.4.23) | ⚠️ Cross-repo proof surface (see gaps) |
 
 Notes:
 
-- `lib-conxian-core` v0.3.2 pins `conxius-enclave-sdk` to git tag `v2.0.16`
+- `lib-conxian-core` v0.3.3 pins `conxius-enclave-sdk` to git tag `v2.0.16`
   (manifest version `2.0.16`). The `lib-conxian-core` README still references
   `v2.0.14`, which is stale doc text relative to its own `Cargo.toml`.
 - Gateway feature selection: `pkg/conxian-core` enables `lib-conxian-core/full-sdk`
@@ -211,7 +211,7 @@ its historical snapshot is dated 2026-07-22 with session updates through
 
 ### G-1 (Dependency drift) — `conxius-enclave-sdk` v2.0.16 vs v2.0.17
 - v2.0.17 was published 2026-08-30. The Gateway inherits v2.0.16 through
-  `lib-conxian-core` v0.3.2, so this is a `lib-conxian-core` release-coordination
+  `lib-conxian-core` v0.3.3, so this is a `lib-conxian-core` release-coordination
   item, not a Gateway-only change.
 - **Action:** track a `lib-conxian-core` bump that re-pins the SDK; do not
   hand-patch the Gateway lockfile.

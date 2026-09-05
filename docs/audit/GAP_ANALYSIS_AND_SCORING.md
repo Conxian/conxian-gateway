@@ -19,6 +19,7 @@ This document provides a comprehensive audit of resolved and open technical gaps
 
 | ID | Gap Description | Domain | Resolution |
 |:---|:---|:---|:---|
+| **G-1** | Dependency re-pinning (`lib-conxian-core` v0.3.3) | Hygiene | ✅ Updated workspace `Cargo.toml` tag to `v0.3.3` |
 | **G-11** | Missing Rust CI workflow | CI/CD | ✅ Created `rust-ci.yml` (build, test, clippy, fmt, audit) |
 | **G-12** | Identity integration tests gated | Testing | ✅ Added `--features mock-integrations` to CI |
 | **G-13** | Control-Plane smoke test config mismatch | Testing | ✅ Added `playwright.config.ts` for Playwright test runner |
@@ -35,11 +36,13 @@ This document provides a comprehensive audit of resolved and open technical gaps
 | **G-27** | Docker image not published | CI/CD | ✅ Added `docker/build-push-action` to release workflow |
 | **G-FI1** | ISO 20022 XML Schema Validation | Technical | ✅ Implemented structural XML validation & namespace checks in `zkc.rs` |
 | **G-FI2** | ISO 20022 pacs.008 Payment Initiation | Technical | ✅ Implemented `pacs.008.001.08` XML generator & schema validator |
+| **G-FI3** | BRICS mBridge DLT Ingress & Sanctions Clearance | Technical | ✅ Implemented `MBridgeAdapter::verify_mbridge_dlt_attestation` & `/api/v1/ingress/mbridge` |
 | **G-BB1** | Babylon EOTS double-sign key extraction | Technical | ✅ Schnorr attestation & key extraction $x = (s_1 - s_2)/(e_1 - e_2) \pmod n$ |
 | **G-FM1** | Fedimint blind signature verification missing | Technical | ✅ Schnorr blind signature verification against guardian pubkeys implemented |
 | **G-SB3** | sBTC L1 tx / block header verification missing | Technical | ✅ Double-SHA256 raw tx verification & 80-byte header PoW verification implemented |
 | **G-DL1** | DLC Schnorr oracle attestation verification | Technical | ✅ Schnorr BIP340 verification active in `dlc_oracle.rs` |
 | **G-C1** | CBTC non-custodial attestation verification | Canton | ✅ Implemented `verify_cbtc_reserve_attestation` in `dlc_oracle.rs` |
+| **G-C4** | Canton state translation adapter (Daml ACS → UCR) | Canton | ✅ Implemented `CantonUcrStateTranslation::translate_to_ucr` & `/api/v1/canton/translate` |
 
 ---
 
@@ -47,26 +50,24 @@ This document provides a comprehensive audit of resolved and open technical gaps
 
 | ID | Gap Description | Domain | Risk | Impact | Effort | Priority | Status |
 |:---|:---|:---|:---:|:---:|:---:|:---:|:---|
-| **G-C4** | Canton state translation adapter (Daml ACS anchor → Bitcoin UCR) | Canton | 2 | 4 | 4 | **8** | 🟢 Initiated (Candidate J) |
 | **G-20** | BitVM3 adapter is research-only — no integration tests or verifying impl | Technical | 2 | 4 | 4 | **8** | 🟡 Fail-Closed |
 | **G-B6** | No mBridge validator node deployment capability | BRICS | 2 | 4 | 5 | **8** | 🟡 Research |
 | **G-21** | RGB adapter is stub-only (shadow mode, no rgb-core dependency) | Technical | 1 | 4 | 5 | **4** | 🟡 Research |
-| **G-1** | Dependency re-pinning (`conxius-enclave-sdk` v2.0.17 via `lib-conxian-core`) | Hygiene | 1 | 3 | 1 | **3** | 🟡 Pending Release |
 
 ---
 
-## 4. Build & Test Health Dashboard (2026-09-04)
+## 4. Build & Test Health Dashboard (2026-09-05)
 
 | Check | Status | Notes |
 |-------|--------|-------|
-| `cargo test --workspace` | ✅ Pass | All crates & integration test suites compile and pass |
-| `verify_contamination_guard.py` | ✅ Pass | All production paths clean (92 files scanned) |
+| `cargo test --workspace` | ✅ Pass | All 142 tests compile and pass |
+| `verify_contamination_guard.py` | ✅ Pass | All production paths clean (93 files scanned) |
 | `verify_tracked_artifacts.py` | ✅ Pass | Zero prohibited artifacts or cache binaries tracked |
 | `verify_release_hygiene.py` | ✅ Pass | Release hygiene verified against v0.1.5 baseline |
-| `pnpm --filter @conxian/client-sdk test` | ✅ Pass | Vitest suite passed |
+| `pnpm --filter @conxian/client-sdk test` | ✅ Pass | Vitest suite passed (9/9 tests) |
 
 ---
 
 ## 5. Current Audit & Adapter Verification Summary
 
-All core settlement adapters (Babylon, Fedimint, sBTC, DLC, ISO 20022, World ID, Web3.bio, CBTC Non-Custodial Reserve Verification) are active and verified. Candidate J (Canton State Translation Adapter) is currently initiated to translate Daml ACS states to Bitcoin UCR references.
+All core settlement adapters (Babylon, Fedimint, sBTC, DLC, ISO 20022, World ID, Web3.bio, CBTC Non-Custodial Reserve Verification, Canton State Translation, BRICS mBridge DLT Ingress) are active and verified across unit and integration test suites.
