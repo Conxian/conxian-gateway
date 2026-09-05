@@ -175,4 +175,69 @@ describe('ConxianClient', () => {
             })
         );
     });
+
+    it('normalizes BRICS mBridge DLT ingress', async () => {
+        const mockResponse = {
+            status: 'normalised',
+            mbridge_id: 'MBR-2026-TEST',
+            sanctions_clearance: true,
+        };
+
+        (global.fetch as any).mockResolvedValueOnce({
+            ok: true,
+            json: async () => mockResponse,
+        });
+
+        const payload = {
+            mbridge_id: 'MBR-2026-TEST',
+            currency: 'AED',
+            amount: 500000,
+        };
+
+        const res = await client.ingressMBridge(payload);
+        expect(res.status).toBe('normalised');
+        expect(res.mbridge_id).toBe('MBR-2026-TEST');
+        expect(res.sanctions_clearance).toBe(true);
+        expect(global.fetch).toHaveBeenCalledWith(
+            `${baseUrl}/api/v1/ingress/mbridge`,
+            expect.objectContaining({
+                method: 'POST',
+                body: JSON.stringify(payload),
+            })
+        );
+    });
+
+    it('routes CCIP messages through Canton ZKC compliance pipeline', async () => {
+        const mockResponse = {
+            approved: true,
+            message_id: 'ccip-msg-101',
+            risk_level: 'Low',
+            timestamp: 1720000000,
+        };
+
+        (global.fetch as any).mockResolvedValueOnce({
+            ok: true,
+            json: async () => mockResponse,
+        });
+
+        const req = {
+            message: {
+                message_id: 'ccip-msg-101',
+                source_chain: 'ethereum',
+                destination_chain: 'canton',
+                sender: '0x123',
+            },
+        };
+
+        const res = await client.routeCcipMessage(req);
+        expect(res.approved).toBe(true);
+        expect(res.risk_level).toBe('Low');
+        expect(global.fetch).toHaveBeenCalledWith(
+            `${baseUrl}/api/v1/ccip/route`,
+            expect.objectContaining({
+                method: 'POST',
+                body: JSON.stringify(req),
+            })
+        );
+    });
 });
