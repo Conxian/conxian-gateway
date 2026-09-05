@@ -214,3 +214,8 @@ Despite accelerating multipolar momentum, complete decoupling remains difficult:
 ---
 
 *Last updated: 2026-06-28 — Comprehensive BRICS+ payment systems research incorporating 2024-2026 developments (16th BRICS Summit, BIS mBridge exit, OFAC SPFS alert, Indonesia accession)*
+
+
+## 5. Implementation Status Update (Candidate P / Session Update)
+- **mBridge DLT State Verification**: Shipped `MBridgeAdapter::verify_mbridge_dlt_attestation` in `internal/engine/src/brics_adapter.rs` validating threshold Schnorr consensus signatures and payload digests.
+- **mBridge Ingress Normalization**: Shipped `normalize_mbridge_ingress` in `internal/compliance/src/zkc.rs` and route handler `/api/v1/ingress/mbridge` in `internal/api/src/handlers.rs`.

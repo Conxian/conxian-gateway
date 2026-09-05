@@ -1,6 +1,7 @@
 pub mod billing;
 pub mod bitcoin;
 pub mod bitvm_adapter;
+pub mod brics_adapter;
 pub mod coordination;
 pub mod ntt;
 pub mod persistence;
@@ -27,6 +28,7 @@ pub use bitcoin::{
     ObservationErrorCategory, ShadowObserverFailure, SourceObservation, StashResolver,
     StrataAdapter, SHADOW_FEE_TARGETS,
 };
+pub use brics_adapter::{MBridgeAdapter, MBridgeAttestationPayload, MBridgeVerificationResult};
 pub use coordination::RedisCoordinator;
 pub use ntt::{CitreaAdapter, NttRelayer, RootstockAdapter};
 pub use persistence::{
