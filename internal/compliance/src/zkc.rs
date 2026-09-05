@@ -749,7 +749,9 @@ impl ZkcVerifier {
             .as_u64()
             .ok_or_else(|| ConxianError::Compliance("Missing or invalid transfer amount".into()))?;
         if amount == 0 {
-            return Err(ConxianError::Compliance("mBridge transfer amount must be greater than zero".into()));
+            return Err(ConxianError::Compliance(
+                "mBridge transfer amount must be greater than zero".into(),
+            ));
         }
 
         let currency = payload["currency"].as_str().unwrap_or("AED");

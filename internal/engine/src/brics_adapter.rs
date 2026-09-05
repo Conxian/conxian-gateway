@@ -42,6 +42,7 @@ pub struct MBridgeAdapter;
 
 impl MBridgeAdapter {
     /// Compute deterministic DLT payload hash
+    #[allow(clippy::too_many_arguments)]
     pub fn compute_payload_hash(
         mbridge_id: &str,
         from_cbdc: &str,
@@ -56,11 +57,11 @@ impl MBridgeAdapter {
         hasher.update(mbridge_id.as_bytes());
         hasher.update(from_cbdc.as_bytes());
         hasher.update(to_cbdc.as_bytes());
-        hasher.update(&amount.to_be_bytes());
+        hasher.update(amount.to_be_bytes());
         hasher.update(currency.as_bytes());
         hasher.update(sender_bic.as_bytes());
         hasher.update(receiver_bic.as_bytes());
-        hasher.update(&timestamp.to_be_bytes());
+        hasher.update(timestamp.to_be_bytes());
         hex::encode(hasher.finalize())
     }
 
@@ -75,10 +76,14 @@ impl MBridgeAdapter {
         );
 
         if payload.mbridge_id.trim().is_empty() {
-            return Err(ConxianError::Compliance("Missing mBridge transaction ID".into()));
+            return Err(ConxianError::Compliance(
+                "Missing mBridge transaction ID".into(),
+            ));
         }
         if payload.amount == 0 {
-            return Err(ConxianError::Compliance("mBridge transfer amount must be greater than zero".into()));
+            return Err(ConxianError::Compliance(
+                "mBridge transfer amount must be greater than zero".into(),
+            ));
         }
 
         let computed_hash = Self::compute_payload_hash(
@@ -92,8 +97,12 @@ impl MBridgeAdapter {
             payload.timestamp,
         );
 
-        if !payload.proof_hash.is_empty() && payload.proof_hash.to_lowercase() != computed_hash.to_lowercase() {
-            return Err(ConxianError::Security("mBridge payload hash mismatch".into()));
+        if !payload.proof_hash.is_empty()
+            && payload.proof_hash.to_lowercase() != computed_hash.to_lowercase()
+        {
+            return Err(ConxianError::Security(
+                "mBridge payload hash mismatch".into(),
+            ));
         }
 
         let msg_hash = Sha256::digest(computed_hash.as_bytes());
@@ -126,7 +135,8 @@ impl MBridgeAdapter {
             }
         }
 
-        let quorum_met = valid_signatures >= payload.quorum_threshold && payload.quorum_threshold > 0;
+        let quorum_met =
+            valid_signatures >= payload.quorum_threshold && payload.quorum_threshold > 0;
 
         if !quorum_met {
             return Err(ConxianError::Security(format!(
@@ -220,7 +230,14 @@ mod tests {
 
         let mbridge_id = "mb-tx-2026-002";
         let payload_hash = MBridgeAdapter::compute_payload_hash(
-            mbridge_id, "e-CNY", "e-AED", 500, "AED", "BKCHCNBJXXX", "FADBAEADXXX", 1750000000,
+            mbridge_id,
+            "e-CNY",
+            "e-AED",
+            500,
+            "AED",
+            "BKCHCNBJXXX",
+            "FADBAEADXXX",
+            1750000000,
         );
 
         let msg_hash = Sha256::digest(payload_hash.as_bytes());
@@ -237,9 +254,10 @@ mod tests {
             receiver_bic: "FADBAEADXXX".into(),
             proof_hash: payload_hash,
             timestamp: 1750000000,
-            validator_attestations: vec![
-                (hex::encode(pubkey1.serialize()), hex::encode(sig1.as_ref())),
-            ],
+            validator_attestations: vec![(
+                hex::encode(pubkey1.serialize()),
+                hex::encode(sig1.as_ref()),
+            )],
             quorum_threshold: 2,
         };
 

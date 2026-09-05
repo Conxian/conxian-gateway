@@ -14,9 +14,6 @@ pub use billing::{
     compute_mrr, format_usd, BillingPeriod, GatewayDeployment, LineItem, MrrReport, UsageMetrics,
     BILLING_PERIOD_SECONDS,
 };
-pub use brics_adapter::{
-    MBridgeAdapter, MBridgeAttestationPayload, MBridgeVerificationResult,
-};
 #[cfg(feature = "rgb-native")]
 pub use bitcoin::Bip340IssuerPolicy;
 pub use bitcoin::{
@@ -31,6 +28,7 @@ pub use bitcoin::{
     ObservationErrorCategory, ShadowObserverFailure, SourceObservation, StashResolver,
     StrataAdapter, SHADOW_FEE_TARGETS,
 };
+pub use brics_adapter::{MBridgeAdapter, MBridgeAttestationPayload, MBridgeVerificationResult};
 pub use coordination::RedisCoordinator;
 pub use ntt::{CitreaAdapter, NttRelayer, RootstockAdapter};
 pub use persistence::{

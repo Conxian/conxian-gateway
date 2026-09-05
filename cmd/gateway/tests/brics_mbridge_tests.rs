@@ -9,9 +9,7 @@ use conxian_api::lightning::{
 };
 use conxian_api::{configure_routes, AppState};
 use conxian_compliance::{IdentityManager, ZkcVerifier};
-use conxian_engine::{
-    MBridgeAdapter, MBridgeAttestationPayload,
-};
+use conxian_engine::{MBridgeAdapter, MBridgeAttestationPayload};
 use http_body_util::BodyExt;
 use secp256k1::{Keypair, Message, Secp256k1};
 use serde_json::json;
@@ -177,7 +175,8 @@ async fn test_mbridge_dlt_attestation_verification_engine() {
         quorum_threshold: 2,
     };
 
-    let result = MBridgeAdapter::verify_mbridge_dlt_attestation(&payload).expect("Attestation failed");
+    let result =
+        MBridgeAdapter::verify_mbridge_dlt_attestation(&payload).expect("Attestation failed");
     assert!(result.is_valid);
     assert_eq!(result.verified_validators, 2);
     assert_eq!(result.quorum_threshold, 2);
