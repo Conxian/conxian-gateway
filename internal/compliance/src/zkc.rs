@@ -740,18 +740,34 @@ impl ZkcVerifier {
         payload: &serde_json::Value,
         tx_hash: String,
     ) -> ConxianResult<SettlementEnvelope> {
-        info!("Normalizing mBridge JSON payload");
+        info!("Normalizing mBridge DLT JSON payload");
+
+        let mbridge_id = payload["mbridge_id"]
+            .as_str()
+            .ok_or_else(|| ConxianError::Compliance("Missing mbridge_id".into()))?;
+        let amount = payload["amount"]
+            .as_u64()
+            .ok_or_else(|| ConxianError::Compliance("Missing or invalid transfer amount".into()))?;
+        if amount == 0 {
+            return Err(ConxianError::Compliance("mBridge transfer amount must be greater than zero".into()));
+        }
+
+        let currency = payload["currency"].as_str().unwrap_or("AED");
+        let sender = payload["sender"].as_str().unwrap_or("sim-sender");
+        let receiver = payload["receiver"].as_str().unwrap_or("sim-receiver");
+        let timestamp = payload["timestamp"].as_u64().unwrap_or(123456789);
+
         Ok(SettlementEnvelope {
             version: "1.0".to_string(),
             payload: NormalizedSettlement {
                 source: SettlementSource::MBridge,
-                transaction_id: payload["mbridge_id"].as_str().unwrap_or("unknown").into(),
-                amount_minor: payload["amount"].as_u64().unwrap_or(0),
+                transaction_id: mbridge_id.into(),
+                amount_minor: amount,
                 amount_scale: 2,
-                currency: "USD".into(),
-                sender: "sim-sender".into(),
-                receiver: "sim-receiver".into(),
-                timestamp: 123456789,
+                currency: currency.into(),
+                sender: sender.into(),
+                receiver: receiver.into(),
+                timestamp,
                 status: SettlementStatus::Ingested,
                 rail: None,
                 finality: SettlementFinality::Final,

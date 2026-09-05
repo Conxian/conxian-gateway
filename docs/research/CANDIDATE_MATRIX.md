@@ -54,7 +54,7 @@ This matrix tracks the maturity of core components and identifies the best candi
 With Candidates K, L, M, N, O, A, B, C, D, E, F shipped and Candidates I & J active, the next development cycles will focus on client Wasm UCV-1 verification, mBridge validator node research, and BitVM3 recursive proof optimization.
 
 
-### Candidate P: BRICS mBridge & Cross-Border Sovereign Settlement (Score: 8.5 — Initiated / Research)
-- **Status**: 🟢 Initiated / Active Research (G-B6, G-FI3). Protocol mapping for mBridge (HotStuff consensus & DLT ledger), PAPSS, and CIPS cross-border fiat payment channels.
+### Candidate P: BRICS mBridge & Cross-Border Sovereign Settlement (Score: 9.2 — Shipped)
+- **Status**: ✅ Shipped (G-B6, G-FI3). Implemented `MBridgeAdapter::verify_mbridge_dlt_attestation` in `internal/engine/src/brics_adapter.rs` validating HotStuff/e-CNY DLT state proofs and threshold Schnorr consensus signatures. Enhanced `normalize_mbridge_ingress` in `internal/compliance/src/zkc.rs` and exposed `/api/v1/ingress/mbridge` in `internal/api/src/handlers.rs`.
 - **Urgency**: High (Q3/Q4 2026). Strategic expansion into non-SWIFT international trade corridors and sovereign multi-CBDC settlement platforms.
 - **Impact**: Enables Conxian Gateway to orchestrate non-custodial atomicity between mBridge ISO 20022 messages and Bitcoin/Lightning liquidity rails.

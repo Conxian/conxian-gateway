@@ -1,6 +1,7 @@
 pub mod billing;
 pub mod bitcoin;
 pub mod bitvm_adapter;
+pub mod brics_adapter;
 pub mod coordination;
 pub mod ntt;
 pub mod persistence;
@@ -12,6 +13,9 @@ pub mod treasury;
 pub use billing::{
     compute_mrr, format_usd, BillingPeriod, GatewayDeployment, LineItem, MrrReport, UsageMetrics,
     BILLING_PERIOD_SECONDS,
+};
+pub use brics_adapter::{
+    MBridgeAdapter, MBridgeAttestationPayload, MBridgeVerificationResult,
 };
 #[cfg(feature = "rgb-native")]
 pub use bitcoin::Bip340IssuerPolicy;
