@@ -262,3 +262,58 @@ export interface WasmUcvVerificationResult {
     proof_type: string;
     error?: string;
 }
+
+/**
+ * Candidate R: Machine Economy & DePIN peaq DLT Settlement structures.
+ */
+export interface MachineIdentityPayload {
+    device_id: string;
+    provider: "peaq" | "dimo" | "helium" | "custom";
+    device_pubkey: string;
+    signature?: string;
+    metadata?: Record<string, any>;
+}
+
+export interface MachineRwaAttestation {
+    device_id: string;
+    epoch: number;
+    revenue_sats: number;
+    telemetry_hash: string;
+    sensor_signatures?: string[];
+}
+
+export interface DePinSettlementRequest {
+    machine_identity: MachineIdentityPayload;
+    attestation: MachineRwaAttestation;
+    settlement_rail: "lightning" | "x402" | "canton";
+}
+
+export interface DePinSettlementResponse {
+    success: boolean;
+    txid?: string;
+    settled_amount_sats: number;
+    settlement_rail: string;
+    timestamp: number;
+    error?: string;
+}
+
+/**
+ * Candidate T: SWIFT ISO 20022 camt.053 Bank-to-Customer Statement structures.
+ */
+export interface Camt053StatementRequest {
+    account_id: string;
+    currency: string;
+    statement_period_start: number;
+    statement_period_end: number;
+    include_pending_txs?: boolean;
+}
+
+export interface Camt053StatementResponse {
+    xml_statement: string;
+    account_id: string;
+    currency: string;
+    opening_balance: number;
+    closing_balance: number;
+    entry_count: number;
+    timestamp: number;
+}

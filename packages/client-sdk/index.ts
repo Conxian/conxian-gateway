@@ -20,7 +20,13 @@ import {
     CcipRouteRequest,
     CcipRouteResponse,
     WasmUcvProofPayload,
-    WasmUcvVerificationResult
+    WasmUcvVerificationResult,
+    MachineIdentityPayload,
+    MachineRwaAttestation,
+    DePinSettlementRequest,
+    DePinSettlementResponse,
+    Camt053StatementRequest,
+    Camt053StatementResponse
 } from "@conxian/schemas";
 
 export const GATEWAY_API_VERSION = "v1";
@@ -189,10 +195,50 @@ export class ConxianClient {
     }
 
     /**
-     * Chainlink CCIP Canton Connector Message Routing (G-C5).
+     * Chainlink CCIP Canton Connector Message Routing (G-C5 / Candidate S).
      */
     async routeCcipMessage(req: CcipRouteRequest): Promise<CcipRouteResponse> {
         return this.request<CcipRouteResponse>("/ccip/route", {
+            method: "POST",
+            body: JSON.stringify(req),
+        });
+    }
+
+    /**
+     * Candidate R: Resolve machine DID and device public key (peaq DLT / DIMO).
+     */
+    async resolveMachineIdentity(payload: MachineIdentityPayload): Promise<{ resolved: boolean, device_id: string, provider: string }> {
+        return this.request<{ resolved: boolean, device_id: string, provider: string }>("/m2m/identity/resolve", {
+            method: "POST",
+            body: JSON.stringify(payload),
+        });
+    }
+
+    /**
+     * Candidate R: Verify machine RWA sensor revenue attestation.
+     */
+    async verifyMachineRwaAttestation(attestation: MachineRwaAttestation): Promise<{ verified: boolean, epoch: number, revenue_sats: number }> {
+        return this.request<{ verified: boolean, epoch: number, revenue_sats: number }>("/m2m/rwa/verify", {
+            method: "POST",
+            body: JSON.stringify(attestation),
+        });
+    }
+
+    /**
+     * Candidate R: Micro-settle machine-to-machine payment via Lightning or X402.
+     */
+    async settleDePinMachinePayment(req: DePinSettlementRequest): Promise<DePinSettlementResponse> {
+        return this.request<DePinSettlementResponse>("/m2m/settle", {
+            method: "POST",
+            body: JSON.stringify(req),
+        });
+    }
+
+    /**
+     * Candidate T: Generate SWIFT ISO 20022 camt.053 Bank-to-Customer Treasury Statement XML.
+     */
+    async generateCamt053Statement(req: Camt053StatementRequest): Promise<Camt053StatementResponse> {
+        return this.request<Camt053StatementResponse>("/iso20022/camt053/generate", {
             method: "POST",
             body: JSON.stringify(req),
         });
