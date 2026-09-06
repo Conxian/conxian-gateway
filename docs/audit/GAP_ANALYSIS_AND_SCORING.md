@@ -50,9 +50,9 @@ This document provides a comprehensive audit of resolved and open technical gaps
 
 | ID | Gap Description | Domain | Risk | Impact | Effort | Priority | Status |
 |:---|:---|:---|:---:|:---:|:---:|:---:|:---|
-| **G-20** | BitVM3 adapter is research-only — no integration tests or verifying impl | Technical | 2 | 4 | 4 | **8** | 🟡 Fail-Closed |
-| **G-B6** | No mBridge validator node deployment capability | BRICS | 2 | 4 | 5 | **8** | 🟡 Research |
-| **G-21** | RGB adapter is stub-only (shadow mode, no rgb-core dependency) | Technical | 1 | 4 | 5 | **4** | 🟡 Research |
+| **G-20** | BitVM3 adapter is research-only — no integration tests or verifying impl | Technical | 2 | 4 | 4 | **8** | 🟡 Candidate Q (Initiated) |
+| **G-B6** | No mBridge validator node deployment capability | BRICS | 2 | 4 | 5 | **8** | 🟡 Candidate Q (Initiated) |
+| **G-21** | RGB adapter is stub-only (shadow mode, no rgb-core dependency) | Technical | 1 | 4 | 5 | **4** | 🟡 Candidate Q (Initiated) |
 
 ---
 

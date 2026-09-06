@@ -75,3 +75,19 @@ Canton Network employs a privacy-enabled Daml eUTXO model that is architecturall
 - **BitVM3 Recursive Proof Efficiency Targets**: BitVM3 incorporates garbled circuit verification with Groth16 circuit folding. Targets include maintaining recursive proof verification under 200,000 gas units / cycles equivalent and sub-second verification latency for nested SNARK proofs.
 - **Canton Daml ACS to Bitcoin UCR Translation Protocol (Candidate J)**: Daml Active Contract Set (ACS) contract instances are hashed via SHA-256 to produce contract state commitments. These commitments map to Universal Contract References (UCR) format `ucr:canton:<domain>:<contract_id>` and are anchored to Bitcoin L1 UTXO outputs or DLC contract states.
 - **BRICS mBridge Validator Deployment Requirements**: Requirements include non-custodial mBridge node payload parser compatibility, ISO 20022 `pacs.008`/`camt.053` payload mapping, and dual-rail settlement fallback.
+
+
+## 9. Candidate Q: Client-Side Wasm UCV-1 Verification & BitVM3 Garbled-Circuit Folding Engine (2026-09 Expansion)
+
+Candidate Q initiates local-first zero-trust client verification by compiling the Gateway Universal Chain Verification (UCV-1) core logic to WebAssembly (wasm32-unknown-unknown):
+
+1. **Client-Side Wasm UCV-1 Core Architecture**:
+   - Compiles cryptographic verification algorithms (BIP-340 Schnorr signatures, FROST threshold attestations, ISO 20022 XML structure validation, and Bitcoin L1 double-SHA256 Merkle proofs) into Wasm modules for consumption by `@conxian/client-sdk`.
+   - Enables edge verification in browser and Node.js environments with zero network roundtrips to Gateway endpoints, reducing attestation latency to <50ms.
+
+2. **BitVM3 Sub-200k Cycle Garbled-Circuit Folding**:
+   - Implements a recursive Groth16 circuit folding accumulator for BitVM3 challenge-response protocols.
+   - Compresses state-transition verifications into <200,000 gas/cycle equivalents, allowing optimistic fraud-proof dispute transactions to be posted on-chain within standard Bitcoin taproot script limits.
+
+3. **Multi-Chain Edge State Anchoring**:
+   - Maps cross-chain proofs across Canton Daml ACS, mBridge DLT state, and Stacks sBTC headers into unified local-first verification envelopes.

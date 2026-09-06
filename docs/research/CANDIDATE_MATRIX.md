@@ -20,6 +20,7 @@ This matrix tracks the maturity of core components and identifies the best candi
 | **Nostr Wallet Connect (NWC)** | 8.0 | High | Production | NIP-47 relay-settle integrated (`nwc_backend.rs`) |
 | **MuSig2 Key Aggregation** | 8.0 | High | Production | Primitives and Aggregator active (`zkc.rs`) |
 | **BitVM3 / Garbled Circuits** | 2.0 | Medium | Research | Research-only, fail-closed (`bitvm3_adapter.rs`) |
+| **Wasm UCV-1 & BitVM3 Folding Engine** | 9.4 | High | Initiated | Candidate Q (G-20, G-21, G-B6). Local-first Wasm UCV-1 verification & sub-200k cycle proof folding |
 
 ---
 
@@ -55,6 +56,14 @@ This matrix tracks the maturity of core components and identifies the best candi
 
 ---
 
+
+### Candidate Q: Client-Side Wasm UCV-1 & BitVM3 Garbled-Circuit Folding Engine (Score: 9.4 — Initiated)
+- **Status**: 🚀 Initiated (G-20, G-21, G-B6). Architecture defined for compiling Universal Chain Verification (UCV-1) primitives into WebAssembly for `@conxian/client-sdk` local-first verification, alongside sub-200,000 cycle recursive Groth16/garbled-circuit proof folding for BitVM3 state transitions.
+- **Urgency**: High (Q4 2026). Critical for client-side zero-trust attestation verification and high-performance optimistic fraud proof execution.
+- **Impact**: Removes gateway RPC dependencies for web and mobile clients while providing <1s local verification of multi-chain settlement proofs.
+
+---
+
 ## 3. Recommended Roadmap Execution
 
-With Candidates I, J, K, L, M, N, O, P shipped, the next development cycles will focus on client Wasm UCV-1 verification, mBridge validator node research, and BitVM3 recursive proof optimization (<200,000 cycles target).
+With Candidates I, J, K, L, M, N, O, P shipped and Candidate Q initiated, the next development cycles will focus on delivering Wasm UCV-1 verification bindings in `@conxian/client-sdk`, mBridge validator node deployment specs, and BitVM3 recursive proof folding optimization (<200,000 cycles target).
