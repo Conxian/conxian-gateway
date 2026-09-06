@@ -91,3 +91,15 @@ Candidate Q initiates local-first zero-trust client verification by compiling th
 
 3. **Multi-Chain Edge State Anchoring**:
    - Maps cross-chain proofs across Canton Daml ACS, mBridge DLT state, and Stacks sBTC headers into unified local-first verification envelopes.
+
+### 9.1 Technical Specifications & Subsystem Design Matrix for Candidate Q
+- **Wasm UCV-1 Verification Engine Specification**:
+  - Target Triple: `wasm32-unknown-unknown` compiled via `wasm-pack` with `Panic = "abort"` to eliminate unwinding bloat.
+  - Exported Interface: `verify_ucv_proof_wasm(payload_json: &str) -> String` returning standardized `WasmUcvVerificationResult`.
+  - In-memory Cryptographic Primitives: `secp256k1`Schnorr BIP-340 verification, SHA256 double hashing, and ISO 20022 XML tag structure validation.
+- **BitVM3 Garbled-Circuit Folding Protocol**:
+  - Accumulator Schema: IVC (Incrementally Verifiable Computation) state folding with sub-200,000 cycle verification overhead on Taproot script trees.
+  - Fraud Proof Dispute Resolution: Garbled circuit gate evaluation for 32-bit CPU instruction steps with optimistic execution bond slash paths.
+- **BRICS mBridge Non-Custodial Node Topology**:
+  - Containerization: Distroless Docker deployment spec for mBridge DLT state observer sidecar (`brics-mbridge-observer`).
+  - Message Ingress: Direct ingestion of ISO 20022 `pacs.008` & `camt.053` XML messages translated to e-CNY/HotStuff consensus state proofs.

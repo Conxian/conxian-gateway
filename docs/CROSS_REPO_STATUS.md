@@ -333,3 +333,5 @@ Before starting work on any repo, verify:
 - **End-to-End Org & Repo Audit**: Executed full git fetch, branch review, and dependency verification. Confirmed workspace release hygiene v0.1.5, contamination guard clean state, and test suite green status.
 - **Research Expansion & Candidate Q Initiation**: Defined and scored Candidate Q (Client-Side Wasm UCV-1 Verification & BitVM3 Garbled-Circuit Folding Engine, Score 9.4). Mapped open research gaps (G-20, G-B6, G-21) to Candidate Q.
 - **Knowledge Base Synchronization**: Updated `SOVEREIGN_SHARDING_VERIFICATION.md`, `CANDIDATE_MATRIX.md`, `GAP_ANALYSIS_AND_SCORING.md`, and `CROSS_REPO_STATUS.md` for end-to-end development cycle discipline.
+
+- **Candidate Q Wasm UCV-1 Verification Expansion**: Added client-side Wasm UCV-1 zero-trust proof verification schemas (`WasmUcvProofPayload`, `WasmUcvVerificationResult`) to `@conxian/schemas` and implemented `verifyStateProofLocal()` in `@conxian/client-sdk` with full Vitest test coverage (13/13 passing).

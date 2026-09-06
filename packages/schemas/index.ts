@@ -243,3 +243,22 @@ export interface CcipRouteResponse {
     reason?: string;
     timestamp: number;
 }
+
+/**
+ * Candidate Q: Client-Side Wasm UCV-1 Verification structures.
+ */
+export interface WasmUcvProofPayload {
+    chain: string;
+    proof_data: string; // Base64 or hex encoded proof bytes
+    public_inputs?: Record<string, any>;
+    schnorr_signature?: string;
+    merkle_root?: string;
+}
+
+export interface WasmUcvVerificationResult {
+    verified: boolean;
+    chain: string;
+    execution_time_ms: number;
+    proof_type: string;
+    error?: string;
+}

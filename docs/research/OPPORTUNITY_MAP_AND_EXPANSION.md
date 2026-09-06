@@ -44,3 +44,10 @@ This document expands on existing research and maps emerging opportunities for t
 2. **Candidate J**: Canton State Translation Adapter (Daml ACS anchor → Bitcoin UCR) — Score 8.0.
 3. **Candidate G**: Machine Identity & peaq DLT Adapter — Score 7.8.
 4. **Candidate H**: M2M Lightning Settlement Rail — Score 7.5.
+
+### E. Candidate Q - Wasm UCV-1, BitVM3 Folding & mBridge Node Deployment (Detailed Architecture)
+- **Status**: Candidate Q Initiated (Score 9.4)
+- **Detailed Specifications**:
+    - **Wasm UCV-1 Execution Engine**: Compiles `conxian_core` cryptographic verification subroutines to `wasm32-unknown-unknown` for `@conxian/client-sdk`, enabling client-side zero-trust verification of Schnorr signatures, ISO 20022 XML payloads, and Bitcoin Merkle roots.
+    - **BitVM3 Garbled-Circuit Folding**: Implements recursive SNARK/garbled circuit accumulator folding target <200,000 cycles for BitVM3 challenge-response fraud proofs.
+    - **BRICS mBridge Observer Deployment**: Non-custodial containerized sidecar spec (`brics-mbridge-observer`) for parsing mBridge DLT state commitments and normalizing ISO 20022 payloads across cross-border trade corridors.

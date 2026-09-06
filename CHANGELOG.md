@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Added Client-Side Wasm UCV-1 Verification schemas (`WasmUcvProofPayload`, `WasmUcvVerificationResult`) to `@conxian/schemas` and implemented local zero-trust state proof verification (`verifyStateProofLocal`) in `@conxian/client-sdk` with full Vitest unit test coverage (Candidate Q).
 - Implemented BRICS mBridge & CIPS Cross-Border Settlement Engine (Candidate P / G-B6 / G-FI3) featuring `MBridgeAdapter::verify_mbridge_dlt_attestation` in `internal/engine/src/brics_adapter.rs`, payload validation in `internal/compliance/src/zkc.rs`, `/api/v1/ingress/mbridge` API route, and E2E integration tests in `brics_mbridge_tests.rs`.
 - Implemented Canton Daml ACS state translation adapter (`translate_canton_state` / Candidate J / G-C4) in `internal/api/src/handlers.rs` and `pkg/conxian-core`, adding Daml contract ID verification, state root hash computation via SHA-256 (`daml_contract_id` + `template_name` + optional `payload_json`), and UCR URI translation (`ucr:canton:<domain>:<contract_id>`).
 - Updated `@conxian/client-sdk` and `@conxian/schemas` with `translateCantonState` and supporting TypeScript interfaces (`CantonStateTranslationRequest`, `CantonStateTranslationResponse`, `UniversalContractRef`).
