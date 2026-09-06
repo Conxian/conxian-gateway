@@ -410,7 +410,7 @@ jobs:
           printf 'target=%s\n' "${TARGET_TRIPLE}" >> "${GITHUB_OUTPUT}"
 
       - name: Install pinned CycloneDX generator
-        uses: taiki-e/install-action@37f7c5781271959fb65b6b35224e28652ff2b63d # v2.87.0
+        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b # v2.87.4
         with:
           tool: cargo-cyclonedx@0.5.9
           fallback: none
@@ -638,7 +638,7 @@ jobs:
             --expected-commit "${EXPECTED_COMMIT}"
 
       - name: Create and publish GitHub Release
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: ${{ needs.package-release.outputs.tag }}
           generate_release_notes: true
