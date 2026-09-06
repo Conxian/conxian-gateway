@@ -38,6 +38,6 @@ When a security or control incident is suspected:
 ## Security expectations
 
 - no public disclosure before coordinated remediation
-- no real secrets committed to source control
+- no real secrets committed to source control (all `.env*` files except `.env.example`, private keys `*.key`/`*.pem`, certificates `*.pfx`/`*.p12`, secrets `*.secret`, and runtime databases `*.db` are strictly ignored and validated via `python3 scripts/verify_tracked_artifacts.py`)
 - production endpoints must use TLS
 - protected endpoints require authenticated access
