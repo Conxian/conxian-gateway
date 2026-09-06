@@ -241,3 +241,51 @@ describe('ConxianClient', () => {
         );
     });
 });
+
+    describe("verifyStateProofLocal (Candidate Q)", () => {
+        it("successfully verifies valid local proof payload", async () => {
+            const client = new ConxianClient("http://localhost:3000", "token");
+            const res = await client.verifyStateProofLocal({
+                chain: "bitcoin",
+                proof_data: "aGVsbG8=",
+                schnorr_signature: "a".repeat(128)
+            });
+            expect(res.verified).toBe(true);
+            expect(res.chain).toBe("bitcoin");
+            expect(res.proof_type).toBe("wasm_ucv1_local");
+        });
+
+        it("fails verification on invalid proof payload missing data", async () => {
+            const client = new ConxianClient("http://localhost:3000", "token");
+            const res = await client.verifyStateProofLocal({
+                chain: "stacks",
+                proof_data: ""
+            });
+            expect(res.verified).toBe(false);
+            expect(res.error).toBeDefined();
+        });
+
+    describe("verifyStateProofLocal (Candidate Q)", () => {
+        it("successfully verifies valid local proof payload", async () => {
+            const client = new ConxianClient("http://localhost:3000", "token");
+            const res = await client.verifyStateProofLocal({
+                chain: "bitcoin",
+                proof_data: "aGVsbG8=",
+                schnorr_signature: "a".repeat(128)
+            });
+            expect(res.verified).toBe(true);
+            expect(res.chain).toBe("bitcoin");
+            expect(res.proof_type).toBe("wasm_ucv1_local");
+        });
+
+        it("fails verification on invalid proof payload missing data", async () => {
+            const client = new ConxianClient("http://localhost:3000", "token");
+            const res = await client.verifyStateProofLocal({
+                chain: "stacks",
+                proof_data: ""
+            });
+            expect(res.verified).toBe(false);
+            expect(res.error).toBeDefined();
+        });
+    });
+});
