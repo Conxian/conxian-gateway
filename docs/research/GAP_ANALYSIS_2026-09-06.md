@@ -2,7 +2,7 @@
 
 This document provides a canonical audit of all identified technical and governance gaps, tracking their current resolution status, implementation locations, and strategic roadmap positioning.
 
-## 1. Closed Technical Gaps (18 Gaps — Shipped)
+## 1. Closed Technical Gaps (19 Gaps — Shipped)
 
 | Gap ID | Category | Description | Resolution / Implementation Location | Status |
 |---|---|---|---|---|
@@ -24,14 +24,14 @@ This document provides a canonical audit of all identified technical and governa
 | **G-B6** | Sovereign | Multi-Corridor Atomicity Normalization | ZKC compliance pipeline multi-format ingress normalization in `zkc.rs` | ✅ Shipped |
 | **G-ME1** | DePIN | Machine Identity Resolution | peaq / DIMO device key resolution in `canton_m2m.rs` | ✅ Shipped |
 | **G-ME2** | DePIN | Machine RWA Revenue Attestation | Sensor epoch revenue verification & proof generation in `canton_m2m.rs` | ✅ Shipped |
+| **G-TR1** | Treasury | SWIFT `camt.053` OData v4 ERP Generator | OData v4 ERP webhook callbacks & dispatch in `camt.rs` | ✅ Shipped |
 
 ---
 
-## 2. Active Technical & Governance Gaps (4 Gaps — In Progress / Infrastructure-Gated)
+## 2. Active Technical & Governance Gaps (3 Gaps — In Progress / Infrastructure-Gated)
 
 | Gap ID | Category | Description | Current Blockers / Scope | Target Milestone |
 |---|---|---|---|---|
-| **G-TR1** | Treasury | SWIFT `camt.053` Bank Statement Generator | OData v4 ERP webhook callbacks in progress (`camt.rs`) | Session 55 |
 | **G-SB1** | sBTC | Peg-in/out initiation | Institutional BTC/sBTC custody solution & signer set API | Q4 2026 |
 | **G-LN1** | Lightning | Direct LND/CLN Production Backend | Operator demand signal; macaroon/rune rotation infra | Q4 2026 |
 | **G-FM3** | Fedimint | E-Cash Privacy Audit vs. Compliance | ExCo-level governance decision (Chaumian e-cash vs. OFAC) | Governance Gated |
@@ -58,4 +58,4 @@ G-ME1 (peaq DID) ──► G-ME2 (RWA Attestation) ─────────�
 
 ## 4. Summary & Strategic Impact
 
-With 18 technical gaps closed, the Conxian Gateway offers multi-corridor settlement coverage spanning Bitcoin (L1, sBTC, DLC, Lightning, Liquid, Babylon, Fedimint), institutional DLTs (Canton Network, peaq DLT), cross-border CBDC networks (BRICS mBridge), and SWIFT ISO 20022 banking rails.
+With 19 technical gaps closed, the Conxian Gateway offers multi-corridor settlement coverage spanning Bitcoin (L1, sBTC, DLC, Lightning, Liquid, Babylon, Fedimint), institutional DLTs (Canton Network, peaq DLT), cross-border CBDC networks (BRICS mBridge), and SWIFT ISO 20022 banking rails.

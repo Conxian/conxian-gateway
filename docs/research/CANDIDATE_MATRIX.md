@@ -18,7 +18,7 @@ This matrix tracks the maturity of core components and identifies the best candi
 | **Canton State Translation Adapter** | 9.0 | High | Production | Shipped (Candidate J / G-C4). Daml ACS contract parsing & state root UCR translation active |
 | **CBTC Non-Custodial Reserve Verification** | 9.0 | High | Production | Shipped (Candidate I / G-C1). Threshold Schnorr attestation & UTXO reserve proof check in `dlc_oracle.rs` |
 | **BIP-322 Message Signing** | 9.0 | Urgent | Production | Integrated into compliance and identity layer (`zkc.rs`) |
-| **SWIFT camt.053 ERP Treasury Reporting** | 8.8 | High | Initiated | Candidate T (G-TR1). Real-time bank-to-customer statement generation & OData v4 synchronization active |
+| **SWIFT camt.053 ERP Treasury Reporting** | 9.5 | High | Production | Shipped (Candidate T / G-TR1). Real-time bank-to-customer statement generation & OData v4 synchronization active in `camt.rs` |
 | **DLC Orchestration & Oracle Attestation** | 8.8 | Medium | Production | Shipped (G-DL1, G-DL3). Cryptographic BIP340 Schnorr oracle threshold verification active |
 | **Identity Resolution (ENS/Web3.bio/World ID)** | 8.5 | High | Production | Integrated live APIs with fail-closed fallback (`identity.rs`) |
 | **Nostr Wallet Connect (NWC)** | 8.0 | High | Production | NIP-47 relay-settle integrated (`nwc_backend.rs`) |
@@ -67,7 +67,7 @@ This matrix tracks the maturity of core components and identifies the best candi
 - **Status**: ✅ Shipped (G-C5). Chainlink CCIP message verification and dynamic risk-scoring routing engine (`route_ccip_message`) implemented in `canton_m2m.rs` and exposed via `/api/v1/ccip/route`.
 
 ### Candidate T: SWIFT camt.053 Real-Time Bank Treasury Reporting (Score: 9.0 — Initiated)
-- **Status**: 🚀 Initiated (G-TR1). Implemented `camt.053.001.10` Bank-to-Customer Statement XML builder in `internal/api/src/camt.rs` mapping `TreasuryMonitor` events to institutional ERP systems (SAP, Oracle) via OData v4 ledger synchronization.
+- **Status**: ✅ Shipped (Candidate T / G-TR1). Implemented `camt.053.001.08` Bank-to-Customer Statement XML builder and OData v4 JSON webhook callback dispatch in `internal/api/src/camt.rs` mapping `TreasuryMonitor` events to institutional ERP systems (SAP, Oracle) via real-time ledger synchronization.
 
 ---
 

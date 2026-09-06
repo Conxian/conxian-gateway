@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Implemented SWIFT `camt.053` OData v4 ERP Webhook Callback Synchronization (Candidate T / G-TR1) in `internal/api/src/camt.rs`, providing `ODataV4CallbackPayload` serialization, `dispatch_odata_v4_webhook` HTTP callback delivery using `minreq` inside `spawn_blocking`, and full test coverage.
 - Comprehensive audit and research expansion across all gaps, candidates (Candidates Q, R, S, T), and knowledge base documents (`docs/research/CANDIDATE_MATRIX.md`, `docs/research/KNOWLEDGE_MAP.md`, `docs/research/OPPORTUNITY_MAP_AND_EXPANSION.md`, and `docs/research/GAP_ANALYSIS_2026-09-06.md`).
 - Added Machine Economy & DePIN peaq DLT TypeScript interfaces (`MachineIdentityPayload`, `MachineRwaAttestation`, `DePinSettlementRequest`, `DePinSettlementResponse`) and SWIFT ISO 20022 `camt.053` Bank Treasury Reporting interfaces (`Camt053StatementRequest`, `Camt053StatementResponse`) to `@conxian/schemas` (Candidates R & T).
 - Expanded `@conxian/client-sdk` (`ConxianClient`) with typed API methods (`resolveMachineIdentity`, `verifyMachineRwaAttestation`, `settleDePinMachinePayment`, `generateCamt053Statement`) and added unit test coverage in `index.test.ts`.
