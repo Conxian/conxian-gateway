@@ -116,7 +116,9 @@ pub async fn generate_camt053(
             xml_payload_base64: BASE64.encode(xml.as_bytes()),
             status: "SYNCED".to_string(),
         };
-        match dispatch_odata_v4_webhook(url, payload.webhook_secret.as_deref(), &odata_payload).await {
+        match dispatch_odata_v4_webhook(url, payload.webhook_secret.as_deref(), &odata_payload)
+            .await
+        {
             Ok(code) if (200..300).contains(&code) => (true, format!("SYNCED_HTTP_{code}")),
             Ok(code) => (false, format!("SYNC_FAILED_HTTP_{code}")),
             Err(err) => (false, format!("DISPATCH_ERROR: {err}")),
@@ -668,7 +670,8 @@ mod tests {
         assert!(json.contains("@odata.context"));
         assert!(json.contains("stmt-12345"));
 
-        let deserialized: ODataV4CallbackPayload = serde_json::from_str(&json).expect("Deserialization failed");
+        let deserialized: ODataV4CallbackPayload =
+            serde_json::from_str(&json).expect("Deserialization failed");
         assert_eq!(payload, deserialized);
     }
 
@@ -684,7 +687,12 @@ mod tests {
             status: "SYNCED".to_string(),
         };
 
-        let res = dispatch_odata_v4_webhook("http://invalid.local.unreachable:9999/odata", Some("secret123"), &payload).await;
+        let res = dispatch_odata_v4_webhook(
+            "http://invalid.local.unreachable:9999/odata",
+            Some("secret123"),
+            &payload,
+        )
+        .await;
         assert!(res.is_err());
     }
 }
