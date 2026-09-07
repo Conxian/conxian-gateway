@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  RUST_TOOLCHAIN: 1.96.0
+  RUST_TOOLCHAIN: 1.98.0
   CARGO_LLVM_COV_VERSION: 0.8.7
 
 jobs:
