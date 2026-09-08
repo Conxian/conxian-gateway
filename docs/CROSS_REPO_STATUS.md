@@ -335,3 +335,8 @@ Before starting work on any repo, verify:
 - **Knowledge Base Synchronization**: Updated `SOVEREIGN_SHARDING_VERIFICATION.md`, `CANDIDATE_MATRIX.md`, `GAP_ANALYSIS_AND_SCORING.md`, and `CROSS_REPO_STATUS.md` for end-to-end development cycle discipline.
 
 - **Candidate Q Wasm UCV-1 Verification Expansion**: Added client-side Wasm UCV-1 zero-trust proof verification schemas (`WasmUcvProofPayload`, `WasmUcvVerificationResult`) to `@conxian/schemas` and implemented `verifyStateProofLocal()` in `@conxian/client-sdk` with full Vitest test coverage (13/13 passing).
+
+## Session Update — 2026-09-08 (Current Session)
+- **End-to-End Audit & Research Synchronization**: Executed git fetch, submodule sync, and verified clean repository hygiene across workspace v0.1.5 baseline.
+- **Candidate Scoring & Gap Alignment**: Confirmed 19 closed technical gaps (including G-DL1, G-FI1..3, G-BB1, G-FM1..2, G-SB3, G-C1, G-C4..5, G-20..21, G-ME1..2, G-TR1) and tracked 3 infrastructure/governance gated open gaps (G-SB1, G-LN1, G-FM3).
+- **Candidate R & T Maturity Verification**: Verified Candidate R (DePIN/peaq M2M settlement & machine RWA attestation) and Candidate T (ISO 20022 camt.053 ERP reporting) full end-to-end integration across Rust core crates and `@conxian/client-sdk` monorepo packages.
