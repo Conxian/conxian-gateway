@@ -18,13 +18,15 @@ pub struct InstallerConfig {
 impl Default for InstallerConfig {
     fn default() -> Self {
         Self {
-            auth_token: "conxian_prod_sec_99a8b7c6d5e4f3a21".to_string(),
+            auth_token: "CONXIAN_PROD_AUTH_TOKEN_REQUIRED".to_string(),
             trust_tier: "T1".to_string(),
             bitcoin_rpc_url: "http://127.0.0.1:8332".to_string(),
             stacks_rpc_url: "https://api.mainnet.hiro.so".to_string(),
             database_url: "sqlite://gateway_state.db".to_string(),
             gateway_port: 8080,
-            odata_v4_webhook_url: Some("https://erp.client-domain.com/odata/v4/BankStatements".to_string()),
+            odata_v4_webhook_url: Some(
+                "https://erp.client-domain.com/odata/v4/BankStatements".to_string(),
+            ),
         }
     }
 }
@@ -111,10 +113,18 @@ pub async fn probe_gateway_status(gateway_url: &str) -> Result<String> {
         let resp = minreq::get(&health_url)
             .with_timeout(3)
             .send()
-            .with_context(|| format!("Failed to connect to Gateway health endpoint at {}", health_url))?;
+            .with_context(|| {
+                format!(
+                    "Failed to connect to Gateway health endpoint at {}",
+                    health_url
+                )
+            })?;
 
         if resp.status_code == 200 {
-            Ok(format!("Gateway Online (HTTP 200) - Response: {}", resp.as_str().unwrap_or("OK")))
+            Ok(format!(
+                "Gateway Online (HTTP 200) - Response: {}",
+                resp.as_str().unwrap_or("OK")
+            ))
         } else {
             Ok(format!("Gateway Error Status: {}", resp.status_code))
         }
@@ -152,7 +162,10 @@ async fn main() -> Result<()> {
             generate_docker_compose(&config, &compose_path)?;
 
             println!("  [SUCCESS] Created env file: {:?}", env_path);
-            println!("  [SUCCESS] Created Docker Compose file: {:?}", compose_path);
+            println!(
+                "  [SUCCESS] Created Docker Compose file: {:?}",
+                compose_path
+            );
             println!("\nConfiguration ready. Run `conxian-cli doctor` to verify environment.");
         }
         "doctor" => {
@@ -160,12 +173,40 @@ async fn main() -> Result<()> {
             let config = InstallerConfig::default();
             let report = run_doctor_checks(&config);
 
-            println!("  - Production Secret Validation: {}", if report.secret_valid { "PASS" } else { "FAIL (sentinel or empty)" });
-            println!("  - Trust Tier Verification (T1/T2): {}", if report.tier_valid { "PASS" } else { "FAIL" });
-            println!("  - Bitcoin L1 RPC Reachability: {}", if report.btc_rpc_reachable { "PASS (Valid URL)" } else { "FAIL" });
-            println!("  - Stacks L2 RPC Reachability: {}", if report.stacks_rpc_reachable { "PASS (Valid URL)" } else { "FAIL" });
+            println!(
+                "  - Production Secret Validation: {}",
+                if report.secret_valid {
+                    "PASS"
+                } else {
+                    "FAIL (sentinel or empty)"
+                }
+            );
+            println!(
+                "  - Trust Tier Verification (T1/T2): {}",
+                if report.tier_valid { "PASS" } else { "FAIL" }
+            );
+            println!(
+                "  - Bitcoin L1 RPC Reachability: {}",
+                if report.btc_rpc_reachable {
+                    "PASS (Valid URL)"
+                } else {
+                    "FAIL"
+                }
+            );
+            println!(
+                "  - Stacks L2 RPC Reachability: {}",
+                if report.stacks_rpc_reachable {
+                    "PASS (Valid URL)"
+                } else {
+                    "FAIL"
+                }
+            );
 
-            if report.secret_valid && report.tier_valid && report.btc_rpc_reachable && report.stacks_rpc_reachable {
+            if report.secret_valid
+                && report.tier_valid
+                && report.btc_rpc_reachable
+                && report.stacks_rpc_reachable
+            {
                 println!("\nSystem Diagnostics All PASS. Ready for deployment.");
             } else {
                 println!("\nSystem Diagnostics Warnings Detected. Review above parameters.");
@@ -179,7 +220,8 @@ async fn main() -> Result<()> {
         }
         "status" => {
             println!("Probing Conxian Gateway Health...");
-            let gateway_url = env::var("GATEWAY_URL").unwrap_or_else(|_| "http://127.0.0.1:8080".to_string());
+            let gateway_url =
+                env::var("GATEWAY_URL").unwrap_or_else(|_| "http://127.0.0.1:8080".to_string());
             match probe_gateway_status(&gateway_url).await {
                 Ok(msg) => println!("  [STATUS] {}", msg),
                 Err(err) => println!("  [STATUS] Gateway Offline / Unreachable: {}", err),
@@ -206,7 +248,7 @@ mod tests {
         generate_env_file(&config, &env_file).unwrap();
 
         let content = fs::read_to_string(&env_file).unwrap();
-        assert!(content.contains("CONXIAN_GATEWAY_AUTH_TOKEN=conxian_prod_sec"));
+        assert!(content.contains("CONXIAN_GATEWAY_AUTH_TOKEN=CONXIAN_PROD_AUTH_TOKEN_REQUIRED"));
         assert!(content.contains("CONXIAN_TRUST_TIER=T1"));
         assert!(content.contains("GATEWAY_PORT=8080"));
         let _ = fs::remove_file(env_file);
