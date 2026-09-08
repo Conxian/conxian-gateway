@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "cmd/gateway",
+    "cmd/conxian-cli",
     "internal/engine",
     "internal/api",
     "internal/compliance",
