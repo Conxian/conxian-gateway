@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Implemented Bitcoin L1 Merkle Proof Verification (`verify_bitcoin_merkle_proof`) in `internal/engine/src/stacks/sbtc.rs` for sBTC peg-in/out transaction validation (G-SB3).
 - Implemented ISO 20022 XML Schema Validation & XSD structure hardening (`validate_iso20022_xml_structure`) in `internal/compliance/src/zkc.rs` (G-FI1).
 - Added XML structure, namespace verification (pacs.008, pacs.009, camt), and syntax error checks for ISO 20022 ingress normalization.
 - Added comprehensive unit tests in `zkc_iso20022_tests` and updated research knowledge base (`GAP_ANALYSIS_2026-08-07.md`, `CANDIDATE_MATRIX.md`).

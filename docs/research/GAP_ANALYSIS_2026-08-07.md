@@ -260,3 +260,9 @@ Each gap is scored on 3 axes (1-5 scale):
 ## 10. Session 53 Gap Resolution Update (2026-08-20)
 
 - **G-BB1 (Babylon EOTS Verification & Double-Sign Key Extraction):** ✅ CLOSED. Implemented full `extract_eots_secret_key()` in `internal/engine/src/bitcoin/babylon_adapter.rs` calculating finality provider private key $x = (s_1 - s_2) / (e_1 - e_2) \pmod n$ from double-signing evidence $(R, s_1)$ and $(R, s_2)$ under secp256k1 curve order $n$. Wired double-sign key extraction and Schnorr verification into `verify_state_proof()` with 9 unit tests.
+
+---
+
+## 11. Session 54 Gap Resolution Update (2026-09-09)
+
+- **G-SB3 (sBTC Bitcoin L1 Merkle Proof Verification):** ✅ CLOSED. Implemented `verify_bitcoin_merkle_proof()` in `internal/engine/src/stacks/sbtc.rs` performing independent SHA-256 double-hashing, display-order byte reversal, and sibling index bit shifting to verify Bitcoin L1 Merkle proofs for sBTC bridge peg-in/out transactions. Verified with 18 passing unit tests.
