@@ -289,6 +289,23 @@ describe('ConxianClient', () => {
             );
         });
 
+        it('resolves helium and iotex machine identities', async () => {
+            const mockResponse = { resolved: true, device_id: 'hotspot-001', provider: 'helium' };
+            (global.fetch as any).mockResolvedValueOnce({
+                ok: true,
+                json: async () => mockResponse,
+            });
+
+            const res = await client.resolveMachineIdentity({
+                device_id: 'hotspot-001',
+                provider: 'helium',
+                device_pubkey: '0x02def456'
+            });
+
+            expect(res.resolved).toBe(true);
+            expect(res.provider).toBe('helium');
+        });
+
         it('verifies machine RWA revenue attestation', async () => {
             const mockResponse = { verified: true, epoch: 42, revenue_sats: 100000 };
             (global.fetch as any).mockResolvedValueOnce({

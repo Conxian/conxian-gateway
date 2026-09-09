@@ -626,6 +626,7 @@ pub enum MachineType {
     Camera,
     DeliveryVehicle,
     EnergyMeter,
+    TelecomCell,
     Other,
 }
 
@@ -634,9 +635,17 @@ pub enum MachineType {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct MachineIdentity {
     /// peaq decentralized identifier (did:peaq:<address>)
+    #[serde(default)]
     pub peaq_did: Option<String>,
     /// DIMO vehicle identity (for connected vehicles)
+    #[serde(default)]
     pub dimo_vehicle_id: Option<String>,
+    /// Helium hotspot / network device identity
+    #[serde(default)]
+    pub helium_hotspot_id: Option<String>,
+    /// IoTeX device identity
+    #[serde(default)]
+    pub iotex_device_id: Option<String>,
     /// Schnorr x-only public key (Taproot-ready, BIP-340)
     pub device_key: String,
     /// Manufacturer or DePIN-network attestation proof
@@ -655,7 +664,7 @@ pub struct MachineIdentity {
 pub struct MachineIdentityResolutionRequest {
     /// Machine DID or device public key to resolve
     pub identifier: String,
-    /// Provider: "peaq", "dimo", "device_key"
+    /// Provider: "peaq", "dimo", "helium", "iotex", "device_key"
     pub provider: String,
     /// BIP-322 or Schnorr proof-of-possession signature (optional)
     #[serde(default)]

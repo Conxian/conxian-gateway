@@ -14,7 +14,7 @@ This matrix tracks the maturity of core components and identifies the best candi
 | **Canton CCIP Cross-Chain Gateway** | 9.3 | High | Production | Shipped (Candidate S / G-C5). Dynamic risk scoring & ZKC compliance routing active in `canton_m2m.rs` |
 | **BRICS mBridge DLT Ingress** | 9.2 | High | Production | Shipped (Candidate P / G-FI3). HotStuff/e-CNY DLT state proof verification in `brics_adapter.rs` |
 | **sBTC L1 Proof Verification** | 9.2 | High | Production | Shipped (G-SB3). Double-SHA256 tx & block header PoW verification in `sbtc.rs` |
-| **Machine Economy & DePIN Settlement** | 9.2 | High | Initiated | Candidate R (G-ME1, G-ME2). peaq machine identity resolution, RWA revenue attestation & Lightning/X402 settlement active in `canton_m2m.rs` |
+| **Machine Economy & DePIN Settlement** | 9.6 | High | Production | Candidate R (G-ME1, G-ME2). Multi-provider machine identity resolution (peaq, DIMO, Helium, IoTeX), RWA revenue attestation & Lightning/X402 settlement active |
 | **Canton State Translation Adapter** | 9.0 | High | Production | Shipped (Candidate J / G-C4). Daml ACS contract parsing & state root UCR translation active |
 | **CBTC Non-Custodial Reserve Verification** | 9.0 | High | Production | Shipped (Candidate I / G-C1). Threshold Schnorr attestation & UTXO reserve proof check in `dlc_oracle.rs` |
 | **BIP-322 Message Signing** | 9.0 | Urgent | Production | Integrated into compliance and identity layer (`zkc.rs`) |
@@ -58,8 +58,8 @@ This matrix tracks the maturity of core components and identifies the best candi
 ### Candidate Q: Client-Side Wasm UCV-1 & BitVM3 Garbled-Circuit Folding Engine (Score: 9.5 — Shipped)
 - **Status**: ✅ Shipped (G-20, G-21, G-B6). Wasm-compatible UCV-1 verification primitives implemented in `@conxian/client-sdk` (`verifyStateProofLocal`) enabling zero-trust client-side verification, alongside sub-200,000 cycle recursive Groth16/garbled-circuit proof folding for BitVM3 state transitions.
 
-### Candidate R: Machine Economy & DePIN peaq DLT Settlement Engine (Score: 9.2 — Initiated)
-- **Status**: 🚀 Initiated (G-ME1, G-ME2). peaq DLT machine identity resolution (`resolve_machine_identity`), machine RWA revenue attestation (`verify_machine_rwa_revenue`), and machine-to-machine (M2M) Lightning/X402 micro-settlement implemented in `canton_m2m.rs` and exposed via `/api/v1/m2m/settle` and `/api/v1/m2m/rwa/verify`.
+### Candidate R: Machine Economy & DePIN Settlement Engine (Score: 9.6 — Shipped)
+- **Status**: ✅ Shipped (G-ME1, G-ME2). Multi-chain machine identity resolution (`resolve_machine_identity` supporting peaq, DIMO, Helium, IoTeX, device_key), machine RWA revenue attestation (`verify_machine_rwa_revenue`), and machine-to-machine (M2M) Lightning/X402 micro-settlement implemented in `internal/api/src/handlers.rs` and exposed via `/api/v1/m2m/settle`, `/api/v1/m2m/rwa/verify`, and `/api/v1/m2m/identity/resolve`.
 - **Urgency**: High (Q4 2026). Essential for autonomous machine agents, solar/telecom DePIN sensors, and smart mobility fleets requiring instant micropayments and revenue tokenization.
 - **Impact**: Bridges IoT machine telemetry directly to Bitcoin/Lightning settlement rails and Canton tokenized asset contracts.
 
