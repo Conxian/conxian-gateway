@@ -268,7 +268,7 @@ export interface WasmUcvVerificationResult {
  */
 export interface MachineIdentityPayload {
     device_id: string;
-    provider: "peaq" | "dimo" | "helium" | "custom";
+    provider: "peaq" | "dimo" | "helium" | "iotex" | "custom";
     device_pubkey: string;
     signature?: string;
     metadata?: Record<string, any>;

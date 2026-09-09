@@ -11,11 +11,11 @@ This document expands on existing research and maps emerging opportunities for t
     - **Client-Side Wasm UCV-1 Verification**: Zero-trust client-side state proof verification implemented in `@conxian/client-sdk` (`verifyStateProofLocal`), eliminating gateway RPC dependencies for web and mobile clients.
     - **Recursive Proof Folding**: Sub-200,000 cycle recursive Groth16 / garbled circuit accumulator folding target for optimistic BitVM3 challenge-response state transitions.
 
-### B. Machine Economy & DePIN peaq DLT Micro-Settlement (Candidate R)
-- **Status**: Active Candidate Initiation (Score 9.2)
+### B. Machine Economy & DePIN Micro-Settlement (Candidate R)
+- **Status**: Production Shipped (Score 9.6)
 - **Opportunity**: Autonomous machine agents (EV chargers, solar grids, telecom cell towers, drone fleets) require cryptographically verified machine identities (DIDs), real-time revenue tokenization, and instant micro-settlements over Lightning / X402 rails.
 - **Expansion**:
-    - **G-ME1 (Machine Identity)**: Device key resolution for peaq DLT and DIMO device key signatures via `resolve_machine_identity`.
+    - **G-ME1 (Machine Identity)**: Multi-provider device key resolution across peaq DLT, DIMO, Helium, and IoTeX via `resolve_machine_identity`.
     - **G-ME2 (Machine RWA Attestation)**: Epoch-based revenue verification and sensor telemetry proof generation via `verify_machine_rwa_revenue`.
     - **M2M Micro-Settlement**: Sub-cent X402 / Lightning payment routing for machine-generated service requests via `/api/v1/m2m/settle`.
 
@@ -39,7 +39,7 @@ This document expands on existing research and maps emerging opportunities for t
 
 1. **Candidate Q**: Client-Side Wasm UCV-1 Verification & BitVM3 Folding Engine — Score 9.5.
 2. **Candidate S**: Canton CCIP Cross-Chain Gateway — Score 9.3.
-3. **Candidate R**: Machine Economy & DePIN peaq DLT Settlement Engine — Score 9.2.
+3. **Candidate R**: Machine Economy & DePIN Settlement Engine — Score 9.6.
 4. **Candidate T**: SWIFT camt.053 Real-Time Bank Treasury Reporting — Score 9.0.
 
 ---
@@ -47,5 +47,5 @@ This document expands on existing research and maps emerging opportunities for t
 ## 3. Recommended Roadmap Execution
 
 1. **Client SDK Integration**: Maintain full TypeScript schema synchronization in `@conxian/schemas` and client methods in `@conxian/client-sdk`.
-2. **DePIN Expansion**: Expand machine DID resolution across additional IoT ecosystems (Helium, peaq, DIMO, IoTeX).
+2. **DePIN Expansion**: Multi-provider machine DID resolution active across peaq, DIMO, Helium, and IoTeX IoT ecosystems.
 3. **ERP Synchronization**: Deliver OData v4 webhooks for `camt.053` bank statement updates to institutional treasuries.

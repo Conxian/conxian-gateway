@@ -999,7 +999,7 @@ pub async fn resolve_machine_identity(
     // For peaq/dimo providers, a separate device_key field must also be provided.
     let device_key_for_verify = match payload.provider.as_str() {
         "device_key" => Some(payload.identifier.as_str()),
-        "peaq" | "dimo" => payload.device_key.as_deref(),
+        "peaq" | "dimo" | "helium" | "iotex" => payload.device_key.as_deref(),
         _ => None,
     };
 
@@ -1031,6 +1031,8 @@ pub async fn resolve_machine_identity(
         "peaq" => conxian_core::MachineIdentity {
             peaq_did: Some(format!("did:peaq:{}", payload.identifier)),
             dimo_vehicle_id: None,
+            helium_hotspot_id: None,
+            iotex_device_id: None,
             device_key: payload.identifier.clone(),
             attestation_proof: None,
             machine_type,
@@ -1039,6 +1041,28 @@ pub async fn resolve_machine_identity(
         "dimo" => conxian_core::MachineIdentity {
             peaq_did: None,
             dimo_vehicle_id: Some(payload.identifier.clone()),
+            helium_hotspot_id: None,
+            iotex_device_id: None,
+            device_key: payload.identifier.clone(),
+            attestation_proof: None,
+            machine_type,
+            label: None,
+        },
+        "helium" => conxian_core::MachineIdentity {
+            peaq_did: None,
+            dimo_vehicle_id: None,
+            helium_hotspot_id: Some(payload.identifier.clone()),
+            iotex_device_id: None,
+            device_key: payload.identifier.clone(),
+            attestation_proof: None,
+            machine_type,
+            label: None,
+        },
+        "iotex" => conxian_core::MachineIdentity {
+            peaq_did: None,
+            dimo_vehicle_id: None,
+            helium_hotspot_id: None,
+            iotex_device_id: Some(payload.identifier.clone()),
             device_key: payload.identifier.clone(),
             attestation_proof: None,
             machine_type,
@@ -1047,6 +1071,8 @@ pub async fn resolve_machine_identity(
         "device_key" => conxian_core::MachineIdentity {
             peaq_did: None,
             dimo_vehicle_id: None,
+            helium_hotspot_id: None,
+            iotex_device_id: None,
             device_key: payload.identifier.clone(),
             attestation_proof: payload.signature.clone(),
             machine_type,

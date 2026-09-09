@@ -22,8 +22,8 @@ This document provides a canonical audit of all identified technical and governa
 | **G-20** | Wasm | Client-Side UCV-1 Zero-Trust Proof Engine | Local Wasm state proof verification in `@conxian/client-sdk` (`verifyStateProofLocal`) | ✅ Shipped |
 | **G-21** | BitVM3 | Sub-200k Cycle Garbled Circuit Proof Folding | Recursive Groth16/garbled-circuit accumulator folding spec in `bitvm3_adapter.rs` | ✅ Shipped |
 | **G-B6** | Sovereign | Multi-Corridor Atomicity Normalization | ZKC compliance pipeline multi-format ingress normalization in `zkc.rs` | ✅ Shipped |
-| **G-ME1** | DePIN | Machine Identity Resolution | peaq / DIMO device key resolution in `canton_m2m.rs` | ✅ Shipped |
-| **G-ME2** | DePIN | Machine RWA Revenue Attestation | Sensor epoch revenue verification & proof generation in `canton_m2m.rs` | ✅ Shipped |
+| **G-ME1** | DePIN | Machine Identity Resolution | Multi-provider device key resolution (peaq, DIMO, Helium, IoTeX) in `handlers.rs` | ✅ Shipped |
+| **G-ME2** | DePIN | Machine RWA Revenue Attestation | Sensor epoch revenue verification & proof generation in `handlers.rs` | ✅ Shipped |
 | **G-TR1** | Treasury | SWIFT `camt.053` OData v4 ERP Generator | OData v4 ERP webhook callbacks & dispatch in `camt.rs` | ✅ Shipped |
 
 ---

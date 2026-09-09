@@ -64,7 +64,7 @@
 
 ### 1. Gateway REST API (`internal/api/`)
 - `src/handlers.rs`: REST endpoint handlers including UCV-1 verification, ISO 20022 payment initiation (`pacs.008`), BRICS mBridge ingress, identity resolution, DLC bonds, and admin governance.
-- `src/canton_m2m.rs`: Canton Daml state translation (Candidate J), Canton CCIP routing (Candidate S), Machine Identity & RWA attestation (Candidate R), and M2M Lightning micro-settlement.
+- `src/handlers.rs`: REST endpoint handlers including UCV-1 verification, ISO 20022 payment initiation (`pacs.008`), BRICS mBridge ingress, identity resolution, DLC bonds, Canton state translation (Candidate J), CCIP routing (Candidate S), Machine Identity & RWA attestation (Candidate R supporting peaq, DIMO, Helium, IoTeX), M2M settlement, and admin governance.
 - `src/camt.rs`: SWIFT ISO 20022 `pacs.008` generation and `camt.053` Bank-to-Customer Treasury Statement XML generation (Candidate T).
 - `src/auth.rs`: Bearer token authentication and sentinel rejection.
 - `src/nostr.rs` & `src/nwc_backend.rs`: Nostr Wallet Connect (NWC) NIP-47 relay-settle protocol handlers.
@@ -101,6 +101,6 @@
 | **Candidate O** | sBTC L1 Proof Verification | `internal/engine/src/stacks/sbtc.rs` | ✅ Shipped |
 | **Candidate P** | BRICS mBridge DLT Settlement | `internal/engine/src/brics_adapter.rs` & `internal/compliance/src/zkc.rs` | ✅ Shipped |
 | **Candidate Q** | Wasm UCV-1 & BitVM3 Folding | `@conxian/client-sdk` & `internal/engine/src/bitvm3_adapter.rs` | ✅ Shipped |
-| **Candidate R** | Machine Economy & DePIN peaq DLT | `internal/api/src/canton_m2m.rs` & `@conxian/client-sdk` | 🚀 Active |
+| **Candidate R** | Machine Economy & DePIN Settlement | `internal/api/src/handlers.rs` & `@conxian/client-sdk` | ✅ Shipped |
 | **Candidate S** | Canton CCIP Cross-Chain Gateway | `internal/api/src/canton_m2m.rs` & `@conxian/client-sdk` | ✅ Shipped |
 | **Candidate T** | SWIFT camt.053 Real-Time ERP Reporting | `internal/api/src/camt.rs` & `@conxian/client-sdk` | 🚀 Active |
