@@ -493,10 +493,11 @@ pub fn verify_bitcoin_merkle_proof(
         _ => return false,
     };
 
-    let expected_root_bytes: Vec<u8> = match <Vec<u8> as bitcoin::hex::FromHex>::from_hex(merkle_root_hex) {
-        Ok(b) if b.len() == 32 => b,
-        _ => return false,
-    };
+    let expected_root_bytes: Vec<u8> =
+        match <Vec<u8> as bitcoin::hex::FromHex>::from_hex(merkle_root_hex) {
+            Ok(b) if b.len() == 32 => b,
+            _ => return false,
+        };
 
     // Convert display byte order (reversed) to internal byte order
     current_bytes.reverse();
@@ -504,10 +505,11 @@ pub fn verify_bitcoin_merkle_proof(
     expected_root_internal.reverse();
 
     for (level, sibling_hex) in proof_path.iter().enumerate() {
-        let mut sibling_bytes: Vec<u8> = match <Vec<u8> as bitcoin::hex::FromHex>::from_hex(sibling_hex) {
-            Ok(b) if b.len() == 32 => b,
-            _ => return false,
-        };
+        let mut sibling_bytes: Vec<u8> =
+            match <Vec<u8> as bitcoin::hex::FromHex>::from_hex(sibling_hex) {
+                Ok(b) if b.len() == 32 => b,
+                _ => return false,
+            };
         sibling_bytes.reverse();
 
         let is_right_child = (index >> level) & 1 == 1;
