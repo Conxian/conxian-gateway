@@ -715,14 +715,14 @@ mod tests {
         assert!(verify_bitcoin_merkle_proof(
             &tx0_hex,
             &root_hex,
-            &[tx1_hex.clone()],
+            std::slice::from_ref(&tx1_hex),
             0
         ));
 
         assert!(verify_bitcoin_merkle_proof(
             &tx1_hex,
             &root_hex,
-            &[tx0_hex.clone()],
+            std::slice::from_ref(&tx0_hex),
             1
         ));
 
