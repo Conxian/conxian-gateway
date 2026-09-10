@@ -1060,6 +1060,9 @@ mod tests {
         assert_eq!(payload.executed_cet.outcome, "up");
         assert!(payload.is_verified);
         assert!(payload.broadcast_ready);
+    }
+
+    #[test]
     fn cbtc_reserve_attestation_verifies_threshold_quorum() {
         let secp = test_secp();
         let ssecp = signing_secp();
