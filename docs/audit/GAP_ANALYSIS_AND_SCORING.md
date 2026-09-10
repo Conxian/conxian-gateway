@@ -33,6 +33,7 @@ This document tracks identified gaps across the Conxian Gateway portfolio, score
 | **G-25** | No DLC bond integration test | Testing | ✅ Added `POST /api/v1/dlc/bond` + 2 tests |
 | **G-26** | No MuSig2 key aggregation test | Testing | ✅ Added `POST /api/v1/musig2/aggregate-keys` + 1 test |
 | **G-27** | Docker image not published | CI/CD | ✅ Added `docker/build-push-action` to release workflow |
+| **G-DL2** | DLC CET Construction & Refund Engine | DLC | ✅ Implemented `DlcExecutionEngine` for CET and refund tx construction |
 
 ---
 
