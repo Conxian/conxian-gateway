@@ -46,7 +46,9 @@ pub mod risc0_verifier;
 pub use risc0_verifier::{Risc0Mode, Risc0StfVerifier, Risc0VerificationReceipt};
 pub mod dlc_oracle;
 pub use dlc_oracle::{
-    DlcOracleClient, OracleAnnouncement, OracleAttestation, ThresholdOracleCoordinator,
+    DlcCet, DlcContractSpec, DlcExecutionEngine, DlcExecutionPayload, DlcFundingInput,
+    DlcOracleClient, DlcOutcomePayout, DlcRefundTx, OracleAnnouncement, OracleAttestation,
+    ThresholdOracleCoordinator,
 };
 
 pub mod groth16_verifier;

@@ -96,3 +96,8 @@ Full financial systems analysis in `docs/research/BRICS_FINANCIAL_SYSTEMS_RESEAR
 ### Candidate M: Babylon EOTS Verification & Double-Sign Key Extraction (Score: 9.5)
 - **Status**: ✅ Shipped (G-BB1). Implemented Schnorr attestation verification, double-sign detection, and algebraic secret key extraction $x = (s_1 - s_2)/(e_1 - e_2) \pmod n$ in `internal/engine/src/bitcoin/babylon_adapter.rs`.
 - **Impact**: Resolves sole remaining P1 gap and enables independent slashability verification for Babylon BTC staking finality providers.
+
+
+### Candidate N: DLC CET & Refund Execution Engine (Score: 9.5)
+- **Status**: ✅ Shipped (G-DL2). Implemented `DlcContractSpec`, `DlcCet`, `DlcRefundTx`, `DlcExecutionPayload`, and `DlcExecutionEngine` in `internal/engine/src/bitcoin/dlc_oracle.rs`.
+- **Impact**: Completes Stage 3 & 4 of the DLC pipeline, enabling deterministic CET construction, net fee deduction, refund transaction building, and attestation-driven contract execution.
