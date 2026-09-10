@@ -1821,12 +1821,122 @@ pub async fn route_ccip_message(
         ));
     }
 
-    Err((
-        StatusCode::NOT_IMPLEMENTED,
-        Json(json!({
-            "error": "CCIP message authenticity verification is not configured"
-        })),
-    ))
+    // CCIP Authenticity Verification
+    let proof = match &payload.authenticity_proof {
+        Some(proof) => proof,
+        None => {
+            return Err((
+                StatusCode::NOT_IMPLEMENTED,
+                Json(json!({
+                    "error": "CCIP message authenticity verification is not configured"
+                })),
+            ));
+        }
+    };
+
+    // Verify secp256k1 signature over message digest
+    if let Err(err_msg) = verify_ccip_authenticity_signature(message, proof) {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            Json(json!({
+                "error": format!("Invalid CCIP message authenticity signature: {}", err_msg)
+            })),
+        ));
+    }
+
+    // Determine Sanctions Risk
+    let src = message.source_chain.to_lowercase();
+    let dst = message.destination_chain.to_lowercase();
+
+    let mut risk_level = if src == "spfs" || dst == "spfs" {
+        conxian_core::SanctionsRisk::High
+    } else if src == "mbridge" || dst == "mbridge" {
+        conxian_core::SanctionsRisk::Medium
+    } else if matches!(src.as_str(), "canton" | "ethereum" | "bitcoin" | "stacks")
+        && matches!(dst.as_str(), "canton" | "ethereum" | "bitcoin" | "stacks")
+    {
+        conxian_core::SanctionsRisk::Low
+    } else {
+        conxian_core::SanctionsRisk::Medium
+    };
+
+    if payload.elevated_scrutiny {
+        risk_level = match risk_level {
+            conxian_core::SanctionsRisk::Low => conxian_core::SanctionsRisk::Medium,
+            conxian_core::SanctionsRisk::Medium => conxian_core::SanctionsRisk::High,
+            conxian_core::SanctionsRisk::High => conxian_core::SanctionsRisk::Critical,
+            conxian_core::SanctionsRisk::Critical => conxian_core::SanctionsRisk::Critical,
+        };
+    }
+
+    let (approved, rejection_reason) = if risk_level == conxian_core::SanctionsRisk::Critical {
+        (
+            false,
+            Some("Sanctions risk critical under elevated scrutiny".to_string()),
+        )
+    } else {
+        (true, None)
+    };
+
+    use sha2::Digest;
+    let digest_str = format!(
+        "{}:{}:{}:{}",
+        message.source_chain, message.destination_chain, message.message_id, message.payload
+    );
+    let digest_hash = sha2::Sha256::digest(digest_str.as_bytes());
+    let audit_ref = format!("ccip-audit-{}", hex::encode(digest_hash));
+
+    Ok(Json(conxian_core::CcipRouteResponse {
+        approved,
+        message_id: message.message_id.clone(),
+        risk_level,
+        rejection_reason,
+        audit_ref: Some(audit_ref),
+        routed_at: now_unix(),
+    }))
+}
+
+fn verify_ccip_authenticity_signature(
+    message: &conxian_core::CcipMessageRoute,
+    proof: &conxian_core::CcipAuthenticityProof,
+) -> Result<(), String> {
+    use sha2::Digest;
+
+    let pubkey_bytes =
+        hex::decode(&proof.public_key).map_err(|e| format!("Invalid hex in public key: {}", e))?;
+    let sig_bytes =
+        hex::decode(&proof.signature).map_err(|e| format!("Invalid hex in signature: {}", e))?;
+
+    let digest_str = format!(
+        "{}:{}:{}:{}",
+        message.source_chain, message.destination_chain, message.message_id, message.payload
+    );
+    let msg_hash = sha2::Sha256::digest(digest_str.as_bytes());
+    let secp_msg = secp256k1::Message::from_digest(msg_hash.into());
+
+    let secp = secp256k1::Secp256k1::verification_only();
+
+    // Try Schnorr (32-byte pubkey, 64-byte sig)
+    if pubkey_bytes.len() == 32 && sig_bytes.len() == 64 {
+        let xonly_pk = secp256k1::XOnlyPublicKey::from_slice(&pubkey_bytes)
+            .map_err(|e| format!("Invalid Schnorr x-only public key: {}", e))?;
+        let schnorr_sig = secp256k1::schnorr::Signature::from_slice(&sig_bytes)
+            .map_err(|e| format!("Invalid Schnorr signature: {}", e))?;
+        secp.verify_schnorr(&schnorr_sig, &secp_msg, &xonly_pk)
+            .map_err(|e| format!("Schnorr signature verification failed: {}", e))?;
+        return Ok(());
+    }
+
+    // Try ECDSA (33 or 65 byte pubkey, 64 byte compact signature)
+    let pk = secp256k1::PublicKey::from_slice(&pubkey_bytes)
+        .map_err(|e| format!("Invalid ECDSA public key: {}", e))?;
+    let ecdsa_sig = secp256k1::ecdsa::Signature::from_compact(&sig_bytes)
+        .map_err(|e| format!("Invalid ECDSA signature: {}", e))?;
+
+    secp.verify_ecdsa(&secp_msg, &ecdsa_sig, &pk)
+        .map_err(|e| format!("ECDSA signature verification failed: {}", e))?;
+
+    Ok(())
 }
 
 // ── Machine RWA Revenue Verification (G-C6) ──────────────────────────

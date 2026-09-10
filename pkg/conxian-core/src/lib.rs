@@ -428,6 +428,15 @@ pub struct CcipMessageRoute {
     pub requires_screening: bool,
 }
 
+/// Cryptographic authenticity proof for CCIP messages (G-C5).
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CcipAuthenticityProof {
+    /// Public key (hex-encoded 32-byte Schnorr or 33-byte/65-byte ECDSA public key)
+    pub public_key: String,
+    /// Signature (hex-encoded 64-byte Schnorr or Compact ECDSA signature)
+    pub signature: String,
+}
+
 /// G-C5: CCIP route request — submit a CCIP message for compliance routing.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CcipRouteRequest {
@@ -436,6 +445,9 @@ pub struct CcipRouteRequest {
     /// If true, apply elevated compliance scrutiny
     #[serde(default)]
     pub elevated_scrutiny: bool,
+    /// Cryptographic authenticity proof (secp256k1 signature over source_chain:destination_chain:message_id:payload)
+    #[serde(default)]
+    pub authenticity_proof: Option<CcipAuthenticityProof>,
 }
 
 /// G-C5: CCIP route response — result of compliance routing.
