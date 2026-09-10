@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
 - Implemented Bitcoin L1 Merkle Proof Verification (`verify_bitcoin_merkle_proof`) in `internal/engine/src/stacks/sbtc.rs` for sBTC peg-in/out transaction validation (G-SB3).
 - Implemented SWIFT `camt.053` OData v4 ERP Webhook Callback Synchronization (Candidate T / G-TR1) in `internal/api/src/camt.rs`, providing `ODataV4CallbackPayload` serialization, `dispatch_odata_v4_webhook` HTTP callback delivery using `minreq` inside `spawn_blocking`, and full test coverage.
 - Comprehensive audit and research expansion across all gaps, candidates (Candidates Q, R, S, T), and knowledge base documents (`docs/research/CANDIDATE_MATRIX.md`, `docs/research/KNOWLEDGE_MAP.md`, `docs/research/OPPORTUNITY_MAP_AND_EXPANSION.md`, and `docs/research/GAP_ANALYSIS_2026-09-06.md`).
@@ -25,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [v0.1.5] - 2026-08-07
 
 ### Added
+
 - Implemented 7 missing Python validation scripts in `scripts/` to close CI coverage gaps (CON-1322).
 - Created `docs/audit/GAP_ANALYSIS_AND_SCORING.md` for prioritized risk management.
 - Added `docs/research/OPPORTUNITY_MAP_AND_EXPANSION.md` covering BitVM3 and local-first verification.

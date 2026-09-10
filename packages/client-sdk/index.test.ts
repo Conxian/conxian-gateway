@@ -242,16 +242,17 @@ describe('ConxianClient', () => {
     });
 
     describe('verifyStateProofLocal (Candidate Q)', () => {
-        it('successfully verifies valid local proof payload', async () => {
+        it('fails closed when the local Wasm verifier is unavailable', async () => {
             const client = new ConxianClient('http://localhost:3000', 'token');
             const res = await client.verifyStateProofLocal({
                 chain: 'bitcoin',
                 proof_data: 'aGVsbG8=',
                 schnorr_signature: 'a'.repeat(128)
             });
-            expect(res.verified).toBe(true);
+            expect(res.verified).toBe(false);
             expect(res.chain).toBe('bitcoin');
             expect(res.proof_type).toBe('wasm_ucv1_local');
+            expect(res.error).toBe('Local Wasm UCV-1 verifier is not configured');
         });
 
         it('fails verification on invalid proof payload missing data', async () => {
