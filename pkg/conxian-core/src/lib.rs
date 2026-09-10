@@ -587,21 +587,49 @@ impl DlcManager {
     pub fn new(oracle_pubkey: String) -> Self {
         Self { oracle_pubkey }
     }
+
+    /// Derives a deterministic DLC contract ID from oracle public key and bond specification parameters.
+    pub fn derive_contract_id(&self, bond: &DlcBond) -> String {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(self.oracle_pubkey.as_bytes());
+        hasher.update(bond.bond_id.as_bytes());
+        hasher.update(bond.amount_btc.to_be_bytes());
+        hasher.update(bond.maturity_date.to_be_bytes());
+        hasher.update(&[bond.sovereign_alignment as u8]);
+        let digest: [u8; 32] = hasher.finalize().into();
+        format!("dlc-bond-{}", hex::encode(&digest[..16]))
+    }
 }
 
 impl DlcOrchestrator for DlcManager {
     fn create_dlc_bond(&self, bond: &DlcBond) -> ConxianResult<String> {
-        info!("Creating DLC-backed Bitcoin bond: {} sBTC", bond.amount_btc);
-        let bond_id = format!("dlc-bond-{}", uuid::Uuid::new_v4());
-        Ok(bond_id)
+        if bond.bond_id.trim().is_empty() {
+            return Err(ConxianError::Compliance("bond_id cannot be empty".into()));
+        }
+        if bond.amount_btc == 0 {
+            return Err(ConxianError::Compliance("amount_btc must be greater than zero".into()));
+        }
+        info!(
+            "Creating DLC-backed Bitcoin bond: {} satoshis with oracle {}",
+            bond.amount_btc, self.oracle_pubkey
+        );
+        let derived_id = self.derive_contract_id(bond);
+        Ok(derived_id)
     }
 
     fn settle_coupon(&self, bond_id: &str, amount_sbtc: u64) -> ConxianResult<bool> {
+        if bond_id.trim().is_empty() {
+            return Err(ConxianError::Compliance("bond_id cannot be empty".into()));
+        }
+        if amount_sbtc == 0 {
+            return Err(ConxianError::Compliance("amount_sbtc must be greater than zero".into()));
+        }
         info!(
             "Settling coupon for DLC bond {}: {} satoshis",
             bond_id, amount_sbtc
         );
-        Ok(!bond_id.is_empty())
+        Ok(true)
     }
 }
 
@@ -1056,4 +1084,57 @@ pub struct AuditEvent {
     pub outcome: String,
     pub timestamp: u64,
     pub metadata: serde_json::Value,
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_dlc_manager_deterministic_bond_creation() {
+        let oracle = "02a1663b05410ce555222b0b8d52396933357b8275a322018287e9120798147d29";
+        let manager = DlcManager::new(oracle.to_string());
+
+        let bond = DlcBond {
+            bond_id: "bond-2026-alpha".to_string(),
+            amount_btc: 100_000_000,
+            interest_rate: 0.05,
+            maturity_date: 1780000000,
+            sovereign_alignment: true,
+        };
+
+        let id1 = manager.create_dlc_bond(&bond).unwrap();
+        let id2 = manager.create_dlc_bond(&bond).unwrap();
+
+        assert_eq!(id1, id2, "Deterministic bond creation must produce identical IDs");
+        assert!(id1.starts_with("dlc-bond-"));
+    }
+
+    #[test]
+    fn test_dlc_manager_validation_failures() {
+        let manager = DlcManager::new("pubkey_test_sentinel".to_string());
+
+        let invalid_id_bond = DlcBond {
+            bond_id: "".to_string(),
+            amount_btc: 100,
+            interest_rate: 0.05,
+            maturity_date: 1780000000,
+            sovereign_alignment: true,
+        };
+        assert!(manager.create_dlc_bond(&invalid_id_bond).is_err());
+
+        let zero_amount_bond = DlcBond {
+            bond_id: "valid-id".to_string(),
+            amount_btc: 0,
+            interest_rate: 0.05,
+            maturity_date: 1780000000,
+            sovereign_alignment: true,
+        };
+        assert!(manager.create_dlc_bond(&zero_amount_bond).is_err());
+
+        assert!(manager.settle_coupon("", 1000).is_err());
+        assert!(manager.settle_coupon("valid-id", 0).is_err());
+        assert!(manager.settle_coupon("valid-id", 1000).unwrap());
+    }
 }
