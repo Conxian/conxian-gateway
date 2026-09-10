@@ -864,7 +864,7 @@ async fn test_ccip_route_unknown_chain_defaults_to_medium() {
 
 #[tokio::test]
 async fn test_ccip_route_valid_authenticity_proof_success() {
-    use secp256k1::{Keypair, Secp256k1, Message};
+    use secp256k1::{Keypair, Message, Secp256k1};
     use sha2::{Digest, Sha256};
 
     let secp = Secp256k1::new();
@@ -876,7 +876,10 @@ async fn test_ccip_route_valid_authenticity_proof_success() {
     let message_id = "msg-auth-1";
     let payload_data = "0xdeadbeef";
 
-    let digest_str = format!("{}:{}:{}:{}", source_chain, destination_chain, message_id, payload_data);
+    let digest_str = format!(
+        "{}:{}:{}:{}",
+        source_chain, destination_chain, message_id, payload_data
+    );
     let msg_hash = Sha256::digest(digest_str.as_bytes());
     let secp_msg = Message::from_digest(msg_hash.into());
 

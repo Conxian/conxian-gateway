@@ -1870,13 +1870,19 @@ pub async fn route_ccip_message(
     }
 
     let (approved, rejection_reason) = if risk_level == conxian_core::SanctionsRisk::Critical {
-        (false, Some("Sanctions risk critical under elevated scrutiny".to_string()))
+        (
+            false,
+            Some("Sanctions risk critical under elevated scrutiny".to_string()),
+        )
     } else {
         (true, None)
     };
 
     use sha2::Digest;
-    let digest_str = format!("{}:{}:{}:{}", message.source_chain, message.destination_chain, message.message_id, message.payload);
+    let digest_str = format!(
+        "{}:{}:{}:{}",
+        message.source_chain, message.destination_chain, message.message_id, message.payload
+    );
     let digest_hash = sha2::Sha256::digest(digest_str.as_bytes());
     let audit_ref = format!("ccip-audit-{}", hex::encode(digest_hash));
 
@@ -1896,10 +1902,15 @@ fn verify_ccip_authenticity_signature(
 ) -> Result<(), String> {
     use sha2::Digest;
 
-    let pubkey_bytes = hex::decode(&proof.public_key).map_err(|e| format!("Invalid hex in public key: {}", e))?;
-    let sig_bytes = hex::decode(&proof.signature).map_err(|e| format!("Invalid hex in signature: {}", e))?;
+    let pubkey_bytes =
+        hex::decode(&proof.public_key).map_err(|e| format!("Invalid hex in public key: {}", e))?;
+    let sig_bytes =
+        hex::decode(&proof.signature).map_err(|e| format!("Invalid hex in signature: {}", e))?;
 
-    let digest_str = format!("{}:{}:{}:{}", message.source_chain, message.destination_chain, message.message_id, message.payload);
+    let digest_str = format!(
+        "{}:{}:{}:{}",
+        message.source_chain, message.destination_chain, message.message_id, message.payload
+    );
     let msg_hash = sha2::Sha256::digest(digest_str.as_bytes());
     let secp_msg = secp256k1::Message::from_digest(msg_hash.into());
 
