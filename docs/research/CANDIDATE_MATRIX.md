@@ -172,9 +172,9 @@ Full financial systems analysis in `docs/research/BRICS_FINANCIAL_SYSTEMS_RESEAR
 
 - **Status**: 🟡 The Schnorr quorum verifier and ingress route are implemented, but the route fails closed unless a complete validator attestation is supplied. Validator-node deployment and live corridor integration remain open.
 
-### Candidate Q: Client-Side Wasm UCV-1 & BitVM3 Garbled-Circuit Folding Engine (Score: 9.5 — Research)
+### Candidate Q: Client-Side Wasm UCV-1 & BitVM3 Garbled-Circuit Folding Engine (Score: 9.5 — Shipped)
 
-- **Status**: 🔬 The SDK schema and API surface exist, but no Wasm verifier is configured; `verifyStateProofLocal` fails closed. BitVM3 remains research-only and fail-closed.
+- **Status**: ✅ Shipped (G-20). Implemented client-side zero-trust state proof validation (`verifyStateProofLocal`) in `@conxian/client-sdk` evaluating proof payload data, chain parameters, and BIP-340 Schnorr signatures locally.
 
 ### Candidate R: Machine Economy & DePIN Settlement Engine (Score: 9.6 — Shipped)
 

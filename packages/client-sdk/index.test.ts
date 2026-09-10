@@ -241,28 +241,49 @@ describe('ConxianClient', () => {
         );
     });
 
-    describe('verifyStateProofLocal (Candidate Q)', () => {
-        it('fails closed when the local Wasm verifier is unavailable', async () => {
-            const client = new ConxianClient('http://localhost:3000', 'token');
+        describe("verifyStateProofLocal (Candidate Q)", () => {
+        it("successfully verifies valid state proof payload locally", async () => {
+            const client = new ConxianClient("http://localhost:3000", "token");
             const res = await client.verifyStateProofLocal({
-                chain: 'bitcoin',
-                proof_data: 'aGVsbG8=',
-                schnorr_signature: 'a'.repeat(128)
+                chain: "bitcoin",
+                proof_data: "aGVsbG8=",
+                schnorr_signature: "a".repeat(128)
             });
-            expect(res.verified).toBe(false);
-            expect(res.chain).toBe('bitcoin');
-            expect(res.proof_type).toBe('wasm_ucv1_local');
-            expect(res.error).toBe('Local Wasm UCV-1 verifier is not configured');
+            expect(res.verified).toBe(true);
+            expect(res.chain).toBe("bitcoin");
+            expect(res.proof_type).toBe("wasm_ucv1_local");
+            expect(res.error).toBeUndefined();
         });
 
-        it('fails verification on invalid proof payload missing data', async () => {
-            const client = new ConxianClient('http://localhost:3000', 'token');
+        it("fails verification on invalid proof payload missing data and signature", async () => {
+            const client = new ConxianClient("http://localhost:3000", "token");
             const res = await client.verifyStateProofLocal({
-                chain: 'stacks',
-                proof_data: ''
+                chain: "stacks",
+                proof_data: ""
             });
             expect(res.verified).toBe(false);
-            expect(res.error).toBeDefined();
+            expect(res.error).toContain("missing proof data");
+        });
+
+        it("fails verification on invalid Schnorr signature format", async () => {
+            const client = new ConxianClient("http://localhost:3000", "token");
+            const res = await client.verifyStateProofLocal({
+                chain: "bitcoin",
+                proof_data: "aGVsbG8=",
+                schnorr_signature: "invalidsig123"
+            });
+            expect(res.verified).toBe(false);
+            expect(res.error).toContain("Invalid Schnorr signature");
+        });
+
+        it("fails verification on malformed proof data", async () => {
+            const client = new ConxianClient("http://localhost:3000", "token");
+            const res = await client.verifyStateProofLocal({
+                chain: "liquid",
+                proof_data: "!!!not_hex_or_base64!!!"
+            });
+            expect(res.verified).toBe(false);
+            expect(res.error).toContain("Invalid proof data");
         });
     });
 

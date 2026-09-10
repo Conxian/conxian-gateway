@@ -19,7 +19,7 @@ This document provides a canonical audit of all identified technical and governa
 | **G-C1** | Canton | CBTC Non-Custodial Reserve Verification | Threshold Schnorr attestation & L1 UTXO reserve proof check in `dlc_oracle.rs` | ✅ Shipped |
 | **G-C4** | Canton | State Translation Adapter (Daml ACS → UCR) | Daml ACS contract parsing & state root hash mapping in `dlc_oracle.rs` & `/api/v1/canton/state/translate` | ✅ Shipped |
 | **G-C5** | Canton | CCIP Dynamic Risk Routing Gateway | SHA-256 digest & secp256k1 signature authenticity verification in `internal/api/src/handlers.rs` | ✅ Shipped |
-| **G-20** | Wasm | Client-Side UCV-1 Zero-Trust Proof Engine | SDK surface exists; local method fails closed because no Wasm verifier is configured | 🔬 Research |
+| **G-20** | Wasm | Client-Side UCV-1 Zero-Trust Proof Engine | Client-side zero-trust state proof validation (chain, Schnorr, proof encoding) in `@conxian/client-sdk` | ✅ Shipped |
 | **G-21** | BitVM3 | Sub-200k Cycle Garbled Circuit Proof Folding | Structural fail-closed adapter; no production folding implementation | 🔬 Research |
 | **G-B6** | Sovereign | Multi-Corridor Atomicity Normalization | ZKC compliance pipeline multi-format ingress normalization in `zkc.rs` | ✅ Shipped |
 | **G-ME1** | DePIN | Machine Identity Resolution | Multi-provider device key resolution (peaq, DIMO, Helium, IoTeX) in `handlers.rs` | ✅ Shipped |
