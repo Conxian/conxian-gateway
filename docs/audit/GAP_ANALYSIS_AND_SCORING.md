@@ -34,6 +34,7 @@ This document provides a comprehensive audit of resolved and open technical gaps
 | **G-25** | No DLC bond integration test | Testing | ✅ Added `POST /api/v1/dlc/bond` + 2 tests |
 | **G-26** | No MuSig2 key aggregation test | Testing | ✅ Added `POST /api/v1/musig2/aggregate-keys` + 1 test |
 | **G-27** | Docker image not published | CI/CD | ✅ Added `docker/build-push-action` to release workflow |
+| **G-DL2** | DLC CET Construction & Refund Engine | DLC | ✅ Implemented `DlcExecutionEngine` for CET and refund tx construction |
 | **G-FI1** | ISO 20022 XML Schema Validation | Technical | ✅ Implemented structural XML validation & namespace checks in `zkc.rs` |
 | **G-FI2** | ISO 20022 pacs.008 Payment Initiation | Technical | ✅ Implemented `pacs.008.001.08` XML generator & schema validator |
 | **G-FI3** | BRICS mBridge DLT Ingress & Sanctions Clearance | Technical | ✅ Implemented `MBridgeAdapter::verify_mbridge_dlt_attestation` & `/api/v1/ingress/mbridge` |

@@ -473,6 +473,64 @@ pub fn verify_block_header_pow(header_hex: &str) -> bool {
     hash_rev <= target
 }
 
+/// Verify that a Bitcoin transaction (by txid) is included in a block's Merkle root
+/// using a Merkle inclusion proof.
+///
+/// `txid_hex`: Claimed transaction ID (in standard display hex, 64 chars)
+/// `merkle_root_hex`: Expected Merkle root from block header (in standard display hex, 64 chars)
+/// `proof_path`: Ordered slice of sibling hash hex strings along the Merkle path
+/// `index`: Zero-based leaf index of the transaction in the block
+pub fn verify_bitcoin_merkle_proof(
+    txid_hex: &str,
+    merkle_root_hex: &str,
+    proof_path: &[String],
+    index: u32,
+) -> bool {
+    use sha2::{Digest, Sha256};
+
+    let mut current_bytes: Vec<u8> = match <Vec<u8> as bitcoin::hex::FromHex>::from_hex(txid_hex) {
+        Ok(b) if b.len() == 32 => b,
+        _ => return false,
+    };
+
+    let expected_root_bytes: Vec<u8> =
+        match <Vec<u8> as bitcoin::hex::FromHex>::from_hex(merkle_root_hex) {
+            Ok(b) if b.len() == 32 => b,
+            _ => return false,
+        };
+
+    // Convert display byte order (reversed) to internal byte order
+    current_bytes.reverse();
+    let mut expected_root_internal = expected_root_bytes;
+    expected_root_internal.reverse();
+
+    for (level, sibling_hex) in proof_path.iter().enumerate() {
+        let mut sibling_bytes: Vec<u8> =
+            match <Vec<u8> as bitcoin::hex::FromHex>::from_hex(sibling_hex) {
+                Ok(b) if b.len() == 32 => b,
+                _ => return false,
+            };
+        sibling_bytes.reverse();
+
+        let is_right_child = (index >> level) & 1 == 1;
+
+        let mut concat = Vec::with_capacity(64);
+        if is_right_child {
+            concat.extend_from_slice(&sibling_bytes);
+            concat.extend_from_slice(&current_bytes);
+        } else {
+            concat.extend_from_slice(&current_bytes);
+            concat.extend_from_slice(&sibling_bytes);
+        }
+
+        let hash1 = Sha256::digest(&concat);
+        let hash2 = Sha256::digest(hash1);
+        current_bytes = hash2.to_vec();
+    }
+
+    current_bytes == expected_root_internal
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -539,16 +597,10 @@ mod tests {
 
     #[test]
     fn verify_tx_hex_matches_txid() {
-        // A real Bitcoin testnet tx: raw hex and its txid
-        // This tx: 1 input, 1 output, known P2PKH txid
         let raw_tx = "020000000001010000000000000000000000000000000000000000000000000000000000000000ffffffff0401640101ffffffff0100f2052a01000000160014aa0000000000000000000000000000000000000000024730440220000000000000000000000000000000000000000000000000000000000000000002200000000000000000000000000000000000000000000000000000000000000000001210000000000000000000000000000000000000000000000000000000000000000000000000";
 
         let txid = "1111111111111111111111111111111111111111111111111111111111111111";
-        // This is a deliberately fake tx/txid pair.
-        // verify_bitcoin_tx_hex just confirms the sha256d(tx) matches the claimed txid.
-        // For a real tx, we'd use actual on-chain data.
         let result = verify_bitcoin_tx_hex(raw_tx, txid);
-        // Should be false since these don't match
         assert!(!result);
     }
 
@@ -576,7 +628,6 @@ mod tests {
 
     #[test]
     fn verify_tx_hex_end_to_end() {
-        // Construct a valid tx and compute its txid
         use sha2::{Digest, Sha256};
         let raw_tx = b"test-bitcoin-tx-data-for-sha256-hashing";
         let hash1 = Sha256::digest(raw_tx);
@@ -608,7 +659,6 @@ mod tests {
 
     #[test]
     fn verify_block_header_rejects_short_header() {
-        // Header must be exactly 80 bytes (160 hex chars)
         assert!(!verify_block_header_pow("00aabbcc"));
     }
 
@@ -619,16 +669,82 @@ mod tests {
 
     #[test]
     fn verify_block_header_rejects_zero_bits() {
-        // 80 bytes of zeros — bits field (bytes 72-75) = 0, which is invalid target
         let zeros = "00".repeat(80);
         assert!(!verify_block_header_pow(&zeros));
     }
 
     #[test]
     fn verify_block_header_rejects_header_that_does_not_satisfy_pow() {
-        // A block header with random data that won't satisfy the difficulty target
         let random_header = hex::encode([0u8; 80]);
-        // bits = 0 → rejected
         assert!(!verify_block_header_pow(&random_header));
+    }
+
+    #[test]
+    fn verify_merkle_proof_single_tx_block() {
+        let txid = "11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff";
+        assert!(verify_bitcoin_merkle_proof(txid, txid, &[], 0));
+    }
+
+    #[test]
+    fn verify_merkle_proof_two_tx_block() {
+        use sha2::{Digest, Sha256};
+
+        let tx0 = b"transaction-0-32-bytes-data-tx00";
+        let tx1 = b"transaction-1-32-bytes-data-tx01";
+
+        let mut tx0_id = [0u8; 32];
+        tx0_id.copy_from_slice(tx0);
+        tx0_id.reverse();
+        let tx0_hex = hex::encode(tx0_id);
+
+        let mut tx1_id = [0u8; 32];
+        tx1_id.copy_from_slice(tx1);
+        tx1_id.reverse();
+        let tx1_hex = hex::encode(tx1_id);
+
+        let mut concat = Vec::new();
+        concat.extend_from_slice(tx0);
+        concat.extend_from_slice(tx1);
+        let h1 = Sha256::digest(&concat);
+        let h2 = Sha256::digest(h1);
+        let mut root = [0u8; 32];
+        root.copy_from_slice(&h2);
+        root.reverse();
+        let root_hex = hex::encode(root);
+
+        assert!(verify_bitcoin_merkle_proof(
+            &tx0_hex,
+            &root_hex,
+            std::slice::from_ref(&tx1_hex),
+            0
+        ));
+
+        assert!(verify_bitcoin_merkle_proof(
+            &tx1_hex,
+            &root_hex,
+            std::slice::from_ref(&tx0_hex),
+            1
+        ));
+
+        let bad_sibling = "00".repeat(32);
+        assert!(!verify_bitcoin_merkle_proof(
+            &tx0_hex,
+            &root_hex,
+            &[bad_sibling],
+            0
+        ));
+    }
+
+    #[test]
+    fn verify_merkle_proof_rejects_invalid_inputs() {
+        let valid_hex = "00".repeat(32);
+        assert!(!verify_bitcoin_merkle_proof("short", &valid_hex, &[], 0));
+        assert!(!verify_bitcoin_merkle_proof(&valid_hex, "short", &[], 0));
+        assert!(!verify_bitcoin_merkle_proof(
+            &valid_hex,
+            &valid_hex,
+            &["bad-hex".into()],
+            0
+        ));
     }
 }
