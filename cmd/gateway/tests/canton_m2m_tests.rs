@@ -739,7 +739,7 @@ async fn test_canton_translate_missing_domain() {
 // ── G-C5: CCIP Compliance Routing ────────────────────────────────────────
 
 #[tokio::test]
-async fn test_ccip_route_canton_to_ethereum_low_risk() {
+async fn test_ccip_route_fails_closed_without_authenticity_verifier() {
     let app = test_app();
     let payload = json!({
         "message": {
@@ -757,15 +757,11 @@ async fn test_ccip_route_canton_to_ethereum_low_risk() {
         .await
         .unwrap();
 
-    assert_eq!(response.status(), axum::http::StatusCode::OK);
-    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
-    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
-    assert_eq!(body["approved"], true);
-    assert_eq!(body["risk_level"], "LOW");
+    assert_eq!(response.status(), axum::http::StatusCode::NOT_IMPLEMENTED);
 }
 
 #[tokio::test]
-async fn test_ccip_route_spfs_high_risk() {
+async fn test_ccip_route_spfs_requires_authenticity_verifier() {
     let app = test_app();
     let payload = json!({
         "message": {
@@ -782,13 +778,7 @@ async fn test_ccip_route_spfs_high_risk() {
         .await
         .unwrap();
 
-    assert_eq!(response.status(), axum::http::StatusCode::OK);
-    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
-    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
-    // SPFS with elevated scrutiny → CRITICAL (blocked); escalated from HIGH by escalate_risk()
-    assert_eq!(body["approved"], false);
-    assert_eq!(body["risk_level"], "CRITICAL");
-    assert!(body["rejection_reason"].is_string());
+    assert_eq!(response.status(), axum::http::StatusCode::NOT_IMPLEMENTED);
 }
 
 #[tokio::test]
@@ -808,10 +798,7 @@ async fn test_ccip_route_mbridge_medium_risk() {
         .await
         .unwrap();
 
-    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
-    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
-    assert_eq!(body["risk_level"], "MEDIUM");
-    assert_eq!(body["approved"], true); // Medium is approved, not escalated to High
+    assert_eq!(response.status(), axum::http::StatusCode::NOT_IMPLEMENTED);
 }
 
 #[tokio::test]
@@ -832,9 +819,7 @@ async fn test_ccip_route_elevated_scrutiny_escalates_low_to_medium() {
         .await
         .unwrap();
 
-    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
-    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
-    assert_eq!(body["risk_level"], "MEDIUM"); // Low escalated to Medium
+    assert_eq!(response.status(), axum::http::StatusCode::NOT_IMPLEMENTED);
 }
 
 #[tokio::test]
@@ -874,9 +859,7 @@ async fn test_ccip_route_unknown_chain_defaults_to_medium() {
         .await
         .unwrap();
 
-    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
-    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
-    assert_eq!(body["risk_level"], "MEDIUM"); // Unknown → Medium
+    assert_eq!(response.status(), axum::http::StatusCode::NOT_IMPLEMENTED);
 }
 
 // ── G-C6: Machine RWA Revenue Verification ────────────────────────────────

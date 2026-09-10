@@ -17,7 +17,9 @@ pub struct MBridgeAttestationPayload {
     pub to_cbdc: String,
     pub amount: u64,
     pub currency: String,
+    #[serde(alias = "sender")]
     pub sender_bic: String,
+    #[serde(alias = "receiver")]
     pub receiver_bic: String,
     pub proof_hash: String,
     pub timestamp: u64,

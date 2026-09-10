@@ -104,16 +104,12 @@ export class ConxianClient {
             };
         }
 
-        const isVerified = Boolean(
-            (payload.proof_data && payload.proof_data.length > 0) ||
-            (payload.schnorr_signature && payload.schnorr_signature.length === 128)
-        );
-
         return {
-            verified: isVerified,
+            verified: false,
             chain: payload.chain,
             execution_time_ms: Date.now() - startTime,
-            proof_type: "wasm_ucv1_local"
+            proof_type: "wasm_ucv1_local",
+            error: "Local Wasm UCV-1 verifier is not configured"
         };
     }
 

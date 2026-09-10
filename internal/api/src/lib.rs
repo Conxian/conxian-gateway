@@ -20,7 +20,7 @@ pub use routes::configure_routes;
 
 use crate::a2p::A2pRouter;
 use crate::fiat::FiatRouter;
-use crate::lightning::{LightningAdapter, SimulatedLightningBackend};
+use crate::lightning::{LightningAdapter, ProductionLightningBackend, SimulatedLightningBackend};
 use conxian_compliance::{IdentityManager, UniversalVerifier, ZkcVerifier};
 use conxian_core::{Persistence, SettlementProposal, SharedState};
 pub use conxian_engine::stacks::alex::AlexClient;
@@ -59,6 +59,10 @@ pub struct AppState {
 
 pub fn new_lightning_adapter() -> Arc<LightningAdapter> {
     Arc::new(LightningAdapter::new(Arc::new(SimulatedLightningBackend)))
+}
+
+pub fn new_production_lightning_adapter() -> Arc<LightningAdapter> {
+    Arc::new(LightningAdapter::new(Arc::new(ProductionLightningBackend)))
 }
 
 pub fn new_settlement_log() -> Arc<RwLock<VecDeque<SettlementProposal>>> {
