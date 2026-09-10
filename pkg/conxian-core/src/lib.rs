@@ -596,7 +596,7 @@ impl DlcManager {
         hasher.update(bond.bond_id.as_bytes());
         hasher.update(bond.amount_btc.to_be_bytes());
         hasher.update(bond.maturity_date.to_be_bytes());
-        hasher.update(&[bond.sovereign_alignment as u8]);
+        hasher.update([bond.sovereign_alignment as u8]);
         let digest: [u8; 32] = hasher.finalize().into();
         format!("dlc-bond-{}", hex::encode(&digest[..16]))
     }
@@ -608,7 +608,9 @@ impl DlcOrchestrator for DlcManager {
             return Err(ConxianError::Compliance("bond_id cannot be empty".into()));
         }
         if bond.amount_btc == 0 {
-            return Err(ConxianError::Compliance("amount_btc must be greater than zero".into()));
+            return Err(ConxianError::Compliance(
+                "amount_btc must be greater than zero".into(),
+            ));
         }
         info!(
             "Creating DLC-backed Bitcoin bond: {} satoshis with oracle {}",
@@ -623,7 +625,9 @@ impl DlcOrchestrator for DlcManager {
             return Err(ConxianError::Compliance("bond_id cannot be empty".into()));
         }
         if amount_sbtc == 0 {
-            return Err(ConxianError::Compliance("amount_sbtc must be greater than zero".into()));
+            return Err(ConxianError::Compliance(
+                "amount_sbtc must be greater than zero".into(),
+            ));
         }
         info!(
             "Settling coupon for DLC bond {}: {} satoshis",
@@ -1086,7 +1090,6 @@ pub struct AuditEvent {
     pub metadata: serde_json::Value,
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1107,7 +1110,10 @@ mod tests {
         let id1 = manager.create_dlc_bond(&bond).unwrap();
         let id2 = manager.create_dlc_bond(&bond).unwrap();
 
-        assert_eq!(id1, id2, "Deterministic bond creation must produce identical IDs");
+        assert_eq!(
+            id1, id2,
+            "Deterministic bond creation must produce identical IDs"
+        );
         assert!(id1.starts_with("dlc-bond-"));
     }
 
