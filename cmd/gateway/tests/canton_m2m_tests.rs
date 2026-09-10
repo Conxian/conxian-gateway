@@ -408,6 +408,48 @@ async fn test_machine_identity_resolve_dimo() {
 }
 
 #[tokio::test]
+async fn test_machine_identity_resolve_helium() {
+    let app = test_app();
+    let payload = json!({
+        "identifier": "hotspot:112b3c4d5e",
+        "provider": "helium",
+        "machine_type_hint": "TELECOM_CELL"
+    });
+
+    let response = app
+        .oneshot(post_request("/api/v1/identity/resolve/machine", payload))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(body["provider"], "helium");
+    assert_eq!(body["identity"]["helium_hotspot_id"], "hotspot:112b3c4d5e");
+}
+
+#[tokio::test]
+async fn test_machine_identity_resolve_iotex() {
+    let app = test_app();
+    let payload = json!({
+        "identifier": "io1sensor8823901",
+        "provider": "iotex",
+        "machine_type_hint": "SENSOR"
+    });
+
+    let response = app
+        .oneshot(post_request("/api/v1/identity/resolve/machine", payload))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(body["provider"], "iotex");
+    assert_eq!(body["identity"]["iotex_device_id"], "io1sensor8823901");
+}
+
+#[tokio::test]
 async fn test_machine_identity_resolve_device_key() {
     let app = test_app();
     let payload = json!({
@@ -641,6 +683,11 @@ async fn test_canton_translate_asset_transfer() {
     assert_eq!(body["translation_complete"], true);
     assert!(body["unmapped_fields"].as_array().unwrap().is_empty());
     assert_eq!(body["contract_ref"]["ledger"], "canton");
+    assert!(body["state_root_hash"].is_string());
+    assert_eq!(
+        body["ucr_uri"],
+        "ucr:canton:global:ContractId:00567abcd8901"
+    );
 }
 
 #[tokio::test]

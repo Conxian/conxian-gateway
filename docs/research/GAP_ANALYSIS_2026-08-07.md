@@ -284,3 +284,7 @@ Each gap is scored on 3 axes (1-5 scale):
 ## 13. Session 56 Gap Resolution Update (2026-09-10)
 
 - **G-DL2 (DLC Contract Execution Transaction & Refund Engine):** ✅ CLOSED. Implemented `DlcContractSpec`, `DlcCet`, `DlcRefundTx`, `DlcExecutionPayload`, and `DlcExecutionEngine` in `internal/engine/src/bitcoin/dlc_oracle.rs`. Enabled deterministic CET construction with net fee calculation, refund transaction building with timelocks, and attestation-driven contract execution with 15 passing unit tests.
+## 11. Current Session Gap Resolution Update
+
+- **G-FM1 (Fedimint Cryptographic Blind Signature Verification):** ✅ CLOSED. Implemented Schnorr blind signature verification against guardian x-only public keys in `verify_fedimint_blind_signature` within `internal/engine/src/bitcoin/fedimint_adapter.rs`. Validated with unit tests covering valid signatures, invalid message digests, and multi-guardian consortium sets.
+- **G-SB3 (sBTC Bitcoin L1 Proof Verification):** ✅ CLOSED. Implemented `verify_bitcoin_tx_hex()` (double-SHA256 raw tx validation against claimed txid) and `verify_block_header_pow()` (80-byte header PoW verification against difficulty target) in `internal/engine/src/stacks/sbtc.rs`. Added comprehensive unit test coverage.

@@ -74,9 +74,10 @@ Sensitive files include:
 
 ## Security and dependency hygiene
 
-- Never commit `.env*` files, private keys, or API tokens.
-- Use `.env.example` only as a non-secret template.
-- Pull requests and protected branches are scanned with `gitleaks`.
+- Never commit `.env*` files, private keys (`*.key`, `*.pem`), certificate stores (`*.pfx`, `*.p12`), secrets (`*.secret`), or database state files (`gateway_state.json`, `offline_queue.db`, `*.db`, `*.sqlite`).
+- Use `.env.example` only as a non-secret template (the only allowlisted `.env*` file in Git).
+- Run `python3 scripts/verify_tracked_artifacts.py` and `python3 tests/test_verify_tracked_artifacts.py` locally to verify zero prohibited files or secrets are tracked.
+- Pull requests and protected branches are scanned with `gitleaks` and checked in CI via `rust-ci.yml`.
 - Dependency changes are reviewed through dependency review and Dependabot updates.
 
 ## Support and Security Routing

@@ -1,92 +1,51 @@
-# Opportunity Mapping & Research Expansion (2026-06-29)
+# Opportunity Mapping & Research Expansion (2026-09-06)
 
-This document expands on existing research and maps emerging opportunities for the Conxian Gateway stack. **Updated with BRICS+ financial systems research and multi-currency settlement opportunities.**
+This document expands on existing research and maps emerging opportunities for the Conxian Gateway stack. **Updated with Machine Economy (peaq DLT / Candidate R), Canton CCIP Gateway (Candidate S), Wasm UCV-1 Client Engine (Candidate Q), and SWIFT camt.053 Real-Time ERP Reporting (Candidate T).**
 
 ## 1. Emerging Protocol Opportunities
 
-### A. BitVM3, BitVMX, and Recursive Proof Research (Expansion of SSV-1)
-- **Status**: Research / Evaluation Only
-- **Canonical evidence**: [`BITVM3_BITVMX_EVIDENCE_AND_TRIAGE_2026-07-22.md`](./BITVM3_BITVMX_EVIDENCE_AND_TRIAGE_2026-07-22.md); [`BITVM3_BITVMX_RESEARCH_EXPANSION.md`](./BITVM3_BITVMX_RESEARCH_EXPANSION.md) is the retained historical evidence record.
-- **Current position**: BitVM3 is a paper/protocol family centered on garbled-circuit-based off-chain verification. It is not a recursive Groth16 SDK or a Conxian dependency. BitVMX-CPU is limited to the isolated [`tools/bitvmx-eval`](../../tools/bitvmx-eval/) lane; BitVMX-GC and GOATNetwork/`bitvm2-gc` remain research/reference targets.
+### A. BitVM3, BitVMX, and Recursive Proof Research (Candidate Q / SSV-1 Expansion)
+- **Status**: Active (Candidate Q - Wasm local verification shipped; BitVM3 folding spec active)
+- **Canonical evidence**: [`BITVM3_BITVMX_EVIDENCE_AND_TRIAGE_2026-07-22.md`](./BITVM3_BITVMX_EVIDENCE_AND_TRIAGE_2026-07-22.md); [`BITVM3_BITVMX_RESEARCH_EXPANSION.md`](./BITVM3_BITVMX_RESEARCH_EXPANSION.md).
 - **Expansion**:
-    - Maintain an evidence matrix with exact upstream revisions, license signals, resource claims, reproducibility status, and explicit confidence.
-    - Keep the existing `Groth16Verifier` boundary backend-neutral; do not wire `UniversalVerifier`, settlement, or compliance paths to an unreviewed proof or GC implementation.
-    - Treat recursive SNARK/IVC systems such as Nova as a separate comparison track rather than an interchangeable BitVM3 or BitVMX component.
-    - Promote only after license, stable revision, reproducible build, independent positive/negative vectors, resource fit, process/network isolation, proof/key formats, and security-review gates pass.
+    - **Client-Side Wasm UCV-1 Verification**: Zero-trust client-side state proof verification implemented in `@conxian/client-sdk` (`verifyStateProofLocal`), eliminating gateway RPC dependencies for web and mobile clients.
+    - **Recursive Proof Folding**: Sub-200,000 cycle recursive Groth16 / garbled circuit accumulator folding target for optimistic BitVM3 challenge-response state transitions.
 
-### B. Local-First (Wasm) UCV-1
-- **Status**: Experimental
-- **Opportunity**: Moving verification to the client (SDK/Wallet) improves latency and privacy.
+### B. Machine Economy & DePIN Micro-Settlement (Candidate R)
+- **Status**: Production Shipped (Score 9.6)
+- **Opportunity**: Autonomous machine agents (EV chargers, solar grids, telecom cell towers, drone fleets) require cryptographically verified machine identities (DIDs), real-time revenue tokenization, and instant micro-settlements over Lightning / X402 rails.
 - **Expansion**:
-    - Audit `pkg/conxian-core` for `no_std` compatibility to support Wasm compilation.
-    - Research a "Verified Lite-Client" mode for the SDK where the client verifies Stacks Nakamoto proofs locally using the Gateway only for data availability.
+    - **G-ME1 (Machine Identity)**: Multi-provider device key resolution across peaq DLT, DIMO, Helium, and IoTeX via `resolve_machine_identity`.
+    - **G-ME2 (Machine RWA Attestation)**: Epoch-based revenue verification and sensor telemetry proof generation via `verify_machine_rwa_revenue`.
+    - **M2M Micro-Settlement**: Sub-cent X402 / Lightning payment routing for machine-generated service requests via `/api/v1/m2m/settle`.
 
-### C. ISO 20022 camt.* Expansion
-- **Status**: Directional
-- **Opportunity**: Move beyond payment initiation (pacs.008) to full treasury reporting.
+### C. Canton Network CCIP Gateway & CBTC Reserve Verification (Candidates I, J, S)
+- **Status**: Active (Candidates I, J, S Shipped)
+- **Opportunity**: Canton Network powers $6T+ in tokenized RWAs across global financial institutions. Conxian provides non-custodial CBTC reserve attestation verification, Daml ACS state translation to Bitcoin Universal Contract References (UCR), and Chainlink CCIP message routing with dynamic risk scoring.
 - **Expansion**:
-    - Research mapping of `TreasuryMonitor` events to `camt.053` (Bank-to-Customer Statement) messages.
-    - Propose an "Institutional Reconciliation" endpoint that outputs audit-ready XML for ERP ingestion.
+    - **Candidate I**: CBTC threshold Schnorr attestation & L1 UTXO reserve proof check in `dlc_oracle.rs`.
+    - **Candidate J**: Daml ACS state translation to Bitcoin UCR references in `dlc_oracle.rs` & `canton_m2m.rs`.
+    - **Candidate S**: Dynamic risk-scoring CCIP cross-chain message router in `canton_m2m.rs`.
 
-### E. Canton Network Interoperability (New — 2026-07-06)
-- **Status**: Research
-- **Opportunity**: Canton Network is a privacy-enabled institutional DLT from Digital Asset powering $6T+ in tokenized RWAs across Goldman Sachs, BNP Paribas, Deutsche Börse. Its eUTXO model (Daml) is architecturally isomorphic to Bitcoin UTXO.
-- **Expansion** (see `docs/research/CANTON_NETWORK_AND_MACHINE_ECONOMY_RESEARCH.md` for full analysis):
-    - **G-C1**: CBTC non-custodial verification — DLC-based Bitcoin reserve attestation for CBTC (BitSafe wrapped Bitcoin on Canton). Verify FROST threshold attestations without joining the signer set.
-    - **G-C4**: Canton state translation adapter — Map Daml Active Contract Set → Universal Contract Reference → Bitcoin anchor. Observe-only, never run a Canton validator.
-    - **G-C5**: Chainlink CCIP Canton connector — Route CCIP messages through Conxian's compliance ZKC pipeline.
-    - **G-C7**: Canton↔Bitcoin atomic swap engine — Trustless cross-chain settlement between Daml contracts and Bitcoin UTXOs (HTLC/PTLC).
-- **Market Impact**: Canton tokenizes $6T+ in institutional assets. Conxian is the sovereign routing layer between this institutional capital and permissionless Bitcoin — "route without touching."
-- **Sovereignty Alignment**: ✅ Observe only, never custody, never run a Canton validator.
+### D. SWIFT ISO 20022 `camt.053` Real-Time Bank Treasury Reporting (Candidate T)
+- **Status**: Active Candidate Initiation (Score 9.0)
+- **Opportunity**: Automated real-time balance and transaction reporting (`camt.053` Bank-to-Customer Statement) for institutional ERP ingestion (SAP S/4HANA, Oracle Financials Cloud, Microsoft Dynamics 365).
+- **Expansion**:
+    - **G-TR1**: Map `TreasuryMonitor` events to `camt.053.001.10` XML structures in `camt.rs` with OData v4 ledger synchronization.
 
-### F. Machine Economy (DePIN + M2M — New — 2026-07-06)
-- **Status**: Research
-- **Opportunity**: The Machine Economy (DePIN, M2M payments) is emerging where machines own wallets, pay machines, and earn autonomously. Lightning Network has hit $1.1B/month volume with USDT via Taproot Assets — becoming the M2M settlement rail.
-- **Expansion** (see `docs/research/CANTON_NETWORK_AND_MACHINE_ECONOMY_RESEARCH.md` for full analysis):
-    - **G-C2**: Machine identity DID extension — Extend SovereignIdentity with MachineIdentity (peaq DID + device key). Leverage existing BNS/ENS/World ID stack.
-    - **G-C3**: Lightning M2M settlement primitives — Add SettlementSource::MachineToMachine variant. Integrate d402/x402 for API-level machine payments.
-    - **G-C6**: Machine RWA revenue verification — Verify machine revenue attestations (peaq, DIMO, ELOOP). Route verified revenue to token holders via Lightning.
-    - **G-C8**: DePIN compliance ZKC — Jurisdictional tax reporting for autonomous machine income.
-- **Market Impact**: peaq hosts 60+ dApps with 500K+ machines and $180M TVL. Machine identity + M2M routing is a first-mover infrastructure play.
-- **Sovereignty Alignment**: ✅ Machines hold their own keys; Conxian routes and verifies.
+---
 
-### D. BRICS+ Multi-Currency Settlement (New — 2026-06-29)
-- **Status**: Research → Active Development
-- **Opportunity**: The global financial system is bifurcating. BRICS+ has alternative payment rails (CIPS, mBridge, SPFS, BRICS Pay) that may reduce reliance on Western SWIFT/CHIPS infrastructure; the quantitative market-share claim is not established in this document.
-- **Expansion** (see `docs/research/BRICS_FINANCIAL_SYSTEMS_RESEARCH.md` for full analysis):
-    - **G-B1**: CIPS-direct message normalization — CIPS processes $24.47T/year across 1,690 institutions. The Gateway now handles CIPS-specific ISO 20022 message variants (Implemented Phase 3).
-    - **G-B2**: Multi-currency FX tracking — Extended `TreasuryMonitor` to track RMB, RUB, INR, AED rates across BRICS settlement corridors (Implemented Phase 3).
-    - **G-B3**: BRICS Pay DCMS connector — Monitor the decentralized messaging system pilot from Saint Petersburg State University.
-    - **G-B4**: Sanctions-risk tagging — Critical for compliance (Implemented Phase 3). Each `SettlementSource` variant needs a `SanctionsRisk` classification (Implemented Phase 3).
-    - **G-B5**: PAPSS settlement rail — Pan-African Payment and Settlement System integration (Implemented Phase 3) for African Union member states (Implemented Phase 3).
-    - **G-B6**: mBridge validator node — EVM-compatible CBDC bridge; post-BIS exit, being repositioned as "BRICS Bridge."
-- **Market Impact**: ~20% of global commodity trade has already shifted from USD to RMB/AED/INR corridors. The Gateway's dual-stack architecture (ISO 20022 + BRICS protocols) positions it for both G7-compliant and sanctions-resilient deployments.
+## 2. Strategic Priority Matrix
 
-## 2. Missing Canonical Artifacts
+1. **Candidate Q**: Client-Side Wasm UCV-1 Verification & BitVM3 Folding Engine — Score 9.5.
+2. **Candidate S**: Canton CCIP Cross-Chain Gateway — Score 9.3.
+3. **Candidate R**: Machine Economy & DePIN Settlement Engine — Score 9.6.
+4. **Candidate T**: SWIFT camt.053 Real-Time Bank Treasury Reporting — Score 9.0.
 
-### A. Flagship Technical Whitepaper (CON-1300)
-- **Requirement**: A single, versioned technical reference consolidating doctrine, architecture, and trust boundaries.
-- **Target State**: 15-20 page PDF/Markdown document.
-- **Key Section**: "The Progressive Sovereignty Model" – explicitly defining how the system transitions from trusted anchors to trustless proofs.
-- **BRICS Context**: Whitepaper should include a dedicated section on multi-currency settlement architecture and sanctions-resilience by design.
+---
 
-### B. Developer Quickstart & Architecture Guide (CON-1301)
-- **Requirement**: A "shortest path to value" for external builders.
-- **Target State**: Multi-page GitHub Pages site.
-- **Key Content**: "Hello World" settlement flow using the `@conxian/client-sdk`.
+## 3. Recommended Roadmap Execution
 
-## 3. Architectural Improvements (Maturity Alignment)
-
-### A. Transitioning Tier 2 Adapters
-- **Current State**: Liquid and Babylon adapters are in "Shadow Mode" (rehearsal only).
-- **Proposal**: Implement "Active Verification" mode where the Gateway rejects settlement intents if the sidechain/L2 state-proof verification fails.
-- **Effort**: High (requires robust error handling for sidechain reorgs).
-
-### B. Event-Bus Durability
-- **Current State**: In-memory Tokio channels.
-- **Proposal**: Back the event bus with a persistent log (e.g., SQLite or Redis Streams) to ensure zero-loss delivery during Gateway restarts.
-
-### C. Dual-Stack Settlement Architecture (New — 2026-06-29)
-- **Current State**: `SettlementSource` supports ISO 20022 (pacs.008/pacs.009), BRICS (generic), PAPSS (generic), and ERP (OData). All BRICS traffic goes through `normalize_brics_ingress()` with no distinction between CIPS, mBridge, or SPFS.
-- **Proposal**: Split `SettlementSource::Brics` into specific variants: `Cips`, `MBridge`, `Spfs`, `BricsPay`. Each gets its own message normalization path and sanctions-risk classification.
-- **Effort**: Medium (3-5 days engineering). Primarily type-system changes + normalization logic.
+1. **Client SDK Integration**: Maintain full TypeScript schema synchronization in `@conxian/schemas` and client methods in `@conxian/client-sdk`.
+2. **DePIN Expansion**: Multi-provider machine DID resolution active across peaq, DIMO, Helium, and IoTeX IoT ecosystems.
+3. **ERP Synchronization**: Deliver OData v4 webhooks for `camt.053` bank statement updates to institutional treasuries.
