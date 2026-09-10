@@ -168,20 +168,4 @@ Full financial systems analysis in `docs/research/BRICS_FINANCIAL_SYSTEMS_RESEAR
 
 ## 3. Recommended Roadmap Execution
 
-### Candidate K: ISO 20022 XML Schema Validation (Score: 9.0)
-- **Status**: ✅ Shipped (G-FI1). Implemented structural XML validation and namespace checking for pacs.008, pacs.009, and camt messages in `internal/compliance/src/zkc.rs`.
-- **Impact**: Eliminates silent bank rejection risks and guarantees schema compliance for institutional payment initiation.
-
-### Candidate L: ISO 20022 pacs.008 Payment Initiation (Score: 9.2)
-- **Status**: ✅ Shipped (G-FI2). Implemented `pacs.008.001.08` FI-to-FI Customer Credit Transfer XML builder, structural validation, and compliance normalization.
-- **Impact**: Enables cross-border payment initiation and settlement envelope construction for institutional banking networks.
-
-### Candidate M: Babylon EOTS Verification & Double-Sign Key Extraction (Score: 9.5)
-- **Status**: ✅ Shipped (G-BB1). Implemented Schnorr attestation verification, double-sign detection, and algebraic secret key extraction $x = (s_1 - s_2)/(e_1 - e_2) \pmod n$ in `internal/engine/src/bitcoin/babylon_adapter.rs`.
-- **Impact**: Resolves sole remaining P1 gap and enables independent slashability verification for Babylon BTC staking finality providers.
-
-### Candidate N: DLC CET & Refund Execution Engine (Score: 9.5)
-- **Status**: ✅ Shipped (G-DL2). Implemented `DlcContractSpec`, `DlcCet`, `DlcRefundTx`, `DlcExecutionPayload`, and `DlcExecutionEngine` in `internal/engine/src/bitcoin/dlc_oracle.rs`.
-- **Impact**: Completes Stage 3 & 4 of the DLC pipeline, enabling deterministic CET construction, net fee deduction, refund transaction building, and attestation-driven contract execution.
-
-With Candidates I through T shipped and Candidates Q, R active, the next development cycles will focus on expanding Wasm UCV-1 verification bindings in `@conxian/client-sdk`, extending peaq DLT machine DID verification across multi-chain DePIN networks (DIMO, peaq, Helium), and completing OData v4 ERP webhook callbacks.
+With Candidates I through S shipped and Candidates Q, R, T active, the next development cycles will focus on expanding Wasm UCV-1 verification bindings in `@conxian/client-sdk`, extending peaq DLT machine DID verification across multi-chain DePIN networks (DIMO, peaq, Helium), and completing OData v4 ERP webhook callbacks.
