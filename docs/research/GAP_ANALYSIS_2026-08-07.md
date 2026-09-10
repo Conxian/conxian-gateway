@@ -272,3 +272,15 @@ Each gap is scored on 3 axes (1-5 scale):
 
 - **G-BB1 (Babylon EOTS Verification & Double-Sign Secret Key Extraction):** ✅ CLOSED. Implemented `extract_eots_secret_key()` in `internal/engine/src/bitcoin/babylon_adapter.rs` using 256-bit modular scalar arithmetic (`SecpScalar`) over secp256k1 curve order $n$ to derive finality provider private key $x = (s_1 - s_2)/(e_1 - e_2) \pmod n$ from double-signing signatures $(R, s_1)$ and $(R, s_2)$ and verify $x \cdot G = P$. Wired double-sign evidence extraction into `verify_state_proof()` with unit tests.
 - **G-FM1 (Fedimint Blind Signature Verification):** ✅ CLOSED. Implemented `verify_fedimint_blind_signature()` in `internal/engine/src/bitcoin/fedimint_adapter.rs` verifying Schnorr blind signatures against guardian x-only public keys under T2 (Managed) trust tier.
+
+---
+
+## 13. Session 56 Gap Resolution Update (2026-09-10)
+
+- **G-DL2 (DLC Contract Execution Transaction & Refund Engine):** ✅ CLOSED. Implemented , , , , and  in . Enabled deterministic CET construction with net fee calculation, refund transaction building with timelocks, and attestation-driven contract execution with 15 passing unit tests.
+
+---
+
+## 13. Session 56 Gap Resolution Update (2026-09-10)
+
+- **G-DL2 (DLC Contract Execution Transaction & Refund Engine):** ✅ CLOSED. Implemented `DlcContractSpec`, `DlcCet`, `DlcRefundTx`, `DlcExecutionPayload`, and `DlcExecutionEngine` in `internal/engine/src/bitcoin/dlc_oracle.rs`. Enabled deterministic CET construction with net fee calculation, refund transaction building with timelocks, and attestation-driven contract execution with 15 passing unit tests.
