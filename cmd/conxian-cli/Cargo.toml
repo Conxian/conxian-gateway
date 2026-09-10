@@ -1,0 +1,18 @@
+[package]
+name = "conxian-cli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Unified Installer and Management CLI for the Conxian Sovereign Settlement Suite"
+
+[dependencies]
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+minreq = { workspace = true }
+url = { workspace = true }
+
+[dev-dependencies]
+axum = { workspace = true }

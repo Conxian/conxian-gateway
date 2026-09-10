@@ -1,4 +1,5 @@
 use axum::{extract::State, http::StatusCode, Json};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
@@ -12,6 +13,10 @@ pub struct Camt053Request {
     pub to_date: String,
     pub currency: String,
     pub include_transactions: bool,
+    #[serde(default)]
+    pub webhook_url: Option<String>,
+    #[serde(default)]
+    pub webhook_secret: Option<String>,
 }
 
 /// Request to generate a camt.054 debit/credit notification
@@ -33,6 +38,46 @@ pub struct CamtResponse {
     pub message_type: String,
     pub xml_payload: String,
     pub created_at: String,
+    pub webhook_delivered: bool,
+    pub erp_sync_status: String,
+}
+
+/// OData v4 payload structure for ERP ledger webhook callbacks (SAP, Oracle)
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ODataV4CallbackPayload {
+    #[serde(rename = "@odata.context")]
+    pub odata_context: String,
+    pub statement_id: String,
+    pub account_id: String,
+    pub statement_date: String,
+    pub currency: String,
+    pub xml_payload_base64: String,
+    pub status: String,
+}
+
+/// Dispatches OData v4 JSON webhook callback to external ERP ledger endpoints
+pub async fn dispatch_odata_v4_webhook(
+    url: &str,
+    secret: Option<&str>,
+    payload: &ODataV4CallbackPayload,
+) -> Result<u16, String> {
+    let url = url.to_string();
+    let secret = secret.map(|s| s.to_string());
+    let payload_json = serde_json::to_string(payload).map_err(|e| e.to_string())?;
+
+    tokio::task::spawn_blocking(move || {
+        let mut req = minreq::post(&url)
+            .with_header("Content-Type", "application/json")
+            .with_header("OData-Version", "4.0")
+            .with_body(payload_json);
+        if let Some(sec) = secret {
+            req = req.with_header("X-ERP-Webhook-Secret", sec);
+        }
+        let res = req.send().map_err(|e| e.to_string())?;
+        Ok(res.status_code as u16)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Generate a camt.053 bank statement (closing/periodic)
@@ -60,11 +105,35 @@ pub async fn generate_camt053(
             "FrToDt",
         ],
     )?;
+
+    let (webhook_delivered, erp_sync_status) = if let Some(ref url) = payload.webhook_url {
+        let odata_payload = ODataV4CallbackPayload {
+            odata_context: "$metadata#BankStatements/$entity".to_string(),
+            statement_id: message_id.clone(),
+            account_id: payload.account_id.clone(),
+            statement_date: payload.to_date.clone(),
+            currency: payload.currency.clone(),
+            xml_payload_base64: BASE64.encode(xml.as_bytes()),
+            status: "SYNCED".to_string(),
+        };
+        match dispatch_odata_v4_webhook(url, payload.webhook_secret.as_deref(), &odata_payload)
+            .await
+        {
+            Ok(code) if (200..300).contains(&code) => (true, format!("SYNCED_HTTP_{code}")),
+            Ok(code) => (false, format!("SYNC_FAILED_HTTP_{code}")),
+            Err(err) => (false, format!("DISPATCH_ERROR: {err}")),
+        }
+    } else {
+        (false, "LOCAL_ONLY".to_string())
+    };
+
     Ok(Json(CamtResponse {
         message_id,
         message_type: "camt.053.001.08".to_string(),
         xml_payload: xml,
         created_at: now_iso8601(),
+        webhook_delivered,
+        erp_sync_status,
     }))
 }
 
@@ -103,6 +172,8 @@ pub async fn generate_camt054(
         message_type: "camt.054.001.08".to_string(),
         xml_payload: xml,
         created_at: now_iso8601(),
+        webhook_delivered: false,
+        erp_sync_status: "LOCAL_ONLY".to_string(),
     }))
 }
 
@@ -324,6 +395,8 @@ mod tests {
             to_date: "2026-06-30".into(),
             currency: "EUR".into(),
             include_transactions: false,
+            webhook_url: None,
+            webhook_secret: None,
         };
         let xml = build_camt053_xml("test-msg", &payload).unwrap();
         assert!(xml.contains("A&amp;B"));
@@ -357,6 +430,8 @@ mod tests {
             to_date: "2026-06-30".into(),
             currency: "EUR".into(),
             include_transactions: false,
+            webhook_url: None,
+            webhook_secret: None,
         };
         let xml = build_camt053_xml("test-msg", &payload).unwrap();
         assert!(validate_camt_xml(
@@ -431,6 +506,8 @@ mod tests {
             to_date: "2026-06-30".into(),
             currency: "EUR".into(),
             include_transactions: false,
+            webhook_url: None,
+            webhook_secret: None,
         };
         let xml = build_camt053_xml("test-msg", &payload).unwrap();
         // Ask for an element that doesn't exist in camt.053
@@ -492,6 +569,8 @@ mod tests {
             to_date: "2026-06-30T23:59:59".into(),
             currency: "GBP".into(),
             include_transactions: true,
+            webhook_url: None,
+            webhook_secret: None,
         };
         let xml = build_camt053_xml("camt053-integration-test", &payload).unwrap();
         // Must contain all six structural elements
@@ -574,6 +653,48 @@ mod tests {
         )
         .expect("Full camt.054 pipeline validation should pass");
     }
+
+    #[test]
+    fn odata_v4_payload_serialization_and_deserialization() {
+        let payload = ODataV4CallbackPayload {
+            odata_context: "$metadata#BankStatements/$entity".to_string(),
+            statement_id: "stmt-12345".to_string(),
+            account_id: "DE89370400440532013000".to_string(),
+            statement_date: "2026-09-06".to_string(),
+            currency: "EUR".to_string(),
+            xml_payload_base64: BASE64.encode(b"<Document></Document>"),
+            status: "SYNCED".to_string(),
+        };
+
+        let json = serde_json::to_string(&payload).expect("Serialization failed");
+        assert!(json.contains("@odata.context"));
+        assert!(json.contains("stmt-12345"));
+
+        let deserialized: ODataV4CallbackPayload =
+            serde_json::from_str(&json).expect("Deserialization failed");
+        assert_eq!(payload, deserialized);
+    }
+
+    #[tokio::test]
+    async fn odata_v4_webhook_dispatch_invalid_url() {
+        let payload = ODataV4CallbackPayload {
+            odata_context: "$metadata#BankStatements/$entity".to_string(),
+            statement_id: "stmt-test".to_string(),
+            account_id: "DE12345".to_string(),
+            statement_date: "2026-09-06".to_string(),
+            currency: "EUR".to_string(),
+            xml_payload_base64: "dGVzdA==".to_string(),
+            status: "SYNCED".to_string(),
+        };
+
+        let res = dispatch_odata_v4_webhook(
+            "http://invalid.local.unreachable:9999/odata",
+            Some("secret123"),
+            &payload,
+        )
+        .await;
+        assert!(res.is_err());
+    }
 }
 
 /// Request to generate a pacs.008 FI-to-FI Customer Credit Transfer
@@ -620,6 +741,8 @@ pub async fn generate_pacs008(
         message_type: "pacs.008.001.08".into(),
         xml_payload: xml,
         created_at: now_iso8601(),
+        webhook_delivered: false,
+        erp_sync_status: "LOCAL_ONLY".to_string(),
     }))
 }
 

@@ -41,6 +41,67 @@ pub struct OracleAttestation {
     pub oracle_pubkey: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CbtcReserveAttestation {
+    pub cbtc_asset_id: String,
+    pub reserve_sats: u64,
+    pub reserve_txid: String,
+    pub reserve_vout: u32,
+    pub threshold_quorum: usize,
+    pub attestations: Vec<OracleAttestation>,
+}
+
+/// Canton Active Contract Set (ACS) payload state anchor for translation to Bitcoin UCR.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CantonStateTranslationPayload {
+    pub contract_id: String,
+    pub template_id: String,
+    pub package_id: String,
+    pub payload_bytes: Vec<u8>,
+    pub ledger_effective_time: u64,
+}
+
+/// Translated state root mapping a Canton Daml ACS contract commitment to a Bitcoin UCR reference.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CantonUcrStateTranslation {
+    pub contract_id: String,
+    pub ucr_reference: String,
+    pub state_root: String,
+}
+
+impl CantonStateTranslationPayload {
+    /// Validates Daml contract ID syntax and translates payload hash to Bitcoin UCR reference.
+    pub fn translate_to_ucr(&self) -> ConxianResult<CantonUcrStateTranslation> {
+        if self.contract_id.trim().is_empty() {
+            return Err(conxian_core::ConxianError::Internal(
+                "Canton contract_id cannot be empty".into(),
+            ));
+        }
+        if self.template_id.trim().is_empty() || self.package_id.trim().is_empty() {
+            return Err(conxian_core::ConxianError::Internal(
+                "Canton template_id and package_id are required".into(),
+            ));
+        }
+
+        let mut hasher = Sha256::new();
+        hasher.update(self.contract_id.as_bytes());
+        hasher.update(self.template_id.as_bytes());
+        hasher.update(self.package_id.as_bytes());
+        hasher.update(&self.payload_bytes);
+        hasher.update(self.ledger_effective_time.to_be_bytes());
+        let state_root_bytes: [u8; 32] = hasher.finalize().into();
+        let state_root_hex = hex::encode(state_root_bytes);
+
+        let ucr_ref = format!("ucr:canton:{}:{}", self.package_id, &state_root_hex[..16]);
+
+        Ok(CantonUcrStateTranslation {
+            contract_id: self.contract_id.clone(),
+            ucr_reference: ucr_ref,
+            state_root: state_root_hex,
+        })
+    }
+}
+
 impl DlcOracleClient {
     pub fn new(oracle_url: String, oracle_pubkey: String) -> Self {
         Self {
@@ -166,6 +227,55 @@ impl DlcOracleClient {
         let msg = secp256k1::Message::from_digest(msg_hash);
 
         Ok(secp.verify_schnorr(&sig, &msg, &pubkey).is_ok())
+    }
+
+    /// Verifies a Canton-wrapped Bitcoin (CBTC) reserve attestation against threshold Schnorr attestations.
+    pub fn verify_cbtc_reserve_attestation(
+        secp: &Secp256k1<VerifyOnly>,
+        payload: &CbtcReserveAttestation,
+    ) -> ConxianResult<bool> {
+        if payload.cbtc_asset_id.is_empty() || payload.reserve_txid.is_empty() {
+            return Ok(false);
+        }
+        if payload.reserve_sats == 0 || payload.threshold_quorum == 0 {
+            return Ok(false);
+        }
+        if payload.attestations.len() < payload.threshold_quorum {
+            return Ok(false);
+        }
+
+        let mut valid_count = 0;
+        for att in &payload.attestations {
+            let pubkey_bytes = match hex::decode(&att.oracle_pubkey) {
+                Ok(b) => b,
+                Err(_) => continue,
+            };
+            let pubkey = match XOnlyPublicKey::from_slice(&pubkey_bytes) {
+                Ok(pk) => pk,
+                Err(_) => continue,
+            };
+            let sig_bytes = match hex::decode(&att.signature) {
+                Ok(b) => b,
+                Err(_) => continue,
+            };
+            let sig = match schnorr::Signature::from_slice(&sig_bytes) {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
+
+            let mut hasher = Sha256::new();
+            hasher.update(payload.cbtc_asset_id.as_bytes());
+            hasher.update(payload.reserve_txid.as_bytes());
+            hasher.update(payload.reserve_sats.to_be_bytes());
+            let msg_hash: [u8; 32] = hasher.finalize().into();
+            let msg = secp256k1::Message::from_digest(msg_hash);
+
+            if secp.verify_schnorr(&sig, &msg, &pubkey).is_ok() {
+                valid_count += 1;
+            }
+        }
+
+        Ok(valid_count >= payload.threshold_quorum)
     }
 }
 
@@ -950,5 +1060,92 @@ mod tests {
         assert_eq!(payload.executed_cet.outcome, "up");
         assert!(payload.is_verified);
         assert!(payload.broadcast_ready);
+    fn cbtc_reserve_attestation_verifies_threshold_quorum() {
+        let secp = test_secp();
+        let ssecp = signing_secp();
+        let mut rng = rand::thread_rng();
+
+        let (sk1, _) = ssecp.generate_keypair(&mut rng);
+        let kp1 = Keypair::from_secret_key(&ssecp, &sk1);
+        let pk1_hex = hex::encode(kp1.x_only_public_key().0.serialize());
+
+        let (sk2, _) = ssecp.generate_keypair(&mut rng);
+        let kp2 = Keypair::from_secret_key(&ssecp, &sk2);
+        let pk2_hex = hex::encode(kp2.x_only_public_key().0.serialize());
+
+        let asset_id = "cbtc-canton-v1";
+        let txid = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        let sats = 100_000_000u64;
+
+        let mut hasher1 = Sha256::new();
+        hasher1.update(asset_id.as_bytes());
+        hasher1.update(txid.as_bytes());
+        hasher1.update(sats.to_be_bytes());
+        let msg1 = secp256k1::Message::from_digest(hasher1.finalize().into());
+        let sig1 = ssecp.sign_schnorr(&msg1, &kp1);
+
+        let mut hasher2 = Sha256::new();
+        hasher2.update(asset_id.as_bytes());
+        hasher2.update(txid.as_bytes());
+        hasher2.update(sats.to_be_bytes());
+        let msg2 = secp256k1::Message::from_digest(hasher2.finalize().into());
+        let sig2 = ssecp.sign_schnorr(&msg2, &kp2);
+
+        let att1 = OracleAttestation {
+            event_id: asset_id.into(),
+            outcome: "reserve-valid".into(),
+            signature: hex::encode(sig1.serialize()),
+            oracle_pubkey: pk1_hex,
+        };
+
+        let att2 = OracleAttestation {
+            event_id: asset_id.into(),
+            outcome: "reserve-valid".into(),
+            signature: hex::encode(sig2.serialize()),
+            oracle_pubkey: pk2_hex,
+        };
+
+        let payload = CbtcReserveAttestation {
+            cbtc_asset_id: asset_id.into(),
+            reserve_sats: sats,
+            reserve_txid: txid.into(),
+            reserve_vout: 0,
+            threshold_quorum: 2,
+            attestations: vec![att1, att2],
+        };
+
+        assert!(DlcOracleClient::verify_cbtc_reserve_attestation(&secp, &payload).unwrap());
+    }
+
+    #[test]
+    fn canton_state_translation_maps_acs_to_ucr() {
+        let payload = CantonStateTranslationPayload {
+            contract_id: "00a1b2c3d4e5f607891011121314151617181920".into(),
+            template_id: "Main:SovereignBond".into(),
+            package_id: "canton-pkg-v1".into(),
+            payload_bytes: vec![1, 2, 3, 4, 5, 6, 7, 8],
+            ledger_effective_time: 1770000000,
+        };
+
+        let translation = payload
+            .translate_to_ucr()
+            .expect("Translation should succeed");
+        assert_eq!(
+            translation.contract_id,
+            "00a1b2c3d4e5f607891011121314151617181920"
+        );
+        assert!(translation
+            .ucr_reference
+            .starts_with("ucr:canton:canton-pkg-v1:"));
+        assert_eq!(translation.state_root.len(), 64);
+
+        let empty_id_payload = CantonStateTranslationPayload {
+            contract_id: "".into(),
+            template_id: "Main:SovereignBond".into(),
+            package_id: "canton-pkg-v1".into(),
+            payload_bytes: vec![],
+            ledger_effective_time: 1770000000,
+        };
+        assert!(empty_id_payload.translate_to_ucr().is_err());
     }
 }

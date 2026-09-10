@@ -57,6 +57,7 @@ pub fn configure_routes(
             get(shadow_observation::get_bitcoin_core_shadow_observation),
         )
         .route("/state", get(handlers::get_state))
+        .route("/treasury/syi", get(handlers::get_sovereign_yield_index))
         .route("/verify", post(handlers::verify_attestation))
         .route("/identity/exchange", post(handlers::exchange_identity))
         .route("/identity/resolve", post(handlers::resolve_identity_v1))

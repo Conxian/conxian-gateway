@@ -1093,3 +1093,12 @@ File a tracking issue in the repository to monitor these research items:
 12. KPMG Machine Economy Report: https://assets.kpmg.com/content/dam/kpmgsites/ie/pdf/insights/consulting/ie-the-next-era-of-payments.pdf
 13. Canton Coin: https://digitalasset.com/hubfs/Canton%20Network%20Files/Documents%20(whitepapers%2C%20etc...)/Canton%20Coin_%20A%20Canton-Network-native%20payment%20application.pdf
 14. Deep Dive on Canton: https://collective.flashbots.net/t/deep-dive-on-permissioned-blockchains-the-canton-network/5517
+
+## 10. Canton Daml ACS Anchor to Bitcoin UCR Mapping Specification (2026-09 Expansion)
+
+The Canton Daml Active Contract Set (ACS) commitment model requires translating private institutional smart contract states into public, verifiable Bitcoin references:
+
+1. **State Key Extraction**: Daml templates (`AssetTransfer`, `CollateralBond`, `InvoicePayable`) expose key fields (contract ID, template ID, owner/signatories, payload parameters).
+2. **SHA-256 State Commitment**: The normalized Daml payload JSON is hashed: `H(contract_id || template_id || payload_bytes)`.
+3. **UCR Derivation**: Construct `ucr:canton:<domain>:<contract_id>` referencing the calculated state root hash.
+4. **Bitcoin L1 Verification**: The UCR state commitment is anchor-checked against Bitcoin L1 `OP_RETURN` transactions or Discreet Log Contract (DLC) oracle attestations.

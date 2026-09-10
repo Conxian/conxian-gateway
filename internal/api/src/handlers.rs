@@ -88,6 +88,20 @@ pub async fn get_metrics(State(state): State<AppState>) -> Json<Value> {
     }))
 }
 
+/// Read-only Sovereign Yield Index (SYI) endpoint.
+///
+/// Returns the real tracked SYI rate and its last-update timestamp from the
+/// treasury monitor. No quotes are fabricated: BTC/STX USD price quotes are
+/// not tracked by the treasury monitor and are therefore omitted rather than
+/// synthesized.
+pub async fn get_sovereign_yield_index(State(state): State<AppState>) -> Json<Value> {
+    let s = state.shared.read().expect("lock poisoned");
+    Json(json!({
+        "syi_rate": s.metrics.syi_index,
+        "timestamp": s.metrics.last_treasury_update,
+    }))
+}
+
 pub async fn get_mempool_telemetry(
     State(state): State<AppState>,
 ) -> Result<Json<MempoolTelemetryResponse>, (StatusCode, Json<Value>)> {
@@ -985,7 +999,7 @@ pub async fn resolve_machine_identity(
     // For peaq/dimo providers, a separate device_key field must also be provided.
     let device_key_for_verify = match payload.provider.as_str() {
         "device_key" => Some(payload.identifier.as_str()),
-        "peaq" | "dimo" => payload.device_key.as_deref(),
+        "peaq" | "dimo" | "helium" | "iotex" => payload.device_key.as_deref(),
         _ => None,
     };
 
@@ -1017,6 +1031,8 @@ pub async fn resolve_machine_identity(
         "peaq" => conxian_core::MachineIdentity {
             peaq_did: Some(format!("did:peaq:{}", payload.identifier)),
             dimo_vehicle_id: None,
+            helium_hotspot_id: None,
+            iotex_device_id: None,
             device_key: payload.identifier.clone(),
             attestation_proof: None,
             machine_type,
@@ -1025,6 +1041,28 @@ pub async fn resolve_machine_identity(
         "dimo" => conxian_core::MachineIdentity {
             peaq_did: None,
             dimo_vehicle_id: Some(payload.identifier.clone()),
+            helium_hotspot_id: None,
+            iotex_device_id: None,
+            device_key: payload.identifier.clone(),
+            attestation_proof: None,
+            machine_type,
+            label: None,
+        },
+        "helium" => conxian_core::MachineIdentity {
+            peaq_did: None,
+            dimo_vehicle_id: None,
+            helium_hotspot_id: Some(payload.identifier.clone()),
+            iotex_device_id: None,
+            device_key: payload.identifier.clone(),
+            attestation_proof: None,
+            machine_type,
+            label: None,
+        },
+        "iotex" => conxian_core::MachineIdentity {
+            peaq_did: None,
+            dimo_vehicle_id: None,
+            helium_hotspot_id: None,
+            iotex_device_id: Some(payload.identifier.clone()),
             device_key: payload.identifier.clone(),
             attestation_proof: None,
             machine_type,
@@ -1033,6 +1071,8 @@ pub async fn resolve_machine_identity(
         "device_key" => conxian_core::MachineIdentity {
             peaq_did: None,
             dimo_vehicle_id: None,
+            helium_hotspot_id: None,
+            iotex_device_id: None,
             device_key: payload.identifier.clone(),
             attestation_proof: payload.signature.clone(),
             machine_type,
@@ -1142,10 +1182,11 @@ pub async fn verify_state_proof(
     State(state): State<AppState>,
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    // The generic BitVM route has no production cryptographic verifier. Guard
-    // at the HTTP boundary so no adapter, backend, or downstream authorization
-    // path can turn legacy metadata into a successful verification response.
-    if chain.eq_ignore_ascii_case("bitvm") {
+    // The generic BitVM and BitVM3 routes have no production cryptographic
+    // verifier. Guard at the HTTP boundary so no adapter, backend, or
+    // downstream authorization path can turn legacy metadata into a successful
+    // verification response.
+    if chain.eq_ignore_ascii_case("bitvm") || chain.eq_ignore_ascii_case("bitvm3") {
         return Err(verifier_unavailable_response(&chain));
     }
 
@@ -1160,6 +1201,11 @@ pub async fn verify_state_proof(
 }
 
 fn verifier_unavailable_response(chain: &str) -> (StatusCode, Json<Value>) {
+    let message = match chain.to_ascii_lowercase().as_str() {
+        "bitvm" => "BitVM verification is unavailable".to_string(),
+        "bitvm3" => "BitVM3 verification is unavailable".to_string(),
+        other => format!("{other} verification is unavailable"),
+    };
     (
         StatusCode::NOT_IMPLEMENTED,
         Json(json!({
@@ -1167,7 +1213,7 @@ fn verifier_unavailable_response(chain: &str) -> (StatusCode, Json<Value>) {
             "status": "unsupported",
             "code": "verifier_unavailable",
             "authoritative": false,
-            "message": "BitVM verification is unavailable"
+            "message": message
         })),
     )
 }
@@ -1688,10 +1734,27 @@ pub async fn translate_canton_state(
         domain: Some(payload.domain.domain_name.clone()),
     };
 
+    // Calculate state root hash from contract ID, template, and optional payload JSON
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(payload.daml_contract_id.as_bytes());
+    hasher.update(template_name.as_bytes());
+    if let Some(ref p) = payload.payload_json {
+        hasher.update(p.as_bytes());
+    }
+    let state_root_hash = hex::encode(hasher.finalize());
+
+    let ucr_uri = format!(
+        "ucr:canton:{}:{}",
+        payload.domain.domain_name, payload.daml_contract_id
+    );
+
     Ok(Json(conxian_core::CantonStateTranslationResponse {
         contract_ref,
         source_ledger: "canton".into(),
         target_ledger: payload.target_ledger,
+        state_root_hash: Some(state_root_hash),
+        ucr_uri: Some(ucr_uri),
         translation_complete: unmapped_fields.is_empty(),
         unmapped_fields,
         translated_at: now,

@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use conxian_core::{ChainAdapter, ConxianResult};
+use conxian_core::{ChainAdapter, ConxianError, ConxianResult};
 use serde_json::{json, Value};
 use tracing::{info, warn};
 
@@ -18,7 +18,14 @@ impl StrataAdapter {
 #[async_trait]
 impl ChainAdapter for StrataAdapter {
     async fn get_latest_height(&self) -> ConxianResult<u64> {
-        Ok(0)
+        warn!(
+            chain = "strata",
+            network = %self.network,
+            "Strata chain height is unavailable until a trusted RPC backend is wired"
+        );
+        // Fail closed: do not report a fabricated height (0) as a successful
+        // observation. Mirrors the BitVM3 verifier-unavailable precedent.
+        Err(ConxianError::VerifierUnavailable)
     }
 
     async fn get_chain_identity(&self) -> String {
@@ -35,27 +42,47 @@ impl ChainAdapter for StrataAdapter {
         }))
     }
 
-    async fn verify_state_proof(&self, proof_metadata: Value) -> ConxianResult<bool> {
-        info!(chain = "strata", "Verifying Strata state proof");
-
-        // G-ST1: Validate batch_root is a well-formed 32-byte hex hash
-        let batch_root = proof_metadata["batch_root"].as_str().unwrap_or("");
-        if batch_root.is_empty() {
-            warn!(chain = "strata", "Missing batch_root in metadata");
-            return Ok(false);
-        }
-        let root_bytes: Vec<u8> = match <Vec<u8> as bitcoin::hex::FromHex>::from_hex(batch_root) {
-            Ok(b) if b.len() == 32 => b,
-            _ => {
-                warn!(chain = "strata", "Invalid batch_root hex format");
-                return Ok(false);
-            }
-        };
-        info!(
+    async fn verify_state_proof(&self, _proof_metadata: Value) -> ConxianResult<bool> {
+        warn!(
             chain = "strata",
-            batch_root_len = root_bytes.len(),
-            "Batch root structurally valid"
+            network = %self.network,
+            "Strata state-proof verification is disabled until a trusted ZK-proof backend is wired"
         );
-        Ok(true)
+        // Caller-supplied metadata is not a cryptographic proof or a trusted
+        // rollup observation, so production verification remains fail-closed.
+        Ok(false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn verify_state_proof_fails_closed() {
+        let adapter = StrataAdapter::new("regtest".to_string());
+
+        // Even a structurally well-formed 32-byte batch_root must not be
+        // accepted as verified until a real ZK-proof backend is wired.
+        for metadata in [
+            json!({}),
+            json!({"verified": true, "claim": "accepted"}),
+            json!({"batch_root": "11".repeat(32)}),
+        ] {
+            assert!(!adapter.verify_state_proof(metadata).await.unwrap());
+        }
+    }
+
+    #[tokio::test]
+    async fn get_latest_height_fails_closed() {
+        let adapter = StrataAdapter::new("regtest".to_string());
+
+        // A fabricated height must not be reported as a successful observation.
+        let err = adapter.get_latest_height().await.unwrap_err();
+        assert!(
+            matches!(err, ConxianError::VerifierUnavailable),
+            "expected VerifierUnavailable, got {err:?}"
+        );
     }
 }

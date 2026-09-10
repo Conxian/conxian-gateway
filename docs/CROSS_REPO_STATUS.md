@@ -67,7 +67,7 @@ pending review/merge and is not part of `main` until it lands.
 | Repository | Production Path | Last Session | W29 Status |
 |------------|-----------------|--------------|------------|
 | **lib-conxian-core** | main (Shared) | ⏳ Not reviewed | - |
-| **lib-conclave-sdk** | main (Public) | ⏳ Not reviewed | - |
+| **conxius-enclave-sdk** | main (Public) | ⏳ Not reviewed | - |
 | **conxius-platform** | main (Internal) | ⏳ Not reviewed | - |
 | **stacksorbit** | main (Internal) | ⏳ Not reviewed | - |
 
@@ -85,7 +85,7 @@ pending review/merge and is not part of `main` until it lands.
 ```
 lib-conxian-core  ←  required (L3 foundation)
 conxius-wallet    →  depends on gateway API (L2)
-lib-conclave-sdk  ←  shares types with SDK (L3)
+conxius-enclave-sdk  ←  shares types with SDK (L3)
 ```
 
 ### Dependency Status
@@ -300,3 +300,43 @@ Before starting work on any repo, verify:
 - **G-BB1 Closed**: Implemented Babylon EOTS Schnorr attestation verification and double-sign key extraction $x = (s_1 - s_2)/(e_1 - e_2) \pmod n$ in `internal/engine/src/bitcoin/babylon_adapter.rs`.
 - **SDK Alignment & Feature Expansion**: Updated `@conxian/client-sdk` and `@conxian/schemas` with full TypeScript interfaces and client methods for `generatePacs008Payment`, `resolveIdentity`, `getSovereignYieldIndex`, and `verifyCbtcAttestation`.
 - **Knowledge Base Synchronization**: Validated and updated cross-repo knowledge bases, candidate matrices, and gap analysis logs.
+
+## Session Update — 2026-08-30 (Session 59)
+- **Org-wide functionality audit**: Added live-data [`ORG_WIDE_FUNCTIONALITY_AUDIT_2026-08-30.md`](ORG_WIDE_FUNCTIONALITY_AUDIT_2026-08-30.md)
+  covering all 15 repositories, dependency/version alignment, enabled-functionality
+  mapping, all 42 open issues, and a knowledge-base inventory. This supersedes the
+  stale 2026-07-22 snapshot in this file for current state.
+- **Client SDK endpoint correction**: `generatePacs008Payment` previously targeted
+  `/api/v1/fiat/pacs008/generate`, which is not wired; corrected to the actual
+  generation route `/api/v1/iso20022/payment` (`handlers::generate_iso_payment`).
+  The Session 52 note's `/fiat/pacs008/generate` endpoint reference was a
+  plan-not-shipped; the wired pacs.008 generation surface is `/iso20022/payment`.
+- **SYI endpoint wired**: Added read-only `/api/v1/treasury/syi`
+  (`handlers::get_sovereign_yield_index`) returning the real tracked SYI rate and
+  timestamp. BTC/STX USD quotes are not tracked and are omitted rather than
+  synthesized, matching the fail-closed posture.
+- **Portfolio map corrected**: `PORTFOLIO_MAP.md` stale slugs fixed
+  (`Conxian_UI` → `conxian_ui`, `stacksorbit` → `conxius-orbit` archived) and
+  `conxian_market` / `conxian.github.io` added to the Layer 2 inventory.
+
+## Session Update — Current Session
+- **G-FM1 Closed**: Delivered Schnorr blind signature verification against guardian x-only public keys in `internal/engine/src/bitcoin/fedimint_adapter.rs`.
+- **G-SB3 Closed**: Delivered Bitcoin L1 raw transaction hashing and 80-byte block header PoW verification in `internal/engine/src/stacks/sbtc.rs`.
+- **Knowledge Base & Gap Tracking**: Updated `GAP_ANALYSIS_2026-08-07.md` and `CANDIDATE_MATRIX.md` to reflect complete test coverage and gap closure across multi-chain settlement adapters.
+
+## Session Update — 2026-09-04 (Current Session)
+- **Org-Wide Research Audit & Knowledge Base Synchronization**: Audited all 15 Conxian repositories and 42 open issues. Updated `CROSS_REPO_STATUS.md` and `GAP_ANALYSIS_AND_SCORING.md` to record closed gaps (G-FI1, G-FI2, G-BB1, G-FM1, G-SB3, G-DL1) and prioritize open non-custodial research candidates.
+- **Candidate Scoring & Candidate I Initiation**: Scored Candidates A through O in `CANDIDATE_MATRIX.md`. Initiated Candidate I (CBTC Non-Custodial Reserve Verification) to provide non-custodial reserve attestation verification for Canton-wrapped BTC across compliance and engine layers without touching custody.
+- **Research Expansion**: Expanded `OPPORTUNITY_MAP_AND_EXPANSION.md`, `SOVEREIGN_SHARDING_VERIFICATION.md`, and `KNOWLEDGE_MAP.md` with Canton Network eUTXO state translation, BitVM3 garbled circuits fail-closed boundaries, and local-first WASM UCV-1 verification.
+
+## Session Update — 2026-09-06 (Current Session)
+- **End-to-End Org & Repo Audit**: Executed full git fetch, branch review, and dependency verification. Confirmed workspace release hygiene v0.1.5, contamination guard clean state, and test suite green status.
+- **Research Expansion & Candidate Q Initiation**: Defined and scored Candidate Q (Client-Side Wasm UCV-1 Verification & BitVM3 Garbled-Circuit Folding Engine, Score 9.4). Mapped open research gaps (G-20, G-B6, G-21) to Candidate Q.
+- **Knowledge Base Synchronization**: Updated `SOVEREIGN_SHARDING_VERIFICATION.md`, `CANDIDATE_MATRIX.md`, `GAP_ANALYSIS_AND_SCORING.md`, and `CROSS_REPO_STATUS.md` for end-to-end development cycle discipline.
+
+- **Candidate Q Wasm UCV-1 Verification Expansion**: Added client-side Wasm UCV-1 zero-trust proof verification schemas (`WasmUcvProofPayload`, `WasmUcvVerificationResult`) to `@conxian/schemas` and implemented `verifyStateProofLocal()` in `@conxian/client-sdk` with full Vitest test coverage (13/13 passing).
+
+## Session Update — 2026-09-08 (Current Session)
+- **End-to-End Audit & Research Synchronization**: Executed git fetch, submodule sync, and verified clean repository hygiene across workspace v0.1.5 baseline.
+- **Candidate Scoring & Gap Alignment**: Confirmed 19 closed technical gaps (including G-DL1, G-FI1..3, G-BB1, G-FM1..2, G-SB3, G-C1, G-C4..5, G-20..21, G-ME1..2, G-TR1) and tracked 3 infrastructure/governance gated open gaps (G-SB1, G-LN1, G-FM3).
+- **Candidate R & T Maturity Verification**: Verified Candidate R (DePIN/peaq M2M settlement & machine RWA attestation) and Candidate T (ISO 20022 camt.053 ERP reporting) full end-to-end integration across Rust core crates and `@conxian/client-sdk` monorepo packages.
