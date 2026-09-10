@@ -265,19 +265,14 @@ Each gap is scored on 3 axes (1-5 scale):
 
 ## 11. Session 54 Gap Resolution Update (2026-09-09)
 
-- **G-SB3 (sBTC Bitcoin L1 Merkle Proof Verification):** ✅ CLOSED. Implemented `verify_bitcoin_merkle_proof()` in `internal/engine/src/stacks/sbtc.rs` performing independent SHA-256 double-hashing, display-order byte reversal, and sibling index bit shifting to verify Bitcoin L1 Merkle proofs for sBTC bridge peg-in/out transactions. Verified with 18 passing unit tests.
+- **G-SB3 (sBTC Bitcoin L1 Merkle Proof Verification & Proof-of-Work Verification):** ✅ CLOSED. Implemented `verify_bitcoin_merkle_proof()`, `verify_bitcoin_tx_hex()`, and `verify_block_header_pow()` in `internal/engine/src/stacks/sbtc.rs` performing independent SHA-256 double-hashing, display-order byte reversal, difficulty target checks, and sibling index bit shifting for sBTC bridge peg-in/out transactions. Verified with passing unit tests.
+
 ---
 
 ## 12. Session 55 Gap Resolution Update (2026-09-09)
 
 - **G-BB1 (Babylon EOTS Verification & Double-Sign Secret Key Extraction):** ✅ CLOSED. Implemented `extract_eots_secret_key()` in `internal/engine/src/bitcoin/babylon_adapter.rs` using 256-bit modular scalar arithmetic (`SecpScalar`) over secp256k1 curve order $n$ to derive finality provider private key $x = (s_1 - s_2)/(e_1 - e_2) \pmod n$ from double-signing signatures $(R, s_1)$ and $(R, s_2)$ and verify $x \cdot G = P$. Wired double-sign evidence extraction into `verify_state_proof()` with unit tests.
 - **G-FM1 (Fedimint Blind Signature Verification):** ✅ CLOSED. Implemented `verify_fedimint_blind_signature()` in `internal/engine/src/bitcoin/fedimint_adapter.rs` verifying Schnorr blind signatures against guardian x-only public keys under T2 (Managed) trust tier.
-
----
-
-## 13. Session 56 Gap Resolution Update (2026-09-10)
-
-- **G-DL2 (DLC Contract Execution Transaction & Refund Engine):** ✅ CLOSED. Implemented , , , , and  in . Enabled deterministic CET construction with net fee calculation, refund transaction building with timelocks, and attestation-driven contract execution with 15 passing unit tests.
 
 ---
 

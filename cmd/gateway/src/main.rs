@@ -360,6 +360,17 @@ async fn main() -> anyhow::Result<()> {
         )),
     );
 
+    // BitVM3 (garbled circuits + recursive proof verification) is registered
+    // only as a fail-closed research lane. The adapter performs no
+    // cryptographic verification and cannot produce a production `verified`.
+    // See https://github.com/Conxian/conxian-gateway/issues/189.
+    multi_chain.insert(
+        "bitvm3".to_string(),
+        Arc::new(conxian_engine::BitVm3Adapter::new(
+            config.network.to_string(),
+        )),
+    );
+
     multi_chain.insert(
         "fedimint".to_string(),
         Arc::new(conxian_engine::FedimintAdapter::new(

@@ -142,12 +142,15 @@ export interface IdentityResolutionResponse {
 
 /**
  * Sovereign Yield Index (SYI) Treasury structures.
+ *
+ * BTC/STX USD price quotes are not tracked by the treasury monitor, so they
+ * are optional and omitted rather than synthesized.
  */
 export interface SyiResponse {
     syi_rate: number;
-    btc_quote: number;
-    stx_quote: number;
     timestamp: number;
+    btc_quote?: number;
+    stx_quote?: number;
 }
 
 /**
@@ -161,4 +164,156 @@ export interface CbtcVerificationResponse {
     verified: boolean;
     attestation_id?: string;
     error?: string;
+}
+
+/**
+ * Canton State Translation structures (G-C4 / Candidate J).
+ */
+export interface CantonStateTranslationRequest {
+    domain: {
+        domain_name: string;
+        synchronizer_endpoint?: string;
+        public_observer?: boolean;
+    };
+    daml_contract_id: string;
+    template_name?: string;
+    payload_json?: string;
+    target_ledger: string;
+}
+
+export interface UniversalContractRef {
+    ledger: string;
+    contract_id: string;
+    domain?: string;
+}
+
+export interface CantonStateTranslationResponse {
+    contract_ref: UniversalContractRef;
+    source_ledger: string;
+    target_ledger: string;
+    state_root_hash?: string;
+    ucr_uri?: string;
+    translation_complete: boolean;
+    unmapped_fields?: string[];
+    translated_at: number;
+}
+
+/**
+ * BRICS mBridge DLT Ingress structures (Candidate P / G-FI3).
+ */
+export interface MBridgeIngressPayload {
+    mbridge_id: string;
+    currency: string;
+    amount: number;
+    sender_cbdc_wallet?: string;
+    receiver_cbdc_wallet?: string;
+    consensus_signatures?: string[];
+    dlt_state_proof?: string;
+}
+
+export interface MBridgeIngressResponse {
+    status: string;
+    mbridge_id: string;
+    normalized_compliance_id?: string;
+    sanctions_clearance?: boolean;
+    error?: string;
+}
+
+/**
+ * Chainlink CCIP Canton Connector Routing structures (G-C5).
+ */
+export interface CcipMessage {
+    message_id: string;
+    source_chain: string;
+    destination_chain: string;
+    sender: string;
+    data?: string;
+    token_amounts?: Array<{ token: string; amount: string }>;
+}
+
+export interface CcipRouteRequest {
+    message: CcipMessage;
+    elevated_scrutiny?: boolean;
+}
+
+export interface CcipRouteResponse {
+    approved: boolean;
+    message_id: string;
+    risk_level: string;
+    reason?: string;
+    timestamp: number;
+}
+
+/**
+ * Candidate Q: Client-Side Wasm UCV-1 Verification structures.
+ */
+export interface WasmUcvProofPayload {
+    chain: string;
+    proof_data: string; // Base64 or hex encoded proof bytes
+    public_inputs?: Record<string, any>;
+    schnorr_signature?: string;
+    merkle_root?: string;
+}
+
+export interface WasmUcvVerificationResult {
+    verified: boolean;
+    chain: string;
+    execution_time_ms: number;
+    proof_type: string;
+    error?: string;
+}
+
+/**
+ * Candidate R: Machine Economy & DePIN peaq DLT Settlement structures.
+ */
+export interface MachineIdentityPayload {
+    device_id: string;
+    provider: "peaq" | "dimo" | "helium" | "iotex" | "custom";
+    device_pubkey: string;
+    signature?: string;
+    metadata?: Record<string, any>;
+}
+
+export interface MachineRwaAttestation {
+    device_id: string;
+    epoch: number;
+    revenue_sats: number;
+    telemetry_hash: string;
+    sensor_signatures?: string[];
+}
+
+export interface DePinSettlementRequest {
+    machine_identity: MachineIdentityPayload;
+    attestation: MachineRwaAttestation;
+    settlement_rail: "lightning" | "x402" | "canton";
+}
+
+export interface DePinSettlementResponse {
+    success: boolean;
+    txid?: string;
+    settled_amount_sats: number;
+    settlement_rail: string;
+    timestamp: number;
+    error?: string;
+}
+
+/**
+ * Candidate T: SWIFT ISO 20022 camt.053 Bank-to-Customer Statement structures.
+ */
+export interface Camt053StatementRequest {
+    account_id: string;
+    currency: string;
+    statement_period_start: number;
+    statement_period_end: number;
+    include_pending_txs?: boolean;
+}
+
+export interface Camt053StatementResponse {
+    xml_statement: string;
+    account_id: string;
+    currency: string;
+    opening_balance: number;
+    closing_balance: number;
+    entry_count: number;
+    timestamp: number;
 }

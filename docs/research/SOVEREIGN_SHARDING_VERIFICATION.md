@@ -56,3 +56,50 @@ To guarantee institutional mainnet integrity, the Conxian Gateway enforces stric
 ### 6.2 Production Promotion Criteria
 - **Zero-Contamination Enforcement**: Continuous integration automatically runs `python3 scripts/verify_contamination_guard.py` to ensure no `stub`, `placeholder`, or `changeme` keywords exist in `cmd/`, `internal/`, `pkg/`, `apps/`, or `packages/`.
 - **Fail-Closed Runtime Architecture**: Any feature flag or unconfigured dependency fails closed with standard HTTP status codes (`503 Service Unavailable` or `400 Bad Request`) rather than falling back to unauthenticated or mock responses in production binaries.
+
+## 7. Canton Network eUTXO & CBTC Non-Custodial Reserve Verification (2026-09 Expansion)
+
+Canton Network employs a privacy-enabled Daml eUTXO model that is architecturally isomorphic to Bitcoin UTXOs. To bridge institutional $6T+ RWA state with permissionless Bitcoin settlement without introducing custodial risk, Conxian Gateway establishes two non-custodial verification primitives:
+
+1. **CBTC Threshold Attestation Verification (Candidate I)**:
+   - Verifies $k$-of-$n$ FROST threshold Schnorr attestation signatures emitted by BitSafe/Canton guardians.
+   - Validates the accompanying Bitcoin L1 UTXO reserve proof (TXID, output index, satoshi value, and Merkle path) against the Gateway's L1 header verifier.
+   - Operates in a strict zero-custody mode: the Gateway verifies attestation validity and reserve adequacy without holding keys or joining the guardian set.
+
+2. **Canton eUTXO State Translation (Candidate J)**:
+   - Maps Daml Active Contract Set (ACS) commitment hashes into Universal Contract References (UCR).
+   - Anchors UCR roots to Bitcoin OP_RETURN / DLC commitment transactions.
+
+## 8. BitVM3 Recursive Proof Efficiency & Canton ACS-to-UCR Translation Specs (2026-09 Expansion)
+
+- **BitVM3 Recursive Proof Efficiency Targets**: BitVM3 incorporates garbled circuit verification with Groth16 circuit folding. Targets include maintaining recursive proof verification under 200,000 gas units / cycles equivalent and sub-second verification latency for nested SNARK proofs.
+- **Canton Daml ACS to Bitcoin UCR Translation Protocol (Candidate J)**: Daml Active Contract Set (ACS) contract instances are hashed via SHA-256 to produce contract state commitments. These commitments map to Universal Contract References (UCR) format `ucr:canton:<domain>:<contract_id>` and are anchored to Bitcoin L1 UTXO outputs or DLC contract states.
+- **BRICS mBridge Validator Deployment Requirements**: Requirements include non-custodial mBridge node payload parser compatibility, ISO 20022 `pacs.008`/`camt.053` payload mapping, and dual-rail settlement fallback.
+
+
+## 9. Candidate Q: Client-Side Wasm UCV-1 Verification & BitVM3 Garbled-Circuit Folding Engine (2026-09 Expansion)
+
+Candidate Q initiates local-first zero-trust client verification by compiling the Gateway Universal Chain Verification (UCV-1) core logic to WebAssembly (wasm32-unknown-unknown):
+
+1. **Client-Side Wasm UCV-1 Core Architecture**:
+   - Compiles cryptographic verification algorithms (BIP-340 Schnorr signatures, FROST threshold attestations, ISO 20022 XML structure validation, and Bitcoin L1 double-SHA256 Merkle proofs) into Wasm modules for consumption by `@conxian/client-sdk`.
+   - Enables edge verification in browser and Node.js environments with zero network roundtrips to Gateway endpoints, reducing attestation latency to <50ms.
+
+2. **BitVM3 Sub-200k Cycle Garbled-Circuit Folding**:
+   - Implements a recursive Groth16 circuit folding accumulator for BitVM3 challenge-response protocols.
+   - Compresses state-transition verifications into <200,000 gas/cycle equivalents, allowing optimistic fraud-proof dispute transactions to be posted on-chain within standard Bitcoin taproot script limits.
+
+3. **Multi-Chain Edge State Anchoring**:
+   - Maps cross-chain proofs across Canton Daml ACS, mBridge DLT state, and Stacks sBTC headers into unified local-first verification envelopes.
+
+### 9.1 Technical Specifications & Subsystem Design Matrix for Candidate Q
+- **Wasm UCV-1 Verification Engine Specification**:
+  - Target Triple: `wasm32-unknown-unknown` compiled via `wasm-pack` with `Panic = "abort"` to eliminate unwinding bloat.
+  - Exported Interface: `verify_ucv_proof_wasm(payload_json: &str) -> String` returning standardized `WasmUcvVerificationResult`.
+  - In-memory Cryptographic Primitives: `secp256k1`Schnorr BIP-340 verification, SHA256 double hashing, and ISO 20022 XML tag structure validation.
+- **BitVM3 Garbled-Circuit Folding Protocol**:
+  - Accumulator Schema: IVC (Incrementally Verifiable Computation) state folding with sub-200,000 cycle verification overhead on Taproot script trees.
+  - Fraud Proof Dispute Resolution: Garbled circuit gate evaluation for 32-bit CPU instruction steps with optimistic execution bond slash paths.
+- **BRICS mBridge Non-Custodial Node Topology**:
+  - Containerization: Distroless Docker deployment spec for mBridge DLT state observer sidecar (`brics-mbridge-observer`).
+  - Message Ingress: Direct ingestion of ISO 20022 `pacs.008` & `camt.053` XML messages translated to e-CNY/HotStuff consensus state proofs.

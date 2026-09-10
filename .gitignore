@@ -4,13 +4,29 @@
 dist
 *.log
 test-results/
+coverage/
+*.lcov
 gateway_state.json
 .gateway_state.json.transaction.lock
 .gateway_state.json.ownership.lock
 offline_queue.db
-.env
-.env.local
-.env.*.local
+*.db
+*.sqlite
+
+# Environment configuration & secret files
+.env*
+!.env.example
+
+# Private key and certificate files
+*.key
+*.pem
+*.pfx
+*.p12
+*.secret
+*.keystore
+
+# Build outputs
+build/
 
 # Generated Vitest cache
 **/.vite/

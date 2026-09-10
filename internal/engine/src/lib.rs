@@ -1,6 +1,7 @@
 pub mod billing;
 pub mod bitcoin;
 pub mod bitvm_adapter;
+pub mod brics_adapter;
 pub mod coordination;
 pub mod ntt;
 pub mod persistence;
@@ -17,7 +18,7 @@ pub use billing::{
 pub use bitcoin::Bip340IssuerPolicy;
 pub use bitcoin::{
     BabylonAdapter, BabylonHeaderInfoResponse, BabylonHeaderSource, BabylonHttpClient,
-    BabylonMainChainResponse, BabylonPagination, BabylonTipResponse, BitVmAdapter,
+    BabylonMainChainResponse, BabylonPagination, BabylonTipResponse, BitVm3Adapter, BitVmAdapter,
     BitcoinCoreShadowObservation, BitcoinCoreShadowObserver, BitcoinCoreShadowObserverClient,
     BitcoinListener, BitcoinRpc, BitcoinRpcClient, BtcHeaderInfo, CoreBestBlockStats,
     CoreBlockchainInfo, CoreMempoolInfo, CoreNetworkInfo, DeploymentAlias, DeploymentObservation,
@@ -27,6 +28,7 @@ pub use bitcoin::{
     ObservationErrorCategory, ShadowObserverFailure, SourceObservation, StashResolver,
     StrataAdapter, SHADOW_FEE_TARGETS,
 };
+pub use brics_adapter::{MBridgeAdapter, MBridgeAttestationPayload, MBridgeVerificationResult};
 pub use coordination::RedisCoordinator;
 pub use ntt::{CitreaAdapter, NttRelayer, RootstockAdapter};
 pub use persistence::{

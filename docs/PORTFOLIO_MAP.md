@@ -18,8 +18,10 @@ This document serves as the canonical inventory and classification for the Conxi
 | Repository | Role | Production Path | Evaluation Standard |
 | :--- | :--- | :--- | :--- |
 | **conxius-wallet** | Non-custodial institutional wallet (Enclave-backed). | `main` (Production) | Non-custodial proof, E2E functional audit. |
-| **Conxian_UI** | Primary product web interface. | `main` (Production) | UX consistency, secure session handling. |
+| **conxian_ui** | Primary product web interface. | `main` (Production) | UX consistency, secure session handling. |
+| **conxian_market** | Treasury dashboard and monthly transparency reporting. | `main` (Production) | Reporting accuracy, treasury visibility. |
 | **conxian-labs-site** | Public communication and portfolio surface. | `main` (Public) | Branding alignment, no internal leakage. |
+| **conxian.github.io** | GitHub Pages public site. | `main` (Public) | Branding alignment, no internal leakage. |
 
 ### Layer 3: Shared Runtime & Developer Infrastructure
 *Libraries, SDKs, and deployment tools supporting the wider stack.*
@@ -27,9 +29,9 @@ This document serves as the canonical inventory and classification for the Conxi
 | Repository | Role | Production Path | Evaluation Standard |
 | :--- | :--- | :--- | :--- |
 | **lib-conxian-core** | Common models, types, and persistence logic. | `main` (Shared) | Strict semver, backwards compatibility. |
-| **lib-conclave-sdk** | Public developer SDK for Conxian integration. | `main` (Public) | API stability, comprehensive documentation. |
+| **conxius-enclave-sdk** | Public developer SDK for Conxian integration. | `main` (Public) | API stability, comprehensive documentation. |
 | **conxius-platform** | Orchestration, automation, and platform coordination. | `main` (Internal) | Workflow reliability, secret-safe CI. |
-| **stacksorbit** | Deployment automation and infrastructure tools. | `main` (Internal) | Repeatable deployments, audit-ready config. |
+| **conxius-orbit** | Deployment automation and infrastructure tools (archived). | `main` (Archived) | Retained for history; no active evaluation. |
 
 ### Layer 4: Governance & Operating System
 *Repositories defining business logic, governance, and organizational standards.*
@@ -59,7 +61,7 @@ This document serves as the canonical inventory and classification for the Conxi
 
 ## 3. Dependency Map
 - **lib-conxian-core** is the foundation for almost all Rust-based L1 and L3 repos.
-- **conxius-wallet** depends on **conxian-gateway** for state and **lib-conclave-sdk** for logic.
+- **conxius-wallet** depends on **conxian-gateway** for state and **conxius-enclave-sdk** for logic.
 - **conxian-nexus** coordinates state across the gateway and protocol layers.
 - **conxius-platform** automates the deployment of **conxian-gateway** and **stacksorbit**.
 
