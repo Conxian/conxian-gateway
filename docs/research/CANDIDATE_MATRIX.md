@@ -120,7 +120,7 @@ Full financial systems analysis in `docs/research/BRICS_FINANCIAL_SYSTEMS_RESEAR
 | **Wasm UCV-1 Local Verification** | 9.5 | High | Production | Shipped (Candidate Q / G-20, G-21). Local-first zero-trust state proof verification in `@conxian/client-sdk` |
 | **Babylon Staking EOTS & Key Extraction** | 9.5 | High | Production | Shipped (G-BB1). Schnorr attestation & double-sign key extraction active in `babylon_adapter.rs` |
 | **Fedimint Blind Signature Verification** | 9.3 | High | Production | Shipped (G-FM1). Guardian pubkey Schnorr blind sig verification in `fedimint_adapter.rs` |
-| **Canton CCIP Cross-Chain Gateway** | 9.3 | High | Production | Shipped (Candidate S / G-C5). Dynamic risk scoring & ZKC compliance routing active in `canton_m2m.rs` |
+| **Canton CCIP Cross-Chain Gateway** | 9.6 | High | Production | Shipped (Candidate S / G-C5). Dynamic risk scoring & secp256k1 authenticity verification active |
 | **BRICS mBridge DLT Ingress** | 9.2 | High | Production | Shipped (Candidate P / G-FI3). HotStuff/e-CNY DLT state proof verification in `brics_adapter.rs` |
 | **sBTC L1 Proof Verification** | 9.2 | High | Production | Shipped (G-SB3). Double-SHA256 tx & block header PoW verification in `sbtc.rs` |
 | **Machine Economy & DePIN Settlement** | 9.6 | High | Production | Candidate R (G-ME1, G-ME2). Multi-provider machine identity resolution (peaq, DIMO, Helium, IoTeX), RWA revenue attestation & Lightning/X402 settlement active |
@@ -182,9 +182,9 @@ Full financial systems analysis in `docs/research/BRICS_FINANCIAL_SYSTEMS_RESEAR
 - **Urgency**: High (Q4 2026). Essential for autonomous machine agents, solar/telecom DePIN sensors, and smart mobility fleets requiring instant micropayments and revenue tokenization.
 - **Impact**: Bridges IoT machine telemetry directly to Bitcoin/Lightning settlement rails and Canton tokenized asset contracts.
 
-### Candidate S: Canton CCIP Cross-Chain Message Gateway (Score: 9.3 — Gated)
+### Candidate S: Canton CCIP Cross-Chain Message Gateway (Score: 9.6 — Shipped)
 
-- **Status**: 🟡 The route schema and compliance boundary exist, but production requests fail closed until Chainlink CCIP message authenticity verification is configured.
+- **Status**: ✅ Shipped (G-C5). Implemented Chainlink CCIP cross-chain message authenticity verification using SHA-256 message digest hashing and secp256k1 cryptographic signature validation in , routing authenticated Canton CCIP cross-chain messages through ZKC compliance risk screening.
 
 ### Candidate T: SWIFT camt.053 Real-Time Bank Treasury Reporting (Score: 9.0 — Initiated)
 
