@@ -34,9 +34,12 @@ crash recovery, backup, mempool reconciliation, and shutdown procedures in
 
 ## Architecture
 - `/apps/control-plane`: Next.js management dashboard.
+- `/cmd/gateway`: Core Axum Gateway server runtime binary.
+- `/cmd/conxian-cli`: Sovereign multi-rail deployment CLI installer.
 - `/internal/engine`: High-performance chain listeners and RPC clients.
 - `/internal/api`: Axum-based REST interface and X402 payment middleware.
 - `/internal/compliance`: Zero-Knowledge Compliance (ZKC) and attestation logic.
+- `/packages`: TypeScript client SDK (`@conxian/client-sdk`) and shared domain schemas (`@conxian/schemas`).
 - `/pkg/conxian-core`: Shared Rust primitives and resilience models.
 
 ## Development
