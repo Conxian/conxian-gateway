@@ -22,4 +22,8 @@
 
 # Workspace components
 /apps/** @botshelomokoka @admin-conxian-labs
+/cmd/** @botshelomokoka @admin-conxian-labs
+/internal/** @botshelomokoka @admin-conxian-labs
 /packages/** @botshelomokoka @admin-conxian-labs
+/pkg/** @botshelomokoka @admin-conxian-labs
+/scripts/** @botshelomokoka @admin-conxian-labs
