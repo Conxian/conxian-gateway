@@ -59,7 +59,7 @@ class VerifyTrackedArtifactsTests(unittest.TestCase):
                 text=True,
             )
             self.assertEqual(result.returncode, 1)
-            self.assertIn("ERROR: Prohibited artifact tracked:", result.stdout)
+            self.assertIn("ERROR: Prohibited artifact tracked in directory:", result.stdout)
             self.assertIn("node_modules/dummy.js", result.stdout)
 
     def test_detects_tracked_sensitive_env_and_key_files(self) -> None:
@@ -114,7 +114,7 @@ class VerifyTrackedArtifactsTests(unittest.TestCase):
 
             # Create runtime state file and test result directory
             state_file = repo_dir / "gateway_state.json"
-            state_file.write_text('{"state": "test"}', encoding="utf-8")
+            state_file.write_text("{\"state\": \"test\"}", encoding="utf-8")
             test_results = repo_dir / "test-results"
             test_results.mkdir()
             results_file = test_results / "junit.xml"
@@ -131,7 +131,71 @@ class VerifyTrackedArtifactsTests(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 1)
             self.assertIn("ERROR: Prohibited artifact tracked: gateway_state.json", result.stdout)
-            self.assertIn("ERROR: Prohibited artifact tracked: test-results/junit.xml", result.stdout)
+            self.assertIn("ERROR: Prohibited artifact tracked in directory: test-results/junit.xml", result.stdout)
+
+    def test_detects_nested_workspace_tracked_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as raw_dir:
+            repo_dir = Path(raw_dir)
+            self._create_temp_git_repo(repo_dir)
+
+            # Create nested directory structures in sub-packages
+            nested_nm = repo_dir / "apps" / "control-plane" / "node_modules"
+            nested_nm.mkdir(parents=True)
+            (nested_nm / "dummy.js").write_text("// dummy", encoding="utf-8")
+
+            nested_tr = repo_dir / "apps" / "control-plane" / "test-results"
+            nested_tr.mkdir(parents=True)
+            (nested_tr / "results.xml").write_text("<xml/>", encoding="utf-8")
+
+            nested_pr = repo_dir / "packages" / "client-sdk" / "playwright-report"
+            nested_pr.mkdir(parents=True)
+            (nested_pr / "index.html").write_text("<html></html>", encoding="utf-8")
+
+            subprocess.run(
+                [
+                    "git",
+                    "add",
+                    "apps/control-plane/node_modules/dummy.js",
+                    "apps/control-plane/test-results/results.xml",
+                    "packages/client-sdk/playwright-report/index.html",
+                ],
+                cwd=repo_dir,
+                check=True,
+                capture_output=True,
+            )
+
+            result = subprocess.run(
+                [sys.executable, str(SCRIPT)],
+                cwd=repo_dir,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("apps/control-plane/node_modules/dummy.js", result.stdout)
+            self.assertIn("apps/control-plane/test-results/results.xml", result.stdout)
+            self.assertIn("packages/client-sdk/playwright-report/index.html", result.stdout)
+
+    def test_detects_nested_workspace_tracked_env_files(self) -> None:
+        with tempfile.TemporaryDirectory() as raw_dir:
+            repo_dir = Path(raw_dir)
+            self._create_temp_git_repo(repo_dir)
+
+            nested_env = repo_dir / "apps" / "control-plane" / ".env.local"
+            nested_env.parent.mkdir(parents=True)
+            nested_env.write_text("SECRET_KEY=12345", encoding="utf-8")
+
+            subprocess.run(["git", "add", "apps/control-plane/.env.local"], cwd=repo_dir, check=True, capture_output=True)
+
+            result = subprocess.run(
+                [sys.executable, str(SCRIPT)],
+                cwd=repo_dir,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("ERROR: Prohibited environment file tracked: apps/control-plane/.env.local", result.stdout)
 
 
 if __name__ == "__main__":
