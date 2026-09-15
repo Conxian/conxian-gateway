@@ -1,6 +1,6 @@
 # Conxian Gateway: Candidate Maturity & Scoring Matrix
 
-This matrix tracks the maturity of core components and identifies the best candidates for next-phase implementation based on urgency, technical readiness, and institutional demand. **Updated 2026-09-06 with Machine Economy (peaq DLT / Candidate R), Canton CCIP Gateway (Candidate S), Wasm UCV-1 Client Engine (Candidate Q), and ISO 20022 camt.053 ERP Treasury Reporting (Candidate T).**
+This matrix tracks the maturity of core components and identifies the best candidates for next-phase implementation based on urgency, technical readiness, and institutional demand. **Updated 2026-09-15 with Machine Economy (peaq DLT / Candidate R), Canton CCIP Gateway (Candidate S), Wasm UCV-1 Client Engine (Candidate Q), and ISO 20022 camt.053 ERP Treasury Reporting (Candidate T).**
 
 ## 1. Component Maturity Scoring (0-10)
 

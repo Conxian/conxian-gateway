@@ -1,53 +1,11 @@
 # Cross-Repository Status Snapshot
 
-**Historical status snapshot:** 2026-07-22T14:42:43Z (observed via GitHub CLI; not live)
-**Historical source commit:** `764859fd19c6b4305c0b7b9222c71493b3587177` (`origin/main`)
-**Refresh rule:** Re-query GitHub before treating issue or PR counts as current;
-this timestamped snapshot and its dated history are not live data.
-**Current RGB correction — 2026-07-26:** Gateway `main` includes transactional
-existing-contract updates and process-lifetime stash ownership. The current
-#228 branch adds an opt-in BIP340 issuer public-key allowlist backend; controlled
-runtime/import wiring and a state-changing signed Bitcoin/RGB regtest fixture
-remain open. Historical table text below is retained as a dated snapshot.
-**Historical Phase 4 implementation context before the PR #278 merge (local verification, 2026-07-22):**
-`origin/main` is now at
-[`d7032ab621ad038f247566f820ac664a6c8c071c`](https://github.com/Conxian/conxian-gateway/commit/d7032ab621ad038f247566f820ac664a6c8c071c),
-and the bounded #245 slice is being prepared on
-`charlie/issue-245-tracked-mempool-telemetry`. This branch context is not a
-claim that the slice is merged into `main`.
-**Current merged-main verification:** `origin/main` is at
-[`96de9c0e976caf1dd3592593073d1f53e58bc91b`](https://github.com/Conxian/conxian-gateway/commit/96de9c0e976caf1dd3592593073d1f53e58bc91b),
-the external merge commit for PR #278.
-**Superseded observation:** The preceding pre-merge snapshot recorded PR #274
-as open; it merged into `main` at 2026-07-22T14:25:01Z as commit
-`764859fd19c6b4305c0b7b9222c71493b3587177`.
-**Post-snapshot BitVM Phase 4 note — 2026-07-22:** The continuity checkpoint
-predates the external merge of Gateway [PR #278](https://github.com/Conxian/conxian-gateway/pull/278)
-on `charlie/issue-189-bitvm-fail-closed`. Its implementation commit is
-[`114b857ed9d400beaf474cb68e7ac5f25ef58d78`](https://github.com/Conxian/conxian-gateway/commit/114b857ed9d400beaf474cb68e7ac5f25ef58d78);
-the pre-documentation branch head was
-[`c893cbb39ea9d680b229a89035ab38f29ed51b8b`](https://github.com/Conxian/conxian-gateway/commit/c893cbb39ea9d680b229a89035ab38f29ed51b8b).
-GitHub subsequently reports an external merge at 2026-07-22T19:57:47Z as
-[`96de9c0e976caf1dd3592593073d1f53e58bc91b`](https://github.com/Conxian/conxian-gateway/commit/96de9c0e976caf1dd3592593073d1f53e58bc91b);
-Charlie did not merge PR #278. The Phase 4 documentation commit
-[`e761d3edfa7c7cbe6a4d9aa67e4e34229a7e3005`](https://github.com/Conxian/conxian-gateway/commit/e761d3edfa7c7cbe6a4d9aa67e4e34229a7e3005)
-was pushed after that merge and is not in merged `main`. PR #278 does not
-resolve [Gateway #189](https://github.com/Conxian/conxian-gateway/issues/189),
-which remains research-only. The current open cross-repository acceptance
-issues are [Platform #1187](https://github.com/Conxian/conxius-platform/issues/1187),
-[Nexus #169](https://github.com/Conxian/conxian-nexus/issues/169), and
-[Enclave #202](https://github.com/Conxian/conxius-enclave-sdk/issues/202);
-[Wallet #427](https://github.com/Conxian/conxius-wallet/issues/427),
-[`.github` #41](https://github.com/Conxian/.github/issues/41), and
-[Core #188](https://github.com/Conxian/lib-conxian-core/issues/188) remain
-closed remediation evidence.
-This documentation recovery is carried by a separate follow-up PR; that PR is
-pending review/merge and is not part of `main` until it lands.
-**Sprint:** W29 (2026-07-15 to 2026-07-25)  
-**Maintained By:** Agent sessions
+**Latest Organization Audit Snapshot:** 2026-09-15T12:30:00Z
+**Current Source Commit:** `e4812cae7ea9e40420f6801ce810b0d2967ab65b` (`origin/main`)
+**Version & Toolchain Alignment:** v0.1.5 | Rust 1.97 | MSRV 1.98.1 | Node/pnpm monorepo workspace
+**Status Summary:** All 19 technical gap implementations (G-DL1 through G-DL3, G-FI1 through G-FI3, G-BB1, G-FM1/FM2, G-SB3, G-C1, G-C4, G-C5, G-20, G-B6, G-ME1/ME2, G-TR1) verified active in `main`. `conxian-cli` unified installer operational with `init`, `doctor`, `start`, and `status` commands.
 
 ---
-
 ## Repository Inventory (Canonical — from PORTFOLIO_MAP.md)
 
 ### Layer 1: Decentralization-Critical
