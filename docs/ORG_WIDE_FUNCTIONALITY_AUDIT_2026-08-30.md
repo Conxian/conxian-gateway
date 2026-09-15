@@ -1,11 +1,10 @@
 # Org-Wide Functionality Check & Alignment Audit
 
-**Snapshot date:** 2026-08-30 (live GitHub API queries, not a historical snapshot)
+**Snapshot date:** 2026-09-15 (live source-tree and workspace dependency audit)
 **Scope:** Conxian organization — SDK/core → gateway → platform/application layers
-**Method:** live `api.github.com` queries for repos, releases/tags, and open issues; source-tree inspection of `conxian-gateway` and dependency manifests.
+**Method:** Source-tree inspection of `conxian-gateway`, `cmd/conxian-cli`, and workspace manifests (`Cargo.toml`, `package.json`).
 
 ---
-
 ## 1. Repository Inventory (corrected)
 
 Fifteen repositories across four layers. Names below are the current GitHub
