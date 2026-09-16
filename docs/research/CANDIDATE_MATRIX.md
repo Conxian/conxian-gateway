@@ -113,7 +113,7 @@ Full financial systems analysis in `docs/research/BRICS_FINANCIAL_SYSTEMS_RESEAR
 
 ### Candidate N: DLC CET & Refund Execution Engine (Score: 9.5)
 
-- **Status**: ✅ Shipped (G-DL2). Implemented `DlcContractSpec`, `DlcCet`, `DlcRefundTx`, `DlcExecutionPayload`, and `DlcExecutionEngine` in `internal/engine/src/bitcoin/dlc_oracle.rs`.
+- **Status**: ✅ Shipped (G-DL2). Implemented `DlcContractSpec`, `DlcCet`, `DlcRefundTx`, `DlcExecutionPayload`, `DlcFundingTx`, `DlcStatePersistence`, and `DlcExecutionEngine` in `internal/engine/src/bitcoin/dlc_oracle.rs`.
 - **Impact**: Completes Stage 3 & 4 of the DLC pipeline, enabling deterministic CET construction, net fee deduction, refund transaction building, and attestation-driven contract execution.
 | **UCV-1 (Universal Verification)** | 9.8 | Urgent | Production | Multi-chain adapter verification active (Liquid, Stacks, Babylon, Fedimint, Citrea, Strata) |
 | **ISO 20022 (`pacs.008`, `camt.053`)** | 9.6 | Urgent | Production | Shipped (G-FI1, G-FI2, G-TR1). Full XML generator, parser & schema validator in `zkc.rs` & `camt.rs` |
@@ -212,6 +212,6 @@ Full financial systems analysis in `docs/research/BRICS_FINANCIAL_SYSTEMS_RESEAR
 ### Candidate N: DLC CET & Refund Execution Engine (Score: 9.5)
 
 - **Status**: ✅ Shipped (G-DL2). Implemented `DlcContractSpec`, `DlcCet`, `DlcRefundTx`, `DlcExecutionPayload`, and `DlcExecutionEngine` in `internal/engine/src/bitcoin/dlc_oracle.rs`, integrated with `DlcManager` / `DlcOrchestrator` deterministic contract derivation in `pkg/conxian-core/src/lib.rs`.
-- **Impact**: Completes Stage 3 & 4 of the DLC pipeline, enabling deterministic CET construction, net fee deduction, refund transaction building, attestation-driven contract execution, and core bond orchestration.
+- **Impact**: Completes full lifecycle of the DLC pipeline, enabling deterministic CET construction, funding transaction assembly, state persistence, refund building, and attestation-driven contract execution.
 
 The next development cycles should focus on configuring a real Wasm verifier, adding Chainlink CCIP authenticity verification, completing DLC orchestration, and integrating live mBridge validator corridors. Machine identity and OData capabilities remain active implementation areas.
