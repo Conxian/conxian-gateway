@@ -740,7 +740,9 @@ impl DlcExecutionEngine {
     }
 
     /// Initializes a new persistent state record for a DLC Bond contract in `Offered` state.
-    pub fn initialize_contract_state(spec: DlcContractSpec) -> ConxianResult<DlcContractStateRecord> {
+    pub fn initialize_contract_state(
+        spec: DlcContractSpec,
+    ) -> ConxianResult<DlcContractStateRecord> {
         let funding_tx = Self::build_funding_tx(&spec).ok();
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -763,15 +765,28 @@ impl DlcExecutionEngine {
         record: &mut DlcContractStateRecord,
         new_state: DlcBondLifecycleState,
     ) -> ConxianResult<()> {
-        let valid_transition = match (&record.state, &new_state) {
-            (DlcBondLifecycleState::Offered, DlcBondLifecycleState::Accepted) => true,
-            (DlcBondLifecycleState::Accepted, DlcBondLifecycleState::Signed) => true,
-            (DlcBondLifecycleState::Signed, DlcBondLifecycleState::Funded) => true,
-            (DlcBondLifecycleState::Funded, DlcBondLifecycleState::Executed) => true,
-            (DlcBondLifecycleState::Funded, DlcBondLifecycleState::Refunded) => true,
-            (DlcBondLifecycleState::Funded, DlcBondLifecycleState::Expired) => true,
-            _ => false,
-        };
+        let valid_transition = matches!(
+            (&record.state, &new_state),
+            (
+                DlcBondLifecycleState::Offered,
+                DlcBondLifecycleState::Accepted
+            ) | (
+                DlcBondLifecycleState::Accepted,
+                DlcBondLifecycleState::Signed
+            ) | (DlcBondLifecycleState::Signed, DlcBondLifecycleState::Funded)
+                | (
+                    DlcBondLifecycleState::Funded,
+                    DlcBondLifecycleState::Executed
+                )
+                | (
+                    DlcBondLifecycleState::Funded,
+                    DlcBondLifecycleState::Refunded
+                )
+                | (
+                    DlcBondLifecycleState::Funded,
+                    DlcBondLifecycleState::Expired
+                )
+        );
 
         if !valid_transition {
             return Err(conxian_core::ConxianError::Compliance(format!(
@@ -1325,13 +1340,11 @@ mod tests {
             ],
             oracle_pubkey: "pk_oracle".into(),
             event_id: "btc-usd-2026q3".into(),
-            outcomes: vec![
-                DlcOutcomePayout {
-                    outcome: "up".into(),
-                    party_a_payout_sats: 70_000_000,
-                    party_b_payout_sats: 30_000_000,
-                },
-            ],
+            outcomes: vec![DlcOutcomePayout {
+                outcome: "up".into(),
+                party_a_payout_sats: 70_000_000,
+                party_b_payout_sats: 30_000_000,
+            }],
             refund_locktime: 1751328000,
             feerate_sats_per_vbyte: 10,
         };
@@ -1347,18 +1360,26 @@ mod tests {
         assert_eq!(record.state, DlcBondLifecycleState::Offered);
         assert!(record.funding_tx.is_some());
 
-        DlcExecutionEngine::transition_contract_state(&mut record, DlcBondLifecycleState::Accepted).unwrap();
+        DlcExecutionEngine::transition_contract_state(&mut record, DlcBondLifecycleState::Accepted)
+            .unwrap();
         assert_eq!(record.state, DlcBondLifecycleState::Accepted);
 
-        DlcExecutionEngine::transition_contract_state(&mut record, DlcBondLifecycleState::Signed).unwrap();
+        DlcExecutionEngine::transition_contract_state(&mut record, DlcBondLifecycleState::Signed)
+            .unwrap();
         assert_eq!(record.state, DlcBondLifecycleState::Signed);
 
-        DlcExecutionEngine::transition_contract_state(&mut record, DlcBondLifecycleState::Funded).unwrap();
+        DlcExecutionEngine::transition_contract_state(&mut record, DlcBondLifecycleState::Funded)
+            .unwrap();
         assert_eq!(record.state, DlcBondLifecycleState::Funded);
 
-        DlcExecutionEngine::transition_contract_state(&mut record, DlcBondLifecycleState::Executed).unwrap();
+        DlcExecutionEngine::transition_contract_state(&mut record, DlcBondLifecycleState::Executed)
+            .unwrap();
         assert_eq!(record.state, DlcBondLifecycleState::Executed);
 
-        assert!(DlcExecutionEngine::transition_contract_state(&mut record, DlcBondLifecycleState::Offered).is_err());
+        assert!(DlcExecutionEngine::transition_contract_state(
+            &mut record,
+            DlcBondLifecycleState::Offered
+        )
+        .is_err());
     }
 }
