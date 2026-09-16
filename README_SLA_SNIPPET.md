@@ -1,0 +1,1 @@
+> SLA disclaimer: This public repository does not provide any SLA or uptime guarantees. Paid SLAs are available only under signed commercial contracts for enterprise/managed offerings. See https://github.com/Conxian/conxian-business/blob/main/docs/SLA_POLICY.md
