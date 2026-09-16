@@ -487,6 +487,44 @@ pub struct DlcExecutionPayload {
     pub broadcast_ready: bool,
 }
 
+/// Deterministic DLC Funding Transaction parameters and 2-of-2 multisig output details.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DlcFundingTx {
+    pub contract_id: String,
+    pub txid: String,
+    pub funding_vout: u32,
+    pub total_funding_sats: u64,
+    pub party_a_contrib_sats: u64,
+    pub party_b_contrib_sats: u64,
+    pub funding_address: String,
+    pub sighash: String,
+    pub estimated_fee_sats: u64,
+}
+
+/// Lifecycle states for on-chain DLC Bond contracts.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum DlcBondLifecycleState {
+    Offered,
+    Accepted,
+    Signed,
+    Funded,
+    Executed,
+    Refunded,
+    Expired,
+}
+
+/// Persistent record tracking the state, funding, and execution of a DLC contract.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DlcContractStateRecord {
+    pub contract_id: String,
+    pub spec: DlcContractSpec,
+    pub state: DlcBondLifecycleState,
+    pub funding_tx: Option<DlcFundingTx>,
+    pub execution_payload: Option<DlcExecutionPayload>,
+    pub refund_tx: Option<DlcRefundTx>,
+    pub last_updated_timestamp: u64,
+}
+
 /// Deterministic DLC Contract Execution Transaction (CET) & Execution Engine.
 pub struct DlcExecutionEngine;
 
@@ -639,6 +677,131 @@ impl DlcExecutionEngine {
             is_verified: true,
             broadcast_ready: true,
         })
+    }
+
+    /// Builds deterministic DLC Funding Transaction details.
+    pub fn build_funding_tx(spec: &DlcContractSpec) -> ConxianResult<DlcFundingTx> {
+        let party_a_contrib: u64 = spec
+            .funding_inputs
+            .iter()
+            .filter(|i| i.party == "party_a")
+            .map(|i| i.amount_sats)
+            .sum();
+        let party_b_contrib: u64 = spec
+            .funding_inputs
+            .iter()
+            .filter(|i| i.party == "party_b")
+            .map(|i| i.amount_sats)
+            .sum();
+
+        let total_contrib = party_a_contrib + party_b_contrib;
+        if total_contrib < spec.total_collateral_sats {
+            return Err(conxian_core::ConxianError::Compliance(format!(
+                "Funding inputs total ({}) is less than total collateral ({})",
+                total_contrib, spec.total_collateral_sats
+            )));
+        }
+
+        let estimated_vbytes = 200u64 + (spec.funding_inputs.len() as u64 * 68);
+        let estimated_fee = estimated_vbytes * spec.feerate_sats_per_vbyte;
+
+        let mut hasher = Sha256::new();
+        hasher.update(b"FUNDING");
+        hasher.update(spec.contract_id.as_bytes());
+        hasher.update(spec.party_a_pubkey.as_bytes());
+        hasher.update(spec.party_b_pubkey.as_bytes());
+        hasher.update(total_contrib.to_be_bytes());
+        let sighash_bytes: [u8; 32] = hasher.finalize().into();
+        let sighash_hex = hex::encode(sighash_bytes);
+
+        let mut txid_hasher = Sha256::new();
+        txid_hasher.update(sighash_bytes);
+        let txid_bytes: [u8; 32] = txid_hasher.finalize().into();
+        let txid_hex = hex::encode(txid_bytes);
+
+        let mut addr_hasher = Sha256::new();
+        addr_hasher.update(b"P2WSH_2OF2");
+        addr_hasher.update(spec.party_a_pubkey.as_bytes());
+        addr_hasher.update(spec.party_b_pubkey.as_bytes());
+        let addr_hex = hex::encode(&addr_hasher.finalize()[..20]);
+        let funding_address = format!("bc1q{}", addr_hex);
+
+        Ok(DlcFundingTx {
+            contract_id: spec.contract_id.clone(),
+            txid: txid_hex,
+            funding_vout: 0,
+            total_funding_sats: total_contrib,
+            party_a_contrib_sats: party_a_contrib,
+            party_b_contrib_sats: party_b_contrib,
+            funding_address,
+            sighash: sighash_hex,
+            estimated_fee_sats: estimated_fee,
+        })
+    }
+
+    /// Initializes a new persistent state record for a DLC Bond contract in `Offered` state.
+    pub fn initialize_contract_state(
+        spec: DlcContractSpec,
+    ) -> ConxianResult<DlcContractStateRecord> {
+        let funding_tx = Self::build_funding_tx(&spec).ok();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        Ok(DlcContractStateRecord {
+            contract_id: spec.contract_id.clone(),
+            spec,
+            state: DlcBondLifecycleState::Offered,
+            funding_tx,
+            execution_payload: None,
+            refund_tx: None,
+            last_updated_timestamp: now,
+        })
+    }
+
+    /// Validates and transitions the lifecycle state of a persistent DLC state record.
+    pub fn transition_contract_state(
+        record: &mut DlcContractStateRecord,
+        new_state: DlcBondLifecycleState,
+    ) -> ConxianResult<()> {
+        let valid_transition = matches!(
+            (&record.state, &new_state),
+            (
+                DlcBondLifecycleState::Offered,
+                DlcBondLifecycleState::Accepted
+            ) | (
+                DlcBondLifecycleState::Accepted,
+                DlcBondLifecycleState::Signed
+            ) | (DlcBondLifecycleState::Signed, DlcBondLifecycleState::Funded)
+                | (
+                    DlcBondLifecycleState::Funded,
+                    DlcBondLifecycleState::Executed
+                )
+                | (
+                    DlcBondLifecycleState::Funded,
+                    DlcBondLifecycleState::Refunded
+                )
+                | (
+                    DlcBondLifecycleState::Funded,
+                    DlcBondLifecycleState::Expired
+                )
+        );
+
+        if !valid_transition {
+            return Err(conxian_core::ConxianError::Compliance(format!(
+                "Invalid DLC state transition from {:?} to {:?}",
+                record.state, new_state
+            )));
+        }
+
+        record.state = new_state;
+        record.last_updated_timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        Ok(())
     }
 }
 
@@ -1150,5 +1313,73 @@ mod tests {
             ledger_effective_time: 1770000000,
         };
         assert!(empty_id_payload.translate_to_ucr().is_err());
+    }
+
+    #[test]
+    fn dlc_execution_engine_funding_tx_and_state_lifecycle() {
+        let spec = DlcContractSpec {
+            contract_id: "dlc-lifecycle-001".into(),
+            party_a_pubkey: "pk_a".into(),
+            party_b_pubkey: "pk_b".into(),
+            party_a_payout_address: "bc1qparty_a".into(),
+            party_b_payout_address: "bc1qparty_b".into(),
+            total_collateral_sats: 100_000_000,
+            funding_inputs: vec![
+                DlcFundingInput {
+                    party: "party_a".into(),
+                    txid: "1111111111111111111111111111111111111111111111111111111111111111".into(),
+                    vout: 0,
+                    amount_sats: 60_000_000,
+                },
+                DlcFundingInput {
+                    party: "party_b".into(),
+                    txid: "2222222222222222222222222222222222222222222222222222222222222222".into(),
+                    vout: 1,
+                    amount_sats: 40_000_000,
+                },
+            ],
+            oracle_pubkey: "pk_oracle".into(),
+            event_id: "btc-usd-2026q3".into(),
+            outcomes: vec![DlcOutcomePayout {
+                outcome: "up".into(),
+                party_a_payout_sats: 70_000_000,
+                party_b_payout_sats: 30_000_000,
+            }],
+            refund_locktime: 1751328000,
+            feerate_sats_per_vbyte: 10,
+        };
+
+        let funding_tx = DlcExecutionEngine::build_funding_tx(&spec).unwrap();
+        assert_eq!(funding_tx.contract_id, "dlc-lifecycle-001");
+        assert_eq!(funding_tx.total_funding_sats, 100_000_000);
+        assert_eq!(funding_tx.party_a_contrib_sats, 60_000_000);
+        assert_eq!(funding_tx.party_b_contrib_sats, 40_000_000);
+        assert!(funding_tx.funding_address.starts_with("bc1q"));
+
+        let mut record = DlcExecutionEngine::initialize_contract_state(spec).unwrap();
+        assert_eq!(record.state, DlcBondLifecycleState::Offered);
+        assert!(record.funding_tx.is_some());
+
+        DlcExecutionEngine::transition_contract_state(&mut record, DlcBondLifecycleState::Accepted)
+            .unwrap();
+        assert_eq!(record.state, DlcBondLifecycleState::Accepted);
+
+        DlcExecutionEngine::transition_contract_state(&mut record, DlcBondLifecycleState::Signed)
+            .unwrap();
+        assert_eq!(record.state, DlcBondLifecycleState::Signed);
+
+        DlcExecutionEngine::transition_contract_state(&mut record, DlcBondLifecycleState::Funded)
+            .unwrap();
+        assert_eq!(record.state, DlcBondLifecycleState::Funded);
+
+        DlcExecutionEngine::transition_contract_state(&mut record, DlcBondLifecycleState::Executed)
+            .unwrap();
+        assert_eq!(record.state, DlcBondLifecycleState::Executed);
+
+        assert!(DlcExecutionEngine::transition_contract_state(
+            &mut record,
+            DlcBondLifecycleState::Offered
+        )
+        .is_err());
     }
 }

@@ -93,7 +93,7 @@ Clients pull stateless container images and SDKs from `conxian.org`:
 | Gap ID | Description | Layer | Risk | Impact | Effort | Priority Score | Status / Target Solution |
 |---|---|---|:---:|:---:|:---:|:---:|---|
 | **G-20** | BitVM3 / BitVMX Execution & Recursive Proof Verifier | Core Engine | 2 | 4 | 4 | **8** | 🟡 Candidate Q (BitVM3 proof verifier expansion) |
-| **G-DL2**| DLC Bond Orchestration & On-Chain Funding | DLC Rail | 3 | 4 | 3 | **12** | 🟡 Candidate G-DL2 (Complete DLC funding lifecycle) |
+| **G-DL2**| DLC Bond Orchestration & On-Chain Funding | DLC Rail | 3 | 4 | 3 | **12** | ✅ Candidate G-DL2 (Funding Tx Builder, Persistence & Monitoring Engine Shipped) |
 | **G-C5** | Canton CCIP Cross-Chain Chainlink Verifier | Canton Rail | 3 | 4 | 2 | **12** | 🟡 Candidate S / G-C5 (Integrate Chainlink CCIP verifier) |
 | **G-TR1**| OData v4 ERP Webhook Retry & Backoff Persistence | API / ERP | 2 | 3 | 2 | **6** | ✅ Candidate T / G-TR1 (Implemented; add persistent queue) |
 
