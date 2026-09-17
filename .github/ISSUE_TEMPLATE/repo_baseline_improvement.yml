@@ -1,0 +1,50 @@
+name: "Repository Baseline Improvement"
+description: "Review this repository and complete the next highest-value improvement using the Conxian GitHub review baseline."
+title: "[BASELINE] <short summary of chosen task>"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for Conxian GitHub Baseline Review and High-Value Improvement tasks.
+
+        **Security Notice:** Do not submit vulnerabilities or private secrets here. Follow [SECURITY.md](https://github.com/Conxian/conxian-gateway/blob/main/SECURITY.md) for vulnerability reports.
+  - type: textarea
+    id: objective
+    attributes:
+      label: Objective
+      description: Objective of the review and improvement task.
+      value: "Review this repository and complete the next highest-value improvement using the Conxian GitHub review baseline."
+    validations:
+      required: true
+  - type: input
+    id: repo_focus
+    attributes:
+      label: Repo Focus
+      description: Name of the repository in scope.
+      placeholder: "conxian-gateway"
+    validations:
+      required: true
+  - type: textarea
+    id: chosen_task
+    attributes:
+      label: Selected Task & Priority
+      description: Exact single task selected from the Conxian baseline review priorities (Security, Artifacts/Sensitive Files, CI Hygiene, Governance, README/Clarity, Release/Versioning).
+      placeholder: "Selected Task: ..."
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence Found
+      description: Record evidence and findings from inspecting the repository.
+      placeholder: "Findings and evidence..."
+    validations:
+      required: true
+  - type: textarea
+    id: changes_and_validation
+    attributes:
+      label: Files Changed & Validation Results
+      description: List of files modified and verification script / test output.
+      placeholder: "Files changed and validation output..."
+    validations:
+      required: true

@@ -28,6 +28,7 @@ This document defines the required readiness gates across four control domains f
   - [x] **Incident Handling**: Security incident triage/containment/recovery process documented in `SECURITY.md`.
   - [x] **Release Discipline**: Control sign-off checklist documented in `RELEASE.md`.
   - [x] **Authority Boundary**: Explicit statement that gateway is not protocol source-of-truth and not custody authority.
+  - [x] **Repository Baseline Review**: Standardized baseline review template established in `.github/ISSUE_TEMPLATE/repo_baseline_improvement.yml`.
 
 ### Layer 2: User Surface
 *Product interfaces delivering enclave-backed institutional experiences.*
