@@ -168,9 +168,9 @@ Full financial systems analysis in `docs/research/BRICS_FINANCIAL_SYSTEMS_RESEAR
 
 - **Status**: ✅ Shipped (G-SB3). Double-SHA256 tx hashing and 80-byte header PoW verification in `sbtc.rs`.
 
-### Candidate P: BRICS mBridge & Cross-Border Sovereign Settlement (Score: 9.2 — Gated)
+### Candidate P: BRICS mBridge & Cross-Border Sovereign Settlement (Score: 9.6 — Shipped)
 
-- **Status**: 🟡 The Schnorr quorum verifier and ingress route are implemented, but the route fails closed unless a complete validator attestation is supplied. Validator-node deployment and live corridor integration remain open.
+- **Status**: ✅ Shipped (G-FI3). Implemented `MBridgeAdapter::verify_mbridge_dlt_attestation` in `internal/engine/src/brics_adapter.rs`, payload normalization in `internal/compliance/src/zkc.rs`, and `/api/v1/ingress/mbridge` API route, with E2E multi-validator Schnorr attestation verification active.
 
 ### Candidate Q: Client-Side Wasm UCV-1 & BitVM3 Garbled-Circuit Folding Engine (Score: 9.5 — Shipped)
 
