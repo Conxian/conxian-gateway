@@ -115,6 +115,7 @@ As an institutional middleware provider, we maintain a comprehensive set of gove
 - **[PRIVACY.md](PRIVACY.md)**: Data handling and PII pass-through policy.
 - **[TERMS.md](TERMS.md)**: Usage terms for the Conxian Gateway.
 - **[CHANGELOG.md](CHANGELOG.md)**: Canonical release history.
+- **[Repository Baseline Review Template](.github/ISSUE_TEMPLATE/repo_baseline_improvement.yml)**: Issue template for repository baseline reviews and high-value quality improvements.
 
 ## Contact
 - Support: [support@conxian-labs.com](mailto:support@conxian-labs.com)
