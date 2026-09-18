@@ -11,7 +11,7 @@ This document provides a canonical audit of all identified technical and governa
 | **G-DL3** | DLC | Multi-Oracle Threshold Verification | $k$-of-$n$ Schnorr oracle attestation quorum coordinator in `dlc_oracle.rs` | ✅ Shipped |
 | **G-FI1** | ISO 20022 | Structural XML Schema Validation | Strict XML parser & namespace check for pacs.008, pacs.009, camt in `zkc.rs` | ✅ Shipped |
 | **G-FI2** | ISO 20022 | pacs.008 Payment Initiation Builder | Customer Credit Transfer XML builder & API `/api/v1/iso20022/payment` in `camt.rs` | ✅ Shipped |
-| **G-FI3** | BRICS | mBridge DLT Ingress & State Proof Verification | Schnorr quorum verifier in `brics_adapter.rs`; ingress is fail-closed without a valid attestation | 🟡 Gated |
+| **G-FI3** | BRICS | mBridge DLT Ingress & State Proof Verification | Multi-validator Schnorr quorum verifier in `brics_adapter.rs` & `/api/v1/ingress/mbridge` route | ✅ Shipped |
 | **G-BB1** | Babylon | EOTS Verification & Key Extraction | Double-signing private key extraction $x = (s_1 - s_2)/(e_1 - e_2)$ in `babylon_adapter.rs` | ✅ Shipped |
 | **G-FM1** | Fedimint | Cryptographic Blind Signature Verification | Guardian Schnorr blind signature verification in `fedimint_adapter.rs` | ✅ Shipped |
 | **G-FM2** | Fedimint | Federation Discovery & Config Retrieval | Dynamic federation config fetching & parsing in `fedimint_adapter.rs` | ✅ Shipped |
