@@ -43,3 +43,8 @@ As part of the CON-710 and CON-711 pilot lanes, specific integration patterns ar
 ## 6. Emerging Sovereign Execution (2026-06-18 Update)
 - **Local-First Verification**: Expanding UCV-1 to support client-side (Wasm) verification of Stacks Nakamoto proofs.
 - **Synergy Validation**: Unified repository synergy script (`synergy-test.js`) provides a shared proof-of-correctness for cross-language (Rust/TS) dependencies.
+
+## 7. Pilot Lane Completion & Universal Chain Verification (UCV-1) Finalization (2026-09 Update)
+- **Liquid & Rootstock Pilot Lanes Completed**: `LiquidAdapter` (`internal/engine/src/bitcoin/liquid_adapter.rs`) and `RootstockAdapter` (`internal/engine/src/ntt/rootstock_adapter.rs`) pilot lanes are fully implemented and verified with unit test suites and Gateway API routes (`/api/v1/chains/liquid/*` and `/api/v1/chains/rootstock/*`).
+- **Complete Chain Adapter Set**: Universal Chain Verification (UCV-1) routing covers all 8 registered chain adapter families (`LiquidAdapter`, `RootstockAdapter`, `BabylonAdapter`, `BitVmAdapter`, `BitVm3Adapter`, `StrataAdapter`, `FedimintAdapter`, and `CitreaAdapter`).
+- **Fail-Closed Verification Semantics**: State proof verification across all adapters maintains strict zero-trust, fail-closed guarantees—rejecting unverified, arbitrary, or unauthenticated metadata while maintaining typed error responses (`VerifierUnavailable`) for research/stub adapters.
