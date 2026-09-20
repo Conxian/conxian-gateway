@@ -159,17 +159,28 @@ mod tests {
 
     #[tokio::test]
     async fn rootstock_adapter_identity_and_prepare_tx() {
-        let adapter_mainnet = RootstockAdapter::new("http://localhost:4444".into(), "mainnet".into());
-        assert_eq!(adapter_mainnet.get_chain_identity().await, "rootstock:mainnet");
+        let adapter_mainnet =
+            RootstockAdapter::new("http://localhost:4444".into(), "mainnet".into());
+        assert_eq!(
+            adapter_mainnet.get_chain_identity().await,
+            "rootstock:mainnet"
+        );
 
         let tx_details = json!({"to": "0x123", "value": "1000"});
-        let res_mainnet = adapter_mainnet.prepare_unsigned_transaction(tx_details.clone()).await.unwrap();
+        let res_mainnet = adapter_mainnet
+            .prepare_unsigned_transaction(tx_details.clone())
+            .await
+            .unwrap();
         assert_eq!(res_mainnet["chain"], "rootstock");
         assert_eq!(res_mainnet["chain_id"], 30);
         assert_eq!(res_mainnet["evm_compatible"], true);
 
-        let adapter_testnet = RootstockAdapter::new("http://localhost:4444".into(), "testnet".into());
-        let res_testnet = adapter_testnet.prepare_unsigned_transaction(tx_details).await.unwrap();
+        let adapter_testnet =
+            RootstockAdapter::new("http://localhost:4444".into(), "testnet".into());
+        let res_testnet = adapter_testnet
+            .prepare_unsigned_transaction(tx_details)
+            .await
+            .unwrap();
         assert_eq!(res_testnet["chain_id"], 31);
     }
 
@@ -215,6 +226,9 @@ mod tests {
         let expected_txid = hex::encode(expected);
 
         assert!(verify_bitcoin_tx_hex_ntt(raw_hex, &expected_txid));
-        assert!(!verify_bitcoin_tx_hex_ntt(raw_hex, "0000000000000000000000000000000000000000000000000000000000000000"));
+        assert!(!verify_bitcoin_tx_hex_ntt(
+            raw_hex,
+            "0000000000000000000000000000000000000000000000000000000000000000"
+        ));
     }
 }
