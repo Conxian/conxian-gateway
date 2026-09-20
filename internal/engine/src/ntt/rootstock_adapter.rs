@@ -66,7 +66,6 @@ impl ChainAdapter for RootstockAdapter {
             .await
             .and_then(|v| {
                 v.as_str()
-                    .or_else(|| v.as_str())
                     .and_then(|s| u64::from_str_radix(s.trim_start_matches("0x"), 16).ok())
                     .ok_or_else(|| ConxianError::Internal("Invalid block number response".into()))
             })
@@ -152,4 +151,70 @@ fn verify_bitcoin_tx_hex_ntt(raw_tx_hex: &str, expected_txid: &str) -> bool {
     computed.copy_from_slice(&hash2);
     computed.reverse();
     computed == expected_bytes.as_slice()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn rootstock_adapter_identity_and_prepare_tx() {
+        let adapter_mainnet = RootstockAdapter::new("http://localhost:4444".into(), "mainnet".into());
+        assert_eq!(adapter_mainnet.get_chain_identity().await, "rootstock:mainnet");
+
+        let tx_details = json!({"to": "0x123", "value": "1000"});
+        let res_mainnet = adapter_mainnet.prepare_unsigned_transaction(tx_details.clone()).await.unwrap();
+        assert_eq!(res_mainnet["chain"], "rootstock");
+        assert_eq!(res_mainnet["chain_id"], 30);
+        assert_eq!(res_mainnet["evm_compatible"], true);
+
+        let adapter_testnet = RootstockAdapter::new("http://localhost:4444".into(), "testnet".into());
+        let res_testnet = adapter_testnet.prepare_unsigned_transaction(tx_details).await.unwrap();
+        assert_eq!(res_testnet["chain_id"], 31);
+    }
+
+    #[tokio::test]
+    async fn rootstock_adapter_get_latest_height_fallback() {
+        let adapter = RootstockAdapter::new("http://127.0.0.1:59999".into(), "testnet".into());
+        // RPC is not running, so fallback returns 0
+        let height = adapter.get_latest_height().await.unwrap();
+        assert_eq!(height, 0);
+    }
+
+    #[tokio::test]
+    async fn rootstock_verify_state_proof_shadow_mode_and_raw_tx_mismatch() {
+        let adapter = RootstockAdapter::new("http://127.0.0.1:59999".into(), "testnet".into());
+
+        // Shadow mode (no btc_tx_hash) -> returns Ok(true)
+        assert!(adapter.verify_state_proof(json!({})).await.unwrap());
+
+        // Mismatched raw_tx_hex -> returns Ok(false)
+        let proof_bad = json!({
+            "btc_tx_hash": "0000000000000000000000000000000000000000000000000000000000000001",
+            "raw_tx_hex": "010000000100"
+        });
+        assert!(!adapter.verify_state_proof(proof_bad).await.unwrap());
+
+        // Valid btc_tx_hash without raw_tx_hex but RPC fails -> returns Ok(false)
+        let proof_rpc_fail = json!({
+            "btc_tx_hash": "0000000000000000000000000000000000000000000000000000000000000001"
+        });
+        assert!(!adapter.verify_state_proof(proof_rpc_fail).await.unwrap());
+    }
+
+    #[test]
+    fn test_verify_bitcoin_tx_hex_ntt() {
+        // Minimal valid dummy tx bytes
+        let raw_hex = "01000000000000000000";
+        let tx_bytes = hex::decode(raw_hex).unwrap();
+        let h1 = Sha256::digest(&tx_bytes);
+        let h2 = Sha256::digest(h1);
+        let mut expected = [0u8; 32];
+        expected.copy_from_slice(&h2);
+        expected.reverse();
+        let expected_txid = hex::encode(expected);
+
+        assert!(verify_bitcoin_tx_hex_ntt(raw_hex, &expected_txid));
+        assert!(!verify_bitcoin_tx_hex_ntt(raw_hex, "0000000000000000000000000000000000000000000000000000000000000000"));
+    }
 }

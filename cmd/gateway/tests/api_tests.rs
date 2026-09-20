@@ -173,6 +173,13 @@ fn setup_app_with_lightning_and_persistence(
         "bitvm3".to_string(),
         Arc::new(conxian_engine::BitVm3Adapter::new("simulated".to_string())),
     );
+    multi_chain.insert(
+        "rootstock".to_string(),
+        Arc::new(conxian_engine::RootstockAdapter::new(
+            "http://localhost:4444".to_string(),
+            "simulated".to_string(),
+        )),
+    );
     let verifier = Arc::new(UniversalVerifier::new(
         compliance.clone() as Arc<dyn CoreVerifier>,
         multi_chain.clone(),
@@ -3068,4 +3075,56 @@ async fn admin_endpoints_reject_malformed_json() {
             response.status()
         );
     }
+}
+
+#[tokio::test]
+async fn test_verify_state_proof_rootstock_shadow_mode() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let payload = json!({});
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/chains/rootstock/verify")
+                .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("Content-Type", "application/json")
+                .header("x-402-payment", "proof-test")
+                .body(Body::from(serde_json::to_string(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(body["chain"], "rootstock");
+    assert_eq!(body["verified"], true);
+}
+
+#[tokio::test]
+async fn test_get_rootstock_chain_height_fallback() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/chains/rootstock/height")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("x-402-payment", "proof-test")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(body["chain"], "rootstock");
+    assert_eq!(body["height"], 0);
 }

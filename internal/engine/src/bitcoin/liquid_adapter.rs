@@ -59,12 +59,14 @@ mod tests {
     use async_trait::async_trait;
     use conxian_core::BlockInfo;
 
-    struct UnusedRpc;
+    struct TestRpc {
+        height: u64,
+    }
 
     #[async_trait]
-    impl BitcoinRpc for UnusedRpc {
+    impl BitcoinRpc for TestRpc {
         async fn get_block_count(&self) -> ConxianResult<u64> {
-            Ok(0)
+            Ok(self.height)
         }
 
         async fn get_block_info(&self, _height: u64) -> ConxianResult<BlockInfo> {
@@ -76,16 +78,36 @@ mod tests {
         }
 
         async fn get_network_info(&self) -> ConxianResult<String> {
-            Ok("regtest".to_string())
+            Ok("elementsregtest".to_string())
         }
     }
 
     #[tokio::test]
     async fn arbitrary_state_proof_metadata_is_rejected_fail_closed() {
-        let adapter = LiquidAdapter::new(Arc::new(UnusedRpc), "elementsregtest".to_string());
+        let adapter = LiquidAdapter::new(Arc::new(TestRpc { height: 100 }), "elementsregtest".to_string());
 
         for metadata in [json!({}), json!({"verified": true, "claim": "accepted"})] {
             assert!(!adapter.verify_state_proof(metadata).await.unwrap());
         }
+    }
+
+    #[tokio::test]
+    async fn liquid_adapter_get_latest_height_and_identity() {
+        let adapter = LiquidAdapter::new(Arc::new(TestRpc { height: 12345 }), "mainnet".to_string());
+        assert_eq!(adapter.get_latest_height().await.unwrap(), 12345);
+        assert_eq!(adapter.get_chain_identity().await, "liquid:mainnet");
+    }
+
+    #[tokio::test]
+    async fn liquid_adapter_prepare_unsigned_transaction() {
+        let adapter = LiquidAdapter::new(Arc::new(TestRpc { height: 0 }), "testnet".to_string());
+        let tx_details = json!({"amount": 5000, "asset_id": "6f028205edd8e177055080615210294f52e42d2e321e2935c5b3eab393a26a4b"});
+        let result = adapter.prepare_unsigned_transaction(tx_details.clone()).await.unwrap();
+
+        assert_eq!(result["chain"], "liquid");
+        assert_eq!(result["status"], "prepared");
+        assert_eq!(result["confidential"], true);
+        assert_eq!(result["version"], "elements-v1");
+        assert_eq!(result["payload"], tx_details);
     }
 }
