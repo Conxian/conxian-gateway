@@ -152,11 +152,11 @@ impl ZkcVerifier {
             match reader.read_event_into(&mut buf) {
                 Ok(quick_xml::events::Event::Start(e)) | Ok(quick_xml::events::Event::Empty(e)) => {
                     let name = e.name();
-                    if name.as_ref() == b"Document" {
+                    if name.as_ref() == "Document" {
                         has_document_root = true;
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"xmlns" {
-                                let val = String::from_utf8_lossy(&attr.value);
+                            if attr.key.as_ref() == "xmlns" {
+                                let val = attr.value.as_ref();
                                 if val.contains("urn:iso:std:iso:20022:tech:xsd:pain.001")
                                     || val.contains("urn:iso:std:iso:20022:tech:xsd:pacs.008")
                                     || val.contains("urn:iso:std:iso:20022:tech:xsd:pacs.009")
@@ -466,10 +466,10 @@ impl ZkcVerifier {
         loop {
             match reader.read_event_into(&mut buf) {
                 Ok(quick_xml::events::Event::Start(e)) => {
-                    current_tag = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                    current_tag = e.name().as_ref().to_string();
                 }
                 Ok(quick_xml::events::Event::Text(e)) => {
-                    let text = String::from_utf8_lossy(e.as_ref()).trim().to_string();
+                    let text = e.as_ref().trim().to_string();
                     match current_tag.as_str() {
                         "Ctry" => country = text,
                         "TwnNm" => town_name = text,
