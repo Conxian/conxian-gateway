@@ -10,6 +10,7 @@
     "build": "pnpm -r run build",
     "lint": "pnpm --filter control-plane run lint",
     "test": "pnpm -r run test",
+    "test:preflight": "node scripts/test_preflight.mjs",
     "typecheck": "pnpm -r run typecheck"
   }
 }
