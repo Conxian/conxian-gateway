@@ -755,8 +755,14 @@ impl ZkcVerifier {
         }
 
         let currency = payload["currency"].as_str().unwrap_or("AED");
-        let sender = payload["sender"].as_str().unwrap_or("sim-sender");
-        let receiver = payload["receiver"].as_str().unwrap_or("sim-receiver");
+        let sender = payload["sender_bic"]
+            .as_str()
+            .or_else(|| payload["sender"].as_str())
+            .unwrap_or("sim-sender");
+        let receiver = payload["receiver_bic"]
+            .as_str()
+            .or_else(|| payload["receiver"].as_str())
+            .unwrap_or("sim-receiver");
         let timestamp = payload["timestamp"].as_u64().unwrap_or(123456789);
 
         Ok(SettlementEnvelope {

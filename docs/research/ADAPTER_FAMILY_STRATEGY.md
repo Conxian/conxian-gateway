@@ -13,7 +13,7 @@ The Gateway supports 15+ protocol adapters grouped by architectural family. Each
 | **Bitcoin Core** | ✅ Live | 3,545 | RPC, ZMQ listener, mempool orchestrator, fee-bump policy, shadow observation |
 | **Liquid** | 🟡 Boundary | 91 | Fail-closed proof boundary; production backend unwired |
 | **RGB v0.12** | ✅ Live | 4,474 | StashResolver, BIP340 issuer policy, native types; regtest E2E passing; [full research](RGB_SETTLEMENT_RAIL_RESEARCH.md) |
-| **DLC** | ⚠️ Scaffold | 242 | HTTP oracle scaffold only; no cryptographic CET verification |
+| **DLC** | 🟡 Partial | 242 | CET/refund engine and oracle verification exist; production bond orchestration and funding are not configured |
 
 **Shared**: PSBT (BIP-174), descriptor-based wallets, mempool fee estimation. Liquid diverges on Confidential Transactions and Elements opcodes.
 
@@ -36,7 +36,7 @@ The Gateway supports 15+ protocol adapters grouped by architectural family. Each
 | **Rootstock (RSK)** | ✅ Live | 126 | NTT adapter; merged-mining finality |
 | **Citrea** | ✅ Live | 93 | NTT adapter; Bitcoin ZK rollup |
 | **Fedimint** | ⬜ Scaffold | 122 | Federated Chaumian e-cash; ChainAdapter rehearsal; [full research](FEDIMINT_ADAPTER_RESEARCH.md) |
-| **DLC CET** | 🔬 Research | 242 | Oracle scaffold + Stage 0/1 experiments (#220); [full research](DLC_SETTLEMENT_RAIL_RESEARCH.md) |
+| **DLC CET** | 🟡 Partial | 242 | Deterministic CET/refund engine is tested; API bond orchestration remains unavailable (#220) |
 | **Strata** | ✅ Testnet | 43 | ZK rollup bridge (Alpen Labs) |
 
 ## 4. Cross-Chain / Interop Family
@@ -44,7 +44,7 @@ The Gateway supports 15+ protocol adapters grouped by architectural family. Each
 | Adapter | Status | Lines | Notes |
 |---------|--------|-------|-------|
 | **NTT Relayer** | ✅ Live | 189 | Cross-chain native token transfer attestation forwarding; [full research](NTT_SOVEREIGN_BRIDGE_RESEARCH.md) |
-| **Canton/M2M** | ✅ Live | 1,110 | CBTC verification, machine identity, M2M Lightning, CCIP routing, RWA |
+| **Canton/M2M** | 🟡 Partial | 1,110 | CBTC verification, machine identity, and M2M paths exist; CCIP routing is fail-closed pending message authenticity verification |
 
 ## 5. Settlement Rail Family
 
@@ -115,7 +115,7 @@ See [DLC_SETTLEMENT_RAIL_RESEARCH.md](DLC_SETTLEMENT_RAIL_RESEARCH.md).
 |------|-----------|----------|
 | **T1 — Production** | Full implementation, mainnet-ready, tested | Bitcoin, Stacks, Lightning, sBTC, Fedimint, Citrea, Rootstock, RGB, Canton/M2M, Fiat |
 | **T2 — Boundary** | Adapter exists, fail-closed or partial verification | Liquid, BitVM/Groth16, BitVM2, Babylon, Strata, RISC Zero |
-| **T3 — Research** | Structural placeholder or evaluation-only | BitVM3, BitVMX-CPU, DLC CET |
+| **T3 — Research** | Structural placeholder or evaluation-only | BitVM3, BitVMX-CPU |
 
 ## 7. Planned / Not Started (from 41-chain SDK map)
 

@@ -63,6 +63,7 @@
 ## Key Subsystems & File Map
 
 ### 1. Gateway REST API (`internal/api/`)
+
 - `src/handlers.rs`: REST endpoint handlers including UCV-1 verification, ISO 20022 payment initiation (`pacs.008`), BRICS mBridge ingress, identity resolution, DLC bonds, and admin governance.
 - `src/handlers.rs`: REST endpoint handlers including UCV-1 verification, ISO 20022 payment initiation (`pacs.008`), BRICS mBridge ingress, identity resolution, DLC bonds, Canton state translation (Candidate J), CCIP routing (Candidate S), Machine Identity & RWA attestation (Candidate R supporting peaq, DIMO, Helium, IoTeX), M2M settlement, and admin governance.
 - `src/camt.rs`: SWIFT ISO 20022 `pacs.008` generation and `camt.053` Bank-to-Customer Treasury Statement XML generation (Candidate T).
@@ -70,11 +71,13 @@
 - `src/nostr.rs` & `src/nwc_backend.rs`: Nostr Wallet Connect (NWC) NIP-47 relay-settle protocol handlers.
 
 ### 2. Compliance & Zero-Knowledge Verification (`internal/compliance/`)
+
 - `src/zkc.rs`: `ZkcVerifier` implementing `CoreVerifier` and `Bip322Verifier`. Normalizes multi-source ingress (ISO 20022, BRICS mBridge, PAPSS, ERP) and validates XML structure against quick-xml rules.
 - `src/identity.rs`: Tier 1 identity resolution integrating Web3.bio Profile API and World ID Verification API with fail-closed simulated fallback.
 - `src/crypto.rs`: Cryptographic primitives including MuSig2 key aggregation and Blake2s PRF for V-UTXO derivation.
 
 ### 3. Execution Engine & Adapters (`internal/engine/`)
+
 - `src/bitcoin/dlc_oracle.rs`: DLC contract orchestration, Schnorr oracle threshold verification, CBTC non-custodial reserve attestation (`verify_cbtc_reserve_attestation`), and Canton Daml ACS state translation (`translate_to_ucr`).
 - `src/bitcoin/babylon_adapter.rs`: Babylon staking EOTS Schnorr signature verification and double-signing private key extraction ($x = (s_1 - s_2) / (e_1 - e_2)$).
 - `src/bitcoin/fedimint_adapter.rs`: Fedimint guardian x-only pubkey Schnorr blind signature verification.
@@ -83,6 +86,7 @@
 - `src/treasury/mod.rs`: Sovereign Yield Index (SYI) monitoring and ALEX DEX market quote integration.
 
 ### 4. Client SDK & Schemas (`packages/`)
+
 - `packages/schemas/index.ts`: TypeScript domain interfaces for UCV-1, MuSig2, DLC, ISO 20022, Canton state translation, CCIP routing, mBridge ingress, Wasm UCV-1, Machine Identity, DePIN RWA attestation, and camt.053 treasury statements.
 - `packages/client-sdk/index.ts`: `ConxianClient` providing typed API calls for web and Node.js applications, including client-side zero-trust Wasm verification (`verifyStateProofLocal`).
 
@@ -91,7 +95,7 @@
 ## Candidate Mapping Summary
 
 | Candidate | Name | Implementation Location | Status |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Candidate I** | CBTC Non-Custodial Reserve Verification | `internal/engine/src/bitcoin/dlc_oracle.rs` | ✅ Shipped |
 | **Candidate J** | Canton State Translation Adapter | `internal/engine/src/bitcoin/dlc_oracle.rs` & `internal/api/src/canton_m2m.rs` | ✅ Shipped |
 | **Candidate K** | ISO 20022 XML Schema Validation | `internal/compliance/src/zkc.rs` | ✅ Shipped |
@@ -99,8 +103,8 @@
 | **Candidate M** | Babylon EOTS Key Extraction | `internal/engine/src/bitcoin/babylon_adapter.rs` | ✅ Shipped |
 | **Candidate N** | Fedimint Blind Sig Verification | `internal/engine/src/bitcoin/fedimint_adapter.rs` | ✅ Shipped |
 | **Candidate O** | sBTC L1 Proof Verification | `internal/engine/src/stacks/sbtc.rs` | ✅ Shipped |
-| **Candidate P** | BRICS mBridge DLT Settlement | `internal/engine/src/brics_adapter.rs` & `internal/compliance/src/zkc.rs` | ✅ Shipped |
-| **Candidate Q** | Wasm UCV-1 & BitVM3 Folding | `@conxian/client-sdk` & `internal/engine/src/bitvm3_adapter.rs` | ✅ Shipped |
+| **Candidate P** | BRICS mBridge DLT Settlement | `internal/engine/src/brics_adapter.rs` & `internal/compliance/src/zkc.rs` | 🟡 Gated; ingress requires validator quorum |
+| **Candidate Q** | Wasm UCV-1 & BitVM3 Folding | `@conxian/client-sdk` & `internal/engine/src/bitvm3_adapter.rs` | 🔬 Research; local verifier fails closed |
 | **Candidate R** | Machine Economy & DePIN Settlement | `internal/api/src/handlers.rs` & `@conxian/client-sdk` | ✅ Shipped |
-| **Candidate S** | Canton CCIP Cross-Chain Gateway | `internal/api/src/canton_m2m.rs` & `@conxian/client-sdk` | ✅ Shipped |
+| **Candidate S** | Canton CCIP Cross-Chain Gateway | `internal/api/src/handlers.rs` | 🟡 Gated; authenticity verifier required |
 | **Candidate T** | SWIFT camt.053 Real-Time ERP Reporting | `internal/api/src/camt.rs` & `@conxian/client-sdk` | 🚀 Active |

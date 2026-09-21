@@ -5,33 +5,37 @@ This document expands on existing research and maps emerging opportunities for t
 ## 1. Emerging Protocol Opportunities
 
 ### A. BitVM3, BitVMX, and Recursive Proof Research (Candidate Q / SSV-1 Expansion)
-- **Status**: Active (Candidate Q - Wasm local verification shipped; BitVM3 folding spec active)
+
+- **Status**: Research (Candidate Q - SDK surface exists, but local verification fails closed until a Wasm verifier is configured; BitVM3 remains fail-closed)
 - **Canonical evidence**: [`BITVM3_BITVMX_EVIDENCE_AND_TRIAGE_2026-07-22.md`](./BITVM3_BITVMX_EVIDENCE_AND_TRIAGE_2026-07-22.md); [`BITVM3_BITVMX_RESEARCH_EXPANSION.md`](./BITVM3_BITVMX_RESEARCH_EXPANSION.md).
 - **Expansion**:
-    - **Client-Side Wasm UCV-1 Verification**: Zero-trust client-side state proof verification implemented in `@conxian/client-sdk` (`verifyStateProofLocal`), eliminating gateway RPC dependencies for web and mobile clients.
-    - **Recursive Proof Folding**: Sub-200,000 cycle recursive Groth16 / garbled circuit accumulator folding target for optimistic BitVM3 challenge-response state transitions.
+  - **Client-Side Wasm UCV-1 Verification**: SDK contracts are defined in `@conxian/client-sdk`; production verification remains gated on a real Wasm verifier.
+  - **Recursive Proof Folding**: Sub-200,000 cycle recursive Groth16 / garbled circuit accumulator folding target for optimistic BitVM3 challenge-response state transitions.
 
 ### B. Machine Economy & DePIN Micro-Settlement (Candidate R)
+
 - **Status**: Production Shipped (Score 9.6)
 - **Opportunity**: Autonomous machine agents (EV chargers, solar grids, telecom cell towers, drone fleets) require cryptographically verified machine identities (DIDs), real-time revenue tokenization, and instant micro-settlements over Lightning / X402 rails.
 - **Expansion**:
-    - **G-ME1 (Machine Identity)**: Multi-provider device key resolution across peaq DLT, DIMO, Helium, and IoTeX via `resolve_machine_identity`.
-    - **G-ME2 (Machine RWA Attestation)**: Epoch-based revenue verification and sensor telemetry proof generation via `verify_machine_rwa_revenue`.
-    - **M2M Micro-Settlement**: Sub-cent X402 / Lightning payment routing for machine-generated service requests via `/api/v1/m2m/settle`.
+  - **G-ME1 (Machine Identity)**: Multi-provider device key resolution across peaq DLT, DIMO, Helium, and IoTeX via `resolve_machine_identity`.
+  - **G-ME2 (Machine RWA Attestation)**: Epoch-based revenue verification and sensor telemetry proof generation via `verify_machine_rwa_revenue`.
+  - **M2M Micro-Settlement**: Sub-cent X402 / Lightning payment routing for machine-generated service requests via `/api/v1/m2m/settle`.
 
 ### C. Canton Network CCIP Gateway & CBTC Reserve Verification (Candidates I, J, S)
+
 - **Status**: Active (Candidates I, J, S Shipped)
 - **Opportunity**: Canton Network powers $6T+ in tokenized RWAs across global financial institutions. Conxian provides non-custodial CBTC reserve attestation verification, Daml ACS state translation to Bitcoin Universal Contract References (UCR), and Chainlink CCIP message routing with dynamic risk scoring.
 - **Expansion**:
-    - **Candidate I**: CBTC threshold Schnorr attestation & L1 UTXO reserve proof check in `dlc_oracle.rs`.
-    - **Candidate J**: Daml ACS state translation to Bitcoin UCR references in `dlc_oracle.rs` & `canton_m2m.rs`.
-    - **Candidate S**: Dynamic risk-scoring CCIP cross-chain message router in `canton_m2m.rs`.
+  - **Candidate I**: CBTC threshold Schnorr attestation & L1 UTXO reserve proof check in `dlc_oracle.rs`.
+  - **Candidate J**: Daml ACS state translation to Bitcoin UCR references in `dlc_oracle.rs` & `canton_m2m.rs`.
+  - **Candidate S**: CCIP route schema exists, but production routing is fail-closed until message authenticity verification is configured.
 
 ### D. SWIFT ISO 20022 `camt.053` Real-Time Bank Treasury Reporting (Candidate T)
+
 - **Status**: Active Candidate Initiation (Score 9.0)
 - **Opportunity**: Automated real-time balance and transaction reporting (`camt.053` Bank-to-Customer Statement) for institutional ERP ingestion (SAP S/4HANA, Oracle Financials Cloud, Microsoft Dynamics 365).
 - **Expansion**:
-    - **G-TR1**: Map `TreasuryMonitor` events to `camt.053.001.10` XML structures in `camt.rs` with OData v4 ledger synchronization.
+  - **G-TR1**: Map `TreasuryMonitor` events to `camt.053.001.10` XML structures in `camt.rs` with OData v4 ledger synchronization.
 
 ---
 

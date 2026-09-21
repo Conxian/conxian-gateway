@@ -26,13 +26,13 @@ jobs:
         run: git clone --depth 1 https://github.com/Conxian/lib-conxian-core.git ../lib-conxian-core
 
       - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
           components: rustfmt, clippy
 
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.7.7
+        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2.7.7
 
       - name: Install cargo-llvm-cov
         shell: bash
