@@ -1,5 +1,7 @@
 use anyhow::Context;
-use conxian_api::{configure_routes, new_lightning_adapter, new_settlement_log, AppState};
+use conxian_api::{
+    configure_routes, new_production_lightning_adapter, new_settlement_log, AppState,
+};
 use conxian_compliance::{CoreVerifier, IdentityManager, ZkcVerifier};
 use conxian_core::{ConxianError, GatewayState, Persistence, SharedState};
 use conxian_engine::{
@@ -410,7 +412,7 @@ async fn main() -> anyhow::Result<()> {
         verifier,
         alex: alex_client,
         alex_preparer,
-        lightning: new_lightning_adapter(),
+        lightning: new_production_lightning_adapter(),
         fiat_webhook_secret: config.fiat_webhook_secret.clone(),
         settlement_ingress_secret: config.settlement_ingress_secret.clone(),
         settlement_log: new_settlement_log(),

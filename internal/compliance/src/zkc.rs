@@ -152,11 +152,11 @@ impl ZkcVerifier {
             match reader.read_event_into(&mut buf) {
                 Ok(quick_xml::events::Event::Start(e)) | Ok(quick_xml::events::Event::Empty(e)) => {
                     let name = e.name();
-                    if name.as_ref() == "Document" {
+                    if name.as_ref() == b"Document" {
                         has_document_root = true;
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == "xmlns" {
-                                let val = attr.value.as_ref();
+                            if attr.key.as_ref() == b"xmlns" {
+                                let val = String::from_utf8_lossy(&attr.value);
                                 if val.contains("urn:iso:std:iso:20022:tech:xsd:pain.001")
                                     || val.contains("urn:iso:std:iso:20022:tech:xsd:pacs.008")
                                     || val.contains("urn:iso:std:iso:20022:tech:xsd:pacs.009")
@@ -466,10 +466,10 @@ impl ZkcVerifier {
         loop {
             match reader.read_event_into(&mut buf) {
                 Ok(quick_xml::events::Event::Start(e)) => {
-                    current_tag = e.name().as_ref().to_string();
+                    current_tag = String::from_utf8_lossy(e.name().as_ref()).to_string();
                 }
                 Ok(quick_xml::events::Event::Text(e)) => {
-                    let text = e.as_ref().trim().to_string();
+                    let text = String::from_utf8_lossy(e.as_ref()).trim().to_string();
                     match current_tag.as_str() {
                         "Ctry" => country = text,
                         "TwnNm" => town_name = text,
@@ -755,8 +755,14 @@ impl ZkcVerifier {
         }
 
         let currency = payload["currency"].as_str().unwrap_or("AED");
-        let sender = payload["sender"].as_str().unwrap_or("sim-sender");
-        let receiver = payload["receiver"].as_str().unwrap_or("sim-receiver");
+        let sender = payload["sender_bic"]
+            .as_str()
+            .or_else(|| payload["sender"].as_str())
+            .unwrap_or("sim-sender");
+        let receiver = payload["receiver_bic"]
+            .as_str()
+            .or_else(|| payload["receiver"].as_str())
+            .unwrap_or("sim-receiver");
         let timestamp = payload["timestamp"].as_u64().unwrap_or(123456789);
 
         Ok(SettlementEnvelope {

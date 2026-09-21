@@ -222,11 +222,17 @@ export interface MBridgeIngressResponse {
 /**
  * Chainlink CCIP Canton Connector Routing structures (G-C5).
  */
+export interface CcipAuthenticityProof {
+    public_key: string;
+    signature: string;
+}
+
 export interface CcipMessage {
     message_id: string;
     source_chain: string;
     destination_chain: string;
     sender: string;
+    payload?: string;
     data?: string;
     token_amounts?: Array<{ token: string; amount: string }>;
 }
@@ -234,6 +240,7 @@ export interface CcipMessage {
 export interface CcipRouteRequest {
     message: CcipMessage;
     elevated_scrutiny?: boolean;
+    authenticity_proof?: CcipAuthenticityProof;
 }
 
 export interface CcipRouteResponse {

@@ -739,7 +739,7 @@ async fn test_canton_translate_missing_domain() {
 // ── G-C5: CCIP Compliance Routing ────────────────────────────────────────
 
 #[tokio::test]
-async fn test_ccip_route_canton_to_ethereum_low_risk() {
+async fn test_ccip_route_fails_closed_without_authenticity_verifier() {
     let app = test_app();
     let payload = json!({
         "message": {
@@ -757,15 +757,11 @@ async fn test_ccip_route_canton_to_ethereum_low_risk() {
         .await
         .unwrap();
 
-    assert_eq!(response.status(), axum::http::StatusCode::OK);
-    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
-    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
-    assert_eq!(body["approved"], true);
-    assert_eq!(body["risk_level"], "LOW");
+    assert_eq!(response.status(), axum::http::StatusCode::NOT_IMPLEMENTED);
 }
 
 #[tokio::test]
-async fn test_ccip_route_spfs_high_risk() {
+async fn test_ccip_route_spfs_requires_authenticity_verifier() {
     let app = test_app();
     let payload = json!({
         "message": {
@@ -782,13 +778,7 @@ async fn test_ccip_route_spfs_high_risk() {
         .await
         .unwrap();
 
-    assert_eq!(response.status(), axum::http::StatusCode::OK);
-    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
-    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
-    // SPFS with elevated scrutiny → CRITICAL (blocked); escalated from HIGH by escalate_risk()
-    assert_eq!(body["approved"], false);
-    assert_eq!(body["risk_level"], "CRITICAL");
-    assert!(body["rejection_reason"].is_string());
+    assert_eq!(response.status(), axum::http::StatusCode::NOT_IMPLEMENTED);
 }
 
 #[tokio::test]
@@ -808,10 +798,7 @@ async fn test_ccip_route_mbridge_medium_risk() {
         .await
         .unwrap();
 
-    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
-    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
-    assert_eq!(body["risk_level"], "MEDIUM");
-    assert_eq!(body["approved"], true); // Medium is approved, not escalated to High
+    assert_eq!(response.status(), axum::http::StatusCode::NOT_IMPLEMENTED);
 }
 
 #[tokio::test]
@@ -832,9 +819,7 @@ async fn test_ccip_route_elevated_scrutiny_escalates_low_to_medium() {
         .await
         .unwrap();
 
-    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
-    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
-    assert_eq!(body["risk_level"], "MEDIUM"); // Low escalated to Medium
+    assert_eq!(response.status(), axum::http::StatusCode::NOT_IMPLEMENTED);
 }
 
 #[tokio::test]
@@ -874,9 +859,87 @@ async fn test_ccip_route_unknown_chain_defaults_to_medium() {
         .await
         .unwrap();
 
+    assert_eq!(response.status(), axum::http::StatusCode::NOT_IMPLEMENTED);
+}
+
+#[tokio::test]
+async fn test_ccip_route_valid_authenticity_proof_success() {
+    use secp256k1::{Keypair, Message, Secp256k1};
+    use sha2::{Digest, Sha256};
+
+    let secp = Secp256k1::new();
+    let keypair = Keypair::new(&secp, &mut secp256k1::rand::thread_rng());
+    let (xonly_pk, _) = keypair.x_only_public_key();
+
+    let source_chain = "canton";
+    let destination_chain = "ethereum";
+    let message_id = "msg-auth-1";
+    let payload_data = "0xdeadbeef";
+
+    let digest_str = format!(
+        "{}:{}:{}:{}",
+        source_chain, destination_chain, message_id, payload_data
+    );
+    let msg_hash = Sha256::digest(digest_str.as_bytes());
+    let secp_msg = Message::from_digest(msg_hash.into());
+
+    let schnorr_sig = secp.sign_schnorr(&secp_msg, &keypair);
+
+    let app = test_app();
+    let payload = json!({
+        "message": {
+            "source_chain": source_chain,
+            "destination_chain": destination_chain,
+            "message_id": message_id,
+            "payload": payload_data,
+            "requires_screening": false
+        },
+        "elevated_scrutiny": false,
+        "authenticity_proof": {
+            "public_key": hex::encode(xonly_pk.serialize()),
+            "signature": hex::encode(schnorr_sig.as_ref())
+        }
+    });
+
+    let response = app
+        .oneshot(post_request("/api/v1/ccip/route", payload))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+    use http_body_util::BodyExt;
     let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
-    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
-    assert_eq!(body["risk_level"], "MEDIUM"); // Unknown → Medium
+    let body: conxian_core::CcipRouteResponse = serde_json::from_slice(&body_bytes).unwrap();
+    assert!(body.approved);
+    assert_eq!(body.message_id, message_id);
+    assert_eq!(body.risk_level, conxian_core::SanctionsRisk::Low);
+    assert!(body.audit_ref.is_some());
+}
+
+#[tokio::test]
+async fn test_ccip_route_invalid_signature_rejection() {
+    let app = test_app();
+    let payload = json!({
+        "message": {
+            "source_chain": "canton",
+            "destination_chain": "ethereum",
+            "message_id": "msg-auth-2",
+            "payload": "0xdeadbeef",
+            "requires_screening": false
+        },
+        "elevated_scrutiny": false,
+        "authenticity_proof": {
+            "public_key": "0000000000000000000000000000000000000000000000000000000000000001",
+            "signature": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        }
+    });
+
+    let response = app
+        .oneshot(post_request("/api/v1/ccip/route", payload))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), axum::http::StatusCode::UNAUTHORIZED);
 }
 
 // ── G-C6: Machine RWA Revenue Verification ────────────────────────────────

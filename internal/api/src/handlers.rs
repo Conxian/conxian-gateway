@@ -15,6 +15,7 @@ use conxian_core::{
     JobCardSettlementRequest, Persistence, PersistentState, SettlementEnvelope, SettlementProposal,
     TrustPolicyDecision,
 };
+use conxian_engine::{MBridgeAdapter, MBridgeAttestationPayload};
 use http_body_util::BodyExt;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -1003,7 +1004,14 @@ pub async fn resolve_machine_identity(
         _ => None,
     };
 
-    if let (Some(ref sig), Some(key)) = (&payload.signature, device_key_for_verify) {
+    let mut signature_verified = false;
+    if let Some(ref sig) = payload.signature {
+        let Some(key) = device_key_for_verify else {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(json!({"error": "device_key is required when signature is provided"})),
+            ));
+        };
         let verifier: &dyn conxian_core::Bip322Verifier = state.compliance.as_ref();
         let message = format!(
             "Conxian Machine Identity Verification: {}",
@@ -1021,6 +1029,7 @@ pub async fn resolve_machine_identity(
                 ))
             }
         }
+        signature_verified = true;
     }
 
     // Build machine identity from provider-specific resolution
@@ -1088,11 +1097,10 @@ pub async fn resolve_machine_identity(
         }
     };
 
-    let verified = payload.signature.is_some();
     let response = conxian_core::MachineIdentityResolutionResponse {
         identity,
         provider: payload.provider,
-        verified,
+        verified: signature_verified,
         metadata: Some(json!({
             "resolved_at": now_unix(),
             "protocol_version": "1.0.0",
@@ -1350,8 +1358,13 @@ pub async fn create_dlc_bond(
             Json(json!({"error": "bond_id is required"})),
         ));
     }
-    let bond_id = format!("dlc-bond-{}", uuid::Uuid::new_v4());
-    Ok(Json(json!({"bond_id": bond_id})))
+    Err((
+        StatusCode::NOT_IMPLEMENTED,
+        Json(json!({
+            "error": "DLC bond orchestration is not configured; no bond was created",
+            "bond_id": bond.bond_id
+        })),
+    ))
 }
 
 pub async fn aggregate_musig2_keys(
@@ -1474,6 +1487,20 @@ pub async fn ingress_mbridge(
         (
             StatusCode::BAD_REQUEST,
             Json(json!({ "error": format!("Invalid JSON: {}", e) })),
+        )
+    })?;
+
+    let attestation: MBridgeAttestationPayload = serde_json::from_value(json_payload.clone())
+        .map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "error": format!("Invalid mBridge attestation: {}", e) })),
+            )
+        })?;
+    MBridgeAdapter::verify_mbridge_dlt_attestation(&attestation).map_err(|e| {
+        (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": e.to_string() })),
         )
     })?;
 
@@ -1787,83 +1814,129 @@ pub async fn route_ccip_message(
         ));
     }
 
-    // Determine sanctions risk based on source/destination chain pair
-    let risk_level = classify_ccip_risk(&message.source_chain, &message.destination_chain);
+    if message.payload.trim().is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "CCIP message payload is required" })),
+        ));
+    }
 
-    // Elevated scrutiny may escalate risk
-    let effective_risk = if payload.elevated_scrutiny {
-        escalate_risk(risk_level)
-    } else {
-        risk_level
+    // CCIP Authenticity Verification
+    let proof = match &payload.authenticity_proof {
+        Some(proof) => proof,
+        None => {
+            return Err((
+                StatusCode::NOT_IMPLEMENTED,
+                Json(json!({
+                    "error": "CCIP message authenticity verification is not configured"
+                })),
+            ));
+        }
     };
 
-    let approved = effective_risk != conxian_core::SanctionsRisk::Critical;
-    let now = now_unix();
+    // Verify secp256k1 signature over message digest
+    if let Err(err_msg) = verify_ccip_authenticity_signature(message, proof) {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            Json(json!({
+                "error": format!("Invalid CCIP message authenticity signature: {}", err_msg)
+            })),
+        ));
+    }
+
+    // Determine Sanctions Risk
+    let src = message.source_chain.to_lowercase();
+    let dst = message.destination_chain.to_lowercase();
+
+    let mut risk_level = if src == "spfs" || dst == "spfs" {
+        conxian_core::SanctionsRisk::High
+    } else if src == "mbridge" || dst == "mbridge" {
+        conxian_core::SanctionsRisk::Medium
+    } else if matches!(src.as_str(), "canton" | "ethereum" | "bitcoin" | "stacks")
+        && matches!(dst.as_str(), "canton" | "ethereum" | "bitcoin" | "stacks")
+    {
+        conxian_core::SanctionsRisk::Low
+    } else {
+        conxian_core::SanctionsRisk::Medium
+    };
+
+    if payload.elevated_scrutiny {
+        risk_level = match risk_level {
+            conxian_core::SanctionsRisk::Low => conxian_core::SanctionsRisk::Medium,
+            conxian_core::SanctionsRisk::Medium => conxian_core::SanctionsRisk::High,
+            conxian_core::SanctionsRisk::High => conxian_core::SanctionsRisk::Critical,
+            conxian_core::SanctionsRisk::Critical => conxian_core::SanctionsRisk::Critical,
+        };
+    }
+
+    let (approved, rejection_reason) = if risk_level == conxian_core::SanctionsRisk::Critical {
+        (
+            false,
+            Some("Sanctions risk critical under elevated scrutiny".to_string()),
+        )
+    } else {
+        (true, None)
+    };
+
+    use sha2::Digest;
+    let digest_str = format!(
+        "{}:{}:{}:{}",
+        message.source_chain, message.destination_chain, message.message_id, message.payload
+    );
+    let digest_hash = sha2::Sha256::digest(digest_str.as_bytes());
+    let audit_ref = format!("ccip-audit-{}", hex::encode(digest_hash));
 
     Ok(Json(conxian_core::CcipRouteResponse {
         approved,
         message_id: message.message_id.clone(),
-        risk_level: effective_risk,
-        rejection_reason: if !approved {
-            Some("CCIP message blocked: sanctions-critical jurisdiction detected".into())
-        } else {
-            None
-        },
-        audit_ref: Some(format!("ccip-zkc-{}", now)),
-        routed_at: now,
+        risk_level,
+        rejection_reason,
+        audit_ref: Some(audit_ref),
+        routed_at: now_unix(),
     }))
 }
 
-/// Classify the sanctions risk of a CCIP route based on source/destination chains.
-///
-/// Chain classifications are driven by environment variables so that
-/// jurisdictional routing can be updated without code changes:
-/// - `CCIP_HIGH_RISK_CHAINS` (default: `spfs,brics-pay-dcms`)
-/// - `CCIP_MEDIUM_RISK_CHAINS` (default: `cips,papss,mbridge`)
-/// - `CCIP_LOW_RISK_CHAINS` (default: `canton,ethereum,arbitrum,polygon,optimism,bitcoin`)
-fn classify_ccip_risk(source: &str, destination: &str) -> conxian_core::SanctionsRisk {
-    let high_risk: Vec<String> = env_csv("CCIP_HIGH_RISK_CHAINS", &["spfs", "brics-pay-dcms"]);
-    let medium_risk: Vec<String> =
-        env_csv("CCIP_MEDIUM_RISK_CHAINS", &["cips", "papss", "mbridge"]);
-    let low_risk: Vec<String> = env_csv(
-        "CCIP_LOW_RISK_CHAINS",
-        &[
-            "canton", "ethereum", "arbitrum", "polygon", "optimism", "bitcoin",
-        ],
+fn verify_ccip_authenticity_signature(
+    message: &conxian_core::CcipMessageRoute,
+    proof: &conxian_core::CcipAuthenticityProof,
+) -> Result<(), String> {
+    use sha2::Digest;
+
+    let pubkey_bytes =
+        hex::decode(&proof.public_key).map_err(|e| format!("Invalid hex in public key: {}", e))?;
+    let sig_bytes =
+        hex::decode(&proof.signature).map_err(|e| format!("Invalid hex in signature: {}", e))?;
+
+    let digest_str = format!(
+        "{}:{}:{}:{}",
+        message.source_chain, message.destination_chain, message.message_id, message.payload
     );
+    let msg_hash = sha2::Sha256::digest(digest_str.as_bytes());
+    let secp_msg = secp256k1::Message::from_digest(msg_hash.into());
 
-    let src_lower = source.to_lowercase();
-    let dst_lower = destination.to_lowercase();
+    let secp = secp256k1::Secp256k1::verification_only();
 
-    if high_risk.contains(&src_lower) || high_risk.contains(&dst_lower) {
-        return conxian_core::SanctionsRisk::High;
+    // Try Schnorr (32-byte pubkey, 64-byte sig)
+    if pubkey_bytes.len() == 32 && sig_bytes.len() == 64 {
+        let xonly_pk = secp256k1::XOnlyPublicKey::from_slice(&pubkey_bytes)
+            .map_err(|e| format!("Invalid Schnorr x-only public key: {}", e))?;
+        let schnorr_sig = secp256k1::schnorr::Signature::from_slice(&sig_bytes)
+            .map_err(|e| format!("Invalid Schnorr signature: {}", e))?;
+        secp.verify_schnorr(&schnorr_sig, &secp_msg, &xonly_pk)
+            .map_err(|e| format!("Schnorr signature verification failed: {}", e))?;
+        return Ok(());
     }
-    if medium_risk.contains(&src_lower) || medium_risk.contains(&dst_lower) {
-        return conxian_core::SanctionsRisk::Medium;
-    }
-    if low_risk.contains(&src_lower) && low_risk.contains(&dst_lower) {
-        return conxian_core::SanctionsRisk::Low;
-    }
-    conxian_core::SanctionsRisk::Medium
-}
 
-fn env_csv(var: &str, defaults: &[&str]) -> Vec<String> {
-    std::env::var(var)
-        .ok()
-        .filter(|v| !v.is_empty())
-        .map(|v| v.split(',').map(|s| s.trim().to_lowercase()).collect())
-        .unwrap_or_else(|| defaults.iter().map(|s| s.to_lowercase()).collect())
-}
+    // Try ECDSA (33 or 65 byte pubkey, 64 byte compact signature)
+    let pk = secp256k1::PublicKey::from_slice(&pubkey_bytes)
+        .map_err(|e| format!("Invalid ECDSA public key: {}", e))?;
+    let ecdsa_sig = secp256k1::ecdsa::Signature::from_compact(&sig_bytes)
+        .map_err(|e| format!("Invalid ECDSA signature: {}", e))?;
 
-/// Escalate sanctions risk one level for elevated scrutiny.
-fn escalate_risk(risk: conxian_core::SanctionsRisk) -> conxian_core::SanctionsRisk {
-    match risk {
-        conxian_core::SanctionsRisk::Low => conxian_core::SanctionsRisk::Medium,
-        conxian_core::SanctionsRisk::Medium => conxian_core::SanctionsRisk::High,
-        conxian_core::SanctionsRisk::High | conxian_core::SanctionsRisk::Critical => {
-            conxian_core::SanctionsRisk::Critical
-        }
-    }
+    secp.verify_ecdsa(&secp_msg, &ecdsa_sig, &pk)
+        .map_err(|e| format!("ECDSA signature verification failed: {}", e))?;
+
+    Ok(())
 }
 
 // ── Machine RWA Revenue Verification (G-C6) ──────────────────────────

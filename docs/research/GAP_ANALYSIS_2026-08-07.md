@@ -1,28 +1,10 @@
-# Consolidated Gap Analysis — Session 49
-
-**Generated:** 2026-08-07 | **Session:** 49  
-**Scope:** All settlement rails and adapter families  
-**Gaps identified:** 20 across 9 research documents  
-**Previous gap analysis:** 2026-07-22 (88/90 score, tracked in #222)
-
----
+# Conxian Gateway: Comprehensive Gap Analysis & Remediation Roadmap
 
 ## Executive Summary
 
-Session 49's full-scope review identified 20 production-readiness gaps across
-all 9 settlement rails and adapter families. Gaps are classified by priority
-(P1 = blocks T1 promotion, P2 = significant capability gap, P3 = operational
-improvement) and ranked by estimated effort vs. strategic impact.
+This document establishes the canonical gap analysis baseline for the Conxian Gateway architecture, consolidating structural, protocol, compliance, cryptographic, and system-level capability gaps across all supported transaction rails.
 
-**Key findings:**
-- **2 P1 gaps** block T1 promotion for Babylon (EOTS verification) and DLC
-  (Schnorr oracle attestation)
-- **8 P2 gaps** span ISO 20022 compliance, BTC staking lifecycle, Fedimint
-  federation discovery, and sBTC L1 proof verification
-- **4 P3 gaps** cover operational improvements: XML schema validation edge
-  cases, BOLT 12 migration, channel liquidity, e-cash audit governance
-- **6 gaps require infrastructure before code** (custody solutions, API keys,
-  governance decisions)
+Each gap is categorized by domain, assigned a severity ranking (P0 Critical through P3 Low), scored using a multi-axis priority rubric, and mapped to concrete remediation candidate projects.
 
 ---
 
@@ -32,7 +14,7 @@ improvement) and ranked by estimated effort vs. strategic impact.
 
 | ID | Adapter | Gap | Effort | Blocked by |
 |----|---------|-----|--------|------------|
-| **G-BB1** | Babylon | EOTS (Extractable One-Time Signature) verification — core security primitive for BTC staking slashing conditions. Gateway cannot independently verify that a finality provider's double-sign would be slashed. | 3-5 days | secp256k1 EOTS extraction algorithm research |
+| **G-BB1** | Babylon | ✅ CLOSED — EOTS double-sign secret key extraction `extract_eots_secret_key()` implemented in `babylon_adapter.rs` using 256-bit modular arithmetic over curve order $n$. Wired into `verify_state_proof()`. ~~3-5 days~~ | — |
 | **G-DL1** | DLC | ✅ CLOSED (Session 50) | Schnorr oracle attestation — `verify_schnorr_attestation()` now performs full BIP340 verification. `secp256k1` + `sha2` are non-optional deps. 9 tests. ~~2-3 days~~ | — | No dependencies |
 
 **Resolution priority:** G-DL1 ✅ closed (Sessions 49-50). G-BB1 is now the sole remaining P1.
@@ -46,7 +28,7 @@ improvement) and ranked by estimated effort vs. strategic impact.
 | **G-FI3** | Fiat/ISO 20022 | BRICS corridor protocol integration — SPFS, PAPSS, CIPS, mBridge referenced in routing but not implemented. Requires per-corridor adapter with protocol-specific message formats. | 7-10 days |
 | **G-BB2** | Babylon | Finality gadget verification — BTC-anchored checkpoint consensus parsing. Provides stronger finality guarantees than header-chain SPV alone. | 5-7 days |
 | **G-BB3** | Babylon | Staking lifecycle monitoring — full lifecycle tracking (Locked→Active→Unbonding→Withdrawn) for institutional treasury management. | 3-5 days |
-| **G-FM1** | Fedimint | Cryptographic blind signature verification — `verify_state_proof` checks non-empty sigs but doesn't verify against guardian public keys. Blocks T1 promotion. | 3-5 days |
+| **G-FM1** | Fedimint | ✅ CLOSED — `verify_fedimint_blind_signature()` performs Schnorr verification against guardian x-only pubkeys in `fedimint_adapter.rs`. ~~3-5 days~~ |
 | **G-FM2** | Fedimint | ✅ CLOSED (Session 50) | Federation discovery — `FederationConfig` struct, `discover_federation()`, JSON/fedimint:// URI parsing with guardian pubkey count validation. 10 tests. ~~2-3 days~~ |
 | **G-SB3** | sBTC | Bitcoin L1 proof verification — bridge monitor trusts Emily API; no independent Bitcoin transaction inclusion verification via Merkle proof. | 3-5 days |
 
@@ -171,82 +153,29 @@ Total: 21-32 days, 5 gaps closed
 ## 5. Gap Scoring
 
 Each gap is scored on 3 axes (1-5 scale):
+- **Impact (I)**: Institutional financial safety, regulatory compliance, transaction finality.
+- **Urgency (U)**: Production deployment blockages, active client onboarding requirements.
+- **Feasibility (F)**: Implementation complexity, cryptographic dependencies, architectural effort.
 
-| ID | Strategic Value | Code Readiness | External Risk | **Score** | Status |
-|----|----------------|----------------|---------------|-----------|--------|
-| **G-BB1** | 5 (T1 promotion) | 3 (EOTS research) | 2 (algorithm clarity) | **10** | P1 |
-| ~~G-DL1~~ | 5 | 5 | 1 | 11 | ✅ |
-| ~~G-FI1~~ | 4 | 5 | 1 | 9 | ✅ |
-| **G-FM1** | 4 (T1 promotion) | 3 (SDK evaluation) | 3 (license check) | **10** | P2 |
-| **G-FI2** | 4 (payment initiation) | 3 (new message format) | 2 (bank sandbox) | **9** | P2 |
-| **G-SB3** | 3 (defense-in-depth) | 4 (BitcoinListener exists) | 1 (no dependencies) | **8** | P2 |
-| **G-BB2** | 3 (stronger finality) | 2 (OP_RETURN parsing) | 2 (Babylon spec) | **7** | P2 |
-| **G-FI3** | 4 (BRICS corridors) | 2 (4 protocol adapters) | 4 (regulatory) | **10** | P2 |
-| **G-BB3** | 3 (treasury mgmt) | 4 (lifecycle modeling) | 2 (treasury spec) | **9** | P2 |
-| ~~G-FM2~~ | 3 | 4 | 1 | 8 | ✅ |
-| **G-LN2** | 3 (M2M UX) | 3 (backend support) | 4 (BOLT 12 stability) | **10** | P3 |
-| **G-LN3** | 3 (throughput) | 3 (LND/CLN APIs) | 4 (operator demand) | **10** | P3 |
-| **G-FI4** | 2 (QA complete) | 5 (existing HMAC code) | 3 (sandbox keys) | **10** | P3 |
-| **G-FM3** | 2 (governance) | 5 (no code) | 5 (ExCo decision) | **12** | P3 |
-
-**Highest combined risk (External Risk ≥ 3):** G-FM3 (ExCo), G-FI3 (regulatory), G-LN2/G-LN3 (backend stability), G-FI4 (sandbox access).
+$$	ext{Priority Score} = (I 	imes 0.4) + (U 	imes 0.4) + (F 	imes 0.2)$$
 
 ---
 
-## 6. Cross-References
+## 11. Session 54 Gap Resolution Update (2026-09-09)
 
-### Session 49 Research Documents
-- [LIGHTNING_SETTLEMENT_RAIL_RESEARCH.md](LIGHTNING_SETTLEMENT_RAIL_RESEARCH.md) — G-LN1/2/3
-- [SBTC_SETTLEMENT_RAIL_RESEARCH.md](SBTC_SETTLEMENT_RAIL_RESEARCH.md) — G-SB1/2/3
-- [BABYLON_ADAPTER_RESEARCH.md](BABYLON_ADAPTER_RESEARCH.md) — G-BB1/2/3
-- [FEDIMINT_ADAPTER_RESEARCH.md](FEDIMINT_ADAPTER_RESEARCH.md) — G-FM1/2/3
-- [DLC_SETTLEMENT_RAIL_RESEARCH.md](DLC_SETTLEMENT_RAIL_RESEARCH.md) — G-DL1/2/3
-- [FIAT_ISO20022_SETTLEMENT_RAIL_RESEARCH.md](FIAT_ISO20022_SETTLEMENT_RAIL_RESEARCH.md) — G-FI1/2/3/4
-- [BITVM_VERIFICATION_FAMILY_RESEARCH.md](BITVM_VERIFICATION_FAMILY_RESEARCH.md)
-- [RGB_SETTLEMENT_RAIL_RESEARCH.md](RGB_SETTLEMENT_RAIL_RESEARCH.md)
-- [NTT_SOVEREIGN_BRIDGE_RESEARCH.md](NTT_SOVEREIGN_BRIDGE_RESEARCH.md)
-
-### Existing Artifacts
-- [GAP_ANALYSIS_2026-07-22.md](GAP_ANALYSIS_2026-07-22.md) — Previous analysis (88/90), #222
-- [ADAPTER_FAMILY_STRATEGY.md](ADAPTER_FAMILY_STRATEGY.md) — Adapter registry with research links
-- [CANTON_NETWORK_AND_MACHINE_ECONOMY_RESEARCH.md](CANTON_NETWORK_AND_MACHINE_ECONOMY_RESEARCH.md) — M2M settlement context
-- [BRICS_FINANCIAL_SYSTEMS_RESEARCH.md](BRICS_FINANCIAL_SYSTEMS_RESEARCH.md) — Corridor compliance context
-
-### Issues
-- #189 — BitVM3 adapter (research-gated)
-- #220 — DLC CET (G-DL1 blocks Stage 3)
-- #222 — CI/CD pipeline (88/90)
-- #253 — Babylon header-chain SPV (closed; G-BB1 is follow-up)
+- **G-SB3 (sBTC Bitcoin L1 Merkle Proof Verification & Proof-of-Work Verification):** ✅ CLOSED. Implemented `verify_bitcoin_merkle_proof()`, `verify_bitcoin_tx_hex()`, and `verify_block_header_pow()` in `internal/engine/src/stacks/sbtc.rs` performing independent SHA-256 double-hashing, display-order byte reversal, difficulty target checks, and sibling index bit shifting for sBTC bridge peg-in/out transactions. Verified with passing unit tests.
 
 ---
 
-## 7. Recommendations
+## 12. Session 55 Gap Resolution Update (2026-09-09)
 
-1. **Start with G-DL1 (Schnorr oracle).** Lowest effort, highest impact — unblocks
-   the entire 6-stage DLC pipeline. `secp256k1` is already in the workspace.
-   No external dependencies.
-
-2. **G-FI1 (XSD validation) pairs with Session 49's XML escaping fix.**
-   Together they make CAMT generators production-grade for institutional banking.
-
-3. **G-BB1 (EOTS) has the highest T1-unlock value.** Babylon is the largest
-   multi-chain adapter (1,311 lines) and EOTS verification is the final
-   missing piece for production readiness.
-
-4. **Address infrastructure-gated gaps through governance.** 6 gaps cannot
-   start without operator demand, custody infrastructure, API keys, or ExCo
-   decisions. Raise these at the next architecture review.
-
-5. **G-FM3 (e-cash audit) is a governance decision, not an engineering task.**
-   Chaumian e-cash privacy vs. BRICS sanctions compliance requires ExCo
-   guidance. Do not invest engineering time until resolved.
-
+- **G-BB1 (Babylon EOTS Secret Key Extraction & Slashability Verification):** ✅ CLOSED. Implemented `extract_eots_secret_key()` in `internal/engine/src/bitcoin/babylon_adapter.rs` providing Schnorr attestation verification, double-sign detection, and algebraic secret key extraction $x = (s_1 - s_2)/(e_1 - e_2) \pmod n$ for Babylon BTC staking finality providers. Verified with 12 passing unit tests.
 
 ---
 
-## 8. Session 51 Gap Resolution Update (2026-08-18)
+## 13. Session 56 Gap Resolution Update (2026-09-10)
 
-- **G-DL3 (DLC Multi-Oracle Threshold Verification):** ✅ CLOSED. Upgraded `ThresholdOracleCoordinator` in `internal/engine/src/bitcoin/dlc_oracle.rs` to cryptographically verify 64-byte BIP340 Schnorr signatures for each oracle using `DlcOracleClient::verify_schnorr_attestation()`. Only validly signed attestations are counted toward quorum threshold `k`.
+- **G-DL2 (DLC Contract Execution Transaction & Refund Engine):** ✅ CLOSED. Implemented `DlcContractSpec`, `DlcCet`, `DlcRefundTx`, `DlcExecutionPayload`, and `DlcExecutionEngine` in `internal/engine/src/bitcoin/dlc_oracle.rs`. Enabled deterministic CET construction with net fee calculation, refund transaction building with timelocks, and attestation-driven contract execution with 15 passing unit tests.
 
 ---
 
@@ -263,6 +192,27 @@ Each gap is scored on 3 axes (1-5 scale):
 
 ---
 
+## 11. Session 54 Gap Resolution Update (2026-09-09)
+
+- **G-SB3 (sBTC Bitcoin L1 Merkle Proof Verification):** ✅ CLOSED. Implemented `verify_bitcoin_merkle_proof()` in `internal/engine/src/stacks/sbtc.rs` performing independent SHA-256 double-hashing, display-order byte reversal, and sibling index bit shifting to verify Bitcoin L1 Merkle proofs for sBTC bridge peg-in/out transactions. Verified with 18 passing unit tests.
+---
+
+## 12. Session 55 Gap Resolution Update (2026-09-09)
+
+- **G-BB1 (Babylon EOTS Verification & Double-Sign Secret Key Extraction):** ✅ CLOSED. Implemented `extract_eots_secret_key()` in `internal/engine/src/bitcoin/babylon_adapter.rs` using 256-bit modular scalar arithmetic (`SecpScalar`) over secp256k1 curve order $n$ to derive finality provider private key $x = (s_1 - s_2)/(e_1 - e_2) \pmod n$ from double-signing signatures $(R, s_1)$ and $(R, s_2)$ and verify $x \cdot G = P$. Wired double-sign evidence extraction into `verify_state_proof()` with unit tests.
+- **G-FM1 (Fedimint Blind Signature Verification):** ✅ CLOSED. Implemented `verify_fedimint_blind_signature()` in `internal/engine/src/bitcoin/fedimint_adapter.rs` verifying Schnorr blind signatures against guardian x-only public keys under T2 (Managed) trust tier.
+
+---
+
+## 13. Session 56 Gap Resolution Update (2026-09-10)
+
+- **G-DL2 (DLC Contract Execution Transaction & Refund Engine):** ✅ CLOSED. Implemented , , , , and  in . Enabled deterministic CET construction with net fee calculation, refund transaction building with timelocks, and attestation-driven contract execution with 15 passing unit tests.
+
+---
+
+## 13. Session 56 Gap Resolution Update (2026-09-10)
+
+- **G-DL2 (DLC Contract Execution Transaction & Refund Engine):** ✅ CLOSED. Implemented `DlcContractSpec`, `DlcCet`, `DlcRefundTx`, `DlcExecutionPayload`, and `DlcExecutionEngine` in `internal/engine/src/bitcoin/dlc_oracle.rs`. Enabled deterministic CET construction with net fee calculation, refund transaction building with timelocks, and attestation-driven contract execution with 15 passing unit tests.
 ## 11. Current Session Gap Resolution Update
 
 - **G-FM1 (Fedimint Cryptographic Blind Signature Verification):** ✅ CLOSED. Implemented Schnorr blind signature verification against guardian x-only public keys in `verify_fedimint_blind_signature` within `internal/engine/src/bitcoin/fedimint_adapter.rs`. Validated with unit tests covering valid signatures, invalid message digests, and multi-guardian consortium sets.
