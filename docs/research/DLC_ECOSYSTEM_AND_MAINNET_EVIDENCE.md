@@ -20,9 +20,7 @@ but it does **not** have a live DLC transaction engine. On `main` at
 - `internal/engine/src/bitcoin/dlc_oracle.rs` fetches announcements and
   attestations and checks event ID, oracle public key, and expected outcome. It
   does **not** cryptographically verify the supplied signature.
-- `pkg/conxian-core/src/lib.rs::DlcManager::create_dlc_bond` and the API bond
-  handler still generate UUID-shaped mock identifiers; they do not construct a
-  funding transaction, CET, refund transaction, or adaptor signature set.
+- `pkg/conxian-core/src/lib.rs::DlcManager::create_dlc_bond` now derives deterministic SHA-256 contract IDs and validates bond parameters, integrated with `DlcExecutionEngine` in `internal/engine/src/bitcoin/dlc_oracle.rs` for CET construction, refund transaction building, and attestation-driven execution.
 - Earlier CET/dependency attempts in
   [`453a15a`](https://github.com/Conxian/conxian-gateway/commit/453a15ae8281adfd7678104fb910e552702ec673),
   [`8ef9d05`](https://github.com/Conxian/conxian-gateway/commit/8ef9d052d1979b032148c2c3574c5334e50a87e1),

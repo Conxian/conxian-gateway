@@ -236,15 +236,44 @@ async fn test_ingress_mbridge_api_route() {
 
     let app = configure_routes(state, TEST_TOKEN.to_string(), Instant::now(), None);
 
+    let secp = Secp256k1::new();
+    let keypair1 = Keypair::from_secret_key(
+        &secp,
+        &secp256k1::SecretKey::from_slice(&[2u8; 32]).unwrap(),
+    );
+    let keypair2 = Keypair::from_secret_key(
+        &secp,
+        &secp256k1::SecretKey::from_slice(&[3u8; 32]).unwrap(),
+    );
+    let mbridge_hash = MBridgeAdapter::compute_payload_hash(
+        "MBR-2026-TEST",
+        "e-CNY",
+        "e-AED",
+        10000,
+        "AED",
+        "BKCHCNBJXXX",
+        "FADBAEADXXX",
+        1750000000,
+    );
+    let message = Message::from_digest(Sha256::digest(mbridge_hash.as_bytes()).into());
+    let (pubkey1, _) = keypair1.x_only_public_key();
+    let (pubkey2, _) = keypair2.x_only_public_key();
+
     let payload = json!({
         "mbridge_id": "MBR-2026-TEST",
         "from_cbdc": "e-CNY",
         "to_cbdc": "e-AED",
         "amount": 10000,
         "currency": "AED",
-        "sender": "BKCHCNBJXXX",
-        "receiver": "FADBAEADXXX",
-        "timestamp": 1750000000u64
+        "sender_bic": "BKCHCNBJXXX",
+        "receiver_bic": "FADBAEADXXX",
+        "proof_hash": mbridge_hash,
+        "timestamp": 1750000000u64,
+        "validator_attestations": [
+            [hex::encode(pubkey1.serialize()), hex::encode(secp.sign_schnorr(&message, &keypair1).as_ref())],
+            [hex::encode(pubkey2.serialize()), hex::encode(secp.sign_schnorr(&message, &keypair2).as_ref())]
+        ],
+        "quorum_threshold": 2
     });
 
     let payload_bytes = serde_json::to_vec(&payload).unwrap();

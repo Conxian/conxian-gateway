@@ -94,23 +94,58 @@ export class ConxianClient {
      */
     async verifyStateProofLocal(payload: WasmUcvProofPayload): Promise<WasmUcvVerificationResult> {
         const startTime = Date.now();
-        if (!payload.chain || (!payload.proof_data && !payload.schnorr_signature)) {
+        if (!payload || !payload.chain) {
             return {
                 verified: false,
-                chain: payload.chain || "unknown",
+                chain: payload?.chain || "unknown",
                 execution_time_ms: Date.now() - startTime,
                 proof_type: "wasm_ucv1_local",
-                error: "Invalid proof payload: missing chain, proof data, or signature"
+                error: "Invalid proof payload: missing chain"
             };
         }
 
-        const isVerified = Boolean(
-            (payload.proof_data && payload.proof_data.length > 0) ||
-            (payload.schnorr_signature && payload.schnorr_signature.length === 128)
-        );
+        if (!payload.proof_data && !payload.schnorr_signature && !payload.merkle_root) {
+            return {
+                verified: false,
+                chain: payload.chain,
+                execution_time_ms: Date.now() - startTime,
+                proof_type: "wasm_ucv1_local",
+                error: "Invalid proof payload: missing proof data, merkle root, or signature"
+            };
+        }
+
+        // Validate Schnorr signature format if provided (64-byte hex = 128 chars)
+        if (payload.schnorr_signature) {
+            const cleanSig = payload.schnorr_signature.trim();
+            if (cleanSig.length !== 128 || !/^[0-9a-fA-F]+$/.test(cleanSig)) {
+                return {
+                    verified: false,
+                    chain: payload.chain,
+                    execution_time_ms: Date.now() - startTime,
+                    proof_type: "wasm_ucv1_local",
+                    error: "Invalid Schnorr signature: expected 64-byte (128 hex character) BIP-340 signature"
+                };
+            }
+        }
+
+        // Validate proof data encoding (Hex or Base64) if provided
+        if (payload.proof_data) {
+            const cleanProof = payload.proof_data.trim();
+            const isHex = /^[0-9a-fA-F]+$/.test(cleanProof) && cleanProof.length % 2 === 0;
+            const isBase64 = /^[A-Za-z0-9+/=]+$/.test(cleanProof);
+            if (!isHex && !isBase64) {
+                return {
+                    verified: false,
+                    chain: payload.chain,
+                    execution_time_ms: Date.now() - startTime,
+                    proof_type: "wasm_ucv1_local",
+                    error: "Invalid proof data: payload must be valid Hex or Base64 string"
+                };
+            }
+        }
 
         return {
-            verified: isVerified,
+            verified: true,
             chain: payload.chain,
             execution_time_ms: Date.now() - startTime,
             proof_type: "wasm_ucv1_local"

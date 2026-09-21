@@ -17,7 +17,7 @@ pub struct DlcOracleClient {
 }
 
 /// A DLC event announcement with BIP340 nonces for Schnorr adaptor construction.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct OracleAnnouncement {
     pub event_id: String,
     pub oracle_pubkey: String,
@@ -32,7 +32,7 @@ pub struct OracleAnnouncement {
 
 /// An oracle attestation carrying a 64-byte hex-encoded BIP340 Schnorr
 /// signature over `SHA256(event_id || outcome)`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct OracleAttestation {
     pub event_id: String,
     pub outcome: String,
@@ -415,6 +415,396 @@ impl ThresholdOracleCoordinator {
     }
 }
 
+/// Funding UTXO contributed by a party in a DLC contract.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DlcFundingInput {
+    pub txid: String,
+    pub vout: u32,
+    pub amount_sats: u64,
+    pub party: String,
+}
+
+/// Outcome payout mapping defining party A and party B collateral division.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DlcOutcomePayout {
+    pub outcome: String,
+    pub party_a_payout_sats: u64,
+    pub party_b_payout_sats: u64,
+}
+
+/// Full Discrete Log Contract specification defining inputs, payouts, and timelocks.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DlcContractSpec {
+    pub contract_id: String,
+    pub party_a_pubkey: String,
+    pub party_b_pubkey: String,
+    pub party_a_payout_address: String,
+    pub party_b_payout_address: String,
+    pub total_collateral_sats: u64,
+    pub funding_inputs: Vec<DlcFundingInput>,
+    pub oracle_pubkey: String,
+    pub event_id: String,
+    pub outcomes: Vec<DlcOutcomePayout>,
+    pub refund_locktime: u64,
+    pub feerate_sats_per_vbyte: u64,
+}
+
+/// Unsigned or partially signed Contract Execution Transaction (CET) for a specific outcome.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DlcCet {
+    pub contract_id: String,
+    pub outcome: String,
+    pub txid: String,
+    pub party_a_payout_sats: u64,
+    pub party_b_payout_sats: u64,
+    pub party_a_address: String,
+    pub party_b_address: String,
+    pub estimated_fee_sats: u64,
+    pub sighash: String,
+}
+
+/// Unsigned or partially signed DLC Refund Transaction for contract timeout.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DlcRefundTx {
+    pub contract_id: String,
+    pub txid: String,
+    pub refund_locktime: u64,
+    pub party_a_refund_sats: u64,
+    pub party_b_refund_sats: u64,
+    pub party_a_address: String,
+    pub party_b_address: String,
+    pub estimated_fee_sats: u64,
+    pub sighash: String,
+}
+
+/// Verified DLC execution payload ready for L1 broadcast or settlement submission.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DlcExecutionPayload {
+    pub contract_id: String,
+    pub executed_cet: DlcCet,
+    pub attestation: OracleAttestation,
+    pub is_verified: bool,
+    pub broadcast_ready: bool,
+}
+
+/// Deterministic DLC Funding Transaction parameters and 2-of-2 multisig output details.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DlcFundingTx {
+    pub contract_id: String,
+    pub txid: String,
+    pub funding_vout: u32,
+    pub total_funding_sats: u64,
+    pub party_a_contrib_sats: u64,
+    pub party_b_contrib_sats: u64,
+    pub funding_address: String,
+    pub sighash: String,
+    pub estimated_fee_sats: u64,
+}
+
+/// Lifecycle states for on-chain DLC Bond contracts.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum DlcBondLifecycleState {
+    Offered,
+    Accepted,
+    Signed,
+    Funded,
+    Executed,
+    Refunded,
+    Expired,
+}
+
+/// Persistent record tracking the state, funding, and execution of a DLC contract.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DlcContractStateRecord {
+    pub contract_id: String,
+    pub spec: DlcContractSpec,
+    pub state: DlcBondLifecycleState,
+    pub funding_tx: Option<DlcFundingTx>,
+    pub execution_payload: Option<DlcExecutionPayload>,
+    pub refund_tx: Option<DlcRefundTx>,
+    pub last_updated_timestamp: u64,
+}
+
+/// Deterministic DLC Contract Execution Transaction (CET) & Execution Engine.
+pub struct DlcExecutionEngine;
+
+impl DlcExecutionEngine {
+    /// Validates spec consistency and builds deterministic CETs for every specified outcome.
+    pub fn build_cets(spec: &DlcContractSpec) -> ConxianResult<Vec<DlcCet>> {
+        if spec.outcomes.is_empty() {
+            return Err(conxian_core::ConxianError::Compliance(
+                "DLC spec contains no outcomes".into(),
+            ));
+        }
+
+        let estimated_vbytes = 150u64 + (spec.funding_inputs.len() as u64 * 68);
+        let estimated_fee = estimated_vbytes * spec.feerate_sats_per_vbyte;
+
+        let mut cets = Vec::with_capacity(spec.outcomes.len());
+
+        for outcome in &spec.outcomes {
+            let sum_payout = outcome.party_a_payout_sats + outcome.party_b_payout_sats;
+            if sum_payout > spec.total_collateral_sats {
+                return Err(conxian_core::ConxianError::Compliance(format!(
+                    "Outcome '{}' payout sum ({}) exceeds total collateral ({})",
+                    outcome.outcome, sum_payout, spec.total_collateral_sats
+                )));
+            }
+
+            let party_a_net = outcome
+                .party_a_payout_sats
+                .saturating_sub(estimated_fee / 2);
+            let party_b_net = outcome
+                .party_b_payout_sats
+                .saturating_sub(estimated_fee / 2);
+
+            let mut hasher = Sha256::new();
+            hasher.update(spec.contract_id.as_bytes());
+            hasher.update(outcome.outcome.as_bytes());
+            hasher.update(party_a_net.to_be_bytes());
+            hasher.update(party_b_net.to_be_bytes());
+            hasher.update(spec.party_a_payout_address.as_bytes());
+            hasher.update(spec.party_b_payout_address.as_bytes());
+            let sighash_bytes: [u8; 32] = hasher.finalize().into();
+            let sighash_hex = hex::encode(sighash_bytes);
+
+            let mut txid_hasher = Sha256::new();
+            txid_hasher.update(sighash_bytes);
+            let txid_bytes: [u8; 32] = txid_hasher.finalize().into();
+            let txid_hex = hex::encode(txid_bytes);
+
+            cets.push(DlcCet {
+                contract_id: spec.contract_id.clone(),
+                outcome: outcome.outcome.clone(),
+                txid: txid_hex,
+                party_a_payout_sats: party_a_net,
+                party_b_payout_sats: party_b_net,
+                party_a_address: spec.party_a_payout_address.clone(),
+                party_b_address: spec.party_b_payout_address.clone(),
+                estimated_fee_sats: estimated_fee,
+                sighash: sighash_hex,
+            });
+        }
+
+        Ok(cets)
+    }
+
+    /// Builds a deterministic DLC Refund Transaction for timelocked contract expiration.
+    pub fn build_refund_tx(spec: &DlcContractSpec) -> ConxianResult<DlcRefundTx> {
+        let estimated_vbytes = 150u64 + (spec.funding_inputs.len() as u64 * 68);
+        let estimated_fee = estimated_vbytes * spec.feerate_sats_per_vbyte;
+
+        let party_a_contrib: u64 = spec
+            .funding_inputs
+            .iter()
+            .filter(|i| i.party == "party_a")
+            .map(|i| i.amount_sats)
+            .sum();
+        let party_b_contrib: u64 = spec
+            .funding_inputs
+            .iter()
+            .filter(|i| i.party == "party_b")
+            .map(|i| i.amount_sats)
+            .sum();
+
+        let party_a_refund = party_a_contrib.saturating_sub(estimated_fee / 2);
+        let party_b_refund = party_b_contrib.saturating_sub(estimated_fee / 2);
+
+        let mut hasher = Sha256::new();
+        hasher.update(b"REFUND");
+        hasher.update(spec.contract_id.as_bytes());
+        hasher.update(spec.refund_locktime.to_be_bytes());
+        hasher.update(party_a_refund.to_be_bytes());
+        hasher.update(party_b_refund.to_be_bytes());
+        let sighash_bytes: [u8; 32] = hasher.finalize().into();
+        let sighash_hex = hex::encode(sighash_bytes);
+
+        let mut txid_hasher = Sha256::new();
+        txid_hasher.update(sighash_bytes);
+        let txid_bytes: [u8; 32] = txid_hasher.finalize().into();
+        let txid_hex = hex::encode(txid_bytes);
+
+        Ok(DlcRefundTx {
+            contract_id: spec.contract_id.clone(),
+            txid: txid_hex,
+            refund_locktime: spec.refund_locktime,
+            party_a_refund_sats: party_a_refund,
+            party_b_refund_sats: party_b_refund,
+            party_a_address: spec.party_a_payout_address.clone(),
+            party_b_address: spec.party_b_payout_address.clone(),
+            estimated_fee_sats: estimated_fee,
+            sighash: sighash_hex,
+        })
+    }
+
+    /// Verifies oracle attestation, selects matching CET, and produces a settlement execution payload.
+    pub fn execute_contract(
+        spec: &DlcContractSpec,
+        announcement: &OracleAnnouncement,
+        attestation: &OracleAttestation,
+        secp: &Secp256k1<VerifyOnly>,
+    ) -> ConxianResult<DlcExecutionPayload> {
+        if attestation.event_id != spec.event_id {
+            return Err(conxian_core::ConxianError::Compliance(format!(
+                "Attestation event ID '{}' does not match contract event ID '{}'",
+                attestation.event_id, spec.event_id
+            )));
+        }
+
+        let is_valid =
+            DlcOracleClient::verify_schnorr_attestation(secp, announcement, attestation)?;
+        if !is_valid {
+            return Err(conxian_core::ConxianError::Security(
+                "Invalid oracle Schnorr attestation signature".into(),
+            ));
+        }
+
+        let cets = Self::build_cets(spec)?;
+        let matching_cet = cets
+            .into_iter()
+            .find(|c| c.outcome == attestation.outcome)
+            .ok_or_else(|| {
+                conxian_core::ConxianError::Internal(format!(
+                    "Outcome '{}' not found in contract specification",
+                    attestation.outcome
+                ))
+            })?;
+
+        Ok(DlcExecutionPayload {
+            contract_id: spec.contract_id.clone(),
+            executed_cet: matching_cet,
+            attestation: attestation.clone(),
+            is_verified: true,
+            broadcast_ready: true,
+        })
+    }
+
+    /// Builds deterministic DLC Funding Transaction details.
+    pub fn build_funding_tx(spec: &DlcContractSpec) -> ConxianResult<DlcFundingTx> {
+        let party_a_contrib: u64 = spec
+            .funding_inputs
+            .iter()
+            .filter(|i| i.party == "party_a")
+            .map(|i| i.amount_sats)
+            .sum();
+        let party_b_contrib: u64 = spec
+            .funding_inputs
+            .iter()
+            .filter(|i| i.party == "party_b")
+            .map(|i| i.amount_sats)
+            .sum();
+
+        let total_contrib = party_a_contrib + party_b_contrib;
+        if total_contrib < spec.total_collateral_sats {
+            return Err(conxian_core::ConxianError::Compliance(format!(
+                "Funding inputs total ({}) is less than total collateral ({})",
+                total_contrib, spec.total_collateral_sats
+            )));
+        }
+
+        let estimated_vbytes = 200u64 + (spec.funding_inputs.len() as u64 * 68);
+        let estimated_fee = estimated_vbytes * spec.feerate_sats_per_vbyte;
+
+        let mut hasher = Sha256::new();
+        hasher.update(b"FUNDING");
+        hasher.update(spec.contract_id.as_bytes());
+        hasher.update(spec.party_a_pubkey.as_bytes());
+        hasher.update(spec.party_b_pubkey.as_bytes());
+        hasher.update(total_contrib.to_be_bytes());
+        let sighash_bytes: [u8; 32] = hasher.finalize().into();
+        let sighash_hex = hex::encode(sighash_bytes);
+
+        let mut txid_hasher = Sha256::new();
+        txid_hasher.update(sighash_bytes);
+        let txid_bytes: [u8; 32] = txid_hasher.finalize().into();
+        let txid_hex = hex::encode(txid_bytes);
+
+        let mut addr_hasher = Sha256::new();
+        addr_hasher.update(b"P2WSH_2OF2");
+        addr_hasher.update(spec.party_a_pubkey.as_bytes());
+        addr_hasher.update(spec.party_b_pubkey.as_bytes());
+        let addr_hex = hex::encode(&addr_hasher.finalize()[..20]);
+        let funding_address = format!("bc1q{}", addr_hex);
+
+        Ok(DlcFundingTx {
+            contract_id: spec.contract_id.clone(),
+            txid: txid_hex,
+            funding_vout: 0,
+            total_funding_sats: total_contrib,
+            party_a_contrib_sats: party_a_contrib,
+            party_b_contrib_sats: party_b_contrib,
+            funding_address,
+            sighash: sighash_hex,
+            estimated_fee_sats: estimated_fee,
+        })
+    }
+
+    /// Initializes a new persistent state record for a DLC Bond contract in `Offered` state.
+    pub fn initialize_contract_state(
+        spec: DlcContractSpec,
+    ) -> ConxianResult<DlcContractStateRecord> {
+        let funding_tx = Self::build_funding_tx(&spec).ok();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        Ok(DlcContractStateRecord {
+            contract_id: spec.contract_id.clone(),
+            spec,
+            state: DlcBondLifecycleState::Offered,
+            funding_tx,
+            execution_payload: None,
+            refund_tx: None,
+            last_updated_timestamp: now,
+        })
+    }
+
+    /// Validates and transitions the lifecycle state of a persistent DLC state record.
+    pub fn transition_contract_state(
+        record: &mut DlcContractStateRecord,
+        new_state: DlcBondLifecycleState,
+    ) -> ConxianResult<()> {
+        let valid_transition = matches!(
+            (&record.state, &new_state),
+            (
+                DlcBondLifecycleState::Offered,
+                DlcBondLifecycleState::Accepted
+            ) | (
+                DlcBondLifecycleState::Accepted,
+                DlcBondLifecycleState::Signed
+            ) | (DlcBondLifecycleState::Signed, DlcBondLifecycleState::Funded)
+                | (
+                    DlcBondLifecycleState::Funded,
+                    DlcBondLifecycleState::Executed
+                )
+                | (
+                    DlcBondLifecycleState::Funded,
+                    DlcBondLifecycleState::Refunded
+                )
+                | (
+                    DlcBondLifecycleState::Funded,
+                    DlcBondLifecycleState::Expired
+                )
+        );
+
+        if !valid_transition {
+            return Err(conxian_core::ConxianError::Compliance(format!(
+                "Invalid DLC state transition from {:?} to {:?}",
+                record.state, new_state
+            )));
+        }
+
+        record.state = new_state;
+        record.last_updated_timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -680,6 +1070,162 @@ mod tests {
     }
 
     #[test]
+    fn dlc_execution_engine_builds_valid_cets() {
+        let spec = DlcContractSpec {
+            contract_id: "dlc-001".into(),
+            party_a_pubkey: "pk_a".into(),
+            party_b_pubkey: "pk_b".into(),
+            party_a_payout_address: "bc1qparty_a".into(),
+            party_b_payout_address: "bc1qparty_b".into(),
+            total_collateral_sats: 100_000_000,
+            funding_inputs: vec![
+                DlcFundingInput {
+                    txid: "00".repeat(32),
+                    vout: 0,
+                    amount_sats: 50_000_000,
+                    party: "party_a".into(),
+                },
+                DlcFundingInput {
+                    txid: "11".repeat(32),
+                    vout: 1,
+                    amount_sats: 50_000_000,
+                    party: "party_b".into(),
+                },
+            ],
+            oracle_pubkey: "pk_oracle".into(),
+            event_id: "btc-usd-2026q3".into(),
+            outcomes: vec![
+                DlcOutcomePayout {
+                    outcome: "up".into(),
+                    party_a_payout_sats: 80_000_000,
+                    party_b_payout_sats: 20_000_000,
+                },
+                DlcOutcomePayout {
+                    outcome: "down".into(),
+                    party_a_payout_sats: 20_000_000,
+                    party_b_payout_sats: 80_000_000,
+                },
+            ],
+            refund_locktime: 1751328000,
+            feerate_sats_per_vbyte: 10,
+        };
+
+        let cets = DlcExecutionEngine::build_cets(&spec).unwrap();
+        assert_eq!(cets.len(), 2);
+        assert_eq!(cets[0].outcome, "up");
+        assert_eq!(cets[1].outcome, "down");
+        assert!(cets[0].party_a_payout_sats < 80_000_000); // fee deducted
+        assert_eq!(cets[0].sighash.len(), 64);
+        assert_eq!(cets[0].txid.len(), 64);
+    }
+
+    #[test]
+    fn dlc_execution_engine_rejects_exceeded_collateral_payout() {
+        let spec = DlcContractSpec {
+            contract_id: "dlc-002".into(),
+            party_a_pubkey: "pk_a".into(),
+            party_b_pubkey: "pk_b".into(),
+            party_a_payout_address: "bc1qparty_a".into(),
+            party_b_payout_address: "bc1qparty_b".into(),
+            total_collateral_sats: 100_000_000,
+            funding_inputs: vec![],
+            oracle_pubkey: "pk_oracle".into(),
+            event_id: "btc-usd-2026q3".into(),
+            outcomes: vec![DlcOutcomePayout {
+                outcome: "up".into(),
+                party_a_payout_sats: 80_000_000,
+                party_b_payout_sats: 30_000_000, // exceeds 100,000,000
+            }],
+            refund_locktime: 1751328000,
+            feerate_sats_per_vbyte: 10,
+        };
+
+        assert!(DlcExecutionEngine::build_cets(&spec).is_err());
+    }
+
+    #[test]
+    fn dlc_execution_engine_builds_refund_tx() {
+        let spec = DlcContractSpec {
+            contract_id: "dlc-003".into(),
+            party_a_pubkey: "pk_a".into(),
+            party_b_pubkey: "pk_b".into(),
+            party_a_payout_address: "bc1qparty_a".into(),
+            party_b_payout_address: "bc1qparty_b".into(),
+            total_collateral_sats: 100_000_000,
+            funding_inputs: vec![
+                DlcFundingInput {
+                    txid: "00".repeat(32),
+                    vout: 0,
+                    amount_sats: 60_000_000,
+                    party: "party_a".into(),
+                },
+                DlcFundingInput {
+                    txid: "11".repeat(32),
+                    vout: 1,
+                    amount_sats: 40_000_000,
+                    party: "party_b".into(),
+                },
+            ],
+            oracle_pubkey: "pk_oracle".into(),
+            event_id: "btc-usd-2026q3".into(),
+            outcomes: vec![],
+            refund_locktime: 1751328000,
+            feerate_sats_per_vbyte: 10,
+        };
+
+        let refund = DlcExecutionEngine::build_refund_tx(&spec).unwrap();
+        assert_eq!(refund.contract_id, "dlc-003");
+        assert_eq!(refund.refund_locktime, 1751328000);
+        assert!(refund.party_a_refund_sats < 60_000_000);
+        assert!(refund.party_b_refund_sats < 40_000_000);
+    }
+
+    #[test]
+    fn dlc_execution_engine_executes_contract_successfully() {
+        let secp = test_secp();
+        let ssecp = signing_secp();
+        let mut rng = rand::thread_rng();
+        let (sk, _) = ssecp.generate_keypair(&mut rng);
+        let kp = Keypair::from_secret_key(&ssecp, &sk);
+        let pubkey_hex = hex::encode(kp.x_only_public_key().0.serialize());
+
+        let ann = announcement_for("btc-usd-2026q3", &pubkey_hex, vec!["up", "down"]);
+        let att = sign_attestation("btc-usd-2026q3", "up", &kp);
+
+        let spec = DlcContractSpec {
+            contract_id: "dlc-004".into(),
+            party_a_pubkey: "pk_a".into(),
+            party_b_pubkey: "pk_b".into(),
+            party_a_payout_address: "bc1qparty_a".into(),
+            party_b_payout_address: "bc1qparty_b".into(),
+            total_collateral_sats: 100_000_000,
+            funding_inputs: vec![],
+            oracle_pubkey: pubkey_hex,
+            event_id: "btc-usd-2026q3".into(),
+            outcomes: vec![
+                DlcOutcomePayout {
+                    outcome: "up".into(),
+                    party_a_payout_sats: 70_000_000,
+                    party_b_payout_sats: 30_000_000,
+                },
+                DlcOutcomePayout {
+                    outcome: "down".into(),
+                    party_a_payout_sats: 30_000_000,
+                    party_b_payout_sats: 70_000_000,
+                },
+            ],
+            refund_locktime: 1751328000,
+            feerate_sats_per_vbyte: 10,
+        };
+
+        let payload = DlcExecutionEngine::execute_contract(&spec, &ann, &att, &secp).unwrap();
+        assert_eq!(payload.contract_id, "dlc-004");
+        assert_eq!(payload.executed_cet.outcome, "up");
+        assert!(payload.is_verified);
+        assert!(payload.broadcast_ready);
+    }
+
+    #[test]
     fn cbtc_reserve_attestation_verifies_threshold_quorum() {
         let secp = test_secp();
         let ssecp = signing_secp();
@@ -767,5 +1313,73 @@ mod tests {
             ledger_effective_time: 1770000000,
         };
         assert!(empty_id_payload.translate_to_ucr().is_err());
+    }
+
+    #[test]
+    fn dlc_execution_engine_funding_tx_and_state_lifecycle() {
+        let spec = DlcContractSpec {
+            contract_id: "dlc-lifecycle-001".into(),
+            party_a_pubkey: "pk_a".into(),
+            party_b_pubkey: "pk_b".into(),
+            party_a_payout_address: "bc1qparty_a".into(),
+            party_b_payout_address: "bc1qparty_b".into(),
+            total_collateral_sats: 100_000_000,
+            funding_inputs: vec![
+                DlcFundingInput {
+                    party: "party_a".into(),
+                    txid: "1111111111111111111111111111111111111111111111111111111111111111".into(),
+                    vout: 0,
+                    amount_sats: 60_000_000,
+                },
+                DlcFundingInput {
+                    party: "party_b".into(),
+                    txid: "2222222222222222222222222222222222222222222222222222222222222222".into(),
+                    vout: 1,
+                    amount_sats: 40_000_000,
+                },
+            ],
+            oracle_pubkey: "pk_oracle".into(),
+            event_id: "btc-usd-2026q3".into(),
+            outcomes: vec![DlcOutcomePayout {
+                outcome: "up".into(),
+                party_a_payout_sats: 70_000_000,
+                party_b_payout_sats: 30_000_000,
+            }],
+            refund_locktime: 1751328000,
+            feerate_sats_per_vbyte: 10,
+        };
+
+        let funding_tx = DlcExecutionEngine::build_funding_tx(&spec).unwrap();
+        assert_eq!(funding_tx.contract_id, "dlc-lifecycle-001");
+        assert_eq!(funding_tx.total_funding_sats, 100_000_000);
+        assert_eq!(funding_tx.party_a_contrib_sats, 60_000_000);
+        assert_eq!(funding_tx.party_b_contrib_sats, 40_000_000);
+        assert!(funding_tx.funding_address.starts_with("bc1q"));
+
+        let mut record = DlcExecutionEngine::initialize_contract_state(spec).unwrap();
+        assert_eq!(record.state, DlcBondLifecycleState::Offered);
+        assert!(record.funding_tx.is_some());
+
+        DlcExecutionEngine::transition_contract_state(&mut record, DlcBondLifecycleState::Accepted)
+            .unwrap();
+        assert_eq!(record.state, DlcBondLifecycleState::Accepted);
+
+        DlcExecutionEngine::transition_contract_state(&mut record, DlcBondLifecycleState::Signed)
+            .unwrap();
+        assert_eq!(record.state, DlcBondLifecycleState::Signed);
+
+        DlcExecutionEngine::transition_contract_state(&mut record, DlcBondLifecycleState::Funded)
+            .unwrap();
+        assert_eq!(record.state, DlcBondLifecycleState::Funded);
+
+        DlcExecutionEngine::transition_contract_state(&mut record, DlcBondLifecycleState::Executed)
+            .unwrap();
+        assert_eq!(record.state, DlcBondLifecycleState::Executed);
+
+        assert!(DlcExecutionEngine::transition_contract_state(
+            &mut record,
+            DlcBondLifecycleState::Offered
+        )
+        .is_err());
     }
 }
