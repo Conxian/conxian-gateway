@@ -117,7 +117,7 @@ Full financial systems analysis in `docs/research/BRICS_FINANCIAL_SYSTEMS_RESEAR
 - **Impact**: Completes Stage 3 & 4 of the DLC pipeline, enabling deterministic CET construction, net fee deduction, refund transaction building, and attestation-driven contract execution.
 | **UCV-1 (Universal Verification)** | 9.8 | Urgent | Production | Multi-chain adapter verification active (Liquid, Stacks, Babylon, Fedimint, Citrea, Strata) |
 | **ISO 20022 (`pacs.008`, `camt.053`)** | 9.6 | Urgent | Production | Shipped (G-FI1, G-FI2, G-TR1). Full XML generator, parser & schema validator in `zkc.rs` & `camt.rs` |
-| **Wasm UCV-1 Local Verification** | 9.5 | High | Production | Shipped (Candidate Q / G-20, G-21). Local-first zero-trust state proof verification in `@conxian/client-sdk` |
+| **Wasm UCV-1 & RGB Native Verification** | 9.5 | High | Production | Shipped (Candidate Q / G-20, G-21). Local-first zero-trust state proof verification in `@conxian/client-sdk` & native RGB transition/seal validation in `rgb_adapter.rs` |
 | **Babylon Staking EOTS & Key Extraction** | 9.5 | High | Production | Shipped (G-BB1). Schnorr attestation & double-sign key extraction active in `babylon_adapter.rs` |
 | **Fedimint Blind Signature Verification** | 9.3 | High | Production | Shipped (G-FM1). Guardian pubkey Schnorr blind sig verification in `fedimint_adapter.rs` |
 | **Canton CCIP Cross-Chain Gateway** | 9.6 | High | Production | Shipped (Candidate S / G-C5). Dynamic risk scoring & secp256k1 authenticity verification active |
