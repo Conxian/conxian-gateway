@@ -55,6 +55,47 @@ pub struct ODataV4CallbackPayload {
     pub status: String,
 }
 
+/// Exponential backoff retry policy for enterprise ERP webhook callbacks
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ODataV4RetryPolicy {
+    pub max_retries: u32,
+    pub initial_delay_ms: u64,
+    pub max_delay_ms: u64,
+}
+
+impl Default for ODataV4RetryPolicy {
+    fn default() -> Self {
+        Self {
+            max_retries: 3,
+            initial_delay_ms: 1000,
+            max_delay_ms: 30000,
+        }
+    }
+}
+
+impl ODataV4RetryPolicy {
+    /// Calculate backoff delay in milliseconds for attempt n (1-indexed)
+    pub fn calculate_delay_ms(&self, attempt: u32) -> u64 {
+        if attempt == 0 {
+            return 0;
+        }
+        let exp = attempt.saturating_sub(1);
+        let factor = 1u64.checked_shl(exp.min(63)).unwrap_or(u64::MAX);
+        let delay = self.initial_delay_ms.saturating_mul(factor);
+        delay.min(self.max_delay_ms)
+    }
+}
+
+/// Telemetry metadata for enterprise ERP webhook callback delivery
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct ODataV4CallbackMetadata {
+    pub target_url: String,
+    pub attempt_count: u32,
+    pub last_http_status: Option<u16>,
+    pub delivered_at: Option<String>,
+    pub error_message: Option<String>,
+}
+
 /// Dispatches OData v4 JSON webhook callback to external ERP ledger endpoints
 pub async fn dispatch_odata_v4_webhook(
     url: &str,
@@ -673,6 +714,32 @@ mod tests {
         let deserialized: ODataV4CallbackPayload =
             serde_json::from_str(&json).expect("Deserialization failed");
         assert_eq!(payload, deserialized);
+    }
+
+    #[test]
+    fn odata_v4_retry_policy_delay_calculation() {
+        let policy = ODataV4RetryPolicy::default();
+        assert_eq!(policy.calculate_delay_ms(0), 0);
+        assert_eq!(policy.calculate_delay_ms(1), 1000);
+        assert_eq!(policy.calculate_delay_ms(2), 2000);
+        assert_eq!(policy.calculate_delay_ms(3), 4000);
+        assert_eq!(policy.calculate_delay_ms(4), 8000);
+        assert_eq!(policy.calculate_delay_ms(10), 30000); // capped at max_delay_ms
+    }
+
+    #[test]
+    fn odata_v4_callback_metadata_serialization() {
+        let meta = ODataV4CallbackMetadata {
+            target_url: "https://sap.enterprise.internal/odata".into(),
+            attempt_count: 1,
+            last_http_status: Some(200),
+            delivered_at: Some("2026-09-17T12:00:00Z".into()),
+            error_message: None,
+        };
+        let json = serde_json::to_string(&meta).unwrap();
+        assert!(json.contains("https://sap.enterprise.internal/odata"));
+        let deserialized: ODataV4CallbackMetadata = serde_json::from_str(&json).unwrap();
+        assert_eq!(meta, deserialized);
     }
 
     #[tokio::test]
