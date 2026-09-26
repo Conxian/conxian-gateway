@@ -159,7 +159,10 @@ fn get_contract_details_native(contract_id: &str) -> Result<String, RGBError> {
     }
 
     if contract_id.len() == 64 && hex::decode(contract_id).is_ok() {
-        Ok(format!("{{\"contract_id\":\"{}\",\"status\":\"verified\"}}", contract_id))
+        Ok(format!(
+            "{{\"contract_id\":\"{}\",\"status\":\"verified\"}}",
+            contract_id
+        ))
     } else {
         Err(RGBError::ContractNotFound(contract_id.to_string()))
     }
