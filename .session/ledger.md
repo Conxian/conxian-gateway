@@ -1,7 +1,7 @@
 # Session Ledger & Reconnaissance Audit Log
 
-**Timestamp (UTC):** 2026-09-19T06:50:00Z
-**Session ID:** SESSION-2026-09-19-RECON-01
+**Timestamp (UTC):** 2026-09-26T01:30:00Z
+**Session ID:** SESSION-2026-09-26-RECON-02
 **Author / Agent:** Jules (Autonomous Senior Software Engineer)
 **Format:** ATS (Action-Task-Strategy) Baseline Execution Ledger
 
@@ -10,9 +10,9 @@
 ## A0. Session Initialization & State Recovery Baseline
 
 - **Repository:** `Conxian/conxian-gateway`
-- **Current HEAD SHA:** `5c428a15075391daa6d90bf9897bed853db7249b`
-- **HEAD Commit Message:** `docs(research): verify and align Candidate P BRICS mBridge production status (#414)`
-- **Active Branch:** `jules-12692253004267688992-5bfd5961`
+- **Current HEAD SHA:** `0aed110bd9a3231fcde76bdad1b98604e57a6c4f`
+- **HEAD Commit Message:** `fix(deps): bump rustls 0.23.43 -> 0.23.45 (RUSTSEC-2026-0285) (#420)`
+- **Active Branch:** `jules-15694391146211784161-a7db98c9`
 - **Working Tree State:** Clean
 - **Submodules:** None / N/A
 - **Submodule Policy:** `pin-to-parent` (reproducible deterministic build baseline)
@@ -22,7 +22,7 @@
 ## A1. Repository Synchronization Summary
 
 - **Fetch Status:** Clean sync with `origin/main` baseline.
-- **Git HEAD Delta:** `5c428a15075391daa6d90bf9897bed853db7249b` matches current `origin/main` target state.
+- **Git HEAD Delta:** `0aed110bd9a3231fcde76bdad1b98604e57a6c4f` matches current `origin/main` target state.
 - **Submodule Deltas:** No submodules present; dependency tree governed via Cargo workspace and PNPM monorepo locks.
 
 ---
@@ -53,11 +53,13 @@
 |---|---|---|---|---|---|---|
 | **G-DL1** | DLC | Schnorr Oracle Attestation Verification | Cryptographic BIP340 Schnorr verifier active | Production Schnorr attestation check | ✅ Shipped | `dlc_oracle.rs` |
 | **G-DL2** | DLC | CET & Refund Execution Engine | CET & refund tx construction implemented | Full contract execution lifecycle | ✅ Shipped | `dlc_oracle.rs` |
+| **G-DL3** | DLC | DLC Manager derivation & bond derivation | Parameter derivation & bond setup | Parameter derivation | ✅ Shipped | `pkg/conxian-core` |
 | **G-FI1** | ISO 20022 | Structural XML Schema Validation | `quick-xml` structural parser in `zkc.rs` | Fail-closed XML validation | ✅ Shipped | `zkc.rs` |
 | **G-FI2** | ISO 20022 | pacs.008 Payment Initiation Builder | `pacs.008.001.08` XML generator active | Standard payment initiation | ✅ Shipped | `camt.rs` |
 | **G-FI3** | BRICS | mBridge DLT Ingress & Attestation | Schnorr multi-validator quorum in `brics_adapter.rs` | Cross-border CBDC settlement | ✅ Shipped | `brics_adapter.rs` |
 | **G-BB1** | Babylon | EOTS Verification & Key Extraction | Double-sign key extraction $x = (s_1-s_2)/(e_1-e_2)$ | Autonomous slashability verifier | ✅ Shipped | `babylon_adapter.rs` |
 | **G-FM1** | Fedimint | Blind Signature Verification | Guardian Schnorr blind signature verifier | Privacy e-cash validation | ✅ Shipped | `fedimint_adapter.rs` |
+| **G-FM2** | Fedimint | E-Cash Issuance Module | Fedimint e-cash tokenization verifier | E-Cash proof verification | ✅ Shipped | `fedimint_adapter.rs` |
 | **G-SB3** | sBTC | Bitcoin L1 Proof Verification | Raw tx double-SHA256 & 80-byte header PoW | Independent L1 verification | ✅ Shipped | `sbtc.rs` |
 | **G-C1** | Canton | CBTC Non-Custodial Reserve Verification | Threshold Schnorr attestation & UTXO reserve proof | Non-custodial reserve attestation | ✅ Shipped | `dlc_oracle.rs` |
 | **G-C4** | Canton | State Translation Adapter (Daml ACS → UCR) | Daml ACS state anchor parsing & UCR derivation | State root mapping | ✅ Shipped | `dlc_oracle.rs` |
@@ -101,5 +103,5 @@
 ## A6. Session Close & Handoff Instructions for Session N+1
 
 1. **Resume Point:** Next session (Session N+1) must begin by executing **A0** and reading `.session/ledger.md`.
-2. **Current Baseline SHA:** `5c428a15075391daa6d90bf9897bed853db7249b`.
+2. **Current Baseline SHA:** `0aed110bd9a3231fcde76bdad1b98604e57a6c4f`.
 3. **Open Gaps Status:** Technical gaps G-DL1..3, G-FI1..3, G-BB1, G-FM1..2, G-SB3, G-C1, G-C4..5, G-20, G-ME1..2, and G-TR1 are 100% shipped. Open gaps G-SB1, G-LN1, and G-FM3 remain appropriately gated by custody infrastructure, operator demand signals, and ExCo governance decisions.
