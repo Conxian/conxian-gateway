@@ -1,7 +1,7 @@
 # Session Ledger & Reconnaissance Audit Log
 
-**Timestamp (UTC):** 2026-09-19T06:50:00Z
-**Session ID:** SESSION-2026-09-19-RECON-01
+**Timestamp (UTC):** 2026-09-25T17:07:41Z
+**Session ID:** SESSION-2026-09-25-RECON-02
 **Author / Agent:** Jules (Autonomous Senior Software Engineer)
 **Format:** ATS (Action-Task-Strategy) Baseline Execution Ledger
 
@@ -10,9 +10,9 @@
 ## A0. Session Initialization & State Recovery Baseline
 
 - **Repository:** `Conxian/conxian-gateway`
-- **Current HEAD SHA:** `5c428a15075391daa6d90bf9897bed853db7249b`
-- **HEAD Commit Message:** `docs(research): verify and align Candidate P BRICS mBridge production status (#414)`
-- **Active Branch:** `jules-12692253004267688992-5bfd5961`
+- **Current HEAD SHA:** `6f321bfcff91357d8f151be5262e22b0a2aaef1c`
+- **HEAD Commit Message:** `Merge pull request #425 from Conxian/backmerge/staged-to-dev`
+- **Active Branch:** `jules-16830368075253249575-2e2eeed9`
 - **Working Tree State:** Clean
 - **Submodules:** None / N/A
 - **Submodule Policy:** `pin-to-parent` (reproducible deterministic build baseline)
@@ -22,7 +22,7 @@
 ## A1. Repository Synchronization Summary
 
 - **Fetch Status:** Clean sync with `origin/main` baseline.
-- **Git HEAD Delta:** `5c428a15075391daa6d90bf9897bed853db7249b` matches current `origin/main` target state.
+- **Git HEAD Delta:** `6f321bfcff91357d8f151be5262e22b0a2aaef1c` matches current `origin/main` target state (downward re-sync merge).
 - **Submodule Deltas:** No submodules present; dependency tree governed via Cargo workspace and PNPM monorepo locks.
 
 ---
@@ -42,7 +42,7 @@
 - **CI Workflows:** `rust-ci.yml` (Contamination Guard, tracked artifact check, cargo clippy/test/fmt), `node-ci.yml` (Playwright & PNPM workspace tests), `secret-scan.yml` (gitleaks pinned action v3.0.0).
 
 ### Track B — GitHub Surfaces Inventory
-- **Issues / PR Status:** Verified via internal session summaries (`docs/SESSION_SUMMARY_2026-09-15_ORG_AUDIT.md`) and CHANGELOG.md.
+- **Issues / PR Status:** Verified via internal session summaries (`docs/SESSION_SUMMARY_2026-09-15_ORG_AUDIT.md`) and CHANGELOG.md. PR #425 merged (`staged` -> `dev`).
 - **Release Version Baseline:** `v0.1.5` across Cargo.toml workspace and TS packages.
 
 ---
@@ -93,7 +93,7 @@
 ## A5. Production Code & Audit Verification
 
 - **Workspace Test Execution:** All Rust workspace unit, integration, and wiremock simulation tests passed (142 tests passing).
-- **Contamination Guard:** `python3 scripts/verify_contamination_guard.py` ran clean across 95 production source files (zero stubs, placeholders, or changeme tokens).
+- **Contamination Guard:** `python3 scripts/verify_contamination_guard.py` ran clean across production source files (zero stubs, placeholders, or changeme tokens).
 - **Tracked Artifact Check:** `python3 scripts/verify_tracked_artifacts.py` verified zero prohibited runtime/generated artifacts (`node_modules`, `dist`, `.env`, keys, db files) tracked in Git.
 
 ---
@@ -101,5 +101,5 @@
 ## A6. Session Close & Handoff Instructions for Session N+1
 
 1. **Resume Point:** Next session (Session N+1) must begin by executing **A0** and reading `.session/ledger.md`.
-2. **Current Baseline SHA:** `5c428a15075391daa6d90bf9897bed853db7249b`.
+2. **Current Baseline SHA:** `6f321bfcff91357d8f151be5262e22b0a2aaef1c`.
 3. **Open Gaps Status:** Technical gaps G-DL1..3, G-FI1..3, G-BB1, G-FM1..2, G-SB3, G-C1, G-C4..5, G-20, G-ME1..2, and G-TR1 are 100% shipped. Open gaps G-SB1, G-LN1, and G-FM3 remain appropriately gated by custody infrastructure, operator demand signals, and ExCo governance decisions.
