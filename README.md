@@ -112,6 +112,7 @@ As an institutional middleware provider, we maintain a comprehensive set of gove
 - **[CONTRIBUTING.md](CONTRIBUTING.md)**: Technical standards and submission process.
 - **[RELEASE.md](RELEASE.md)**: Release runbook and control sign-off checklist.
 - **[SUPPORT.md](SUPPORT.md)**: Support channels and governance routing.
+- **[SLA Disclaimer](README_SLA_SNIPPET.md)**: Org-wide SLA policy (No SLA on public repos; paid SLAs strictly under B2B commercial contract).
 - **[PRIVACY.md](PRIVACY.md)**: Data handling and PII pass-through policy.
 - **[TERMS.md](TERMS.md)**: Usage terms for the Conxian Gateway.
 - **[CHANGELOG.md](CHANGELOG.md)**: Canonical release history.
