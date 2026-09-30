@@ -106,3 +106,14 @@ Clients pull stateless container images and SDKs from `conxian.org`:
 1. **G-C5 / Canton CCIP On-Chain Verifier**: Implement Chainlink CCIP on-chain digest verifier in `internal/api/src/handlers.rs`.
 2. **G-DL2 / DLC Production Funding & Monitoring**: Extend `DlcExecutionEngine` to manage initial funding transaction broadcast and UTXO state persistence.
 3. **G-TR1 / OData v4 Retry Queue**: Implement persistent SQLite retry queue for failed OData v4 ERP webhook callbacks.
+
+---
+
+## 6. Org-Wide SLA Positioning & Governance
+
+To reconcile open-source funding models with enterprise expectations across Conxian's expansive attack surface (`lib-conxian-core`, `conxius-enclave-sdk`, `conxius-wallet`, `conxian-nexus`, `conxian-gateway`), the organization enforces a strict **Tiered Support & Liability Matrix**:
+
+1. **Public Repositories & Core Protocol (`conxian.org`)**: Strictly **No SLA** or uptime guarantees. Provided under standard open-source disclaimers (MIT).
+2. **Enterprise / Gateway Tier (`conxian-gateway` / B2B Adapters)**: SLAs are offered **exclusively** under signed B2B commercial contracts managed via `conxian-business`.
+3. **Scope Bounding**: Enterprise SLAs are strictly limited to integration support, configuration assistance, and business-hour response times—**never absolute network uptime** on underlying decentralized consensus layers or vendor hardware TEEs.
+4. **Automated Guardrails**: Core protocol integrity is enforced via automated CI guardrails, contamination scans, release artifact verification, and strict staging branches (`dev` -> `staged` -> `main`).
