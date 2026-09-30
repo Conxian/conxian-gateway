@@ -9,7 +9,7 @@ Institutional-grade middleware bridging Bitcoin and Stacks state logic with ente
 The Conxian Gateway provides a single API layer for indexing, verifying, and orchestrating settlement workflows across multiple Bitcoin layers. It simplifies the integration path for institutions and fintechs by providing mathematically verifiable state proofs and non-custodial signing interfaces.
 
 ## Status
-**Production Ready (v0.1.5).** All 19 core technical candidates (Candidates A through T) are active in production. The repository provides full multi-rail settlement coverage spanning Bitcoin (L1, sBTC, DLC, Lightning, Liquid, Babylon, Fedimint), institutional DLTs (Canton Network, peaq DePIN), cross-border CBDC networks (BRICS mBridge), and SWIFT ISO 20022 banking rails (`pacs.008`, `camt.053` ERP reporting).
+**Active Development (v0.1.5).** This repository contains production-ready runtime code for Bitcoin and Stacks state tracking. Current focus is on expanding pilot lanes for Liquid and Rootstock adapters and implementing UCV-1 (Universal Chain Verification).
 
 ## Audience
 - **Institutions & Fintechs**: Seeking a secure, non-custodial entry point into Bitcoin-native liquidity.
@@ -27,11 +27,9 @@ crash recovery, backup, mempool reconciliation, and shutdown procedures in
 [`docs/PERSISTENCE_TOPOLOGY.md`](docs/PERSISTENCE_TOPOLOGY.md).
 
 ## Core Capabilities
-- **Universal Verification (UCV-1)**: Unified interface for heterogeneous proofs (BitVM, ZKC, TEE, Client Wasm).
-- **Institutional Banking Egress**: SWIFT ISO 20022 (`pacs.008` payment initiation and `camt.053` bank-to-customer treasury reporting with OData v4 ERP webhook callbacks).
-- **Sovereign & Institutional Rails**: Canton CCIP cross-chain message routing, Daml ACS UCR state translation, CBTC non-custodial reserve proofs, and BRICS mBridge DLT ingress.
-- **Machine Economy & DePIN**: Multi-provider machine DID resolution (peaq, DIMO, Helium, IoTeX), RWA revenue attestation, and M2M Lightning micro-settlement.
-- **Mempool Orchestration & DLC**: Automated RBF/CPFP fee-bumping and deterministic DLC CET execution transaction engine.
+- **Universal Verification (UCV-1)**: Unified interface for heterogeneous proofs (BitVM, ZKC, TEE).
+- **Institutional Egress**: ISO 20022 (pacs.008) banking-standard messaging.
+- **Mempool Orchestration**: Automated RBF/CPFP fee-bumping for high-priority settlements.
 - **Identity Bridge**: Unified resolution for BNS, ENS, and World ID.
 
 ## Architecture
@@ -114,6 +112,7 @@ As an institutional middleware provider, we maintain a comprehensive set of gove
 - **[CONTRIBUTING.md](CONTRIBUTING.md)**: Technical standards and submission process.
 - **[RELEASE.md](RELEASE.md)**: Release runbook and control sign-off checklist.
 - **[SUPPORT.md](SUPPORT.md)**: Support channels and governance routing.
+- **[SLA Disclaimer](README_SLA_SNIPPET.md)**: Org-wide SLA policy (No SLA on public repos; paid SLAs strictly under B2B commercial contract).
 - **[PRIVACY.md](PRIVACY.md)**: Data handling and PII pass-through policy.
 - **[TERMS.md](TERMS.md)**: Usage terms for the Conxian Gateway.
 - **[CHANGELOG.md](CHANGELOG.md)**: Canonical release history.

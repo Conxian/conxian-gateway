@@ -117,7 +117,7 @@ Full financial systems analysis in `docs/research/BRICS_FINANCIAL_SYSTEMS_RESEAR
 - **Impact**: Completes Stage 3 & 4 of the DLC pipeline, enabling deterministic CET construction, net fee deduction, refund transaction building, and attestation-driven contract execution.
 | **UCV-1 (Universal Verification)** | 9.8 | Urgent | Production | Multi-chain adapter verification active (Liquid, Stacks, Babylon, Fedimint, Citrea, Strata) |
 | **ISO 20022 (`pacs.008`, `camt.053`)** | 9.6 | Urgent | Production | Shipped (G-FI1, G-FI2, G-TR1). Full XML generator, parser & schema validator in `zkc.rs` & `camt.rs` |
-| **Wasm UCV-1 Local Verification** | 9.5 | High | Production | Shipped (Candidate Q / G-20, G-21). Local-first zero-trust state proof verification in `@conxian/client-sdk` |
+| **Wasm UCV-1 & RGB Native Verification** | 9.5 | High | Production | Shipped (Candidate Q / G-20, G-21). Local-first zero-trust state proof verification in `@conxian/client-sdk` & native RGB transition/seal validation in `rgb_adapter.rs` |
 | **Babylon Staking EOTS & Key Extraction** | 9.5 | High | Production | Shipped (G-BB1). Schnorr attestation & double-sign key extraction active in `babylon_adapter.rs` |
 | **Fedimint Blind Signature Verification** | 9.3 | High | Production | Shipped (G-FM1). Guardian pubkey Schnorr blind sig verification in `fedimint_adapter.rs` |
 | **Canton CCIP Cross-Chain Gateway** | 9.6 | High | Production | Shipped (Candidate S / G-C5). Dynamic risk scoring & secp256k1 authenticity verification active |
@@ -184,19 +184,34 @@ Full financial systems analysis in `docs/research/BRICS_FINANCIAL_SYSTEMS_RESEAR
 
 ### Candidate S: Canton CCIP Cross-Chain Message Gateway (Score: 9.6 — Shipped)
 
-- **Status**: ✅ Shipped (G-C5). Implemented Chainlink CCIP cross-chain message authenticity verification using SHA-256 message digest hashing and secp256k1 cryptographic signature validation in `internal/api/src/handlers.rs`, routing authenticated Canton CCIP cross-chain messages through ZKC compliance risk screening.
+- **Status**: ✅ Shipped (G-C5). Implemented Chainlink CCIP cross-chain message authenticity verification using SHA-256 message digest hashing and secp256k1 cryptographic signature validation in , routing authenticated Canton CCIP cross-chain messages through ZKC compliance risk screening.
 
-### Candidate T: SWIFT camt.053 Real-Time Bank Treasury Reporting (Score: 9.5 — Shipped)
+### Candidate T: SWIFT camt.053 Real-Time Bank Treasury Reporting (Score: 9.0 — Initiated)
 
 - **Status**: ✅ Shipped (Candidate T / G-TR1). Implemented `camt.053.001.08` Bank-to-Customer Statement XML builder and OData v4 JSON webhook callback dispatch in `internal/api/src/camt.rs` mapping `TreasuryMonitor` events to institutional ERP systems (SAP, Oracle) via real-time ledger synchronization.
 
 ---
 
-## 3. Active Roadmap & Future Candidate Horizons
+## 3. Recommended Roadmap Execution
 
-All 19 core technical candidates (Candidates A through T) are fully implemented and verified in production as of version 0.1.5.
+### Candidate K: ISO 20022 XML Schema Validation (Score: 9.0)
 
-Future development cycles will focus on infrastructure-gated and governance-controlled expansion opportunities:
-1. **G-SB1 (sBTC Peg-In/Out Initiation)**: Institutional custody integration & multi-sig signer set API (Target: Q4 2026).
-2. **G-LN1 (Direct LND/CLN Production Backend)**: Native Lightning daemon integration with macaroon/rune rotation infrastructure (Target: Q4 2026).
-3. **G-FM3 (Fedimint E-Cash Privacy Audit vs. Compliance)**: Governance-controlled Chaumian e-cash privacy threshold policy (Status: Governance Gated).
+- **Status**: ✅ Shipped (G-FI1). Implemented structural XML validation and namespace checking for pacs.008, pacs.009, and camt messages in `internal/compliance/src/zkc.rs`.
+- **Impact**: Eliminates silent bank rejection risks and guarantees schema compliance for institutional payment initiation.
+
+### Candidate L: ISO 20022 pacs.008 Payment Initiation (Score: 9.2)
+
+- **Status**: ✅ Shipped (G-FI2). Implemented `pacs.008.001.08` FI-to-FI Customer Credit Transfer XML builder, structural validation, and compliance normalization.
+- **Impact**: Enables cross-border payment initiation and settlement envelope construction for institutional banking networks.
+
+### Candidate M: Babylon EOTS Verification & Double-Sign Key Extraction (Score: 9.5)
+
+- **Status**: ✅ Shipped (G-BB1). Implemented Schnorr attestation verification, double-sign detection, and algebraic secret key extraction $x = (s_1 - s_2)/(e_1 - e_2) \pmod n$ in `internal/engine/src/bitcoin/babylon_adapter.rs`.
+- **Impact**: Resolves sole remaining P1 gap and enables independent slashability verification for Babylon BTC staking finality providers.
+
+### Candidate N: DLC CET & Refund Execution Engine (Score: 9.5)
+
+- **Status**: ✅ Shipped (G-DL2). Implemented `DlcContractSpec`, `DlcCet`, `DlcRefundTx`, `DlcExecutionPayload`, and `DlcExecutionEngine` in `internal/engine/src/bitcoin/dlc_oracle.rs`, integrated with `DlcManager` / `DlcOrchestrator` deterministic contract derivation in `pkg/conxian-core/src/lib.rs`.
+- **Impact**: Completes full lifecycle of the DLC pipeline, enabling deterministic CET construction, funding transaction assembly, state persistence, refund building, and attestation-driven contract execution.
+
+The next development cycles should focus on configuring a real Wasm verifier, adding Chainlink CCIP authenticity verification, completing DLC orchestration, and integrating live mBridge validator corridors. Machine identity and OData capabilities remain active implementation areas.
