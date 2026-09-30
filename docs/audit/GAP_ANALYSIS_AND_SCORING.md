@@ -54,7 +54,6 @@ This document provides a comprehensive audit of resolved and open technical gaps
 |:---|:---|:---|:---:|:---:|:---:|:---:|:---|
 | **G-20** | BitVM3 adapter is research-only — no integration tests or verifying impl | Technical | 2 | 4 | 4 | **8** | 🟡 Candidate Q (Initiated) |
 | **G-B6** | No mBridge validator node deployment capability | BRICS | 2 | 4 | 5 | **8** | 🟡 Candidate Q (Initiated) |
-| **G-21** | RGB adapter is stub-only (shadow mode, no rgb-core dependency) | Technical | 1 | 4 | 5 | **4** | 🟡 Candidate Q (Initiated) |
 
 ---
 
@@ -73,3 +72,13 @@ This document provides a comprehensive audit of resolved and open technical gaps
 ## 5. Current Audit & Adapter Verification Summary
 
 Core settlement adapters have differing readiness levels. Cryptographic primitives are tested where available, while DLC orchestration, CCIP authenticity, local Wasm verification, and production Lightning settlement remain explicitly gated or fail-closed.
+
+---
+
+## 6. Enterprise SLA & Support Gating Framework
+
+To prevent liability traps and maintain protocol security under early-stage funding constraints:
+
+1. **Public Repository Policy:** All open-source repositories under `Conxian/*` operate with **No SLA**.
+2. **Paid Enterprise Scope:** Enterprise SLAs apply strictly to B2B integration support, configuration assistance, and business-hour response windows—never absolute L1/L2 network uptime or enclave firmware availability.
+3. **Fail-Closed ERP Integration:** ERP Webhook dispatches (`camt.053` OData v4 sync) execute with deterministic retry logic and structured failure tracking (`SYNC_FAILED_HTTP_<CODE>`), insulating the core gateway from downstream ERP unavailability.
