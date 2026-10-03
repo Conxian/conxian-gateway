@@ -2,6 +2,14 @@
 
 <!-- What changed and why? -->
 
+### Feature -> dev promotion checklist
+
+PROMOTION:FEATURE->DEV
+
+- [x] I evaluated public/private boundaries, runtime safety, and secret containment.
+- [x] I confirmed all workspace unit tests and preflight test checks pass locally.
+- [x] I verified zero untracked artifacts, build outputs, or contamination in production paths.
+
 ## Security and Governance Checklist
 
 - [ ] I assessed whether this change affects security posture, threat model, or governance controls.
