@@ -3,6 +3,7 @@ use hmac::KeyInit;
 use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
+use std::str::FromStr;
 use tracing::info;
 
 type HmacSha256 = Hmac<Sha256>;
@@ -33,230 +34,207 @@ pub struct WebhookPayload {
     pub raw_payload: String,
 }
 
+/// A fiat on-ramp provider. Kept as a closed set of named, first-class variants;
+/// adding a provider is a new variant + an adapter, never a change to the router.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum FiatOnRampProvider {
+    Ramp,
+    Investec,
+    AlchemyPay,
+    Banxa,
+}
+
+impl FiatOnRampProvider {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Ramp => "ramp",
+            Self::Investec => "investec",
+            Self::AlchemyPay => "alchemypay",
+            Self::Banxa => "banxa",
+        }
+    }
+}
+
+impl FromStr for FiatOnRampProvider {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "ramp" => Ok(Self::Ramp),
+            "investec" => Ok(Self::Investec),
+            "alchemypay" => Ok(Self::AlchemyPay),
+            "banxa" => Ok(Self::Banxa),
+            _ => Err(format!("unsupported fiat on-ramp provider: {s}")),
+        }
+    }
+}
+
+/// A fiat on-ramp connector. Each adapter owns the secret it embeds in its
+/// redirect URL; providers that embed no secret (Investec, Banxa) hold nothing.
+pub trait FiatOnRampAdapter: Send + Sync {
+    fn provider(&self) -> FiatOnRampProvider;
+    fn build_redirect_url(&self, request: &OnRampSessionRequest, session_id: &str) -> String;
+}
+
+pub struct RampAdapter {
+    api_key: String,
+}
+
+impl RampAdapter {
+    pub fn new(api_key: String) -> Self {
+        Self { api_key }
+    }
+}
+
+impl FiatOnRampAdapter for RampAdapter {
+    fn provider(&self) -> FiatOnRampProvider {
+        FiatOnRampProvider::Ramp
+    }
+
+    fn build_redirect_url(&self, request: &OnRampSessionRequest, _session_id: &str) -> String {
+        format!(
+            "https://buy.ramp.network/?userAddress={}&swapAmount={}&swapAsset={}&apiKey={}",
+            request.wallet_address, request.amount, request.currency, self.api_key
+        )
+    }
+}
+
+pub struct InvestecAdapter;
+
+impl FiatOnRampAdapter for InvestecAdapter {
+    fn provider(&self) -> FiatOnRampProvider {
+        FiatOnRampProvider::Investec
+    }
+
+    fn build_redirect_url(&self, request: &OnRampSessionRequest, session_id: &str) -> String {
+        format!(
+            "https://investec.com/banking/pay?ref={}&amount={}",
+            session_id, request.amount
+        )
+    }
+}
+
+pub struct AlchemyPayAdapter {
+    app_id: String,
+}
+
+impl AlchemyPayAdapter {
+    pub fn new(app_id: String) -> Self {
+        Self { app_id }
+    }
+}
+
+impl FiatOnRampAdapter for AlchemyPayAdapter {
+    fn provider(&self) -> FiatOnRampProvider {
+        FiatOnRampProvider::AlchemyPay
+    }
+
+    fn build_redirect_url(&self, request: &OnRampSessionRequest, _session_id: &str) -> String {
+        format!(
+            "https://ramp.alchemypay.org/?address={}&cryptoAmount={}&crypto={}&appId={}",
+            request.wallet_address, request.amount, request.currency, self.app_id
+        )
+    }
+}
+
+pub struct BanxaAdapter;
+
+impl FiatOnRampAdapter for BanxaAdapter {
+    fn provider(&self) -> FiatOnRampProvider {
+        FiatOnRampProvider::Banxa
+    }
+
+    fn build_redirect_url(&self, request: &OnRampSessionRequest, _session_id: &str) -> String {
+        format!(
+            "https://conxian-labs.banxa.com/?walletAddress={}&coinAmount={}&coinType={}",
+            request.wallet_address, request.amount, request.currency
+        )
+    }
+}
+
 pub struct FiatRouter {
-    ramp_api_key: String,
-    #[allow(dead_code)]
-    investec_client_id: String,
-    #[allow(dead_code)]
-    investec_secret: String,
-    #[allow(dead_code)]
-    alchemy_pay_app_id: String,
-    #[allow(dead_code)]
-    alchemy_pay_secret: String,
-    #[allow(dead_code)]
-    banxa_api_key: String,
-    #[allow(dead_code)]
-    banxa_secret: String,
+    adapters: Vec<Box<dyn FiatOnRampAdapter>>,
 }
 
 impl FiatRouter {
-    pub fn new(
-        ramp_api_key: String,
-        investec_client_id: String,
-        investec_secret: String,
-        alchemy_pay_app_id: String,
-        alchemy_pay_secret: String,
-        banxa_api_key: String,
-        banxa_secret: String,
+    /// Build a router from the providers enabled for this lane. `None` means the
+    /// provider is disabled and its route is unavailable (no secret required).
+    pub fn from_enabled(
+        ramp: Option<RampAdapter>,
+        investec: Option<InvestecAdapter>,
+        alchemy_pay: Option<AlchemyPayAdapter>,
+        banxa: Option<BanxaAdapter>,
     ) -> Self {
-        Self {
-            ramp_api_key,
-            investec_client_id,
-            investec_secret,
-            alchemy_pay_app_id,
-            alchemy_pay_secret,
-            banxa_api_key,
-            banxa_secret,
+        let mut adapters: Vec<Box<dyn FiatOnRampAdapter>> = Vec::new();
+        if let Some(adapter) = ramp {
+            adapters.push(Box::new(adapter));
         }
+        if let Some(adapter) = investec {
+            adapters.push(Box::new(adapter));
+        }
+        if let Some(adapter) = alchemy_pay {
+            adapters.push(Box::new(adapter));
+        }
+        if let Some(adapter) = banxa {
+            adapters.push(Box::new(adapter));
+        }
+        Self { adapters }
     }
 
     pub async fn create_session(
         &self,
         request: OnRampSessionRequest,
     ) -> ConxianResult<OnRampSessionResponse> {
+        let provider =
+            FiatOnRampProvider::from_str(&request.provider).map_err(ConxianError::Api)?;
+
+        let adapter = self
+            .adapters
+            .iter()
+            .find(|adapter| adapter.provider() == provider)
+            .ok_or_else(|| {
+                ConxianError::Api(format!(
+                    "fiat on-ramp provider not enabled: {}",
+                    request.provider
+                ))
+            })?;
+
         info!(
             "Creating on-ramp session for {} via {}",
             request.wallet_address, request.provider
         );
 
-        match request.provider.as_str() {
-            "ramp" => self.create_ramp_session(request).await,
-            "investec" => self.create_investec_session(request).await,
-            "alchemypay" => self.create_alchemypay_session(request).await,
-            "banxa" => self.create_banxa_session(request).await,
-            _ => Err(ConxianError::Api(format!(
-                "Unsupported provider: {}",
-                request.provider
-            ))),
-        }
-    }
-
-    async fn create_ramp_session(
-        &self,
-        request: OnRampSessionRequest,
-    ) -> ConxianResult<OnRampSessionResponse> {
-        let session_id = format!("ramp-{}", uuid::Uuid::new_v4());
-        let redirect_url = format!(
-            "https://buy.ramp.network/?userAddress={}&swapAmount={}&swapAsset={}&apiKey={}",
-            request.wallet_address, request.amount, request.currency, self.ramp_api_key
-        );
+        let session_id = format!("{}-{}", provider.as_str(), uuid::Uuid::new_v4());
+        let redirect_url = adapter.build_redirect_url(&request, &session_id);
 
         Ok(OnRampSessionResponse {
             session_id,
             redirect_url,
-            provider: "ramp".to_string(),
-        })
-    }
-
-    async fn create_investec_session(
-        &self,
-        request: OnRampSessionRequest,
-    ) -> ConxianResult<OnRampSessionResponse> {
-        let session_id = format!("investec-{}", uuid::Uuid::new_v4());
-        let redirect_url = format!(
-            "https://investec.com/banking/pay?ref={}&amount={}",
-            session_id, request.amount
-        );
-
-        Ok(OnRampSessionResponse {
-            session_id,
-            redirect_url,
-            provider: "investec".to_string(),
-        })
-    }
-
-    async fn create_alchemypay_session(
-        &self,
-        request: OnRampSessionRequest,
-    ) -> ConxianResult<OnRampSessionResponse> {
-        // Industry Enhancement: Alchemy Pay Integration (CON-41)
-        let session_id = format!("alchemypay-{}", uuid::Uuid::new_v4());
-        let redirect_url = format!(
-            "https://ramp.alchemypay.org/?address={}&cryptoAmount={}&crypto={}&appId={}",
-            request.wallet_address, request.amount, request.currency, self.alchemy_pay_app_id
-        );
-
-        Ok(OnRampSessionResponse {
-            session_id,
-            redirect_url,
-            provider: "alchemypay".to_string(),
-        })
-    }
-
-    async fn create_banxa_session(
-        &self,
-        request: OnRampSessionRequest,
-    ) -> ConxianResult<OnRampSessionResponse> {
-        // Industry Enhancement: Banxa Integration (CON-41)
-        let session_id = format!("banxa-{}", uuid::Uuid::new_v4());
-        let redirect_url = format!(
-            "https://conxian-labs.banxa.com/?walletAddress={}&coinAmount={}&coinType={}",
-            request.wallet_address, request.amount, request.currency
-        );
-
-        Ok(OnRampSessionResponse {
-            session_id,
-            redirect_url,
-            provider: "banxa".to_string(),
+            provider: provider.as_str().to_string(),
         })
     }
 
     pub fn verify_webhook(&self, payload: &WebhookPayload, secret: &str) -> ConxianResult<bool> {
-        match payload.provider.as_str() {
-            "ramp" => self.verify_ramp_webhook(payload, secret),
-            "investec" => self.verify_investec_webhook(payload, secret),
-            "alchemypay" => self.verify_alchemypay_webhook(payload, secret),
-            "banxa" => self.verify_banxa_webhook(payload, secret),
-            _ => Err(ConxianError::Security(
-                "Unknown webhook provider".to_string(),
-            )),
-        }
-    }
-
-    fn verify_ramp_webhook(&self, payload: &WebhookPayload, secret: &str) -> ConxianResult<bool> {
-        if payload.signature.is_empty() {
-            return Ok(false);
-        }
-
-        info!(
-            "Verifying Ramp webhook HMAC signature for reference: {}",
-            payload.reference_id
-        );
-
-        let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
-            .map_err(|e| ConxianError::Security(format!("HMAC error: {}", e)))?;
-        mac.update(payload.raw_payload.as_bytes());
-
-        let sig_bytes = hex::decode(&payload.signature)
-            .map_err(|e| ConxianError::Security(format!("Invalid signature hex: {}", e)))?;
-
-        Ok(mac.verify_slice(&sig_bytes).is_ok())
-    }
-
-    fn verify_investec_webhook(
-        &self,
-        payload: &WebhookPayload,
-        secret: &str,
-    ) -> ConxianResult<bool> {
         if secret.is_empty() {
             return Err(ConxianError::Security(
-                "Investec webhook secret is not configured".to_string(),
+                "fiat webhook secret is not configured".to_string(),
             ));
         }
 
+        if FiatOnRampProvider::from_str(&payload.provider).is_err() {
+            return Err(ConxianError::Security(format!(
+                "unknown webhook provider: {}",
+                payload.provider
+            )));
+        }
+
         if payload.signature.is_empty() {
             return Ok(false);
         }
 
         info!(
-            "Verifying Investec webhook HMAC signature for reference: {}",
-            payload.reference_id
-        );
-
-        let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
-            .map_err(|e| ConxianError::Security(format!("HMAC error: {}", e)))?;
-        mac.update(payload.raw_payload.as_bytes());
-
-        let sig_bytes = hex::decode(&payload.signature)
-            .map_err(|e| ConxianError::Security(format!("Invalid signature hex: {}", e)))?;
-
-        Ok(mac.verify_slice(&sig_bytes).is_ok())
-    }
-
-    fn verify_alchemypay_webhook(
-        &self,
-        payload: &WebhookPayload,
-        secret: &str,
-    ) -> ConxianResult<bool> {
-        // Industry Enhancement: Alchemy Pay Signature Verification (CON-41)
-        if payload.signature.is_empty() {
-            return Ok(false);
-        }
-
-        info!(
-            "Verifying Alchemy Pay webhook signature for reference: {}",
-            payload.reference_id
-        );
-
-        let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
-            .map_err(|e| ConxianError::Security(format!("HMAC error: {}", e)))?;
-        mac.update(payload.raw_payload.as_bytes());
-
-        let sig_bytes = hex::decode(&payload.signature)
-            .map_err(|e| ConxianError::Security(format!("Invalid signature hex: {}", e)))?;
-
-        Ok(mac.verify_slice(&sig_bytes).is_ok())
-    }
-
-    fn verify_banxa_webhook(&self, payload: &WebhookPayload, secret: &str) -> ConxianResult<bool> {
-        // Industry Enhancement: Banxa Signature Verification (CON-41)
-        if payload.signature.is_empty() {
-            return Ok(false);
-        }
-
-        info!(
-            "Verifying Banxa webhook signature for reference: {}",
-            payload.reference_id
+            "Verifying {} webhook HMAC signature for reference: {}",
+            payload.provider, payload.reference_id
         );
 
         let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
@@ -274,51 +252,48 @@ impl FiatRouter {
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn test_create_ramp_session() {
-        let router = FiatRouter::new(
-            "test-key".to_string(),
-            "client-id".to_string(),
-            "secret".to_string(),
-            "ap-app-id".to_string(),
-            "ap-secret".to_string(),
-            "banxa-key".to_string(),
-            "banxa-secret".to_string(),
-        );
+    fn test_router() -> FiatRouter {
+        FiatRouter::from_enabled(
+            Some(RampAdapter::new("test-key".to_string())),
+            Some(InvestecAdapter),
+            Some(AlchemyPayAdapter::new("ap-app-id".to_string())),
+            Some(BanxaAdapter),
+        )
+    }
 
-        let req = OnRampSessionRequest {
+    fn request(provider: &str) -> OnRampSessionRequest {
+        OnRampSessionRequest {
             wallet_address: "bc1qtest".to_string(),
             amount: 100.0,
             currency: "BTC".to_string(),
-            provider: "ramp".to_string(),
-        };
+            provider: provider.to_string(),
+        }
+    }
 
-        let res = router.create_session(req).await.unwrap();
+    #[tokio::test]
+    async fn test_create_ramp_session() {
+        let res = test_router().create_session(request("ramp")).await.unwrap();
         assert_eq!(res.provider, "ramp");
         assert!(res.redirect_url.contains("bc1qtest"));
         assert!(res.redirect_url.contains("test-key"));
     }
 
     #[tokio::test]
+    async fn test_create_investec_session() {
+        let res = test_router()
+            .create_session(request("investec"))
+            .await
+            .unwrap();
+        assert_eq!(res.provider, "investec");
+        assert!(res.redirect_url.contains("investec-"));
+    }
+
+    #[tokio::test]
     async fn test_create_alchemypay_session() {
-        let router = FiatRouter::new(
-            "test-key".to_string(),
-            "client-id".to_string(),
-            "secret".to_string(),
-            "ap-app-id".to_string(),
-            "ap-secret".to_string(),
-            "banxa-key".to_string(),
-            "banxa-secret".to_string(),
-        );
-
-        let req = OnRampSessionRequest {
-            wallet_address: "bc1qtest".to_string(),
-            amount: 50.0,
-            currency: "ETH".to_string(),
-            provider: "alchemypay".to_string(),
-        };
-
-        let res = router.create_session(req).await.unwrap();
+        let res = test_router()
+            .create_session(request("alchemypay"))
+            .await
+            .unwrap();
         assert_eq!(res.provider, "alchemypay");
         assert!(res.redirect_url.contains("bc1qtest"));
         assert!(res.redirect_url.contains("ap-app-id"));
@@ -326,151 +301,83 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_banxa_session() {
-        let router = FiatRouter::new(
-            "test-key".to_string(),
-            "client-id".to_string(),
-            "secret".to_string(),
-            "ap-app-id".to_string(),
-            "ap-secret".to_string(),
-            "banxa-key".to_string(),
-            "banxa-secret".to_string(),
-        );
-
-        let req = OnRampSessionRequest {
-            wallet_address: "bc1qtest".to_string(),
-            amount: 200.0,
-            currency: "USDT".to_string(),
-            provider: "banxa".to_string(),
-        };
-
-        let res = router.create_session(req).await.unwrap();
+        let res = test_router()
+            .create_session(request("banxa"))
+            .await
+            .unwrap();
         assert_eq!(res.provider, "banxa");
         assert!(res.redirect_url.contains("bc1qtest"));
-        assert!(res.redirect_url.contains("USDT"));
     }
 
     #[tokio::test]
-    async fn test_verify_ramp_webhook() {
-        let router = FiatRouter::new(
-            "test-key".to_string(),
-            "client-id".to_string(),
-            "secret".to_string(),
-            "ap-app-id".to_string(),
-            "ap-secret".to_string(),
-            "banxa-key".to_string(),
-            "banxa-secret".to_string(),
-        );
+    async fn test_create_session_rejects_unknown_provider() {
+        let res = test_router().create_session(request("moonpay")).await;
+        assert!(res.is_err());
+    }
 
-        let secret = "webhook-secret";
-        let raw_payload = r#"{"reference":"ref123","status":"SUCCESS"}"#;
+    #[tokio::test]
+    async fn test_create_session_rejects_disabled_provider() {
+        let router = FiatRouter::from_enabled(None, None, None, None);
+        let res = router.create_session(request("ramp")).await;
+        assert!(res.is_err());
+    }
 
+    fn signed_webhook(provider: &str, secret: &str) -> (WebhookPayload, String) {
+        let raw_payload = r#"{"reference":"ref123","status":"SUCCESS"}"#.to_string();
         let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).unwrap();
         mac.update(raw_payload.as_bytes());
         let signature = hex::encode(mac.finalize().into_bytes());
 
         let payload = WebhookPayload {
-            provider: "ramp".to_string(),
+            provider: provider.to_string(),
             event_type: "ORDER_CREATED".to_string(),
             reference_id: "ref123".to_string(),
             amount: 100.0,
             status: "SUCCESS".to_string(),
             signature,
-            raw_payload: raw_payload.to_string(),
+            raw_payload,
         };
+        (payload, secret.to_string())
+    }
 
-        let valid = router.verify_webhook(&payload, secret).unwrap();
-        assert!(valid);
+    #[tokio::test]
+    async fn test_verify_ramp_webhook() {
+        let (payload, secret) = signed_webhook("ramp", "webhook-secret");
+        assert!(test_router().verify_webhook(&payload, &secret).unwrap());
     }
 
     #[tokio::test]
     async fn test_verify_banxa_webhook() {
-        let router = FiatRouter::new(
-            "test-key".to_string(),
-            "client-id".to_string(),
-            "secret".to_string(),
-            "ap-app-id".to_string(),
-            "ap-secret".to_string(),
-            "banxa-key".to_string(),
-            "banxa-secret".to_string(),
-        );
-
-        let secret = "banxa-secret";
-        let raw_payload = r#"{"orderId":"banxa-123","status":"completed"}"#;
-
-        let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).unwrap();
-        mac.update(raw_payload.as_bytes());
-        let signature = hex::encode(mac.finalize().into_bytes());
-
-        let payload = WebhookPayload {
-            provider: "banxa".to_string(),
-            event_type: "ORDER_COMPLETED".to_string(),
-            reference_id: "banxa-123".to_string(),
-            amount: 200.0,
-            status: "completed".to_string(),
-            signature,
-            raw_payload: raw_payload.to_string(),
-        };
-
-        let valid = router.verify_webhook(&payload, secret).unwrap();
-        assert!(valid);
+        let (payload, secret) = signed_webhook("banxa", "banxa-secret");
+        assert!(test_router().verify_webhook(&payload, &secret).unwrap());
     }
 
     #[tokio::test]
     async fn test_verify_investec_webhook() {
-        let router = FiatRouter::new(
-            "test-key".to_string(),
-            "client-id".to_string(),
-            "secret".to_string(),
-            "ap-app-id".to_string(),
-            "ap-secret".to_string(),
-            "banxa-key".to_string(),
-            "banxa-secret".to_string(),
-        );
-
-        let secret = "investec-secret";
-        let raw_payload = r#"{"reference":"investec-123","status":"approved"}"#;
-
-        let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).unwrap();
-        mac.update(raw_payload.as_bytes());
-        let signature = hex::encode(mac.finalize().into_bytes());
-
-        let payload = WebhookPayload {
-            provider: "investec".to_string(),
-            event_type: "PAYMENT_APPROVED".to_string(),
-            reference_id: "investec-123".to_string(),
-            amount: 300.0,
-            status: "approved".to_string(),
-            signature,
-            raw_payload: raw_payload.to_string(),
-        };
-
-        let valid = router.verify_webhook(&payload, secret).unwrap();
-        assert!(valid);
+        let (payload, secret) = signed_webhook("investec", "investec-secret");
+        assert!(test_router().verify_webhook(&payload, &secret).unwrap());
     }
 
     #[tokio::test]
-    async fn test_verify_investec_webhook_fails_closed_when_secret_missing() {
-        let router = FiatRouter::new(
-            "test-key".to_string(),
-            "client-id".to_string(),
-            "secret".to_string(),
-            "ap-app-id".to_string(),
-            "ap-secret".to_string(),
-            "banxa-key".to_string(),
-            "banxa-secret".to_string(),
-        );
+    async fn test_verify_webhook_rejects_wrong_secret() {
+        let (payload, _) = signed_webhook("ramp", "webhook-secret");
+        assert!(!test_router()
+            .verify_webhook(&payload, "wrong-secret")
+            .unwrap());
+    }
 
-        let payload = WebhookPayload {
-            provider: "investec".to_string(),
-            event_type: "PAYMENT_APPROVED".to_string(),
-            reference_id: "investec-123".to_string(),
-            amount: 300.0,
-            status: "approved".to_string(),
-            signature: "aabbcc".to_string(),
-            raw_payload: r#"{"reference":"investec-123","status":"approved"}"#.to_string(),
-        };
+    #[tokio::test]
+    async fn test_verify_webhook_fails_closed_when_secret_missing() {
+        let (payload, _) = signed_webhook("investec", "investec-secret");
+        let result = test_router().verify_webhook(&payload, "");
+        assert!(result.is_err());
+    }
 
-        let result = router.verify_webhook(&payload, "");
+    #[tokio::test]
+    async fn test_verify_webhook_rejects_unknown_provider() {
+        let (mut payload, _) = signed_webhook("ramp", "webhook-secret");
+        payload.provider = "unknown".to_string();
+        let result = test_router().verify_webhook(&payload, "webhook-secret");
         assert!(result.is_err());
     }
 }

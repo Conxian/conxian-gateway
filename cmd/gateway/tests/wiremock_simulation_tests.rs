@@ -161,14 +161,13 @@ fn create_test_app_with_lightning(lightning: Arc<LightningAdapter>) -> axum::Rou
         state: PersistentState::default(),
     });
     let shared: SharedState = Arc::new(RwLock::new(GatewayState::default()));
-    let fiat = Arc::new(FiatRouter::new(
-        "ramp-key".to_string(),
-        "investec-id".to_string(),
-        "investec-secret".to_string(),
-        "alchemy-id".to_string(),
-        "alchemy-secret".to_string(),
-        "banxa-key".to_string(),
-        "banxa-secret".to_string(),
+    let fiat = Arc::new(FiatRouter::from_enabled(
+        Some(conxian_api::fiat::RampAdapter::new("ramp-key".to_string())),
+        Some(conxian_api::fiat::InvestecAdapter),
+        Some(conxian_api::fiat::AlchemyPayAdapter::new(
+            "alchemy-id".to_string(),
+        )),
+        Some(conxian_api::fiat::BanxaAdapter),
     ));
     let a2p = Arc::new(A2pRouter::new(
         "sentinel_infobip".to_string(),
@@ -204,7 +203,7 @@ fn create_test_app_with_lightning(lightning: Arc<LightningAdapter>) -> axum::Rou
         persistence: Some(persistence),
         bitcoin_core_shadow_observer: None,
         fiat,
-        a2p,
+        a2p: Some(a2p),
         identity,
         compliance,
         verifier,
