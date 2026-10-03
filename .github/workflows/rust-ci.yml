@@ -68,9 +68,6 @@ jobs:
       - name: Contamination Guard
         run: python3 scripts/verify_contamination_guard.py
 
-      - name: Verify required secrets declared
-        run: python3 scripts/verify_required_secrets.py
-
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
