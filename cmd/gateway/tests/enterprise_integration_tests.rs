@@ -120,14 +120,13 @@ impl LightningBackend for DummyBackend {
 fn test_app() -> axum::Router {
     let state_shared: conxian_core::SharedState =
         Arc::new(RwLock::new(conxian_core::GatewayState::default()));
-    let fiat = Arc::new(conxian_api::fiat::FiatRouter::new(
-        "ramp-key".to_string(),
-        "investec-id".to_string(),
-        "investec-secret".to_string(),
-        "alchemy-id".to_string(),
-        "alchemy-secret".to_string(),
-        "banxa-key".to_string(),
-        "banxa-secret".to_string(),
+    let fiat = Arc::new(conxian_api::fiat::FiatRouter::from_enabled(
+        Some(conxian_api::fiat::RampAdapter::new("ramp-key".to_string())),
+        Some(conxian_api::fiat::InvestecAdapter),
+        Some(conxian_api::fiat::AlchemyPayAdapter::new(
+            "alchemy-id".to_string(),
+        )),
+        Some(conxian_api::fiat::BanxaAdapter),
     ));
     let a2p = Arc::new(conxian_api::a2p::A2pRouter::new(
         "sentinel_infobip".to_string(),
@@ -149,7 +148,7 @@ fn test_app() -> axum::Router {
         persistence: None,
         bitcoin_core_shadow_observer: None,
         fiat,
-        a2p,
+        a2p: Some(a2p),
         identity,
         compliance: compliance.clone(),
         verifier: Arc::new(conxian_compliance::UniversalVerifier::new(

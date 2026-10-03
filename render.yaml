@@ -28,20 +28,20 @@ services:
         sync: false
       - key: SETTLEMENT_INGRESS_SECRET
         sync: false
+      - key: RAMP_MODE
+        value: disabled
       - key: RAMP_API_KEY
         sync: false
-      - key: INVESTEC_CLIENT_ID
-        sync: false
-      - key: INVESTEC_SECRET
-        sync: false
+      - key: INVESTEC_MODE
+        value: disabled
+      - key: ALCHEMY_PAY_MODE
+        value: disabled
       - key: ALCHEMY_PAY_APP_ID
         sync: false
-      - key: ALCHEMY_PAY_SECRET
-        sync: false
-      - key: BANXA_API_KEY
-        sync: false
-      - key: BANXA_SECRET
-        sync: false
+      - key: BANXA_MODE
+        value: disabled
+      - key: INFOBIP_MODE
+        value: disabled
       - key: INFOBIP_API_KEY
         sync: false
       - key: HMAC_SECRET

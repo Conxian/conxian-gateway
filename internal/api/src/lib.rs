@@ -42,7 +42,7 @@ pub struct AppState {
     /// configured Bitcoin Core endpoint. It is not used by routing or fee decisions.
     pub bitcoin_core_shadow_observer: Option<Arc<dyn BitcoinCoreShadowObserver>>,
     pub fiat: Arc<FiatRouter>,
-    pub a2p: Arc<A2pRouter>,
+    pub a2p: Option<Arc<A2pRouter>>,
     pub identity: Arc<IdentityManager>,
     pub compliance: Arc<ZkcVerifier>,
     pub verifier: Arc<UniversalVerifier>,
