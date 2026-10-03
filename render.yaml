@@ -1,0 +1,50 @@
+services:
+  - type: web
+    name: conxian-gateway
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    healthCheckPath: /health
+    disk:
+      name: gateway-state
+      mountPath: /usr/app
+      sizeGB: 5
+    envVars:
+      - key: GATEWAY_STATE_PATH
+        value: /usr/app/gateway_state.json
+      - key: GATEWAY_PERSISTENCE_MODE
+        value: exclusive-local-writer
+      - key: GATEWAY_ALLOW_UNKNOWN_STATE_FILESYSTEM
+        value: "false"
+      - key: BITCOIN_RPC_URL
+        value: https://bitcoin-rpc.publicnode.com
+      - key: STACKS_RPC_URL
+        value: https://api.mainnet.hiro.so
+      - key: RUST_LOG
+        value: info
+      - key: API_TOKEN
+        sync: false
+      - key: FIAT_WEBHOOK_SECRET
+        sync: false
+      - key: SETTLEMENT_INGRESS_SECRET
+        sync: false
+      - key: RAMP_API_KEY
+        sync: false
+      - key: INVESTEC_CLIENT_ID
+        sync: false
+      - key: INVESTEC_SECRET
+        sync: false
+      - key: ALCHEMY_PAY_APP_ID
+        sync: false
+      - key: ALCHEMY_PAY_SECRET
+        sync: false
+      - key: BANXA_API_KEY
+        sync: false
+      - key: BANXA_SECRET
+        sync: false
+      - key: INFOBIP_API_KEY
+        sync: false
+      - key: HMAC_SECRET
+        sync: false
+      - key: OFFLINE_QUEUE_SECRET
+        sync: false
