@@ -19,14 +19,13 @@ fn setup_app(
     state: SharedState,
     offline_queue: Arc<dyn conxian_core::OfflineQueue>,
 ) -> axum::Router {
-    let fiat = Arc::new(FiatRouter::new(
-        "simulated".into(),
-        "simulated".into(),
-        "simulated".into(),
-        "simulated".into(),
-        "simulated".into(),
-        "simulated".into(),
-        "simulated".into(),
+    let fiat = Arc::new(FiatRouter::from_enabled(
+        Some(conxian_api::fiat::RampAdapter::new("simulated".into())),
+        Some(conxian_api::fiat::InvestecAdapter),
+        Some(conxian_api::fiat::AlchemyPayAdapter::new(
+            "simulated".into(),
+        )),
+        Some(conxian_api::fiat::BanxaAdapter),
     ));
     let a2p = Arc::new(A2pRouter::new(
         "simulated".into(),
@@ -50,7 +49,7 @@ fn setup_app(
         persistence: None,
         bitcoin_core_shadow_observer: None,
         fiat,
-        a2p,
+        a2p: Some(a2p),
         identity,
         compliance,
         verifier,

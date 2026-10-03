@@ -8,12 +8,7 @@ const FIAT_WEBHOOK_SECRET_SENTINEL: &str = "sentinel_FIAT_WEBHOOK_SECRET";
 const SETTLEMENT_INGRESS_SECRET_SENTINEL: &str = "sentinel_SETTLEMENT_INGRESS_SECRET";
 const API_TOKEN_SENTINEL: &str = "sentinel_API_TOKEN";
 const RAMP_API_KEY_SENTINEL: &str = "sentinel_RAMP_API_KEY";
-const INVESTEC_CLIENT_ID_SENTINEL: &str = "sentinel_INVESTEC_CLIENT_ID";
-const INVESTEC_SECRET_SENTINEL: &str = "sentinel_INVESTEC_SECRET";
 const ALCHEMY_PAY_APP_ID_SENTINEL: &str = "sentinel_ALCHEMY_PAY_APP_ID";
-const ALCHEMY_PAY_SECRET_SENTINEL: &str = "sentinel_ALCHEMY_PAY_SECRET";
-const BANXA_API_KEY_SENTINEL: &str = "sentinel_BANXA_API_KEY";
-const BANXA_SECRET_SENTINEL: &str = "sentinel_BANXA_SECRET";
 const INFOBIP_API_KEY_SENTINEL: &str = "sentinel_INFOBIP_API_KEY";
 const HMAC_SECRET_SENTINEL: &str = "sentinel_HMAC_SECRET";
 const OFFLINE_QUEUE_SECRET_SENTINEL: &str = "sentinel_OFFLINE_QUEUE_SECRET";
@@ -177,14 +172,11 @@ pub struct Config {
     pub stacks_sync_interval: u64,
     pub api_port: u16,
     pub api_token: String,
-    pub ramp_api_key: String,
-    pub investec_client_id: String,
-    pub investec_secret: String,
-    pub alchemy_pay_app_id: String,
-    pub alchemy_pay_secret: String,
-    pub banxa_api_key: String,
-    pub banxa_secret: String,
-    pub infobip_api_key: String,
+    pub ramp_api_key: Option<String>,
+    pub investec_enabled: bool,
+    pub alchemy_pay_app_id: Option<String>,
+    pub banxa_enabled: bool,
+    pub infobip_api_key: Option<String>,
     pub infobip_base_url: String,
     pub hmac_secret: String,
     pub fiat_webhook_secret: String,
@@ -239,6 +231,19 @@ impl Config {
         })
     }
 
+    /// Fiat/A2P providers are opt-in: enabled only when their `*_MODE` env var is
+    /// `active` (or `shadow`). Absent/anything else = disabled = no secret required,
+    /// so the sovereign/community lane runs with no business providers.
+    fn provider_enabled(key: &str) -> bool {
+        matches!(
+            env::var(key)
+                .ok()
+                .map(|value| value.trim().to_ascii_lowercase())
+                .as_deref(),
+            Some("active" | "shadow" | "true" | "1")
+        )
+    }
+
     fn validate_rgb_endpoint(key: &str, raw: &str) -> String {
         let url = Url::parse(raw).unwrap_or_else(|_| panic!("{} must be a valid URL", key));
         if url.scheme() != "http" && url.scheme() != "https" {
@@ -269,17 +274,32 @@ impl Config {
             SETTLEMENT_INGRESS_SECRET_SENTINEL,
         );
         let api_token = Self::get_mandatory_env("API_TOKEN", API_TOKEN_SENTINEL);
-        let ramp_api_key = Self::get_mandatory_env("RAMP_API_KEY", RAMP_API_KEY_SENTINEL);
-        let investec_client_id =
-            Self::get_mandatory_env("INVESTEC_CLIENT_ID", INVESTEC_CLIENT_ID_SENTINEL);
-        let investec_secret = Self::get_mandatory_env("INVESTEC_SECRET", INVESTEC_SECRET_SENTINEL);
-        let alchemy_pay_app_id =
-            Self::get_mandatory_env("ALCHEMY_PAY_APP_ID", ALCHEMY_PAY_APP_ID_SENTINEL);
-        let alchemy_pay_secret =
-            Self::get_mandatory_env("ALCHEMY_PAY_SECRET", ALCHEMY_PAY_SECRET_SENTINEL);
-        let banxa_api_key = Self::get_mandatory_env("BANXA_API_KEY", BANXA_API_KEY_SENTINEL);
-        let banxa_secret = Self::get_mandatory_env("BANXA_SECRET", BANXA_SECRET_SENTINEL);
-        let infobip_api_key = Self::get_mandatory_env("INFOBIP_API_KEY", INFOBIP_API_KEY_SENTINEL);
+        let ramp_api_key = if Self::provider_enabled("RAMP_MODE") {
+            Some(Self::get_mandatory_env(
+                "RAMP_API_KEY",
+                RAMP_API_KEY_SENTINEL,
+            ))
+        } else {
+            None
+        };
+        let investec_enabled = Self::provider_enabled("INVESTEC_MODE");
+        let alchemy_pay_app_id = if Self::provider_enabled("ALCHEMY_PAY_MODE") {
+            Some(Self::get_mandatory_env(
+                "ALCHEMY_PAY_APP_ID",
+                ALCHEMY_PAY_APP_ID_SENTINEL,
+            ))
+        } else {
+            None
+        };
+        let banxa_enabled = Self::provider_enabled("BANXA_MODE");
+        let infobip_api_key = if Self::provider_enabled("INFOBIP_MODE") {
+            Some(Self::get_mandatory_env(
+                "INFOBIP_API_KEY",
+                INFOBIP_API_KEY_SENTINEL,
+            ))
+        } else {
+            None
+        };
         let hmac_secret = Self::get_mandatory_env("HMAC_SECRET", HMAC_SECRET_SENTINEL);
         let offline_queue_secret =
             Self::get_mandatory_env("OFFLINE_QUEUE_SECRET", OFFLINE_QUEUE_SECRET_SENTINEL);
@@ -449,12 +469,9 @@ impl Config {
                 .unwrap_or(3000),
             api_token,
             ramp_api_key,
-            investec_client_id,
-            investec_secret,
+            investec_enabled,
             alchemy_pay_app_id,
-            alchemy_pay_secret,
-            banxa_api_key,
-            banxa_secret,
+            banxa_enabled,
             infobip_api_key,
             infobip_base_url: env::var("INFOBIP_BASE_URL")
                 .unwrap_or_else(|_| "https://api.infobip.com".to_string()),
@@ -505,13 +522,13 @@ mod tests {
                 "FIAT_WEBHOOK_SECRET",
                 "SETTLEMENT_INGRESS_SECRET",
                 "API_TOKEN",
+                "RAMP_MODE",
                 "RAMP_API_KEY",
-                "INVESTEC_CLIENT_ID",
-                "INVESTEC_SECRET",
+                "INVESTEC_MODE",
+                "ALCHEMY_PAY_MODE",
                 "ALCHEMY_PAY_APP_ID",
-                "ALCHEMY_PAY_SECRET",
-                "BANXA_API_KEY",
-                "BANXA_SECRET",
+                "BANXA_MODE",
+                "INFOBIP_MODE",
                 "INFOBIP_API_KEY",
                 "HMAC_SECRET",
                 "OFFLINE_QUEUE_SECRET",
@@ -553,13 +570,13 @@ mod tests {
         env::set_var("FIAT_WEBHOOK_SECRET", "fiat-secret");
         env::set_var("SETTLEMENT_INGRESS_SECRET", "settlement-secret");
         env::set_var("API_TOKEN", "api-token");
+        env::set_var("RAMP_MODE", "disabled");
         env::set_var("RAMP_API_KEY", "ramp-key");
-        env::set_var("INVESTEC_CLIENT_ID", "investec-id");
-        env::set_var("INVESTEC_SECRET", "investec-secret");
+        env::set_var("INVESTEC_MODE", "disabled");
+        env::set_var("ALCHEMY_PAY_MODE", "disabled");
         env::set_var("ALCHEMY_PAY_APP_ID", "alchemy-id");
-        env::set_var("ALCHEMY_PAY_SECRET", "alchemy-secret");
-        env::set_var("BANXA_API_KEY", "banxa-key");
-        env::set_var("BANXA_SECRET", "banxa-secret");
+        env::set_var("BANXA_MODE", "disabled");
+        env::set_var("INFOBIP_MODE", "disabled");
         env::set_var("INFOBIP_API_KEY", "infobip-key");
         env::set_var("HMAC_SECRET", "hmac-secret");
         env::set_var(
@@ -571,6 +588,31 @@ mod tests {
         env::remove_var("RGB_STASH_PATH");
         env::remove_var("RGB_ESPLORA_URL");
         env::remove_var("RGB_ISSUER_POLICY_PATH");
+    }
+
+    #[test]
+    fn fiat_providers_are_opt_in_via_mode() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        let _env_restore = FullEnvRestore::new();
+        set_test_envs();
+
+        // Default (disabled) -> no provider enabled, no secrets required.
+        let config = Config::from_env();
+        assert_eq!(config.ramp_api_key, None);
+        assert!(!config.investec_enabled);
+        assert_eq!(config.alchemy_pay_app_id, None);
+        assert!(!config.banxa_enabled);
+        assert_eq!(config.infobip_api_key, None);
+
+        // Active -> the provider secret becomes mandatory.
+        env::set_var("RAMP_MODE", "active");
+        let config = Config::from_env();
+        assert_eq!(config.ramp_api_key.as_deref(), Some("ramp-key"));
+
+        // Active without the secret -> fail closed.
+        env::set_var("RAMP_MODE", "active");
+        env::remove_var("RAMP_API_KEY");
+        assert!(std::panic::catch_unwind(Config::from_env).is_err());
     }
 
     #[test]

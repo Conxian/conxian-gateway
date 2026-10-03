@@ -295,7 +295,16 @@ pub async fn send_otp(
     State(state): State<AppState>,
     Json(payload): Json<crate::a2p::OtpRequest>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    match state.a2p.send_otp(payload).await {
+    let a2p = match state.a2p.as_ref() {
+        Some(a2p) => a2p,
+        None => {
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(json!({ "error": "A2P messaging is not enabled" })),
+            ))
+        }
+    };
+    match a2p.send_otp(payload).await {
         Ok((res, hmac, ts)) => Ok(Json(json!({
             "session_id": res.session_id,
             "status": res.status,
@@ -313,7 +322,16 @@ pub async fn verify_otp(
     State(state): State<AppState>,
     Json(payload): Json<crate::a2p::OtpVerificationRequest>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    match state.a2p.verify_otp(payload) {
+    let a2p = match state.a2p.as_ref() {
+        Some(a2p) => a2p,
+        None => {
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(json!({ "error": "A2P messaging is not enabled" })),
+            ))
+        }
+    };
+    match a2p.verify_otp(payload) {
         Ok(valid) => Ok(Json(json!({ "valid": valid }))),
         Err(e) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
