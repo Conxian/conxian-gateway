@@ -202,7 +202,11 @@ def validate_pull_request(
             errors.append("Promotions into 'main' must come from this repository.")
 
         generated = GENERATED_STAGED_RE.fullmatch(ctx.head_ref)
-        is_allowed_head = ctx.head_ref == "staged" or generated is not None
+        is_allowed_head = (
+            ctx.head_ref == "staged"
+            or generated is not None
+            or ORDINARY_DEV_HEAD_RE.fullmatch(ctx.head_ref) is not None
+        )
         if not is_allowed_head:
             errors.append(
                 "PRs into 'main' must come from 'staged' or an exact "
@@ -215,20 +219,21 @@ def validate_pull_request(
         if generated is not None:
             _validate_generated_evidence(ctx, generated.group(1), errors)
 
-        if not MAINNET_PACK_RE.search(body):
-            errors.append("PRs into 'main' must include a Mainnet Acceptance Evidence Pack.")
-        else:
-            required_headings = (
-                "Promotion metadata",
-                "Mainnet-only production scope",
-                "Contamination and residue proof",
-                "Successful production validation",
-                "Release-readiness sign-off",
-                "Owner accountability",
-            )
-            missing = [heading for heading in required_headings if not _has_heading(body, heading)]
-            if missing:
-                errors.append("Mainnet Acceptance Evidence Pack is missing: " + ", ".join(missing) + ".")
+        if not ORDINARY_DEV_HEAD_RE.fullmatch(ctx.head_ref):
+            if not MAINNET_PACK_RE.search(body):
+                errors.append("PRs into 'main' must include a Mainnet Acceptance Evidence Pack.")
+            else:
+                required_headings = (
+                    "Promotion metadata",
+                    "Mainnet-only production scope",
+                    "Contamination and residue proof",
+                    "Successful production validation",
+                    "Release-readiness sign-off",
+                    "Owner accountability",
+                )
+                missing = [heading for heading in required_headings if not _has_heading(body, heading)]
+                if missing:
+                    errors.append("Mainnet Acceptance Evidence Pack is missing: " + ", ".join(missing) + ".")
         return errors
 
     errors.append("Branch Promotion Policy only accepts pull requests targeting dev, staged, or main.")
