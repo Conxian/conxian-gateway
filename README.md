@@ -9,7 +9,7 @@ Institutional-grade middleware bridging Bitcoin and Stacks state logic with ente
 The Conxian Gateway provides a single API layer for indexing, verifying, and orchestrating settlement workflows across multiple Bitcoin layers. It simplifies the integration path for institutions and fintechs by providing mathematically verifiable state proofs and non-custodial signing interfaces.
 
 ## Status
-**Active Development (v0.1.5).** This repository contains production-ready runtime code for Bitcoin and Stacks state tracking. Current focus is on expanding pilot lanes for Liquid and Rootstock adapters and implementing UCV-1 (Universal Chain Verification).
+**Code-complete, undeployed (v0.1.5).** This repository contains Bitcoin and Stacks state-tracking runtime code, but the hosted gateway service is **not deployed** (blocked on ~11 owner secrets; see [#466](https://github.com/Conxian/conxian-gateway/issues/466)). Current focus is on expanding pilot lanes for Liquid and Rootstock adapters and implementing UCV-1 (Universal Chain Verification).
 
 ## Audience
 - **Institutions & Fintechs**: Seeking a secure, non-custodial entry point into Bitcoin-native liquidity.
