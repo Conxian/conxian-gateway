@@ -242,17 +242,17 @@ describe('ConxianClient', () => {
     });
 
         describe("verifyStateProofLocal (Candidate Q)", () => {
-        it("successfully verifies valid state proof payload locally", async () => {
+        it("fails closed (verified=false) when local Wasm verifier is not configured", async () => {
             const client = new ConxianClient("http://localhost:3000", "token");
             const res = await client.verifyStateProofLocal({
                 chain: "bitcoin",
                 proof_data: "aGVsbG8=",
                 schnorr_signature: "a".repeat(128)
             });
-            expect(res.verified).toBe(true);
+            expect(res.verified).toBe(false);
             expect(res.chain).toBe("bitcoin");
             expect(res.proof_type).toBe("wasm_ucv1_local");
-            expect(res.error).toBeUndefined();
+            expect(res.error).toContain("not configured");
         });
 
         it("fails verification on invalid proof payload missing data and signature", async () => {
@@ -394,13 +394,12 @@ describe('ConxianClient', () => {
     describe('SWIFT ISO 20022 camt.053 ERP Reporting (Candidate T)', () => {
         it('generates camt.053 bank treasury statement XML', async () => {
             const mockResponse = {
-                xml_statement: '<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.10"></Document>',
-                account_id: 'ACCT-BANK-101',
-                currency: 'USD',
-                opening_balance: 1000000,
-                closing_balance: 1500000,
-                entry_count: 12,
-                timestamp: 1725000000
+                message_id: 'camt053-00000000-0000-0000-0000-000000000000',
+                message_type: 'camt.053.001.08',
+                xml_payload: '<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.08"><BkToCstmrStmt></BkToCstmrStmt></Document>',
+                created_at: '2024-08-29T00:00:00Z',
+                webhook_delivered: false,
+                erp_sync_status: 'LOCAL_ONLY'
             };
 
             (global.fetch as any).mockResolvedValueOnce({
@@ -410,13 +409,14 @@ describe('ConxianClient', () => {
 
             const res = await client.generateCamt053Statement({
                 account_id: 'ACCT-BANK-101',
+                from_date: '2024-08-28',
+                to_date: '2024-08-29',
                 currency: 'USD',
-                statement_period_start: 1724900000,
-                statement_period_end: 1725000000
+                include_transactions: true
             });
 
-            expect(res.account_id).toBe('ACCT-BANK-101');
-            expect(res.closing_balance).toBe(1500000);
+            expect(res.message_type).toBe('camt.053.001.08');
+            expect(res.xml_payload).toContain('BkToCstmrStmt');
             expect(global.fetch).toHaveBeenCalledWith(
                 `${baseUrl}/api/v1/iso20022/camt053/generate`,
                 expect.objectContaining({

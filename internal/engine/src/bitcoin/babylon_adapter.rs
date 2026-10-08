@@ -7,7 +7,9 @@ use bitcoin::BlockHash;
 use conxian_core::{BlockInfo, ChainAdapter, ConxianError, ConxianResult};
 use lib_conxian_core::babylon::StakingIntent;
 use lib_conxian_core::control_model::TrustTier;
-use secp256k1::{schnorr, Message, Secp256k1, XOnlyPublicKey};
+use num_bigint::BigUint;
+use num_traits::Zero;
+use secp256k1::{schnorr, Message, Secp256k1, SecretKey, XOnlyPublicKey};
 use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{json, Value};
@@ -605,6 +607,142 @@ pub fn verify_eots_signature(pubkey_hex: &str, block_hash: &str, sig_hex: &str) 
     let msg = Message::from_digest(msg_hash);
 
     secp.verify_schnorr(&sig, &msg, &pubkey).is_ok()
+}
+
+/// The order `n` of the secp256k1 scalar field.
+fn secp256k1_order() -> BigUint {
+    BigUint::parse_bytes(
+        b"FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141",
+        16,
+    )
+    .expect("static secp256k1 order is valid hex")
+}
+
+/// Convert a scalar (already reduced mod `n`) to a fixed 32-byte big-endian array.
+fn scalar_to_32_bytes(scalar: &BigUint) -> [u8; 32] {
+    let be = scalar.to_bytes_be();
+    let mut arr = [0u8; 32];
+    let len = be.len().min(32);
+    arr[32 - len..].copy_from_slice(&be[be.len() - len..]);
+    arr
+}
+
+/// Compute the BIP-340 challenge scalar
+/// `e = int(tagged_hash("BIP0340/challenge", R || P || m)) mod n`, matching the
+/// internal computation in `Secp256k1::verify_schnorr`.
+fn bip340_challenge(r: &[u8; 32], p: &[u8; 32], m: &[u8; 32]) -> BigUint {
+    let tag = b"BIP0340/challenge";
+    let tag_hash = Sha256::digest(tag);
+    let mut hasher = Sha256::new();
+    hasher.update(tag_hash);
+    hasher.update(tag_hash);
+    hasher.update(r);
+    hasher.update(p);
+    hasher.update(m);
+    let digest: [u8; 32] = hasher.finalize().into();
+    BigUint::from_bytes_be(&digest) % secp256k1_order()
+}
+
+/// Compute the EOTS message digest `SHA256(finality_provider_pubkey || block_hash)`.
+fn eots_message_digest(pubkey_bytes: &[u8], block_hash: &str) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(pubkey_bytes);
+    hasher.update(block_hash.as_bytes());
+    hasher.finalize().into()
+}
+
+/// G-BB1: Extract a Babylon finality provider's secret key from two EOTS
+/// signatures over *different* messages (block hashes) that reuse the same
+/// nonce `R`.
+///
+/// EOTS commits a finality provider to a one-time nonce per height. If the
+/// provider double-signs (signs two different block hashes at the same height,
+/// producing `(R, s1)` and `(R, s2)`), the signatures satisfy:
+///
+///   s1 = k + e1·x (mod n)
+///   s2 = k + e2·x (mod n)
+///
+/// so the secret key is recovered as `x = (s1 - s2) · (e1 - e2)⁻¹ (mod n)`.
+///
+/// Returns the 32-byte secret key as hex iff extraction succeeds *and* the
+/// recovered key's x-only public key matches `pubkey_hex` (a self-check that
+/// rejects any arithmetic error). Returns `None` when the signatures do not
+/// share a nonce (not a double-sign) or the self-check fails.
+pub fn extract_eots_secret_key(
+    pubkey_hex: &str,
+    sig1_hex: &str,
+    block_hash1: &str,
+    sig2_hex: &str,
+    block_hash2: &str,
+) -> Option<String> {
+    // Deriving the recovered public key from the secret key requires a signing
+    // context (VerifyOnly cannot compute P = x·G).
+    let secp = Secp256k1::new();
+
+    let pubkey_bytes: Vec<u8> = <Vec<u8> as FromHex>::from_hex(pubkey_hex).ok()?;
+    if pubkey_bytes.len() != 32 {
+        warn!("EOTS extraction: invalid pubkey hex length");
+        return None;
+    }
+    let pubkey = XOnlyPublicKey::from_slice(&pubkey_bytes).ok()?;
+    let p: [u8; 32] = pubkey.serialize();
+
+    let sig1_bytes: Vec<u8> = <Vec<u8> as FromHex>::from_hex(sig1_hex).ok()?;
+    let sig2_bytes: Vec<u8> = <Vec<u8> as FromHex>::from_hex(sig2_hex).ok()?;
+    if sig1_bytes.len() != 64 || sig2_bytes.len() != 64 {
+        warn!("EOTS extraction: invalid signature hex length");
+        return None;
+    }
+
+    // BIP-340 signatures serialize as R (32 bytes) || s (32 bytes).
+    let mut r1 = [0u8; 32];
+    let mut s1_bytes = [0u8; 32];
+    let mut r2 = [0u8; 32];
+    let mut s2_bytes = [0u8; 32];
+    r1.copy_from_slice(&sig1_bytes[..32]);
+    s1_bytes.copy_from_slice(&sig1_bytes[32..]);
+    r2.copy_from_slice(&sig2_bytes[..32]);
+    s2_bytes.copy_from_slice(&sig2_bytes[32..]);
+
+    // Double-sign requires the same nonce point across both signatures.
+    if r1 != r2 {
+        debug!("EOTS extraction: signatures do not share a nonce (not a double-sign)");
+        return None;
+    }
+
+    let m1 = eots_message_digest(&pubkey_bytes, block_hash1);
+    let m2 = eots_message_digest(&pubkey_bytes, block_hash2);
+    if m1 == m2 {
+        return None; // same message: carries no double-sign information
+    }
+
+    let n = secp256k1_order();
+    let e1 = bip340_challenge(&r1, &p, &m1);
+    let e2 = bip340_challenge(&r2, &p, &m2);
+    let s1 = BigUint::from_bytes_be(&s1_bytes);
+    let s2 = BigUint::from_bytes_be(&s2_bytes);
+
+    // x = (s1 - s2) · (e1 - e2)⁻¹ mod n
+    let ds = (&s1 + &n - &s2) % &n;
+    let de = (&e1 + &n - &e2) % &n;
+    if de.is_zero() {
+        return None; // (e1 - e2) ≡ 0 mod n: cannot invert
+    }
+    // Fermat's little theorem: n is prime, so a⁻¹ ≡ a^(n-2) (mod n).
+    let exp = &n - BigUint::from(2u32);
+    let de_inv = de.modpow(&exp, &n);
+    let x = (&ds * &de_inv) % &n;
+    let x_bytes = scalar_to_32_bytes(&x);
+
+    // Self-check: the recovered scalar must be a discrete log of `pubkey`.
+    let recovered_sk = SecretKey::from_slice(&x_bytes).ok()?;
+    let recovered_xonly = XOnlyPublicKey::from(recovered_sk.public_key(&secp));
+    if recovered_xonly != pubkey {
+        warn!("EOTS extraction: self-check failed");
+        return None;
+    }
+
+    Some(hex::encode(x_bytes))
 }
 
 /// G-BB3: Babylon staking lifecycle state machine.
@@ -1509,6 +1647,109 @@ mod tests {
             block_hash,
             &sig_hex
         ));
+    }
+
+    #[test]
+    fn eots_extracts_secret_key_from_double_sign() {
+        use secp256k1::{Keypair, Secp256k1};
+
+        let secp = Secp256k1::new();
+        let (sk, _parity) = secp.generate_keypair(&mut secp256k1::rand::thread_rng());
+        let kp = Keypair::from_secret_key(&secp, &sk);
+        let (xonly, p_parity) = kp.x_only_public_key();
+        let p: [u8; 32] = xonly.serialize();
+        let pubkey_hex = hex::encode(p);
+
+        // A one-time nonce committed at a given height, reused across the two
+        // conflicting signatures (the double-sign condition).
+        let (nonce_sk, _parity) = secp.generate_keypair(&mut secp256k1::rand::thread_rng());
+        let nonce_kp = Keypair::from_secret_key(&secp, &nonce_sk);
+        let (r_xonly, r_parity) = nonce_kp.x_only_public_key();
+        let r: [u8; 32] = r_xonly.serialize();
+
+        let block_hash1 = "00000000000000000002aabbccddeeff00112233445566778899aabbccddeeff";
+        let block_hash2 = "11111111111111111111aaaaaaaaaaaaaaaa11111111111111111111aaaaaaaa";
+
+        let m1 = eots_message_digest(&p, block_hash1);
+        let m2 = eots_message_digest(&p, block_hash2);
+        let e1 = bip340_challenge(&r, &p, &m1);
+        let e2 = bip340_challenge(&r, &p, &m2);
+
+        let n = secp256k1_order();
+        let sk_int = BigUint::from_bytes_be(&sk.secret_bytes());
+        let k_int = BigUint::from_bytes_be(&nonce_sk.secret_bytes());
+
+        // BIP-340: x-only points always lift to the even-y point, so the
+        // effective secret key and nonce are negated when their full point has
+        // odd y.
+        let d_eff = if p_parity == secp256k1::Parity::Even {
+            sk_int.clone()
+        } else {
+            &n - &sk_int
+        };
+        let k_eff = if r_parity == secp256k1::Parity::Even {
+            k_int.clone()
+        } else {
+            &n - &k_int
+        };
+
+        // s = k_eff + e·d_eff mod n, with the same nonce for both signatures.
+        let s1 = (&k_eff + &e1 * &d_eff) % &n;
+        let s2 = (&k_eff + &e2 * &d_eff) % &n;
+
+        let mut sig1 = [0u8; 64];
+        sig1[..32].copy_from_slice(&r);
+        sig1[32..].copy_from_slice(&scalar_to_32_bytes(&s1));
+        let mut sig2 = [0u8; 64];
+        sig2[..32].copy_from_slice(&r);
+        sig2[32..].copy_from_slice(&scalar_to_32_bytes(&s2));
+        let sig1_hex = hex::encode(sig1);
+        let sig2_hex = hex::encode(sig2);
+
+        // The constructed signatures must validate under the existing verifier.
+        assert!(verify_eots_signature(&pubkey_hex, block_hash1, &sig1_hex));
+        assert!(verify_eots_signature(&pubkey_hex, block_hash2, &sig2_hex));
+
+        // Extraction must recover the original secret key (or its negation,
+        // which shares the same x-only public key).
+        let extracted =
+            extract_eots_secret_key(&pubkey_hex, &sig1_hex, block_hash1, &sig2_hex, block_hash2)
+                .expect("extraction must succeed for a double-sign");
+
+        let sk_hex = hex::encode(sk.secret_bytes());
+        let neg_sk_hex = hex::encode(scalar_to_32_bytes(&(&n - &sk_int)));
+        assert!(extracted == sk_hex || extracted == neg_sk_hex);
+    }
+
+    #[test]
+    fn eots_extraction_rejects_distinct_nonces() {
+        use secp256k1::{Keypair, Secp256k1};
+
+        let secp = Secp256k1::new();
+        let (sk, _parity) = secp.generate_keypair(&mut secp256k1::rand::thread_rng());
+        let kp = Keypair::from_secret_key(&secp, &sk);
+        let (xonly, _parity) = kp.x_only_public_key();
+        let p: [u8; 32] = xonly.serialize();
+        let pubkey_hex = hex::encode(p);
+
+        let block_hash1 = "00000000000000000002aabbccddeeff00112233445566778899aabbccddeeff";
+        let block_hash2 = "11111111111111111111aaaaaaaaaaaaaaaa11111111111111111111aaaaaaaa";
+
+        // Independent signatures use fresh nonces (distinct R), so no key can
+        // be extracted.
+        let msg1 = Message::from_digest(eots_message_digest(&p, block_hash1));
+        let msg2 = Message::from_digest(eots_message_digest(&p, block_hash2));
+        let sig1_hex = hex::encode(secp.sign_schnorr(&msg1, &kp).serialize());
+        let sig2_hex = hex::encode(secp.sign_schnorr(&msg2, &kp).serialize());
+
+        assert!(extract_eots_secret_key(
+            &pubkey_hex,
+            &sig1_hex,
+            block_hash1,
+            &sig2_hex,
+            block_hash2
+        )
+        .is_none());
     }
 
     #[test]
