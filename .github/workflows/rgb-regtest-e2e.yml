@@ -3,15 +3,6 @@ name: RGB Regtest E2E
 on:
   pull_request:
     branches: [main, staged, dev]
-    paths:
-      - ".github/workflows/rgb-regtest-e2e.yml"
-      - "tests/rgb/**"
-      - "internal/engine/src/bitcoin/rgb_issuer_policy.rs"
-      - "internal/engine/src/bitcoin/rgb_stash.rs"
-      - "internal/engine/tests/rgb_regtest_transition.rs"
-      - "internal/engine/Cargo.toml"
-      - "Cargo.toml"
-      - "Cargo.lock"
   push:
     branches: [main, staged, dev]
     paths:

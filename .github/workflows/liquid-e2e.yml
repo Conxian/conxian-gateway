@@ -3,19 +3,6 @@ name: Liquid E2E
 on:
   pull_request:
     branches: [main, staged, dev]
-    paths:
-      - ".github/workflows/liquid-e2e.yml"
-      - "tests/liquid/**"
-      - "internal/engine/src/bitcoin/liquid_adapter.rs"
-      - "internal/compliance/src/verifier.rs"
-      - "cmd/gateway/tests/api_tests.rs"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "internal/engine/Cargo.toml"
-      - "internal/compliance/Cargo.toml"
-      - "internal/api/Cargo.toml"
-      - "cmd/gateway/Cargo.toml"
-      - "pkg/conxian-core/Cargo.toml"
   push:
     branches: [main, staged, dev]
     paths:
