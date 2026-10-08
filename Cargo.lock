@@ -2395,6 +2395,8 @@ dependencies = [
  "lib-conxian-core",
  "libc",
  "minreq 3.0.0",
+ "num-bigint 0.4.8",
+ "num-traits",
  "redis",
  "reqwest",
  "rgb-core",

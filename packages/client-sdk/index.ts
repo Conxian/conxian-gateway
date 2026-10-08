@@ -144,11 +144,17 @@ export class ConxianClient {
             }
         }
 
+        // Fail-closed: no local Wasm UCV-1 verifier is configured yet, so we never
+        // assert `verified: true`. Real BIP-340 Schnorr verification (challenge
+        // hash BIP0340/challenge, equation s*G = R + e*P) is gated on a real Wasm
+        // verifier. Until then, callers must use the server-side `verifyStateProof`
+        // path, which is fail-closed (VerifierUnavailable) on the same condition.
         return {
-            verified: true,
+            verified: false,
             chain: payload.chain,
             execution_time_ms: Date.now() - startTime,
-            proof_type: "wasm_ucv1_local"
+            proof_type: "wasm_ucv1_local",
+            error: "Local Wasm UCV-1 verifier not configured: cryptographic verification unavailable"
         };
     }
 

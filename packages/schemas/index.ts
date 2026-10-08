@@ -258,6 +258,7 @@ export interface WasmUcvProofPayload {
     chain: string;
     proof_data: string; // Base64 or hex encoded proof bytes
     public_inputs?: Record<string, any>;
+    public_key?: string; // BIP-340 x-only signer pubkey (32-byte hex) for local Schnorr verification
     schnorr_signature?: string;
     merkle_root?: string;
 }
@@ -309,18 +310,19 @@ export interface DePinSettlementResponse {
  */
 export interface Camt053StatementRequest {
     account_id: string;
+    from_date: string;
+    to_date: string;
     currency: string;
-    statement_period_start: number;
-    statement_period_end: number;
-    include_pending_txs?: boolean;
+    include_transactions: boolean;
+    webhook_url?: string;
+    webhook_secret?: string;
 }
 
 export interface Camt053StatementResponse {
-    xml_statement: string;
-    account_id: string;
-    currency: string;
-    opening_balance: number;
-    closing_balance: number;
-    entry_count: number;
-    timestamp: number;
+    message_id: string;
+    message_type: string;
+    xml_payload: string;
+    created_at: string;
+    webhook_delivered: boolean;
+    erp_sync_status: string;
 }

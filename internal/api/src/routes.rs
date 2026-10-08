@@ -2,7 +2,7 @@ use crate::auth::auth_middleware;
 use crate::middleware::latency_tracker;
 use crate::world_id;
 use crate::AppState;
-use crate::{admin, handlers, shadow_observation, x402::x402_filter};
+use crate::{admin, camt, handlers, shadow_observation, x402::x402_filter};
 use axum::{
     extract::DefaultBodyLimit,
     middleware,
@@ -78,6 +78,8 @@ pub fn configure_routes(
         )
         .route("/iso20022/pacs008", post(handlers::ingress_iso20022))
         .route("/iso20022/pacs009", post(handlers::ingress_iso20022))
+        .route("/iso20022/camt053/generate", post(camt::generate_camt053))
+        .route("/iso20022/camt054/generate", post(camt::generate_camt054))
         .route("/settlement/papss", post(handlers::ingress_papss))
         .route("/settlement/brics", post(handlers::ingress_brics))
         .route("/settlement/cips", post(handlers::ingress_cips))
