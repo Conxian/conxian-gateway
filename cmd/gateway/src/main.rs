@@ -297,21 +297,30 @@ async fn main() -> anyhow::Result<()> {
     let ntt_relayer = NttRelayer::new(state.clone(), 30);
 
     // Initialize Institutional Service Routers
-    let fiat_router = Arc::new(conxian_api::fiat::FiatRouter::new(
-        config.ramp_api_key.clone(),
-        config.investec_client_id.clone(),
-        config.investec_secret.clone(),
-        config.alchemy_pay_app_id.clone(),
-        config.alchemy_pay_secret.clone(),
-        config.banxa_api_key.clone(),
-        config.banxa_secret.clone(),
+    let fiat_router = Arc::new(conxian_api::fiat::FiatRouter::from_enabled(
+        config
+            .ramp_api_key
+            .clone()
+            .map(conxian_api::fiat::RampAdapter::new),
+        config
+            .investec_enabled
+            .then_some(conxian_api::fiat::InvestecAdapter),
+        config
+            .alchemy_pay_app_id
+            .clone()
+            .map(conxian_api::fiat::AlchemyPayAdapter::new),
+        config
+            .banxa_enabled
+            .then_some(conxian_api::fiat::BanxaAdapter),
     ));
 
-    let a2p_router = Arc::new(conxian_api::a2p::A2pRouter::new(
-        config.infobip_api_key.clone(),
-        config.infobip_base_url.clone(),
-        config.hmac_secret.clone(),
-    ));
+    let a2p_router = config.infobip_api_key.clone().map(|key| {
+        Arc::new(conxian_api::a2p::A2pRouter::new(
+            key,
+            config.infobip_base_url.clone(),
+            config.hmac_secret.clone(),
+        ))
+    });
 
     // Inject StacksRpc into IdentityManager for BNS resolution
     let identity_manager = Arc::new(IdentityManager::with_stacks_rpc(Box::new(stx_rpc.clone())));
