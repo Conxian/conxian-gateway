@@ -1,6 +1,17 @@
 # Opportunity Mapping & Research Expansion (2026-09-06)
 
-This document expands on existing research and maps emerging opportunities for the Conxian Gateway stack. **Updated with Machine Economy (peaq DLT / Candidate R), Canton CCIP Gateway (Candidate S), Wasm UCV-1 Client Engine (Candidate Q), and SWIFT camt.053 Real-Time ERP Reporting (Candidate T).**
+This document expands on existing research and maps emerging opportunities for the Conxian Gateway stack. **Updated with CXIP-1317 Org-Wide Upgrade Proposal, Machine Economy (peaq DLT / Candidate R), Canton CCIP Gateway (Candidate S), Wasm UCV-1 Client Engine (Candidate Q), and SWIFT camt.053 Real-Time ERP Reporting (Candidate T).**
+
+## 0. Conxian Improvement Proposal Alignment (CXIP-1317)
+
+- **Canonical Research**: [`CXIP_ORG_WIDE_UPGRADE_PROPOSAL.md`](./CXIP_ORG_WIDE_UPGRADE_PROPOSAL.md)
+- **Scope**: Org-wide architectural evolution across four operational pillars:
+  1. **Pillar I**: Multi-Rail Institutional Settlement & UCV-1 Expansion (SWIFT ISO 20022 `pacs.008`/`camt.053`, Canton CCIP & CBTC, BRICS mBridge/CIPS).
+  2. **Pillar II**: DePIN & Machine Economy Settlement (peaq/DIMO/Helium/IoTeX DIDs, telemetry RWA attestation, Lightning/X402 M2M micro-payments).
+  3. **Pillar III**: Zero-Trust Wasm & Advanced Proof Systems (Client SDK offline verification, BitVM3 garbled circuits, Babylon EOTS slashability, DLC execution).
+  4. **Pillar IV**: Institutional Governance, SLA Positioning & Zero-Contamination CI (Branch promotion, automated hygiene, policy registry).
+
+---
 
 ## 1. Emerging Protocol Opportunities
 
