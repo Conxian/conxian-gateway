@@ -24,7 +24,7 @@ impl Sentinel {
     }
 
     /// Redact every registered secret value from `input`, replacing it with a
-    /// fixed placeholder. Constant in the sense that it never reveals the value.
+    /// fixed redaction marker that never reveals the underlying value.
     pub fn redact(&self, input: &str) -> String {
         let mut out = input.to_string();
         for secret in self.secrets.iter() {
