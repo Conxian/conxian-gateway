@@ -1,5 +1,6 @@
 use crate::auth::auth_middleware;
 use crate::middleware::latency_tracker;
+use crate::tenant::{managed_auth_middleware, ManagedAuth};
 use crate::world_id;
 use crate::AppState;
 use crate::{admin, camt, handlers, shadow_observation, x402::x402_filter};
@@ -19,6 +20,10 @@ pub fn configure_routes(
 ) -> Router {
     let token_for_auth = api_token.clone();
     let token_for_alex = api_token.clone();
+
+    // Multi-tenant managed-subscriber auth (managed API keys + Fusion JWT +
+    // per-tenant rate limiting + Sentinel secret filtering).
+    let managed_auth = ManagedAuth::from_env(&api_token);
 
     let public_routes = Router::new()
         .route("/health", get(handlers::get_health))
@@ -171,6 +176,19 @@ pub fn configure_routes(
         }))
         .with_state(state.clone());
 
+    // Managed SaaS Gateway subscriber surface (`/api/v1/agent/*`), bound to
+    // https://api.conxian-labs.com/v1/agent in production. Multi-tenant keys or
+    // Fusion JWTs are accepted; legacy institutional bearer tokens remain valid.
+    let managed_routes = Router::new()
+        .route("/agent/settle", post(handlers::settle_job_card))
+        .route("/agent/verify", post(handlers::verify_attestation))
+        .route("/agent/chains", get(handlers::list_supported_chains))
+        .layer(middleware::from_fn_with_state(
+            managed_auth.clone(),
+            managed_auth_middleware,
+        ))
+        .with_state(state.clone());
+
     Router::new()
         .route("/api/v1/version", get(|| async { conxian_core::VERSION }))
         .layer(middleware::from_fn_with_state(
@@ -180,7 +198,10 @@ pub fn configure_routes(
         .route("/metrics", get(handlers::get_prometheus_metrics))
         .nest(
             "/api/v1",
-            public_routes.merge(private_routes).merge(alex_routes),
+            public_routes
+                .merge(private_routes)
+                .merge(alex_routes)
+                .merge(managed_routes),
         )
         .nest("/admin/v1", admin_routes)
         .with_state(state.clone())
