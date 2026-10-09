@@ -11,8 +11,11 @@ pub mod lightning;
 pub mod mempool_telemetry;
 pub mod middleware;
 pub mod nostr;
+pub mod rate_limit;
 pub mod routes;
+pub mod sentinel;
 pub mod shadow_observation;
+pub mod tenant;
 pub mod world_id;
 pub mod x402;
 
