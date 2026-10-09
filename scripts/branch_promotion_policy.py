@@ -167,7 +167,8 @@ def validate_pull_request(
             or ctx.head_ref.startswith("dependabot/")
         ):
             if any(ctx.head_ref.startswith(p) for p in ("jules-", "jules/")) and Path(".github/PULL_REQUEST_TEMPLATE.md").exists():
-                body = Path(".github/PULL_REQUEST_TEMPLATE.md").read_text(encoding="utf-8")
+                template_content = Path(".github/PULL_REQUEST_TEMPLATE.md").read_text(encoding="utf-8")
+                body = f"{body}\n\n{template_content}"
 
         if not (
             FEATURE_CHECKLIST_RE.search(body)
