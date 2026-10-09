@@ -48,3 +48,16 @@ services:
         sync: false
       - key: OFFLINE_QUEUE_SECRET
         sync: false
+      # ── Managed SaaS Gateway (multi-tenant indie agent surface) ──
+      - key: MANAGED_API_KEYS
+        sync: false
+      - key: FUSION_JWT_SECRET
+        sync: false
+      - key: RATE_LIMIT_REQUESTS_PER_MINUTE
+        value: "120"
+      - key: TOKEN_TTL_SECONDS
+        value: "86400"
+      - key: GATEWAY_PUBLIC_HOST
+        value: gateway.conxian.org
+      - key: MANAGED_SUBSCRIBER_HOST
+        value: api.conxian-labs.com
