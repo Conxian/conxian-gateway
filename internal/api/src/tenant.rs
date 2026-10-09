@@ -290,6 +290,11 @@ pub async fn managed_auth_middleware(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    // `std::env::set_var`/`remove_var` are process-global, so tests that mutate
+    // MANAGED_API_KEYS must run serially to avoid racing each other.
+    static ENV_MUTEX: Mutex<()> = Mutex::new(());
 
     #[test]
     fn fusion_jwt_round_trips_and_verifies() {
@@ -322,6 +327,7 @@ mod tests {
 
     #[test]
     fn registry_authenticates_managed_key_and_legacy_token() {
+        let _guard = ENV_MUTEX.lock().unwrap();
         std::env::set_var("MANAGED_API_KEYS", r#"{"cxn_agent_abc":"tenant-7"}"#);
         let registry = TenantKeyRegistry::from_env("legacy-institutional-token");
         let managed = registry.authenticate("cxn_agent_abc").expect("managed key");
@@ -339,6 +345,7 @@ mod tests {
 
     #[test]
     fn sentinel_redacts_live_managed_keys() {
+        let _guard = ENV_MUTEX.lock().unwrap();
         std::env::set_var("MANAGED_API_KEYS", r#"{"cxn_agent_secret_999":"tenant-9"}"#);
         let registry = TenantKeyRegistry::from_env("legacy");
         let sentinel = Sentinel::new(registry.secret_values());
