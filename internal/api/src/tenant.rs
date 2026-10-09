@@ -85,8 +85,8 @@ impl FusionJwt {
 
         let signing_input = format!("{}.{}", parts[0], parts[1]);
 
-        let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
-            .map_err(|_| JwtError::BadSignature)?;
+        let mut mac =
+            HmacSha256::new_from_slice(secret.as_bytes()).map_err(|_| JwtError::BadSignature)?;
         mac.update(signing_input.as_bytes());
         let expected = mac.finalize().into_bytes();
 
@@ -94,7 +94,8 @@ impl FusionJwt {
             .decode(parts[2])
             .map_err(|_| JwtError::BadSignature)?;
 
-        if expected.len() != provided.len() || expected.as_slice().ct_eq(&provided).unwrap_u8() != 1 {
+        if expected.len() != provided.len() || expected.as_slice().ct_eq(&provided).unwrap_u8() != 1
+        {
             return Err(JwtError::BadSignature);
         }
 
@@ -138,7 +139,8 @@ impl FusionJwt {
         );
         let payload = E.encode(claims.as_bytes());
         let signing_input = format!("{}.{}", header, payload);
-        let mut mac = HmacSha256::new_from_slice(self.secret.as_deref().unwrap().as_bytes()).unwrap();
+        let mut mac =
+            HmacSha256::new_from_slice(self.secret.as_deref().unwrap().as_bytes()).unwrap();
         mac.update(signing_input.as_bytes());
         let sig = E.encode(mac.finalize().into_bytes());
         format!("{}.{}.{}", header, payload, sig)
@@ -223,7 +225,9 @@ pub struct ManagedAuth {
 impl ManagedAuth {
     pub fn from_env(legacy_token: &str) -> Self {
         let registry = TenantKeyRegistry::from_env(legacy_token);
-        let fusion_secret = std::env::var("FUSION_JWT_SECRET").ok().filter(|s| !s.is_empty());
+        let fusion_secret = std::env::var("FUSION_JWT_SECRET")
+            .ok()
+            .filter(|s| !s.is_empty());
         let fusion = FusionJwt::new(fusion_secret);
 
         let limit = std::env::var("RATE_LIMIT_REQUESTS_PER_MINUTE")
@@ -324,7 +328,9 @@ mod tests {
         assert_eq!(managed.tenant_id, "tenant-7");
         assert_eq!(managed.tier, "managed");
 
-        let legacy = registry.authenticate("legacy-institutional-token").expect("legacy");
+        let legacy = registry
+            .authenticate("legacy-institutional-token")
+            .expect("legacy");
         assert_eq!(legacy.tenant_id, "institutional");
 
         assert!(registry.authenticate("unknown-key").is_none());

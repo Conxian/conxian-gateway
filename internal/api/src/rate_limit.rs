@@ -40,7 +40,10 @@ impl RateLimiter {
     /// the current window budget, `false` if the tenant has exceeded its limit.
     pub fn check(&self, tenant: &str) -> bool {
         let now = Instant::now();
-        let mut state = self.inner.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut state = self
+            .inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         let w = state
             .windows
