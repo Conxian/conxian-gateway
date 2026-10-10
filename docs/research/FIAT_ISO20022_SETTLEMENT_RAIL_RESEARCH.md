@@ -10,11 +10,11 @@
 The Fiat settlement rail enables Conxian Gateway to interface with traditional
 banking and international payment networks through ISO 20022 messaging (CAMT.053
 bank statements, CAMT.054 credit/debit notifications) and fiat on/off-ramp
-providers (Ramp, Investec, AlchemyPay, Banxa). The rail is classified as **T1
+providers (Ramp Network, Stitch, Ozow, AlchemyPay, Banxa). The rail is classified as **T1
 Production** across the entire adapter family strategy.
 
 **Current state:**
-- **Fiat on/off-ramp:** 4 provider session builders (redirect URL construction)
+- **Fiat on/off-ramp:** 5 provider session builders (redirect URL construction)
   + HMAC-SHA256 webhook verification for payment confirmations
 - **ISO 20022 (CAMT):** `camt.053` bank statement and `camt.054` notification
   XML generation via `writeln!` string formatting
@@ -63,10 +63,17 @@ Source: `BRICS_FINANCIAL_SYSTEMS_RESEARCH.md`
 
 | Provider | Region | Integration Type | Gateway Status |
 |----------|--------|-----------------|----------------|
-| **Ramp** | Global | Redirect URL + HMAC webhook | ✅ Live |
-| **Investec** | UK/South Africa | Redirect URL + HMAC webhook | ✅ Live |
+| **Ramp Network** | UK/EU (HQ London) | Redirect URL + HMAC webhook | ✅ Live |
+| **Stitch** | South Africa (bank-agnostic) | Redirect URL + HMAC webhook | ✅ Live |
+| **Ozow** | South Africa (instant EFT) | Redirect URL + HMAC webhook | ✅ Live |
 | **AlchemyPay** | APAC | Redirect URL + HMAC webhook | ✅ Stub (CON-41) |
 | **Banxa** | Global | Redirect URL + HMAC webhook | ✅ Stub (CON-41) |
+
+> **Disambiguation:** `RAMP_API_KEY` targets **Ramp Network** (`buy.ramp.network`,
+> HQ London, EU-licensed) — the crypto on/off-ramp. It is **not** the US `ramp.com`
+> corporate-card/spend company. `INVESTEC_MODE` was removed (Investec is a private
+> bank geared to high-net-worth clients); the bank-agnostic South African rails
+> **Stitch** and **Ozow** replace it.
 
 ---
 
@@ -80,7 +87,8 @@ HTTP Request
     ├─ POST /fiat/onramp/session
     │   └─ FiatRouter::create_session(request)
     │       ├─ create_ramp_session()      → buy.ramp.network
-    │       ├─ create_investec_session()  → investec.com/banking/pay
+    │       ├─ create_stitch_session()    → checkout.stitch.money
+    │       ├─ create_ozow_session()      → pay.ozow.com
     │       ├─ create_alchemypay_session()→ ramp.alchemypay.org  (CON-41)
     │       └─ create_banxa_session()     → conxian-labs.banxa.com (CON-41)
     │
@@ -210,8 +218,9 @@ but the full end-to-end flow is untested.
 
 | Provider | Verification | Status |
 |----------|-------------|--------|
-| Ramp | HMAC-SHA256(secret, raw_payload) | ✅ Live |
-| Investec | HMAC-SHA256; fails-closed if secret empty | ✅ Live |
+| Ramp Network | HMAC-SHA256(secret, raw_payload) | ✅ Live |
+| Stitch | HMAC-SHA256; fails-closed if secret empty | ✅ Live |
+| Ozow | HMAC-SHA256; fails-closed if secret empty | ✅ Live |
 | AlchemyPay | HMAC-SHA256 | ✅ Stub |
 | Banxa | HMAC-SHA256 | ✅ Stub |
 
