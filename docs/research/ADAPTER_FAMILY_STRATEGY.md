@@ -52,7 +52,7 @@ The Gateway supports 15+ protocol adapters grouped by architectural family. Each
 |------|--------|-------|-------|
 | **Lightning** | ✅ Live | 2,600 | 806-line handler + NWC NIP-47 relay-settle + X402 middleware + M2M; [full research](LIGHTNING_SETTLEMENT_RAIL_RESEARCH.md) |
 | **sBTC** | ✅ Live | 441 | Deposit/withdrawal lifecycle monitor via Emily API; Treasury/SYI integration; [full research](SBTC_SETTLEMENT_RAIL_RESEARCH.md) |
-| **Fiat (ISO 20022)** | ✅ Live | 1,396 | 4 on-ramp providers + CAMT.053/054 + X402 webhook verify; [full research](FIAT_ISO20022_SETTLEMENT_RAIL_RESEARCH.md) |
+| **Fiat (ISO 20022)** | ✅ Live | 1,396 | 5 on-ramp providers + CAMT.053/054 + X402 webhook verify; [full research](FIAT_ISO20022_SETTLEMENT_RAIL_RESEARCH.md) |
 | **x402** | ✅ Live | 776 | HTTP 402 payment protocol |
 
 ### Lightning Network Detail
@@ -79,7 +79,7 @@ trust model analysis, and integration roadmap.
 
 ### Fiat/ISO 20022 Detail
 
-Four fiat on-ramp providers + ISO 20022 CAMT XML generation. HMAC-SHA256 webhook verification.
+Five fiat on-ramp providers + ISO 20022 CAMT XML generation. HMAC-SHA256 webhook verification.
 
 Decision gates: G-FI1 (XSD validation), G-FI2 (pacs.008), G-FI3 (BRICS protocol), G-FI4 (provider testing).
 ⛔ XML injection risk in CAMT generators — needs entity escaping.

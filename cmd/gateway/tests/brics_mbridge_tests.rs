@@ -190,7 +190,8 @@ async fn test_ingress_mbridge_api_route() {
         Arc::new(RwLock::new(conxian_core::GatewayState::default()));
     let fiat = Arc::new(conxian_api::fiat::FiatRouter::from_enabled(
         Some(conxian_api::fiat::RampAdapter::new("ramp-key".to_string())),
-        Some(conxian_api::fiat::InvestecAdapter),
+        Some(conxian_api::fiat::StitchAdapter),
+        Some(conxian_api::fiat::OzowAdapter),
         Some(conxian_api::fiat::AlchemyPayAdapter::new(
             "alchemy-id".to_string(),
         )),

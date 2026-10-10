@@ -136,7 +136,8 @@ fn setup_app_with_lightning_and_persistence(
 ) -> axum::Router {
     let fiat = Arc::new(FiatRouter::from_enabled(
         Some(conxian_api::fiat::RampAdapter::new("ramp-key".to_string())),
-        Some(conxian_api::fiat::InvestecAdapter),
+        Some(conxian_api::fiat::StitchAdapter),
+        Some(conxian_api::fiat::OzowAdapter),
         Some(conxian_api::fiat::AlchemyPayAdapter::new(
             "alchemy-id".to_string(),
         )),
@@ -2282,7 +2283,7 @@ async fn test_fiat_webhook_rejects_invalid_hmac_signature() {
     let app = setup_app(state);
 
     let payload = json!({
-        "provider": "investec",
+        "provider": "stitch",
         "status": "completed",
         "tx_id": "tx-invalid-sig"
     });
@@ -2295,7 +2296,7 @@ async fn test_fiat_webhook_rejects_invalid_hmac_signature() {
     let signature = hex::encode(mac.finalize().into_bytes());
 
     let webhook_payload = json!({
-        "provider": "investec",
+        "provider": "stitch",
         "event_type": "ORDER_CREATED",
         "reference_id": "ref-bad-sig",
         "amount": 100.0,

@@ -303,8 +303,11 @@ async fn main() -> anyhow::Result<()> {
             .clone()
             .map(conxian_api::fiat::RampAdapter::new),
         config
-            .investec_enabled
-            .then_some(conxian_api::fiat::InvestecAdapter),
+            .stitch_enabled
+            .then_some(conxian_api::fiat::StitchAdapter),
+        config
+            .ozow_enabled
+            .then_some(conxian_api::fiat::OzowAdapter),
         config
             .alchemy_pay_app_id
             .clone()

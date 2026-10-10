@@ -173,7 +173,8 @@ pub struct Config {
     pub api_port: u16,
     pub api_token: String,
     pub ramp_api_key: Option<String>,
-    pub investec_enabled: bool,
+    pub stitch_enabled: bool,
+    pub ozow_enabled: bool,
     pub alchemy_pay_app_id: Option<String>,
     pub banxa_enabled: bool,
     pub infobip_api_key: Option<String>,
@@ -282,7 +283,8 @@ impl Config {
         } else {
             None
         };
-        let investec_enabled = Self::provider_enabled("INVESTEC_MODE");
+        let stitch_enabled = Self::provider_enabled("STITCH_MODE");
+        let ozow_enabled = Self::provider_enabled("OZOW_MODE");
         let alchemy_pay_app_id = if Self::provider_enabled("ALCHEMY_PAY_MODE") {
             Some(Self::get_mandatory_env(
                 "ALCHEMY_PAY_APP_ID",
@@ -469,7 +471,8 @@ impl Config {
                 .unwrap_or(3000),
             api_token,
             ramp_api_key,
-            investec_enabled,
+            stitch_enabled,
+            ozow_enabled,
             alchemy_pay_app_id,
             banxa_enabled,
             infobip_api_key,
@@ -524,7 +527,8 @@ mod tests {
                 "API_TOKEN",
                 "RAMP_MODE",
                 "RAMP_API_KEY",
-                "INVESTEC_MODE",
+                "STITCH_MODE",
+                "OZOW_MODE",
                 "ALCHEMY_PAY_MODE",
                 "ALCHEMY_PAY_APP_ID",
                 "BANXA_MODE",
@@ -572,7 +576,8 @@ mod tests {
         env::set_var("API_TOKEN", "api-token");
         env::set_var("RAMP_MODE", "disabled");
         env::set_var("RAMP_API_KEY", "ramp-key");
-        env::set_var("INVESTEC_MODE", "disabled");
+        env::set_var("STITCH_MODE", "disabled");
+        env::set_var("OZOW_MODE", "disabled");
         env::set_var("ALCHEMY_PAY_MODE", "disabled");
         env::set_var("ALCHEMY_PAY_APP_ID", "alchemy-id");
         env::set_var("BANXA_MODE", "disabled");
@@ -599,7 +604,8 @@ mod tests {
         // Default (disabled) -> no provider enabled, no secrets required.
         let config = Config::from_env();
         assert_eq!(config.ramp_api_key, None);
-        assert!(!config.investec_enabled);
+        assert!(!config.stitch_enabled);
+        assert!(!config.ozow_enabled);
         assert_eq!(config.alchemy_pay_app_id, None);
         assert!(!config.banxa_enabled);
         assert_eq!(config.infobip_api_key, None);
