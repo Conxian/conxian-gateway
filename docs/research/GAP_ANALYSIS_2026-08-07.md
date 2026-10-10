@@ -25,7 +25,7 @@ Each gap is categorized by domain, assigned a severity ranking (P0 Critical thro
 |----|---------|-----|--------|
 | **G-FI1** | Fiat/ISO 20022 | ✅ CLOSED — ISO 20022 XML schema validation & XSD structure hardening implemented in `internal/compliance/src/zkc.rs` with unit & integration tests. ~~2-3 days~~ |
 | **G-FI2** | Fiat/ISO 20022 | pacs.008 credit transfer — core ISO 20022 message for initiating cross-border payments. Without it, the Gateway cannot send fiat payments, only generate statements. | 3-5 days |
-| **G-FI3** | Fiat/ISO 20022 | BRICS corridor protocol integration — SPFS, PAPSS, CIPS, mBridge referenced in routing but not implemented. Requires per-corridor adapter with protocol-specific message formats. | 7-10 days |
+| **G-FI3** | Fiat/ISO 20022 | BRICS corridor protocol integration — mBridge/CIPS (`MBridgeAdapter`) + PAPSS (`PapssAdapter`) implemented (2026-10-10); SPFS remains referenced-only. | 3-5 days (SPFS) |
 | **G-BB2** | Babylon | Finality gadget verification — BTC-anchored checkpoint consensus parsing. Provides stronger finality guarantees than header-chain SPV alone. | 5-7 days |
 | **G-BB3** | Babylon | Staking lifecycle monitoring — full lifecycle tracking (Locked→Active→Unbonding→Withdrawn) for institutional treasury management. | 3-5 days |
 | **G-FM1** | Fedimint | ✅ CLOSED — `verify_fedimint_blind_signature()` performs Schnorr verification against guardian x-only pubkeys in `fedimint_adapter.rs`. ~~3-5 days~~ |
