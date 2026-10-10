@@ -19,8 +19,8 @@ Production** across the entire adapter family strategy.
 - **ISO 20022 (CAMT):** `camt.053` bank statement and `camt.054` notification
   XML generation via `writeln!` string formatting
 - **X402 payment gating:** HTTP 402 middleware protecting settlement endpoints
-- **BRICS corridors:** SPFS, PAPSS, CIPS, mBridge — all referenced in fiat
-  routing but implemented as placeholder stubs
+- **BRICS corridors:** mBridge + CIPS (`MBridgeAdapter`) and PAPSS (`PapssAdapter`)
+  now have settlement-attestation adapters; SPFS remains referenced-only
 
 **Decision:** Fiat remains T1 Production. The on-ramp session builders and CAMT
 XML generators are functional for institutional banking integration. BRICS
@@ -53,9 +53,9 @@ The Gateway's fiat routing references 4 BRICS-aligned payment networks:
 | Network | Full Name | Jurisdiction | Gateway Status |
 |---------|-----------|-------------|----------------|
 | **SPFS** | System for Transfer of Financial Messages | Russia (Bank of Russia) | ✅ Referenced |
-| **PAPSS** | Pan-African Payment and Settlement System | Africa (Afreximbank) | ✅ Referenced |
-| **CIPS** | Cross-Border Interbank Payment System | China (PBOC) | ✅ Referenced |
-| **mBridge** | Multiple CBDC Bridge | BIS Innovation Hub + 4 central banks | ✅ Referenced |
+| **PAPSS** | Pan-African Payment and Settlement System | Africa (Afreximbank) | ✅ Implemented (`PapssAdapter`) |
+| **CIPS** | Cross-Border Interbank Payment System | China (PBOC) | ✅ Implemented (`MBridgeAdapter`) |
+| **mBridge** | Multiple CBDC Bridge | BIS Innovation Hub + 4 central banks | ✅ Implemented (`MBridgeAdapter`) |
 
 Source: `BRICS_FINANCIAL_SYSTEMS_RESEARCH.md`
 
@@ -167,8 +167,9 @@ Gateway cannot initiate cross-border fiat payments.
 
 ### 3.3 G-FI3: BRICS Corridor Protocol Integration (P2 — Medium Priority)
 
-**Current:** BRICS corridor names are referenced in fiat routing but there
-is no protocol-level integration with any BRICS payment network.
+**Current:** mBridge + CIPS (`MBridgeAdapter`) and PAPSS (`PapssAdapter`) have
+settlement-attestation adapters; SPFS remains referenced-only with no
+protocol-level integration.
 
 **Gap:** The Gateway cannot actually send or receive payments over SPFS,
 PAPSS, CIPS, or mBridge. The routes are addressable but generate stub
@@ -184,7 +185,7 @@ responses.
 1. Define `PaymentCorridor` enum with protocol-specific adapters
 2. Implement SPFS adapter: ISO 20022 over dedicated network
 3. Implement CIPS adapter: ISO 20022 + CNY-specific fields
-4. Implement PAPSS adapter: ISO 20022 + Afreximbank settlement
+4. ~~Implement PAPSS adapter~~ ✅ Done (2026-10-10): `PapssAdapter` in `internal/engine/src/papss_adapter.rs`
 5. mBridge: DLT integration (separate research needed)
 
 ### 3.4 G-FI4: On-Ramp Provider Testing (P3 — Low Priority)
