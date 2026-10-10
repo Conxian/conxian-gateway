@@ -175,6 +175,7 @@ pub struct Config {
     pub ramp_api_key: Option<String>,
     pub stitch_enabled: bool,
     pub ozow_enabled: bool,
+    pub papss_enabled: bool,
     pub alchemy_pay_app_id: Option<String>,
     pub banxa_enabled: bool,
     pub infobip_api_key: Option<String>,
@@ -285,6 +286,7 @@ impl Config {
         };
         let stitch_enabled = Self::provider_enabled("STITCH_MODE");
         let ozow_enabled = Self::provider_enabled("OZOW_MODE");
+        let papss_enabled = Self::provider_enabled("PAPSS_MODE");
         let alchemy_pay_app_id = if Self::provider_enabled("ALCHEMY_PAY_MODE") {
             Some(Self::get_mandatory_env(
                 "ALCHEMY_PAY_APP_ID",
@@ -473,6 +475,7 @@ impl Config {
             ramp_api_key,
             stitch_enabled,
             ozow_enabled,
+            papss_enabled,
             alchemy_pay_app_id,
             banxa_enabled,
             infobip_api_key,
@@ -529,6 +532,7 @@ mod tests {
                 "RAMP_API_KEY",
                 "STITCH_MODE",
                 "OZOW_MODE",
+                "PAPSS_MODE",
                 "ALCHEMY_PAY_MODE",
                 "ALCHEMY_PAY_APP_ID",
                 "BANXA_MODE",
@@ -578,6 +582,7 @@ mod tests {
         env::set_var("RAMP_API_KEY", "ramp-key");
         env::set_var("STITCH_MODE", "disabled");
         env::set_var("OZOW_MODE", "disabled");
+        env::set_var("PAPSS_MODE", "disabled");
         env::set_var("ALCHEMY_PAY_MODE", "disabled");
         env::set_var("ALCHEMY_PAY_APP_ID", "alchemy-id");
         env::set_var("BANXA_MODE", "disabled");
@@ -606,6 +611,7 @@ mod tests {
         assert_eq!(config.ramp_api_key, None);
         assert!(!config.stitch_enabled);
         assert!(!config.ozow_enabled);
+        assert!(!config.papss_enabled);
         assert_eq!(config.alchemy_pay_app_id, None);
         assert!(!config.banxa_enabled);
         assert_eq!(config.infobip_api_key, None);
