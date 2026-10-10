@@ -10,17 +10,17 @@
 The Fiat settlement rail enables Conxian Gateway to interface with traditional
 banking and international payment networks through ISO 20022 messaging (CAMT.053
 bank statements, CAMT.054 credit/debit notifications) and fiat on/off-ramp
-providers (Ramp, Investec, AlchemyPay, Banxa). The rail is classified as **T1
+providers (Ramp Network, Stitch, Ozow, AlchemyPay, Banxa). The rail is classified as **T1
 Production** across the entire adapter family strategy.
 
 **Current state:**
-- **Fiat on/off-ramp:** 4 provider session builders (redirect URL construction)
+- **Fiat on/off-ramp:** 5 provider session builders (redirect URL construction)
   + HMAC-SHA256 webhook verification for payment confirmations
 - **ISO 20022 (CAMT):** `camt.053` bank statement and `camt.054` notification
   XML generation via `writeln!` string formatting
 - **X402 payment gating:** HTTP 402 middleware protecting settlement endpoints
-- **BRICS corridors:** SPFS, PAPSS, CIPS, mBridge — all referenced in fiat
-  routing but implemented as placeholder stubs
+- **BRICS corridors:** mBridge + CIPS (`MBridgeAdapter`) and PAPSS (`PapssAdapter`)
+  now have settlement-attestation adapters; SPFS remains referenced-only
 
 **Decision:** Fiat remains T1 Production. The on-ramp session builders and CAMT
 XML generators are functional for institutional banking integration. BRICS
@@ -53,9 +53,9 @@ The Gateway's fiat routing references 4 BRICS-aligned payment networks:
 | Network | Full Name | Jurisdiction | Gateway Status |
 |---------|-----------|-------------|----------------|
 | **SPFS** | System for Transfer of Financial Messages | Russia (Bank of Russia) | ✅ Referenced |
-| **PAPSS** | Pan-African Payment and Settlement System | Africa (Afreximbank) | ✅ Referenced |
-| **CIPS** | Cross-Border Interbank Payment System | China (PBOC) | ✅ Referenced |
-| **mBridge** | Multiple CBDC Bridge | BIS Innovation Hub + 4 central banks | ✅ Referenced |
+| **PAPSS** | Pan-African Payment and Settlement System | Africa (Afreximbank) | ✅ Implemented (`PapssAdapter`) |
+| **CIPS** | Cross-Border Interbank Payment System | China (PBOC) | ✅ Implemented (`MBridgeAdapter`) |
+| **mBridge** | Multiple CBDC Bridge | BIS Innovation Hub + 4 central banks | ✅ Implemented (`MBridgeAdapter`) |
 
 Source: `BRICS_FINANCIAL_SYSTEMS_RESEARCH.md`
 
@@ -63,10 +63,17 @@ Source: `BRICS_FINANCIAL_SYSTEMS_RESEARCH.md`
 
 | Provider | Region | Integration Type | Gateway Status |
 |----------|--------|-----------------|----------------|
-| **Ramp** | Global | Redirect URL + HMAC webhook | ✅ Live |
-| **Investec** | UK/South Africa | Redirect URL + HMAC webhook | ✅ Live |
+| **Ramp Network** | UK/EU (HQ London) | Redirect URL + HMAC webhook | ✅ Live |
+| **Stitch** | South Africa (bank-agnostic) | Redirect URL + HMAC webhook | ✅ Live |
+| **Ozow** | South Africa (instant EFT) | Redirect URL + HMAC webhook | ✅ Live |
 | **AlchemyPay** | APAC | Redirect URL + HMAC webhook | ✅ Stub (CON-41) |
 | **Banxa** | Global | Redirect URL + HMAC webhook | ✅ Stub (CON-41) |
+
+> **Disambiguation:** `RAMP_API_KEY` targets **Ramp Network** (`buy.ramp.network`,
+> HQ London, EU-licensed) — the crypto on/off-ramp. It is **not** the US `ramp.com`
+> corporate-card/spend company. `INVESTEC_MODE` was removed (Investec is a private
+> bank geared to high-net-worth clients); the bank-agnostic South African rails
+> **Stitch** and **Ozow** replace it.
 
 ---
 
@@ -80,7 +87,8 @@ HTTP Request
     ├─ POST /fiat/onramp/session
     │   └─ FiatRouter::create_session(request)
     │       ├─ create_ramp_session()      → buy.ramp.network
-    │       ├─ create_investec_session()  → investec.com/banking/pay
+    │       ├─ create_stitch_session()    → checkout.stitch.money
+    │       ├─ create_ozow_session()      → pay.ozow.com
     │       ├─ create_alchemypay_session()→ ramp.alchemypay.org  (CON-41)
     │       └─ create_banxa_session()     → conxian-labs.banxa.com (CON-41)
     │
@@ -167,8 +175,9 @@ Gateway cannot initiate cross-border fiat payments.
 
 ### 3.3 G-FI3: BRICS Corridor Protocol Integration (P2 — Medium Priority)
 
-**Current:** BRICS corridor names are referenced in fiat routing but there
-is no protocol-level integration with any BRICS payment network.
+**Current:** mBridge + CIPS (`MBridgeAdapter`) and PAPSS (`PapssAdapter`) have
+settlement-attestation adapters; SPFS remains referenced-only with no
+protocol-level integration.
 
 **Gap:** The Gateway cannot actually send or receive payments over SPFS,
 PAPSS, CIPS, or mBridge. The routes are addressable but generate stub
@@ -184,7 +193,7 @@ responses.
 1. Define `PaymentCorridor` enum with protocol-specific adapters
 2. Implement SPFS adapter: ISO 20022 over dedicated network
 3. Implement CIPS adapter: ISO 20022 + CNY-specific fields
-4. Implement PAPSS adapter: ISO 20022 + Afreximbank settlement
+4. ~~Implement PAPSS adapter~~ ✅ Done (2026-10-10): `PapssAdapter` in `internal/engine/src/papss_adapter.rs`
 5. mBridge: DLT integration (separate research needed)
 
 ### 3.4 G-FI4: On-Ramp Provider Testing (P3 — Low Priority)
@@ -209,8 +218,9 @@ but the full end-to-end flow is untested.
 
 | Provider | Verification | Status |
 |----------|-------------|--------|
-| Ramp | HMAC-SHA256(secret, raw_payload) | ✅ Live |
-| Investec | HMAC-SHA256; fails-closed if secret empty | ✅ Live |
+| Ramp Network | HMAC-SHA256(secret, raw_payload) | ✅ Live |
+| Stitch | HMAC-SHA256; fails-closed if secret empty | ✅ Live |
+| Ozow | HMAC-SHA256; fails-closed if secret empty | ✅ Live |
 | AlchemyPay | HMAC-SHA256 | ✅ Stub |
 | Banxa | HMAC-SHA256 | ✅ Stub |
 

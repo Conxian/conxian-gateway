@@ -15,7 +15,9 @@ use conxian_core::{
     JobCardSettlementRequest, Persistence, PersistentState, SettlementEnvelope, SettlementProposal,
     TrustPolicyDecision,
 };
-use conxian_engine::{MBridgeAdapter, MBridgeAttestationPayload};
+use conxian_engine::{
+    MBridgeAdapter, MBridgeAttestationPayload, PapssAdapter, PapssAttestationPayload,
+};
 use http_body_util::BodyExt;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -517,6 +519,20 @@ pub async fn ingress_papss(
         (
             StatusCode::BAD_REQUEST,
             Json(json!({ "error": format!("Invalid JSON: {}", e) })),
+        )
+    })?;
+
+    let attestation: PapssAttestationPayload = serde_json::from_value(json_payload.clone())
+        .map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "error": format!("Invalid PAPSS attestation: {}", e) })),
+            )
+        })?;
+    PapssAdapter::verify_papss_settlement_attestation(&attestation).map_err(|e| {
+        (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": e.to_string() })),
         )
     })?;
 
