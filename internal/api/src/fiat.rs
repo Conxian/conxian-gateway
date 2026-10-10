@@ -351,7 +351,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_papss_session() {
-        let res = test_router().create_session(request("papss")).await.unwrap();
+        let res = test_router()
+            .create_session(request("papss"))
+            .await
+            .unwrap();
         assert_eq!(res.provider, "papss");
         assert!(res.redirect_url.contains("papss.afreximbank.com"));
     }
