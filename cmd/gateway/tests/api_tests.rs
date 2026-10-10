@@ -17,6 +17,7 @@ use conxian_core::{
     GatewayState, JobCardSettlementRequest, MempoolTxStatus, Persistence, PersistentState,
     SharedState, TrackedMempoolTx, VersionedPersistentState, WorkIntent,
 };
+use conxian_engine::PapssAdapter;
 use conxian_engine::{
     BitcoinCoreShadowObservation, BitcoinCoreShadowObserver, CoreBestBlockStats,
     CoreBlockchainInfo, CoreMempoolInfo, CoreNetworkInfo, DeploymentObservation,
@@ -27,7 +28,7 @@ use conxian_engine::{
 use hmac::KeyInit;
 use hmac::{Hmac, Mac};
 use http_body_util::BodyExt;
-use secp256k1::{Message, PublicKey, Secp256k1, SecretKey};
+use secp256k1::{Keypair, Message, PublicKey, Secp256k1, SecretKey};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::{
@@ -2613,13 +2614,53 @@ async fn test_ingress_papss_success() {
     let state = Arc::new(RwLock::new(GatewayState::default()));
     let app = setup_app(state);
 
+    // PAPSS settlement attestation: 2-of-2 Afreximbank/central-bank signatures.
+    let attestation_secp = Secp256k1::new();
+    let papss_keypair1 = Keypair::from_secret_key(
+        &attestation_secp,
+        &SecretKey::from_slice(&[0x11; 32]).unwrap(),
+    );
+    let papss_keypair2 = Keypair::from_secret_key(
+        &attestation_secp,
+        &SecretKey::from_slice(&[0x22; 32]).unwrap(),
+    );
+    let papss_timestamp = 1750000000u64;
+    let papss_hash = PapssAdapter::compute_payload_hash(
+        "PAPSS-AFRICA-001",
+        "NGBK001",
+        "GHBK002",
+        250000,
+        "NGN",
+        papss_timestamp,
+    );
+    let papss_message = Message::from_digest(Sha256::digest(papss_hash.as_bytes()).into());
+    let (papss_pubkey1, _) = papss_keypair1.x_only_public_key();
+    let (papss_pubkey2, _) = papss_keypair2.x_only_public_key();
+    let papss_sig1 = hex::encode(
+        attestation_secp
+            .sign_schnorr(&papss_message, &papss_keypair1)
+            .as_ref(),
+    );
+    let papss_sig2 = hex::encode(
+        attestation_secp
+            .sign_schnorr(&papss_message, &papss_keypair2)
+            .as_ref(),
+    );
+
     let papss_payload = json!({
         "PAPSS_MsgId": "PAPSS-AFRICA-001",
         "PAPSS_Amount": 250000,
         "PAPSS_Sender": "NGBK001",
         "PAPSS_Receiver": "GHBK002",
         "PAPSS_Currency": "NGN",
-        "PAPSS_TxRef": "REF-PAPSS-001"
+        "PAPSS_TxRef": "REF-PAPSS-001",
+        "proof_hash": papss_hash,
+        "timestamp": papss_timestamp,
+        "settlement_attestations": [
+            [hex::encode(papss_pubkey1.serialize()), papss_sig1],
+            [hex::encode(papss_pubkey2.serialize()), papss_sig2]
+        ],
+        "quorum_threshold": 2
     });
 
     let now = SystemTime::now()

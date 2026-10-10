@@ -4,6 +4,7 @@ pub mod bitvm_adapter;
 pub mod brics_adapter;
 pub mod coordination;
 pub mod ntt;
+pub mod papss_adapter;
 pub mod persistence;
 pub mod rgb_adapter;
 mod shutdown;
@@ -31,6 +32,7 @@ pub use bitcoin::{
 pub use brics_adapter::{MBridgeAdapter, MBridgeAttestationPayload, MBridgeVerificationResult};
 pub use coordination::RedisCoordinator;
 pub use ntt::{CitreaAdapter, NttRelayer, RootstockAdapter};
+pub use papss_adapter::{PapssAdapter, PapssAttestationPayload, PapssVerificationResult};
 pub use persistence::{
     run_blocking_persistence, AsyncPersistence, KwilPersistence, SovereignBackend,
     TablelandPersistence,
