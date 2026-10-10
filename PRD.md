@@ -62,7 +62,7 @@ Conxian is designed to capture the Total Addressable Market (TAM) of Bitcoin-nat
     - Integrated Workload Identity Federation (WIF) for TEE-based enclave authentication.
     - Enhanced Treasury Monitor with sBTC "Suction" simulation and Sovereign Yield Index (SYI).
 - 2026-03-24: Fiat Gateway Implementation (Jules):
-    - Implemented FiatRouter with production-grade Ramp and Investec integrations.
+    - Implemented FiatRouter with production-grade Ramp Network, Stitch, Ozow, Alchemy Pay, and Banxa integrations.
     - Added HMAC-SHA256 signature verification for authenticated webhooks.
 - 2026-03-25: A2P & NTT Enhancement (Jules):
     - Implemented Infobip integration and hardened stateless OTP verification in A2pRouter.

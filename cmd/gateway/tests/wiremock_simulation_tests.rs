@@ -163,7 +163,8 @@ fn create_test_app_with_lightning(lightning: Arc<LightningAdapter>) -> axum::Rou
     let shared: SharedState = Arc::new(RwLock::new(GatewayState::default()));
     let fiat = Arc::new(FiatRouter::from_enabled(
         Some(conxian_api::fiat::RampAdapter::new("ramp-key".to_string())),
-        Some(conxian_api::fiat::InvestecAdapter),
+        Some(conxian_api::fiat::StitchAdapter),
+        Some(conxian_api::fiat::OzowAdapter),
         Some(conxian_api::fiat::AlchemyPayAdapter::new(
             "alchemy-id".to_string(),
         )),
