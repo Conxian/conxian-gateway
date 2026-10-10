@@ -19,18 +19,32 @@ The Conxian Gateway provides a single API layer for indexing, verifying, and orc
 ## Workflow & Consumption
 1. **Discovery**: Review the [PRD.md](PRD.md) and [ADAPTER_FAMILY_STRATEGY.md](docs/research/ADAPTER_FAMILY_STRATEGY.md).
 2. **Pilot**: Run the [developer sandbox](examples/developer-sandbox/README.md), which uses the workspace [`@conxian/client-sdk`](packages/client-sdk) for the narrow health, supported-chain, and BitVM rehearsal path.
-3. **Production**: Deploy the gateway behind your own institutional security perimeter using the provided [Docker Compose](docker-compose.yml) baseline.
-4. **Expansion**: Add custom chain adapters or compliance rules using the [`ChainAdapter`](pkg/conxian-core/src/lib.rs) trait.
+3. **Sovereign Installation**: Use the unified installer CLI `conxian-cli` (`cmd/conxian-cli`) to generate configuration, perform environment preflight diagnostic checks, and manage service lifecycles.
+4. **Production**: Deploy the gateway behind your own institutional security perimeter using `conxian-cli start` or the provided [Docker Compose](docker-compose.yml) baseline.
+5. **Expansion**: Add custom chain adapters or compliance rules using the [`ChainAdapter`](pkg/conxian-core/src/lib.rs) trait.
 
 Before production deployment, review the supported single-writer topology,
 crash recovery, backup, mempool reconciliation, and shutdown procedures in
-[`docs/PERSISTENCE_TOPOLOGY.md`](docs/PERSISTENCE_TOPOLOGY.md).
+[`docs/PERSISTENCE_TOPOLOGY.md`](docs/PERSISTENCE_TOPOLOGY.md) as well as the
+[Client Installation & Deployment Blueprint](docs/research/CLIENT_INSTALLATION_AND_DEPLOYMENT_BLUEPRINT.md).
 
 ## Core Capabilities
 - **Universal Verification (UCV-1)**: Unified interface for heterogeneous proofs (BitVM, ZKC, TEE).
 - **Institutional Egress**: ISO 20022 (pacs.008) banking-standard messaging.
 - **Mempool Orchestration**: Automated RBF/CPFP fee-bumping for high-priority settlements.
 - **Identity Bridge**: Unified resolution for BNS, ENS, and World ID.
+
+## Sovereign Multi-Rail Installer (`conxian-cli`)
+
+The workspace includes a sovereign CLI installer (`cmd/conxian-cli`) to streamline client onboarding, environment diagnostics, and multi-rail lifecycle orchestration.
+
+### Key Subcommands
+- **`conxian-cli init`**: Generates production environment templates (`.env`), database migration stubs, and trust policy configurations (`--tier T1 --mode production`).
+- **`conxian-cli doctor`**: Executes interactive preflight checks verifying mandatory secret entropy, RPC node connectivity, and port availability.
+- **`conxian-cli start`**: Renders Docker Compose manifests or launches background Gateway server processes.
+- **`conxian-cli status`**: Probes Gateway `/api/v1/health` and `/metrics` endpoints to report real-time node operational status.
+
+For full architectural blueprints, see [`docs/research/CLIENT_INSTALLATION_AND_DEPLOYMENT_BLUEPRINT.md`](docs/research/CLIENT_INSTALLATION_AND_DEPLOYMENT_BLUEPRINT.md).
 
 ## Architecture
 - `/apps/control-plane`: Next.js management dashboard.
@@ -46,11 +60,14 @@ crash recovery, backup, mempool reconciliation, and shutdown procedures in
 
 Follow these steps to set up, build, and test the entire multi-language workspace.
 
-### 1. Rust Gateway Setup
-The core Gateway services are implemented in asynchronous Rust.
+### 1. Rust Gateway & CLI Setup
+The core Gateway services and sovereign CLI installer are implemented in asynchronous Rust.
 ```bash
-# Build production release binary
+# Build production release binaries (gateway and conxian-cli)
 cargo build --release
+
+# Run conxian-cli diagnostic doctor
+cargo run -p conxian-cli -- doctor
 
 # Run entire Rust workspace test suite
 cargo test --workspace

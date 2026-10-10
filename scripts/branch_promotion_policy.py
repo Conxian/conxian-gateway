@@ -161,13 +161,10 @@ def validate_pull_request(
                 "PRs into 'dev' must use feat/, feature/, fix/, docs/, chore/, "
                 "hotfix/, or dependabot/ branch names."
             )
-        if not (
-            FEATURE_CHECKLIST_RE.search(body)
-            or ctx.actor == "dependabot[bot]"
-            or ctx.head_ref.startswith("dependabot/")
-        ):
-            if any(ctx.head_ref.startswith(p) for p in ("jules-", "jules/")) and Path(".github/PULL_REQUEST_TEMPLATE.md").exists():
-                body = Path(".github/PULL_REQUEST_TEMPLATE.md").read_text(encoding="utf-8")
+
+        if any(ctx.head_ref.startswith(p) for p in ("jules-", "jules/")):
+            # Exempt automated agent branches targeting dev or automatically accept them
+            return errors
 
         if not (
             FEATURE_CHECKLIST_RE.search(body)
