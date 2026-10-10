@@ -318,10 +318,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_ozow_session() {
-        let res = test_router()
-            .create_session(request("ozow"))
-            .await
-            .unwrap();
+        let res = test_router().create_session(request("ozow")).await.unwrap();
         assert_eq!(res.provider, "ozow");
         assert!(res.redirect_url.contains("ozow.com"));
     }
