@@ -107,9 +107,7 @@ impl PapssAdapter {
         if !payload.proof_hash.is_empty()
             && payload.proof_hash.to_lowercase() != computed_hash.to_lowercase()
         {
-            return Err(ConxianError::Security(
-                "PAPSS payload hash mismatch".into(),
-            ));
+            return Err(ConxianError::Security("PAPSS payload hash mismatch".into()));
         }
 
         let msg_hash = Sha256::digest(computed_hash.as_bytes());

@@ -17,6 +17,7 @@ use conxian_core::{
     GatewayState, JobCardSettlementRequest, MempoolTxStatus, Persistence, PersistentState,
     SharedState, TrackedMempoolTx, VersionedPersistentState, WorkIntent,
 };
+use conxian_engine::PapssAdapter;
 use conxian_engine::{
     BitcoinCoreShadowObservation, BitcoinCoreShadowObserver, CoreBestBlockStats,
     CoreBlockchainInfo, CoreMempoolInfo, CoreNetworkInfo, DeploymentObservation,
@@ -24,7 +25,6 @@ use conxian_engine::{
     FeeEstimateObservation, FeeRateUnit, ObservationAvailability, ObservationErrorCategory,
     ShadowObserverFailure, SourceObservation,
 };
-use conxian_engine::PapssAdapter;
 use hmac::KeyInit;
 use hmac::{Hmac, Mac};
 use http_body_util::BodyExt;
@@ -2635,10 +2635,16 @@ async fn test_ingress_papss_success() {
     let papss_message = Message::from_digest(Sha256::digest(papss_hash.as_bytes()).into());
     let (papss_pubkey1, _) = papss_keypair1.x_only_public_key();
     let (papss_pubkey2, _) = papss_keypair2.x_only_public_key();
-    let papss_sig1 =
-        hex::encode(attestation_secp.sign_schnorr(&papss_message, &papss_keypair1).as_ref());
-    let papss_sig2 =
-        hex::encode(attestation_secp.sign_schnorr(&papss_message, &papss_keypair2).as_ref());
+    let papss_sig1 = hex::encode(
+        attestation_secp
+            .sign_schnorr(&papss_message, &papss_keypair1)
+            .as_ref(),
+    );
+    let papss_sig2 = hex::encode(
+        attestation_secp
+            .sign_schnorr(&papss_message, &papss_keypair2)
+            .as_ref(),
+    );
 
     let papss_payload = json!({
         "PAPSS_MsgId": "PAPSS-AFRICA-001",
