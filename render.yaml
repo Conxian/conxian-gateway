@@ -32,7 +32,9 @@ services:
         value: disabled
       - key: RAMP_API_KEY
         sync: false
-      - key: INVESTEC_MODE
+      - key: STITCH_MODE
+        value: disabled
+      - key: OZOW_MODE
         value: disabled
       - key: ALCHEMY_PAY_MODE
         value: disabled

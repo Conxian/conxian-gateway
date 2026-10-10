@@ -13,7 +13,7 @@ pub struct OnRampSessionRequest {
     pub wallet_address: String,
     pub amount: f64,
     pub currency: String,
-    pub provider: String, // "ramp", "investec", "alchemypay", or "banxa"
+    pub provider: String, // "ramp", "stitch", "ozow", "alchemypay", or "banxa"
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -39,7 +39,8 @@ pub struct WebhookPayload {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FiatOnRampProvider {
     Ramp,
-    Investec,
+    Stitch,
+    Ozow,
     AlchemyPay,
     Banxa,
 }
@@ -48,7 +49,8 @@ impl FiatOnRampProvider {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Ramp => "ramp",
-            Self::Investec => "investec",
+            Self::Stitch => "stitch",
+            Self::Ozow => "ozow",
             Self::AlchemyPay => "alchemypay",
             Self::Banxa => "banxa",
         }
@@ -61,7 +63,8 @@ impl FromStr for FiatOnRampProvider {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "ramp" => Ok(Self::Ramp),
-            "investec" => Ok(Self::Investec),
+            "stitch" => Ok(Self::Stitch),
+            "ozow" => Ok(Self::Ozow),
             "alchemypay" => Ok(Self::AlchemyPay),
             "banxa" => Ok(Self::Banxa),
             _ => Err(format!("unsupported fiat on-ramp provider: {s}")),
@@ -70,7 +73,7 @@ impl FromStr for FiatOnRampProvider {
 }
 
 /// A fiat on-ramp connector. Each adapter owns the secret it embeds in its
-/// redirect URL; providers that embed no secret (Investec, Banxa) hold nothing.
+/// redirect URL; providers that embed no secret (Stitch, Ozow, Banxa) hold nothing.
 pub trait FiatOnRampAdapter: Send + Sync {
     fn provider(&self) -> FiatOnRampProvider;
     fn build_redirect_url(&self, request: &OnRampSessionRequest, session_id: &str) -> String;
@@ -99,16 +102,36 @@ impl FiatOnRampAdapter for RampAdapter {
     }
 }
 
-pub struct InvestecAdapter;
+/// Bank-agnostic South African on-ramp via Stitch: instant bank-to-bank (EFT),
+/// card, and crypto-pay (settle crypto -> ZAR). Stitch issues the hosted
+/// checkout link server-side, so no secret is embedded in the redirect URL.
+pub struct StitchAdapter;
 
-impl FiatOnRampAdapter for InvestecAdapter {
+impl FiatOnRampAdapter for StitchAdapter {
     fn provider(&self) -> FiatOnRampProvider {
-        FiatOnRampProvider::Investec
+        FiatOnRampProvider::Stitch
     }
 
     fn build_redirect_url(&self, request: &OnRampSessionRequest, session_id: &str) -> String {
         format!(
-            "https://investec.com/banking/pay?ref={}&amount={}",
+            "https://checkout.stitch.money/?reference={}&amount={}&currency={}",
+            session_id, request.amount, request.currency
+        )
+    }
+}
+
+/// Bank-agnostic South African instant-EFT on-ramp via Ozow (47M+ bank accounts).
+/// No secret is embedded in the hosted redirect URL.
+pub struct OzowAdapter;
+
+impl FiatOnRampAdapter for OzowAdapter {
+    fn provider(&self) -> FiatOnRampProvider {
+        FiatOnRampProvider::Ozow
+    }
+
+    fn build_redirect_url(&self, request: &OnRampSessionRequest, session_id: &str) -> String {
+        format!(
+            "https://pay.ozow.com/?reference={}&amount={}",
             session_id, request.amount
         )
     }
@@ -161,7 +184,8 @@ impl FiatRouter {
     /// provider is disabled and its route is unavailable (no secret required).
     pub fn from_enabled(
         ramp: Option<RampAdapter>,
-        investec: Option<InvestecAdapter>,
+        stitch: Option<StitchAdapter>,
+        ozow: Option<OzowAdapter>,
         alchemy_pay: Option<AlchemyPayAdapter>,
         banxa: Option<BanxaAdapter>,
     ) -> Self {
@@ -169,7 +193,10 @@ impl FiatRouter {
         if let Some(adapter) = ramp {
             adapters.push(Box::new(adapter));
         }
-        if let Some(adapter) = investec {
+        if let Some(adapter) = stitch {
+            adapters.push(Box::new(adapter));
+        }
+        if let Some(adapter) = ozow {
             adapters.push(Box::new(adapter));
         }
         if let Some(adapter) = alchemy_pay {
@@ -255,7 +282,8 @@ mod tests {
     fn test_router() -> FiatRouter {
         FiatRouter::from_enabled(
             Some(RampAdapter::new("test-key".to_string())),
-            Some(InvestecAdapter),
+            Some(StitchAdapter),
+            Some(OzowAdapter),
             Some(AlchemyPayAdapter::new("ap-app-id".to_string())),
             Some(BanxaAdapter),
         )
@@ -279,13 +307,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_create_investec_session() {
+    async fn test_create_stitch_session() {
         let res = test_router()
-            .create_session(request("investec"))
+            .create_session(request("stitch"))
             .await
             .unwrap();
-        assert_eq!(res.provider, "investec");
-        assert!(res.redirect_url.contains("investec-"));
+        assert_eq!(res.provider, "stitch");
+        assert!(res.redirect_url.contains("stitch.money"));
+    }
+
+    #[tokio::test]
+    async fn test_create_ozow_session() {
+        let res = test_router()
+            .create_session(request("ozow"))
+            .await
+            .unwrap();
+        assert_eq!(res.provider, "ozow");
+        assert!(res.redirect_url.contains("ozow.com"));
     }
 
     #[tokio::test]
@@ -317,7 +355,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_session_rejects_disabled_provider() {
-        let router = FiatRouter::from_enabled(None, None, None, None);
+        let router = FiatRouter::from_enabled(None, None, None, None, None);
         let res = router.create_session(request("ramp")).await;
         assert!(res.is_err());
     }
@@ -353,8 +391,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_verify_investec_webhook() {
-        let (payload, secret) = signed_webhook("investec", "investec-secret");
+    async fn test_verify_stitch_webhook() {
+        let (payload, secret) = signed_webhook("stitch", "stitch-secret");
         assert!(test_router().verify_webhook(&payload, &secret).unwrap());
     }
 
@@ -368,7 +406,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_verify_webhook_fails_closed_when_secret_missing() {
-        let (payload, _) = signed_webhook("investec", "investec-secret");
+        let (payload, _) = signed_webhook("stitch", "stitch-secret");
         let result = test_router().verify_webhook(&payload, "");
         assert!(result.is_err());
     }

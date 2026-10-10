@@ -17,7 +17,8 @@ services:
       - SETTLEMENT_INGRESS_SECRET=${SETTLEMENT_INGRESS_SECRET:-sentinel_ingress_secret}
       - RAMP_MODE=${RAMP_MODE:-disabled}
       - RAMP_API_KEY=${RAMP_API_KEY:-sentinel_RAMP_API_KEY}
-      - INVESTEC_MODE=${INVESTEC_MODE:-disabled}
+      - STITCH_MODE=${STITCH_MODE:-disabled}
+      - OZOW_MODE=${OZOW_MODE:-disabled}
       - ALCHEMY_PAY_MODE=${ALCHEMY_PAY_MODE:-disabled}
       - ALCHEMY_PAY_APP_ID=${ALCHEMY_PAY_APP_ID:-sentinel_ALCHEMY_PAY_APP_ID}
       - BANXA_MODE=${BANXA_MODE:-disabled}
@@ -50,7 +51,8 @@ services:
       - SETTLEMENT_INGRESS_SECRET=${SETTLEMENT_INGRESS_SECRET}
       - RAMP_MODE=${RAMP_MODE:-disabled}
       - RAMP_API_KEY=${RAMP_API_KEY:-sentinel_RAMP_API_KEY}
-      - INVESTEC_MODE=${INVESTEC_MODE:-disabled}
+      - STITCH_MODE=${STITCH_MODE:-disabled}
+      - OZOW_MODE=${OZOW_MODE:-disabled}
       - ALCHEMY_PAY_MODE=${ALCHEMY_PAY_MODE:-disabled}
       - ALCHEMY_PAY_APP_ID=${ALCHEMY_PAY_APP_ID:-sentinel_ALCHEMY_PAY_APP_ID}
       - BANXA_MODE=${BANXA_MODE:-disabled}
@@ -84,7 +86,8 @@ services:
       - SETTLEMENT_INGRESS_SECRET=${SETTLEMENT_INGRESS_SECRET}
       - RAMP_MODE=${RAMP_MODE:-disabled}
       - RAMP_API_KEY=${RAMP_API_KEY:-sentinel_RAMP_API_KEY}
-      - INVESTEC_MODE=${INVESTEC_MODE:-disabled}
+      - STITCH_MODE=${STITCH_MODE:-disabled}
+      - OZOW_MODE=${OZOW_MODE:-disabled}
       - ALCHEMY_PAY_MODE=${ALCHEMY_PAY_MODE:-disabled}
       - ALCHEMY_PAY_APP_ID=${ALCHEMY_PAY_APP_ID:-sentinel_ALCHEMY_PAY_APP_ID}
       - BANXA_MODE=${BANXA_MODE:-disabled}
