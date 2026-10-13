@@ -1,5 +1,13 @@
 # Conxian Gateway
 
+## Public protocol and managed service boundary
+
+Gateway owns tokenless routing and financial-message translation. The reusable routing schemas and bounded ISO 20022 translation profile are public protocol components associated with `conxian.org`. Conxian-Labs operates the commercial `conxian-labs.com` tier through authenticated tenant APIs, distributed quotas, compliance integrations, durable audit export, deployment operations, and contracted support.
+
+Conxian has no native token, staking asset, or speculative tokenomics. Gateway may observe or route assets issued by external networks, but those adapters do not create Conxian protocol assets. Bitcoin L1 is the verification root for promoted production claims.
+
+The current managed-auth middleware provides strict JWT/API-key validation, a single-process rate limiter, and structured audit hooks. Multi-replica commercial service remains gated on a shared atomic rate-limit backend and durable append-only audit sink.
+
 Institutional-grade middleware bridging Bitcoin and Stacks state logic with enterprise compliance.
 
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
