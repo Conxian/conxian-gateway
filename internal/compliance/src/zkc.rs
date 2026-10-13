@@ -200,31 +200,48 @@ impl ZkcVerifier {
         raw_xml: &str,
         tx_hash: String,
     ) -> ConxianResult<SettlementEnvelope> {
-        info!("Normalizing ISO 20022 XML payload");
-        self.validate_iso20022_xml_structure(raw_xml)?;
-
-        let source = if raw_xml.contains("pain.001") {
-            SettlementSource::Iso20022Pain001
-        } else {
-            SettlementSource::Iso20022Pacs008
+        info!("Normalizing bounded ISO 20022 ingress payload");
+        let event = crate::iso20022::translate(raw_xml.as_bytes())?;
+        if event.payload_sha256 != tx_hash {
+            return Err(ConxianError::Compliance(
+                "ISO 20022 payload digest does not match the ingress digest".to_string(),
+            ));
+        }
+        let source = match event.message_type {
+            crate::iso20022::Iso20022MessageType::Pacs008 => SettlementSource::Iso20022Pacs008,
+            crate::iso20022::Iso20022MessageType::Pacs009 => SettlementSource::Iso20022Pacs009,
+            crate::iso20022::Iso20022MessageType::Pain001 => SettlementSource::Iso20022Pain001,
+            crate::iso20022::Iso20022MessageType::Camt053 => {
+                return Err(ConxianError::Compliance(
+                    "camt.053 is a reporting message and cannot initiate settlement".to_string(),
+                ));
+            }
         };
 
         Ok(SettlementEnvelope {
             version: "1.0".to_string(),
             payload: NormalizedSettlement {
                 source,
-                transaction_id: "ISO-SIM-123".into(),
-                amount_minor: 5000,
-                amount_scale: 2,
-                currency: "USD".into(),
-                sender: "sim-sender".into(),
-                receiver: "sim-receiver".into(),
-                timestamp: 123456789,
+                transaction_id: event.message_id.clone(),
+                amount_minor: event.amount_minor,
+                amount_scale: event.amount_scale,
+                currency: event.currency.clone(),
+                sender: event.debtor,
+                receiver: event.creditor,
+                timestamp: 0,
                 status: SettlementStatus::Ingested,
                 rail: None,
-                finality: SettlementFinality::Final,
+                finality: SettlementFinality::Unknown,
                 settled_at: None,
-                identifiers: SettlementIdentifiers::default(),
+                identifiers: SettlementIdentifiers {
+                    message_id: Some(event.message_id),
+                    transaction_reference: event.instruction_id,
+                    settlement_reference: None,
+                    end_to_end_id: event.end_to_end_id,
+                    settlement_amount: event.amount_minor.to_string(),
+                    settlement_currency: event.currency,
+                    settlement_date: event.settlement_date.unwrap_or_default(),
+                },
                 raw_payload_hash: tx_hash,
                 industrial_intent: Default::default(),
             },
