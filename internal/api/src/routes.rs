@@ -181,7 +181,10 @@ pub fn configure_routes(
     // https://api.conxian-labs.com/v1/agent in production. Multi-tenant keys or
     // Fusion JWTs are accepted; legacy institutional bearer tokens remain valid.
     let managed_routes = Router::new()
-        .route("/agent/capabilities", get(crate::capabilities::get_capabilities))
+        .route(
+            "/agent/capabilities",
+            get(crate::capabilities::get_capabilities),
+        )
         .route("/agent/settle", post(handlers::settle_job_card))
         .route("/agent/verify", post(handlers::verify_attestation))
         .route("/agent/chains", get(handlers::list_supported_chains))
