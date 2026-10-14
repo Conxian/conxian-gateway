@@ -138,7 +138,6 @@ fn setup_app_with_lightning_and_persistence(
         Some(conxian_api::fiat::RampAdapter::new("ramp-key".to_string())),
         Some(conxian_api::fiat::StitchAdapter),
         Some(conxian_api::fiat::OzowAdapter),
-        Some(conxian_api::fiat::PapssAdapter),
         Some(conxian_api::fiat::AlchemyPayAdapter::new(
             "alchemy-id".to_string(),
         )),
