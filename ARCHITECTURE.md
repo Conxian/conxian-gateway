@@ -1,5 +1,9 @@
 # Gateway architecture and operating boundary
 
+## Runtime capability discovery
+
+The running adapter map supplies authenticated diagnostic discovery at `/api/v1/capabilities` and `/api/v1/agent/capabilities`. Registration is separate from exact chain/network identity, runtime health, and qualified operations. The manifest exposes unknown health, unqualified production support, and no signing authorization. See [capability discovery](docs/CAPABILITY_DISCOVERY.md) and Gateway #526 for the deployment-bound Core manifest rollout.
+
 ## Role
 
 Conxian Gateway translates validated external messages into tokenless routing events and applies transport, tenant, compliance, and policy controls. It does not issue a native token, custody customer keys, claim chain finality from message receipt, or implement Nexus proof arithmetic.
