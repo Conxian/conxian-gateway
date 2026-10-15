@@ -1,5 +1,7 @@
 # Conxian Gateway: Agent Instructions (Session 58, Aug 2026)
 
+> Capability alignment (2026-10-14): read `docs/CAPABILITY_DISCOVERY.md`. Runtime adapter registration is diagnostic; health, exact chain/network identity, operation support, provider evidence, and production qualification require separate verification. Preserve legitimate external-chain adapters and the zero-native-token boundary.
+
 > **Archive**: `docs/archive/AGENTS_archive_session_58.md` (full session history)
 
 ## Core Philosophy

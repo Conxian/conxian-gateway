@@ -1174,8 +1174,14 @@ pub async fn update_handoff_state(
 }
 
 pub async fn list_supported_chains(State(state): State<AppState>) -> Json<Value> {
-    let chains: Vec<String> = state.multi_chain.keys().cloned().collect();
-    Json(json!({ "supported_chains": chains }))
+    let mut chains: Vec<String> = state.multi_chain.keys().cloned().collect();
+    chains.sort();
+    Json(json!({
+        "supported_chains": chains,
+        "semantics": "registered-adapters-only",
+        "capability_manifest": "/api/v1/capabilities",
+        "production_support": "not-advertised"
+    }))
 }
 
 pub async fn get_chain_height(

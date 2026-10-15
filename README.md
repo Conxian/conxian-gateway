@@ -1,5 +1,7 @@
 # Conxian Gateway
 
+Current [capability discovery](docs/CAPABILITY_DISCOVERY.md) reports process registrations with separate health/evidence status. It does not infer live support from SDK inventory counts. See [architecture](ARCHITECTURE.md) for public protocol and managed-service ownership.
+
 ## Public protocol and managed service boundary
 
 Gateway owns tokenless routing and financial-message translation. The reusable routing schemas and bounded ISO 20022 translation profile are public protocol components associated with `conxian.org`. Conxian-Labs operates the commercial `conxian-labs.com` tier through authenticated tenant APIs, distributed quotas, compliance integrations, durable audit export, deployment operations, and contracted support.

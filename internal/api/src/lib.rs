@@ -5,6 +5,7 @@ pub mod a2p;
 pub mod admin;
 pub mod auth;
 pub mod camt;
+pub mod capabilities;
 pub mod fiat;
 pub mod handlers;
 pub mod lightning;
