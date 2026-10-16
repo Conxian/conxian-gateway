@@ -24,26 +24,15 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-// ---- Pricing constants ----
-
-/// Base monthly cost for the managed Gateway service (USD cents).
-pub const MANAGED_GATEWAY_BASE_FEE_CENTS: u64 = 20_000; // $200/mo
-
-/// Per-relay-message cost for managed Gateway (USD cents).
-pub const RELAY_MESSAGE_COST_CENTS: u64 = 1; // $0.01 per message
-
-/// Per-RWA-verification cost for managed Gateway (USD cents).
-pub const RWA_VERIFICATION_COST_CENTS: u64 = 5; // $0.05 per verification
-
-/// Per-settlement operation cost for managed Gateway (USD cents).
-pub const SETTLEMENT_OP_COST_CENTS: u64 = 10; // $0.10 per settlement
-
-/// Tier thresholds: usage above this switches to volume pricing.
-pub const ENTERPRISE_RELAY_THRESHOLD: u64 = 100_000; // messages/month
-pub const ENTERPRISE_DISCOUNT_BPS: u64 = 2000; // 20% discount in basis points
-
-/// Billing period: 30 days.
-pub const BILLING_PERIOD_SECONDS: u64 = 30 * 24 * 3600;
+// Keep the public paths and calculator behavior; definitions are shared with
+// Nexus through the immutable Core billing contract. These configured rates
+// neither prove a paid entitlement nor authorize collection.
+pub use lib_conxian_core::billing::gateway::{
+    BILLING_PERIOD_SECONDS, ENTERPRISE_DISCOUNT_BPS, ENTERPRISE_RELAY_THRESHOLD,
+    MANAGED_GATEWAY_BASE_FEE_CENTS, RELAY_MESSAGE_COST_CENTS, RWA_VERIFICATION_COST_CENTS,
+    SETTLEMENT_OP_COST_CENTS,
+};
+pub use lib_conxian_core::billing::{billing_catalog, BillingCatalog};
 
 // ---- Models ----
 
@@ -132,7 +121,8 @@ impl BillingPeriod {
     }
 }
 
-/// A billing report generated at the end of a billing period.
+/// Legacy configured-charge estimate for a period. It is not measured recurring
+/// revenue, recognized revenue, an invoice or a payment/collection receipt.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MrrReport {
     pub period: BillingPeriod,
@@ -156,7 +146,8 @@ pub struct LineItem {
 
 // ---- Billing Calculator ----
 
-/// Computes a billing report from accumulated usage.
+/// Computes the legacy configured service-charge estimate from supplied usage.
+/// The preserved API name does not establish MRR, payment or paid entitlement.
 pub fn compute_mrr(period: BillingPeriod, usage: &UsageMetrics) -> MrrReport {
     let mut line_items = Vec::new();
     let mut total = 0u64;
@@ -237,6 +228,66 @@ pub fn compute_mrr(period: BillingPeriod, usage: &UsageMetrics) -> MrrReport {
 /// Converts USD cents to a human-readable dollar string.
 pub fn format_usd(cents: u64) -> String {
     format!("${}.{:02}", cents / 100, cents % 100)
+}
+
+#[cfg(test)]
+mod shared_catalog_conformance {
+    use super::*;
+
+    #[test]
+    fn transitive_sdk_retains_provider_policy_hardening() {
+        use lib_conxian_core::sdk::conxius_enclave_sdk::enclave::attestation::{
+            HardwareProviderType, ATTESTATION_POLICY_DIGEST_VERSION,
+        };
+        assert_eq!(ATTESTATION_POLICY_DIGEST_VERSION, 2);
+        for alias in ["TDX", "KEYMINT", "SEV", "HSM"] {
+            assert!(HardwareProviderType::from_str_token(alias).is_none());
+        }
+    }
+
+    #[test]
+    fn legacy_calculation_preserves_golden_totals_across_the_volume_boundary() {
+        for (deployment, relay_messages, rwa_verifications, settlement_ops, expected) in [
+            (GatewayDeployment::SelfHosted, 100_000, 1_000, 500, 0),
+            (GatewayDeployment::Managed, 0, 0, 0, 20_000),
+            (GatewayDeployment::Managed, 99_999, 0, 0, 119_999),
+            (GatewayDeployment::Managed, 100_000, 0, 0, 96_000),
+            (GatewayDeployment::Managed, 100_000, 1_000, 500, 104_000),
+        ] {
+            let period = BillingPeriod {
+                start_unix: 0,
+                end_unix: BILLING_PERIOD_SECONDS,
+                deployment,
+            };
+            let usage = UsageMetrics {
+                relay_messages,
+                rwa_verifications,
+                settlement_ops,
+                ..UsageMetrics::default()
+            };
+            assert_eq!(compute_mrr(period, &usage).total_cost_cents, expected);
+        }
+    }
+
+    #[test]
+    fn compiled_catalog_retains_units_and_does_not_grant_nexus_entitlement() {
+        let catalog = billing_catalog();
+        assert_eq!(catalog.gateway.unit, "usd_cents");
+        assert_eq!(catalog.nexus.upgrade_unit, "satoshis");
+        assert_eq!(catalog.cross_product_entitlement, "unavailable");
+        assert!(!catalog.confers_entitlement);
+        assert_eq!(catalog.gateway.managed_base, MANAGED_GATEWAY_BASE_FEE_CENTS);
+        assert_eq!(catalog.gateway.relay, RELAY_MESSAGE_COST_CENTS);
+        assert_eq!(
+            catalog.gateway.rwa_verification,
+            RWA_VERIFICATION_COST_CENTS
+        );
+        assert_eq!(
+            catalog.gateway.settlement_operation,
+            SETTLEMENT_OP_COST_CENTS
+        );
+        assert_eq!(catalog.gateway.period_seconds, BILLING_PERIOD_SECONDS);
+    }
 }
 
 // ---- Tests ----
