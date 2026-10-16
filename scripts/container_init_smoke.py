@@ -102,6 +102,9 @@ def main():
                 subprocess.run(["docker", "rm", "--force", second], capture_output=True, timeout=30)
             CURRENT_PHASE = "restart"
             docker("restart", name)
+            # Docker may assign a new host port to an ephemeral binding.
+            port = docker("port", name, "10000/tcp").rsplit(":", 1)[1]
+            base = "http://127.0.0.1:" + port
             check_initialized()
             print(json.dumps({"result": "pass", "scope": "isolated-container-initialization",
                               "checks": ["hosting-port", "authentication-denial",
