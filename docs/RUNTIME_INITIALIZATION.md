@@ -27,3 +27,24 @@ Production activation retains the current durable-storage, per-operation provide
 tenant, key provisioning, source/artifact, review, promotion and acceptance gates.
 The existing Blueprint's persistent disk and single-writer deployment assumptions
 must be fulfilled before any hosted runtime is represented as operational.
+
+The Blueprint and disposable probe use the actual public route
+`/api/v1/health`. This route is liveness only; it does not attest RPC health,
+settlement finality, provider qualification or production readiness.
+
+Within the approved operator secret boundary, run:
+
+```sh
+python3 scripts/startup_secret_preflight.py
+```
+
+The preflight reads the injected environment locally and reports only known
+missing/invalid key names and an exit code. It does not export values,
+fingerprints, lengths, unrelated environment data or provider responses. Its
+contract tests compare the required/conditional secret set with Rust startup.
+It covers secret presence and the existing webhook-domain separation check;
+it does not assess secret strength, provisioning authority, filesystem,
+network, database, provider entitlement or release acceptance. Disabled
+providers remain unavailable even when the minimum startup-secret set passes.
+Smoke-test failures report only fixed phase labels.
+

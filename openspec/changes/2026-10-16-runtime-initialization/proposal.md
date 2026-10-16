@@ -10,3 +10,9 @@ Preserve persistent single-writer state, authentication, disabled provider modes
 tenant boundaries, signing and independent release gates. Validate port behavior,
 the existing default/mock/WireMock suites and container initialization in CI.
 No service placement, secret, DNS or production authorization is changed.
+
+Follow-up: bind deployment and smoke probes to `/api/v1/health`, retain
+secret-safe fixed failure phases, and add a local startup-secret presence
+preflight whose required and conditional key sets are checked against Rust.
+The preflight does not provision secrets or authorize a production operation.
+
