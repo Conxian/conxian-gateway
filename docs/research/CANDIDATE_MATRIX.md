@@ -215,3 +215,13 @@ Full financial systems analysis in `docs/research/BRICS_FINANCIAL_SYSTEMS_RESEAR
 - **Impact**: Completes full lifecycle of the DLC pipeline, enabling deterministic CET construction, funding transaction assembly, state persistence, refund building, and attestation-driven contract execution.
 
 The next development cycles should focus on configuring a real Wasm verifier, adding Chainlink CCIP authenticity verification, completing DLC orchestration, and integrating live mBridge validator corridors. Machine identity and OData capabilities remain active implementation areas.
+
+
+### Multi-Dimensional Scoring Refactoring & Live Settlement Integration (CON-1437 / CON-1440 / CON-1436)
+
+- **Status**: ✅ Expanded / Architectural Specification.
+- **Scope**: Replaces legacy Phase 6 mock scoring (`erp_mock` schema and simulated $1.0B valuation impact) with real-world x402 payment volume streams and ERC-8183 on-chain escrow state assertions.
+- **Scoring Mechanics**: Weighted Product Score (WPS) calculation consumes live telemetry:
+  1. **x402 Settlement Throughput**: Real-time throughput metrics (sats/sec and transaction velocity) from Lightning/X402 middleware.
+  2. **ERC-8183 Escrow State Assertions**: On-chain escrow locking, release attestations, and non-custodial milestone commitments.
+  3. **Valuation Impact**: Dynamic valuation metrics computed directly from verified on-chain and stateful payment proofs rather than synthetic ERP mock databases.
