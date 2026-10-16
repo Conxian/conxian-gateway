@@ -9,6 +9,8 @@ import time
 import urllib.error
 import urllib.request
 
+CURRENT_PHASE = "setup"
+
 
 def docker(*args):
     result = subprocess.run(["docker", *args], capture_output=True, text=True, timeout=60)
@@ -28,6 +30,7 @@ def request(base, path, token=None):
 
 
 def main():
+    global CURRENT_PHASE
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--image", required=True)
     args = parser.parse_args()
@@ -51,15 +54,18 @@ def main():
         for entry in env:
             command.extend(["--env", entry])
         try:
+            CURRENT_PHASE = "container-start"
             docker(*command, args.image)
             port = docker("port", name, "10000/tcp").rsplit(":", 1)[1]
             base = "http://127.0.0.1:" + port
 
             def check_initialized():
+                global CURRENT_PHASE
+                CURRENT_PHASE = "readiness"
                 deadline = time.monotonic() + 60
                 while True:
                     try:
-                        code, body = request(base, "/health")
+                        code, body = request(base, "/api/v1/health")
                         if code == 200 and len(body) <= 65536 and json.loads(body).get("status") == "ok":
                             break
                     except (OSError, ValueError):
@@ -67,6 +73,7 @@ def main():
                     if time.monotonic() > deadline:
                         raise RuntimeError("Gateway did not initialize")
                     time.sleep(1)
+                CURRENT_PHASE = "authentication"
                 for credential in [None, secrets.token_hex(32)]:
                     if request(base, "/api/v1/capabilities", credential)[0] != 401:
                         raise RuntimeError("Unauthorized discovery was not denied")
@@ -75,6 +82,7 @@ def main():
                     raise RuntimeError("Authenticated discovery failed")
 
             check_initialized()
+            CURRENT_PHASE = "exclusive-writer"
             # A second writer must fail rather than silently replace state.
             second = name + "-second"
             try:
@@ -92,6 +100,7 @@ def main():
                     raise RuntimeError("Second writer failed for an unrelated reason")
             finally:
                 subprocess.run(["docker", "rm", "--force", second], capture_output=True, timeout=30)
+            CURRENT_PHASE = "restart"
             docker("restart", name)
             check_initialized()
             print(json.dumps({"result": "pass", "scope": "isolated-container-initialization",
@@ -105,4 +114,7 @@ if __name__ == "__main__":
     try:
         main()
     except (RuntimeError, OSError, subprocess.TimeoutExpired):
-        raise SystemExit("Container initialization failed; no production acceptance is implied.")
+        print(json.dumps({"result": "fail", "phase": CURRENT_PHASE,
+                          "scope": "isolated-container-initialization"}))
+        raise SystemExit(1)
+
