@@ -30,31 +30,23 @@ services:
         sync: false
       - key: RAMP_MODE
         value: disabled
-      - key: RAMP_API_KEY
-        sync: false
       - key: STITCH_MODE
         value: disabled
       - key: OZOW_MODE
         value: disabled
       - key: ALCHEMY_PAY_MODE
         value: disabled
-      - key: ALCHEMY_PAY_APP_ID
-        sync: false
       - key: BANXA_MODE
         value: disabled
       - key: INFOBIP_MODE
         value: disabled
-      - key: INFOBIP_API_KEY
-        sync: false
       - key: HMAC_SECRET
         sync: false
       - key: OFFLINE_QUEUE_SECRET
         sync: false
-      # ── Managed SaaS Gateway (multi-tenant indie agent surface) ──
-      - key: MANAGED_API_KEYS
-        sync: false
-      - key: FUSION_JWT_SECRET
-        sync: false
+      # Add optional provider/managed credentials only through the protected
+      # operator channel when that operation is separately qualified. Omitted
+      # keys are not initial-creation prompts; existing values are preserved.
       - key: RATE_LIMIT_REQUESTS_PER_MINUTE
         value: "120"
       - key: TOKEN_TTL_SECONDS

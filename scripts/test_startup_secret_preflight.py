@@ -81,6 +81,14 @@ class StartupPreflightTests(unittest.TestCase):
         bindings = dict(re.findall(r'if Self::provider_enabled\("([A-Z0-9_]+)"\)\s*\{\s*Some\(Self::get_mandatory_env\(\s*"([A-Z0-9_]+)"', startup))
         self.assertEqual(bindings, CONDITIONAL)
 
+    def test_blueprint_requests_only_the_minimum_startup_secret_set(self):
+        blueprint = (SCRIPT.parents[1] / "render.yaml").read_text()
+        prompts = set(re.findall(r'- key: ([A-Z0-9_]+)\n\s+sync: false', blueprint))
+        self.assertEqual(prompts, set(REQUIRED))
+        self.assertIn("healthCheckPath: /api/v1/health", blueprint)
+        for mode in CONDITIONAL:
+            self.assertRegex(blueprint, rf'- key: {mode}\n\s+value: disabled')
+
 
 if __name__ == "__main__":
     unittest.main()

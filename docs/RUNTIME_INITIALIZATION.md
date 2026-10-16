@@ -48,3 +48,11 @@ network, database, provider entitlement or release acceptance. Disabled
 providers remain unavailable even when the minimum startup-secret set passes.
 Smoke-test failures report only fixed phase labels.
 
+The Blueprint now prompts for only those five unconditional startup secrets.
+Credentials for disabled providers and optional managed authentication are
+provisioned separately when their operations are qualified. Render preserves
+existing environment variables omitted from a Blueprint; omissions do not
+rotate or delete existing credentials. Its initial creation flow prompts for
+every `sync: false` entry, so optional credentials are not listed as startup
+requirements. See the [Blueprint environment-variable reference](https://render.com/docs/blueprint-spec#setting-environment-variables).
+
