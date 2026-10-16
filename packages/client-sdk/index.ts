@@ -31,6 +31,10 @@ import {
 
 export const GATEWAY_API_VERSION = "v1";
 
+export { JOURNAL_PREVIEW_VERSION, JOURNAL_PREVIEW_MAX_BYTES, JOURNAL_PREVIEW_MAX_LINES,
+    JournalPreviewError, prepareJournalPreview } from "./journal-preview";
+export type { JournalSourceClaim, JournalLine, JournalPreviewRequest, JournalPreview } from "./journal-preview";
+
 export interface HealthResponse {
     status: "ok";
 }
