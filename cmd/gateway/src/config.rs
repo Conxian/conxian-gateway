@@ -18,6 +18,27 @@ const REDIS_PASSWORD_SENTINEL: &str = "sentinel_REDIS_PASSWORD";
 const TOKEN_TTL_SENTINEL: &str = "sentinel_TOKEN_TTL";
 const EXCLUSIVE_LOCAL_WRITER_MODE: &str = "exclusive-local-writer";
 
+fn resolve_api_port_with(
+    get: impl Fn(&str) -> Result<String, env::VarError>,
+) -> Result<u16, String> {
+    for key in ["API_PORT", "PORT"] {
+        match get(key) {
+            Ok(raw) => {
+                let port: u16 = raw.parse().map_err(|_| format!("Invalid {key}"))?;
+                if port == 0 {
+                    return Err(format!("{key} must be a non-zero TCP port"));
+                }
+                return Ok(port);
+            }
+            Err(env::VarError::NotPresent) => continue,
+            Err(env::VarError::NotUnicode(_)) => {
+                return Err(format!("{key} must be valid unicode"))
+            }
+        }
+    }
+    Ok(3000)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FilesystemClass {
     Local(&'static str),
@@ -467,10 +488,8 @@ impl Config {
                 .unwrap_or_else(|_| "30".to_string())
                 .parse()
                 .unwrap_or(30),
-            api_port: env::var("API_PORT")
-                .unwrap_or_else(|_| "3000".to_string())
-                .parse()
-                .unwrap_or(3000),
+            api_port: resolve_api_port_with(|key| env::var(key))
+                .unwrap_or_else(|error| panic!("{error}")),
             api_token,
             ramp_api_key,
             stitch_enabled,
@@ -507,6 +526,33 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hosting_port_respects_explicit_override_and_rejects_invalid_values() {
+        let resolve = |api: Option<&str>, hosting: Option<&str>| {
+            resolve_api_port_with(|key| {
+                match key {
+                    "API_PORT" => api,
+                    "PORT" => hosting,
+                    _ => None,
+                }
+                .map(str::to_owned)
+                .ok_or(env::VarError::NotPresent)
+            })
+        };
+        assert_eq!(resolve(None, None).unwrap(), 3000);
+        assert_eq!(resolve(None, Some("10000")).unwrap(), 10000);
+        assert_eq!(resolve(Some("3001"), Some("10000")).unwrap(), 3001);
+        assert_eq!(resolve(Some("3001"), Some("invalid")).unwrap(), 3001);
+        for invalid in ["", "invalid", "0", "65536", "-1", " 10000 "] {
+            assert!(resolve(None, Some(invalid)).is_err());
+            assert!(resolve(Some(invalid), Some("10000")).is_err());
+        }
+        assert!(resolve_api_port_with(|_| {
+            Err(env::VarError::NotUnicode(std::ffi::OsString::new()))
+        })
+        .is_err());
+    }
     use std::sync::Mutex;
 
     static ENV_MUTEX: Mutex<()> = Mutex::new(());
