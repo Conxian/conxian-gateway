@@ -2416,8 +2416,8 @@ dependencies = [
 
 [[package]]
 name = "conxius-enclave-sdk"
-version = "2.0.17"
-source = "git+https://github.com/Conxian/conxius-enclave-sdk?tag=v2.0.17#7230f74a3c610d9825ca8d028c3e73167f3b7735"
+version = "2.1.0"
+source = "git+https://github.com/Conxian/conxius-enclave-sdk?rev=cb6b9c69752b7082d71b0ea7431a40a498ae8a6e#cb6b9c69752b7082d71b0ea7431a40a498ae8a6e"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -4287,9 +4287,8 @@ dependencies = [
 [[package]]
 name = "lib-conxian-core"
 version = "0.3.3"
-source = "git+https://github.com/Conxian/lib-conxian-core?tag=v0.3.3#b85625f7be8c77f9b656e32442f43e02eca77f1e"
+source = "git+https://github.com/Conxian/lib-conxian-core?rev=9dd3676bb64a5ba327cc2717d9e9d32bd09a2c95#9dd3676bb64a5ba327cc2717d9e9d32bd09a2c95"
 dependencies = [
- "aluvm",
  "anyhow",
  "ark-bn254 0.6.0",
  "ark-ff 0.6.0",
@@ -4305,10 +4304,8 @@ dependencies = [
  "k256 0.14.0",
  "lightning",
  "rand 0.10.3",
- "rgb-core",
- "rgb-std",
  "ripemd 0.2.0",
- "secp256k1 0.31.1",
+ "secp256k1 0.33.1",
  "semver 1.0.28",
  "serde",
  "serde_json",
