@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Consumed the immutable Core billing catalog/shared legacy rates and SDK provider-policy hardening, preserving MRR calculations and separating configuration from paid entitlement. Added golden calculation and dependency conformance checks (Business #1343/#1390).
+- Offline, versioned ERP journal previews in `@conxian/client-sdk`, with exact debit/credit validation, separate asset/accounting units, source references and deterministic scope/payload digests. Previews grant no posting or verification authority.
 - Implemented Bitcoin L1 Merkle Proof Verification (`verify_bitcoin_merkle_proof`) in `internal/engine/src/stacks/sbtc.rs` for sBTC peg-in/out transaction validation (G-SB3).
 - Implemented SWIFT `camt.053` OData v4 ERP Webhook Callback Synchronization (Candidate T / G-TR1) in `internal/api/src/camt.rs`, providing `ODataV4CallbackPayload` serialization, `dispatch_odata_v4_webhook` HTTP callback delivery using `minreq` inside `spawn_blocking`, and full test coverage.
 - Comprehensive audit and research expansion across all gaps, candidates (Candidates Q, R, S, T), and knowledge base documents (`docs/research/CANDIDATE_MATRIX.md`, `docs/research/KNOWLEDGE_MAP.md`, `docs/research/OPPORTUNITY_MAP_AND_EXPANSION.md`, and `docs/research/GAP_ANALYSIS_2026-09-06.md`).
