@@ -144,6 +144,132 @@ pub struct LineItem {
     pub subtotal_cents: u64,
 }
 
+/// Gateway subscription tier for managed gateway deployments (CON-1437 / CON-1440 / CON-1436).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GatewayTier {
+    /// Indie developer tier ($99/mo base, $0.001 per relay message)
+    Indie,
+    /// Production managed gateway tier ($200/mo base, standard metered ops)
+    Managed,
+    /// Custom enterprise tier with volume discounts
+    Enterprise,
+}
+
+pub const INDIE_GATEWAY_BASE_FEE_CENTS: u64 = 9_900; // $99.00 USD
+pub const INDIE_RELAY_MESSAGE_COST_CENTS: u64 = 1; // 1 cent per 10 messages = $0.001 per message
+
+/// CON-1437 / CON-1440 / CON-1436: Multi-Dimensional Weighted Product Score (WPS)
+///
+/// Computes a unified valuation and performance score consuming live x402 Lightning throughput,
+/// ERC-8183 on-chain escrow state assertions, and verified settlement metrics.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WeightedProductScore {
+    /// x402 settlement throughput in satoshis per second.
+    pub x402_throughput_sats_per_sec: f64,
+    /// On-chain ERC-8183 locked escrow value in satoshis.
+    pub erc8183_escrow_locked_sats: u64,
+    /// Total verified settlement operations.
+    pub verified_settlement_ops: u64,
+    /// Final calculated Weighted Product Score.
+    pub score: f64,
+    /// Throughput sub-score contribution (alpha weight = 0.40).
+    pub throughput_subscore: f64,
+    /// Escrow sub-score contribution (beta weight = 0.35).
+    pub escrow_subscore: f64,
+    /// Settlement sub-score contribution (gamma weight = 0.25).
+    pub settlement_subscore: f64,
+    /// Computed valuation impact estimate in USD cents.
+    pub valuation_impact_usd_cents: u64,
+}
+
+impl WeightedProductScore {
+    pub const ALPHA_WEIGHT: f64 = 0.40;
+    pub const BETA_WEIGHT: f64 = 0.35;
+    pub const GAMMA_WEIGHT: f64 = 0.25;
+
+    /// Calculate Weighted Product Score (WPS) from telemetry inputs.
+    pub fn compute(
+        x402_throughput_sats_per_sec: f64,
+        erc8183_escrow_locked_sats: u64,
+        verified_settlement_ops: u64,
+    ) -> Self {
+        let s_throughput = 1.0 + x402_throughput_sats_per_sec;
+        let s_escrow = 1.0 + (erc8183_escrow_locked_sats as f64 / 100_000.0);
+        let s_settlement = 1.0 + verified_settlement_ops as f64;
+
+        let throughput_subscore = s_throughput.powf(Self::ALPHA_WEIGHT);
+        let escrow_subscore = s_escrow.powf(Self::BETA_WEIGHT);
+        let settlement_subscore = s_settlement.powf(Self::GAMMA_WEIGHT);
+
+        let score = throughput_subscore * escrow_subscore * settlement_subscore;
+        let valuation_impact_usd_cents = (score * 10_000_000.0) as u64;
+
+        Self {
+            x402_throughput_sats_per_sec,
+            erc8183_escrow_locked_sats,
+            verified_settlement_ops,
+            score,
+            throughput_subscore,
+            escrow_subscore,
+            settlement_subscore,
+            valuation_impact_usd_cents,
+        }
+    }
+}
+
+/// Compute MRR for a specific GatewayTier.
+pub fn compute_mrr_for_tier(
+    tier: GatewayTier,
+    period: BillingPeriod,
+    usage: &UsageMetrics,
+) -> MrrReport {
+    if period.deployment == GatewayDeployment::SelfHosted {
+        return MrrReport {
+            period,
+            usage: usage.clone(),
+            total_cost_cents: 0,
+            line_items: Vec::new(),
+            enterprise_discount_applied: false,
+        };
+    }
+
+    let mut line_items = Vec::new();
+    let mut total = 0u64;
+
+    match tier {
+        GatewayTier::Indie => {
+            line_items.push(LineItem {
+                description: "Indie Gateway base fee".into(),
+                quantity: 1,
+                unit_cost_cents: INDIE_GATEWAY_BASE_FEE_CENTS,
+                subtotal_cents: INDIE_GATEWAY_BASE_FEE_CENTS,
+            });
+            total += INDIE_GATEWAY_BASE_FEE_CENTS;
+
+            if usage.relay_messages > 0 {
+                let subtotal = (usage.relay_messages * INDIE_RELAY_MESSAGE_COST_CENTS) / 10;
+                line_items.push(LineItem {
+                    description: "Relay messages (Indie metered)".into(),
+                    quantity: usage.relay_messages,
+                    unit_cost_cents: 1,
+                    subtotal_cents: subtotal,
+                });
+                total += subtotal;
+            }
+
+            MrrReport {
+                period,
+                usage: usage.clone(),
+                total_cost_cents: total,
+                line_items,
+                enterprise_discount_applied: false,
+            }
+        }
+        GatewayTier::Managed | GatewayTier::Enterprise => compute_mrr(period, usage),
+    }
+}
+
 // ---- Billing Calculator ----
 
 /// Computes the legacy configured service-charge estimate from supplied usage.
@@ -690,5 +816,35 @@ mod protocol_fee_tests {
         assert_eq!(report.total_settled_sat, 0);
         assert_eq!(report.total_fees_sat, 0);
         assert_eq!(report.effective_fee_bps, 0);
+    }
+}
+
+#[cfg(test)]
+mod wps_tier_tests {
+    use super::*;
+
+    #[test]
+    fn test_indie_tier_mrr_computation() {
+        let period = BillingPeriod {
+            start_unix: 0,
+            end_unix: BILLING_PERIOD_SECONDS,
+            deployment: GatewayDeployment::Managed,
+        };
+        let mut usage = UsageMetrics::new();
+        usage.relay_messages = 1_000;
+
+        let report = compute_mrr_for_tier(GatewayTier::Indie, period, &usage);
+        assert_eq!(report.total_cost_cents, 9_900 + 100); // $99 base + $1.00 for 1000 messages
+        assert_eq!(report.line_items.len(), 2);
+    }
+
+    #[test]
+    fn test_weighted_product_score_computation() {
+        let wps = WeightedProductScore::compute(100.0, 10_000_000, 500);
+        assert!(wps.score > 1.0);
+        assert!(wps.throughput_subscore > 1.0);
+        assert!(wps.escrow_subscore > 1.0);
+        assert!(wps.settlement_subscore > 1.0);
+        assert!(wps.valuation_impact_usd_cents > 0);
     }
 }

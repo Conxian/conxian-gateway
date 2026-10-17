@@ -225,3 +225,18 @@ The next development cycles should focus on configuring a real Wasm verifier, ad
   1. **x402 Settlement Throughput**: Real-time throughput metrics (sats/sec and transaction velocity) from Lightning/X402 middleware.
   2. **ERC-8183 Escrow State Assertions**: On-chain escrow locking, release attestations, and non-custodial milestone commitments.
   3. **Valuation Impact**: Dynamic valuation metrics computed directly from verified on-chain and stateful payment proofs rather than synthetic ERP mock databases.
+
+### Candidate U: Multi-Dimensional Weighted Product Score (WPS) & Gateway Tiering Engine (Score: 9.8 — Active Implementation)
+
+- **Status**: 🚀 Production Active / Implementation (CON-1437 / CON-1440 / CON-1436).
+- **Scope**: Replaces legacy synthetic mock scoring with real-world x402 Lightning settlement metrics, ERC-8183 on-chain escrow state assertions, and multi-tier pricing models ($99 Indie, $200 Managed, Custom Enterprise).
+- **Mathematical Model**:
+  $$\text{WPS} = (S_{\text{throughput}})^{\alpha} \times (S_{\text{escrow}})^{\beta} \times (S_{\text{settlement}})^{\gamma}$$
+  where:
+  - $\alpha = 0.40$ (x402 Lightning settlement throughput weight)
+  - $\beta = 0.35$ (ERC-8183 on-chain escrow state commitment weight)
+  - $\gamma = 0.25$ (Verified settlement operation velocity & volume weight)
+- **Pricing Tier Ladder**:
+  - `Indie`: $99/mo base fee + $0.001 per relay message (tailored for indie developers & low-volume agents).
+  - `Managed`: $200/mo base fee + $0.01 per relay, $0.05 per RWA verification, $0.10 per settlement op.
+  - `Enterprise`: Volume discounted tier (20% discount above 100k messages).
