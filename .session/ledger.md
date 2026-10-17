@@ -105,3 +105,18 @@
 1. **Resume Point:** Next session (Session N+1) must begin by executing **A0** and reading `.session/ledger.md`.
 2. **Current Baseline SHA:** `0aed110bd9a3231fcde76bdad1b98604e57a6c4f`.
 3. **Open Gaps Status:** Technical gaps G-DL1..3, G-FI1..3, G-BB1, G-FM1..2, G-SB3, G-C1, G-C4..5, G-20, G-ME1..2, and G-TR1 are 100% shipped. Open gaps G-SB1, G-LN1, and G-FM3 remain appropriately gated by custody infrastructure, operator demand signals, and ExCo governance decisions.
+
+---
+
+## A7. Session N Execution — Candidate U Implementation & Multi-Dimensional Scoring Engine
+
+- **Implemented Candidate:** Candidate U — Multi-Dimensional Weighted Product Score (WPS) & Gateway Tiering Engine (CON-1437 / CON-1440 / CON-1436).
+- **Files Modified:**
+  - `internal/engine/src/billing.rs`: Implemented `GatewayTier` (`Indie`, `Managed`, `Enterprise`), `compute_mrr_for_tier()`, and `WeightedProductScore::compute()` with unit tests.
+  - `docs/research/CANDIDATE_MATRIX.md`: Expanded matrix with Candidate U mathematical specification and pricing ladder.
+  - `.session/ledger.md`: Session execution ledger and audit tracking.
+- **Verification Results:**
+  - `cargo test --workspace` passed 100% (all workspace crates passing cleanly).
+  - `python3 scripts/verify_contamination_guard.py` passed (102 files clean).
+  - `python3 scripts/verify_tracked_artifacts.py` passed (zero prohibited tracked files).
+  - `python3 scripts/verify_release_hygiene.py` passed (v0.1.5 release alignment).
