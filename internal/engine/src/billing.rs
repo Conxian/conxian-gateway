@@ -144,7 +144,6 @@ pub struct LineItem {
     pub subtotal_cents: u64,
 }
 
-
 /// Gateway subscription tier for managed gateway deployments (CON-1437 / CON-1440 / CON-1436).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -819,7 +818,6 @@ mod protocol_fee_tests {
         assert_eq!(report.effective_fee_bps, 0);
     }
 }
-
 
 #[cfg(test)]
 mod wps_tier_tests {
