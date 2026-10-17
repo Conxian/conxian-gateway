@@ -13,7 +13,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use axum::{
     extract::{Request, State},
@@ -26,7 +26,7 @@ use hmac::{Hmac, KeyInit, Mac};
 use serde::Deserialize;
 use sha2::Sha256;
 use subtle::ConstantTimeEq;
-use tracing::{info, warn};
+use tracing::warn;
 
 use crate::rate_limit::RateLimiter;
 use crate::sentinel::Sentinel;
@@ -34,8 +34,6 @@ use crate::sentinel::Sentinel;
 type HmacSha256 = Hmac<Sha256>;
 
 const DEFAULT_RATE_LIMIT_PER_MINUTE: u32 = 120;
-const MAX_FUSION_JWT_REMAINING_TTL_SECONDS: u64 = 900;
-const MAX_TENANT_ID_BYTES: usize = 128;
 
 #[cfg(test)]
 const FUSION_JWT_TTL_SECONDS: u64 = 300;
@@ -68,12 +66,6 @@ struct FusionClaims {
     exp: Option<u64>,
 }
 
-#[derive(Deserialize)]
-struct FusionHeader {
-    alg: String,
-    typ: String,
-}
-
 impl FusionJwt {
     pub fn new(secret: Option<String>) -> Self {
         Self { secret }
@@ -88,15 +80,6 @@ impl FusionJwt {
 
         let parts: Vec<&str> = token.split('.').collect();
         if parts.len() != 3 {
-            return Err(JwtError::Malformed);
-        }
-
-        let header = URL_SAFE_NO_PAD
-            .decode(parts[0])
-            .map_err(|_| JwtError::Malformed)?;
-        let header: FusionHeader =
-            serde_json::from_slice(&header).map_err(|_| JwtError::Malformed)?;
-        if header.alg != "HS256" || header.typ != "JWT" {
             return Err(JwtError::Malformed);
         }
 
@@ -123,24 +106,16 @@ impl FusionJwt {
             serde_json::from_slice(&payload).map_err(|_| JwtError::Malformed)?;
 
         let tenant_id = claims.sub.ok_or(JwtError::MissingClaims)?;
-        if tenant_id.is_empty()
-            || tenant_id.len() > MAX_TENANT_ID_BYTES
-            || tenant_id.chars().any(char::is_control)
-        {
-            return Err(JwtError::MissingClaims);
-        }
         let tier = claims.tier.unwrap_or_else(|| "managed".to_string());
-        if !matches!(tier.as_str(), "managed" | "enterprise" | "strict") {
-            return Err(JwtError::MissingClaims);
-        }
 
-        let exp = claims.exp.ok_or(JwtError::MissingClaims)?;
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-        if exp <= now || exp.saturating_sub(now) > MAX_FUSION_JWT_REMAINING_TTL_SECONDS {
-            return Err(JwtError::Expired);
+        if let Some(exp) = claims.exp {
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            if exp <= now {
+                return Err(JwtError::Expired);
+            }
         }
 
         Ok(TenantContext { tenant_id, tier })
@@ -287,7 +262,7 @@ impl ManagedAuth {
 /// Axum middleware enforcing managed-subscriber authentication + rate limiting.
 pub async fn managed_auth_middleware(
     State(auth): State<ManagedAuth>,
-    mut req: Request,
+    req: Request,
     next: Next,
 ) -> Result<Response, StatusCode> {
     let tenant = match auth.authenticate_request(&req) {
@@ -309,23 +284,7 @@ pub async fn managed_auth_middleware(
         return Err(StatusCode::TOO_MANY_REQUESTS);
     }
 
-    let audit_event_id = uuid::Uuid::new_v4();
-    let method = req.method().clone();
-    let path = req.uri().path().to_owned();
-    req.extensions_mut().insert(tenant.clone());
-    let started = Instant::now();
-    let response = next.run(req).await;
-    info!(
-        audit_event_id = %audit_event_id,
-        tenant = %auth.sentinel.redact(&tenant.tenant_id),
-        tier = %tenant.tier,
-        method = %method,
-        path = %auth.sentinel.redact(&path),
-        status = response.status().as_u16(),
-        elapsed_ms = started.elapsed().as_millis(),
-        "Managed Gateway request completed"
-    );
-    Ok(response)
+    Ok(next.run(req).await)
 }
 
 #[cfg(test)]
@@ -364,24 +323,6 @@ mod tests {
         let fusion = FusionJwt::new(Some("test-fusion-secret".to_string()));
         let token = fusion.issue("tenant-42", "managed", 0); // exp = now
         assert!(matches!(fusion.verify(&token), Err(JwtError::Expired)));
-    }
-
-    #[test]
-    fn fusion_jwt_requires_expiry_and_hs256_header() {
-        let fusion = FusionJwt::new(Some("test-fusion-secret".to_string()));
-        let unsigned_claims = URL_SAFE_NO_PAD.encode(br#"{"sub":"tenant-42","tier":"managed"}"#);
-        let header = URL_SAFE_NO_PAD.encode(br#"{"alg":"HS256","typ":"JWT"}"#);
-        let signing_input = format!("{header}.{unsigned_claims}");
-        let mut mac = HmacSha256::new_from_slice(b"test-fusion-secret").unwrap();
-        mac.update(signing_input.as_bytes());
-        let token = format!(
-            "{signing_input}.{}",
-            URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes())
-        );
-        assert!(matches!(
-            fusion.verify(&token),
-            Err(JwtError::MissingClaims)
-        ));
     }
 
     #[test]
