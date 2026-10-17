@@ -152,7 +152,7 @@ def validate_pull_request(
     errors: list[str] = []
     body = ctx.body or ""
 
-    if any(ctx.head_ref.startswith(p) for p in ("jules-", "jules/", "feat/", "feature/", "fix/", "docs/", "chore/", "hotfix/")) and Path(".github/PULL_REQUEST_TEMPLATE.md").exists():
+    if any(ctx.head_ref.startswith(p) for p in ("jules-", "jules/")) and Path(".github/PULL_REQUEST_TEMPLATE.md").exists():
         template_text = Path(".github/PULL_REQUEST_TEMPLATE.md").read_text(encoding="utf-8")
         if not body.strip():
             body = template_text
