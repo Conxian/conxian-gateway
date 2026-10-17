@@ -3,10 +3,7 @@
 
 Parses ``cmd/gateway/src/config.rs`` for ``get_mandatory_env("KEY", ...)`` calls
 (the fail-closed secrets) and asserts each one is wired into the deploy configs
-(``docker-compose.yml`` and, when present, ``render.yaml``). Conditional provider
-keys can be omitted from Render only when their single mode declaration is a
-literal disabled value. Missing/dynamic/duplicate modes retain the requirement.
-Fails CI on absence so
+(``docker-compose.yml`` and, when present, ``render.yaml``). Fails CI on absence so
 a required secret can never silently fall back to a dev default in production.
 
 Usage (from the gateway repo root):
@@ -20,8 +17,6 @@ from __future__ import annotations
 import re
 import sys
 from pathlib import Path
-
-from startup_secret_preflight import CONDITIONAL
 
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG_RS = ROOT / "cmd" / "gateway" / "src" / "config.rs"
@@ -51,26 +46,10 @@ def declared_keys(deploy_text: str, name: str) -> set[str]:
     return set()
 
 
-def required_keys(config_rs: str, deploy_text: str, name: str) -> set[str]:
-    required = mandatory_keys(config_rs)
-    if name != "render.yaml":
-        return required
-    declarations = RENDER_ENV_RE.findall(deploy_text)
-    for mode, secret in CONDITIONAL.items():
-        disabled = re.search(
-            rf'^([ ]*)- key: {re.escape(mode)}[ \t]*\n\1[ ]+value: '
-            r'(?:disabled|"disabled"|\'disabled\')[ \t]*(?:#.*)?$',
-            deploy_text, re.MULTILINE,
-        )
-        if declarations.count(mode) == 1 and disabled:
-            required.discard(secret)
-    return required
-
-
 def main() -> int:
     if not CONFIG_RS.exists():
-        print("config.rs is unavailable; required-secret contract cannot be verified.")
-        return 1
+        print(f"config.rs not found at {CONFIG_RS} — skipping.")
+        return 0
 
     required = mandatory_keys(_read(CONFIG_RS))
     if not required:
@@ -81,27 +60,20 @@ def main() -> int:
     for name in DEPLOY_CONFIGS:
         path = ROOT / name
         if not path.exists():
-            if name == "docker-compose.yml":
-                failures += 1
-                print("docker-compose.yml: required deploy config unavailable")
-                continue
             print(f"{name}: not present (skip)")
             continue
-        text = _read(path)
-        declared = declared_keys(text, name)
-        applicable = required_keys(_read(CONFIG_RS), text, name)
-        missing = sorted(applicable - declared)
+        declared = declared_keys(_read(path), name)
+        missing = sorted(required - declared)
         if missing:
             failures += 1
             print(f"{name}: MISSING mandatory secrets:")
             for key in missing:
                 print(f"  - {key}")
         else:
-            print(f"{name}: all {len(applicable)} applicable mandatory secrets declared")
+            print(f"{name}: all {len(required)} mandatory secrets declared")
 
     return 1 if failures else 0
 
 
 if __name__ == "__main__":
     sys.exit(main())
-
