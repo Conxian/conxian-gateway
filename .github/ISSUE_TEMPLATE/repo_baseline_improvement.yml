@@ -5,17 +5,47 @@ body:
   - type: markdown
     attributes:
       value: |
-        Use this template for Conxian GitHub Baseline Review and High-Value Improvement tasks.
+        Use this template for Conxian GitHub Baseline Review and High-Value Quality Improvement tasks.
 
-        **Security Notice:** Do not submit vulnerabilities or private secrets here. Follow [SECURITY.md](https://github.com/Conxian/conxian-gateway/blob/main/SECURITY.md) for vulnerability reports.
+        ### Baseline Review Context & Priority Hierarchy
+
+        **Known cross-org concerns:**
+        - Public/private separation risk
+        - Possible sensitive config exposure such as `.env`
+        - Tracked generated/runtime artifacts (`node_modules`, `test-results`, `playwright-report`)
+        - Inconsistent governance and repo standards
+        - Missing core governance files (`README`, `LICENSE`, `SECURITY.md`, `CONTRIBUTING.md`, `CODEOWNERS`, `CHANGELOG.md`)
+        - Weak release/versioning discipline
+        - Unclear public-facing purpose/status
+
+        **Task Priority:**
+        1. Security exposure or public/private boundary risk
+        2. Sensitive files or generated artifacts tracked in git
+        3. Missing ignore rules or CI hygiene
+        4. Missing governance files
+        5. README / public-facing clarity improvements
+        6. Release/versioning improvements
+
+        **Required Workflow & Constraints:**
+        - Inspect repository before making changes
+        - Select exactly one self-contained task from the priority list
+        - Record evidence for why it was selected
+        - Implement change fully and run relevant validation
+        - Update all related documentation
+        - Avoid broad speculative refactors; prefer minimal, high-confidence changes
+        - Do not expose or commit secrets
+
+        **Security Notice:** Do not submit vulnerabilities or private secrets here. Follow [SECURITY.md](SECURITY.md) for vulnerability reports.
+
   - type: textarea
     id: objective
     attributes:
       label: Objective
-      description: Objective of the review and improvement task.
+      description: Objective of the baseline review task.
       value: "Review this repository and complete the next highest-value improvement using the Conxian GitHub review baseline."
     validations:
       required: true
+
   - type: input
     id: repo_focus
     attributes:
@@ -24,27 +54,30 @@ body:
       placeholder: "conxian-gateway"
     validations:
       required: true
+
   - type: textarea
     id: chosen_task
     attributes:
-      label: Selected Task & Priority
-      description: Exact single task selected from the Conxian baseline review priorities (Security, Artifacts/Sensitive Files, CI Hygiene, Governance, README/Clarity, Release/Versioning).
-      placeholder: "Selected Task: ..."
+      label: Selected Task & Priority Level
+      description: State the exact single task selected and its priority level (1-6) from the baseline matrix.
+      placeholder: "Selected Task: Standardize repository baseline review & CI artifact hygiene (Priority 3 & 4)..."
     validations:
       required: true
+
   - type: textarea
     id: evidence
     attributes:
-      label: Evidence Found
-      description: Record evidence and findings from inspecting the repository.
-      placeholder: "Findings and evidence..."
+      label: Evidence Found & Selection Rationale
+      description: Record findings, audit evidence, and why this specific task was chosen over other baseline candidates.
+      placeholder: "Audit evidence and rationale..."
     validations:
       required: true
+
   - type: textarea
-    id: changes_and_validation
+    id: deliverables_and_validation
     attributes:
-      label: Files Changed & Validation Results
-      description: List of files modified and verification script / test output.
-      placeholder: "Files changed and validation output..."
+      label: Deliverables & Validation Results
+      description: List files changed, validation/script results, documentation updated, follow-up items, and approval note.
+      placeholder: "- Files changed: ...\n- Validation results: ...\n- Documentation updated: ...\n- Follow-up items: ...\n- Approval note: ..."
     validations:
       required: true
