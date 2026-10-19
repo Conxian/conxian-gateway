@@ -33,7 +33,13 @@ fn init_templates_match_startup_inputs_without_embedding_secrets_in_compose() {
     assert!(dir.init().status.success());
     let env = std::fs::read_to_string(dir.0.join(".env.production")).unwrap();
     let compose = std::fs::read_to_string(dir.0.join("docker-compose.yml")).unwrap();
-    for key in ["API_TOKEN", "FIAT_WEBHOOK_SECRET", "SETTLEMENT_INGRESS_SECRET", "HMAC_SECRET", "OFFLINE_QUEUE_SECRET"] {
+    for key in [
+        "API_TOKEN",
+        "FIAT_WEBHOOK_SECRET",
+        "SETTLEMENT_INGRESS_SECRET",
+        "HMAC_SECRET",
+        "OFFLINE_QUEUE_SECRET",
+    ] {
         assert!(env.contains(&format!("{key}=")));
         assert!(!compose.contains(key));
     }
@@ -42,7 +48,15 @@ fn init_templates_match_startup_inputs_without_embedding_secrets_in_compose() {
     assert!(!env.contains("DATABASE_URL="));
     assert!(env.contains("GATEWAY_STATE_PATH='/usr/app/gateway_state.json'"));
     assert!(env.contains("GATEWAY_PERSISTENCE_MODE='exclusive-local-writer'"));
-    for mode in ["RAMP_MODE", "ALCHEMY_PAY_MODE", "INFOBIP_MODE", "STITCH_MODE", "OZOW_MODE", "BANXA_MODE", "PAPSS_MODE"] {
+    for mode in [
+        "RAMP_MODE",
+        "ALCHEMY_PAY_MODE",
+        "INFOBIP_MODE",
+        "STITCH_MODE",
+        "OZOW_MODE",
+        "BANXA_MODE",
+        "PAPSS_MODE",
+    ] {
         assert!(env.contains(&format!("{mode}='disabled'")));
     }
     assert!(compose.contains("${GATEWAY_IMAGE:?"));
@@ -51,19 +65,31 @@ fn init_templates_match_startup_inputs_without_embedding_secrets_in_compose() {
     assert!(compose.contains("127.0.0.1:${API_PORT:?Set API_PORT}:${API_PORT:?Set API_PORT}"));
     assert!(compose.contains("- .env.production"));
     assert!(String::from_utf8_lossy(&dir.init().stderr).contains("Refusing to replace"));
-    assert_eq!(std::fs::read_to_string(dir.0.join(".env.production")).unwrap(), env);
-    assert_eq!(std::fs::read_to_string(dir.0.join("docker-compose.yml")).unwrap(), compose);
+    assert_eq!(
+        std::fs::read_to_string(dir.0.join(".env.production")).unwrap(),
+        env
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.0.join("docker-compose.yml")).unwrap(),
+        compose
+    );
 }
 
 #[test]
 fn init_preserves_each_existing_file_without_creating_the_other() {
-    for (existing, other) in [(".env.production", "docker-compose.yml"), ("docker-compose.yml", ".env.production")] {
+    for (existing, other) in [
+        (".env.production", "docker-compose.yml"),
+        ("docker-compose.yml", ".env.production"),
+    ] {
         let dir = Scratch::new();
         std::fs::write(dir.0.join(existing), "private-existing-content").unwrap();
         let output = dir.init();
         assert!(!output.status.success());
         assert!(!dir.0.join(other).exists());
-        assert_eq!(std::fs::read_to_string(dir.0.join(existing)).unwrap(), "private-existing-content");
+        assert_eq!(
+            std::fs::read_to_string(dir.0.join(existing)).unwrap(),
+            "private-existing-content"
+        );
         assert!(!String::from_utf8_lossy(&output.stderr).contains("private-existing-content"));
     }
 }
@@ -75,7 +101,14 @@ fn init_protects_permissions_and_preserves_symlink_targets() {
     let fresh = Scratch::new();
     assert!(fresh.init().status.success());
     for name in [".env.production", "docker-compose.yml"] {
-        assert_eq!(std::fs::metadata(fresh.0.join(name)).unwrap().permissions().mode() & 0o077, 0);
+        assert_eq!(
+            std::fs::metadata(fresh.0.join(name))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o077,
+            0
+        );
     }
     for name in [".env.production", "docker-compose.yml"] {
         let dir = Scratch::new();
@@ -86,7 +119,11 @@ fn init_protects_permissions_and_preserves_symlink_targets() {
         assert_eq!(std::fs::read_to_string(&target).unwrap(), "private-target");
     }
     let dangling = Scratch::new();
-    symlink(dangling.0.join("missing"), dangling.0.join(".env.production")).unwrap();
+    symlink(
+        dangling.0.join("missing"),
+        dangling.0.join(".env.production"),
+    )
+    .unwrap();
     assert!(!dangling.init().status.success());
     assert!(!dangling.0.join("missing").exists());
 }

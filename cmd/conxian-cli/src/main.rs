@@ -339,8 +339,17 @@ mod tests {
 
     #[test]
     fn dotenv_values_are_literal_and_reject_delimiter_injection() {
-        assert_eq!(dotenv_literal("$SYNTHETIC # value").unwrap(), "'$SYNTHETIC # value'");
-        for value in ["private\nAPI_PORT=9", "private\rvalue", "private\0value", "private'value", "private\\value"] {
+        assert_eq!(
+            dotenv_literal("$SYNTHETIC # value").unwrap(),
+            "'$SYNTHETIC # value'"
+        );
+        for value in [
+            "private\nAPI_PORT=9",
+            "private\rvalue",
+            "private\0value",
+            "private'value",
+            "private\\value",
+        ] {
             let error = dotenv_literal(value).unwrap_err().to_string();
             assert!(!error.contains("private"));
         }
