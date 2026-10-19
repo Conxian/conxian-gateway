@@ -316,7 +316,9 @@ mod tests {
         assert!(status.contains("liveness observed"));
         assert!(status.contains("readiness and provider connectivity not established"));
         assert!(!status.contains("private-test-body"));
-        let api_base_status = probe_gateway_status(&format!("{url}/api/v1/")).await.unwrap();
+        let api_base_status = probe_gateway_status(&format!("{url}/api/v1/"))
+            .await
+            .unwrap();
         assert_eq!(status, api_base_status);
     }
 
@@ -327,22 +329,30 @@ mod tests {
 
         let app = Router::new()
             .route("/health", get(|| async { "private-historical-body" }))
-            .route("/api/v1/health", get(|| async { Redirect::temporary("/health") }));
+            .route(
+                "/api/v1/health",
+                get(|| async { Redirect::temporary("/health") }),
+            );
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-        let error = probe_gateway_status(&format!("http://{addr}")).await.unwrap_err();
+        let error = probe_gateway_status(&format!("http://{addr}"))
+            .await
+            .unwrap_err();
         assert!(error.to_string().contains("HTTP 307"));
         assert!(!error.to_string().contains("private-historical-body"));
         server.abort();
 
-        let app = Router::new().route("/api/v1/health", get(|| async {
-            (StatusCode::SERVICE_UNAVAILABLE, "private-error-body")
-        }));
+        let app = Router::new().route(
+            "/api/v1/health",
+            get(|| async { (StatusCode::SERVICE_UNAVAILABLE, "private-error-body") }),
+        );
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-        let error = probe_gateway_status(&format!("http://{addr}")).await.unwrap_err();
+        let error = probe_gateway_status(&format!("http://{addr}"))
+            .await
+            .unwrap_err();
         assert!(error.to_string().contains("HTTP 503"));
         assert!(!error.to_string().contains("private-error-body"));
         server.abort();
@@ -350,9 +360,13 @@ mod tests {
 
     #[tokio::test]
     async fn status_rejects_ambiguous_or_credential_bearing_bases_without_echoing_them() {
-        for base in ["file:///tmp/private-test-value", "http://private-test-value@127.0.0.1",
-                     "http://127.0.0.1?private-test-value", "http://127.0.0.1#private-test-value",
-                     "http://127.0.0.1/private-test-value"] {
+        for base in [
+            "file:///tmp/private-test-value",
+            "http://private-test-value@127.0.0.1",
+            "http://127.0.0.1?private-test-value",
+            "http://127.0.0.1#private-test-value",
+            "http://127.0.0.1/private-test-value",
+        ] {
             let error = probe_gateway_status(base).await.unwrap_err();
             assert!(!error.to_string().contains("private-test-value"));
         }
@@ -366,24 +380,34 @@ mod tests {
 
         let slow = Arc::new(AtomicBool::new(true));
         let state = slow.clone();
-        let app = Router::new().route("/api/v1/health", get(move || {
-            let state = state.clone();
-            async move {
-                if state.load(Ordering::SeqCst) {
-                    tokio::time::sleep(Duration::from_secs(10)).await;
+        let app = Router::new().route(
+            "/api/v1/health",
+            get(move || {
+                let state = state.clone();
+                async move {
+                    if state.load(Ordering::SeqCst) {
+                        tokio::time::sleep(Duration::from_secs(10)).await;
+                    }
+                    "private-health-body"
                 }
-                "private-health-body"
-            }
-        }));
+            }),
+        );
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
         let start = Instant::now();
-        let result = tokio::time::timeout(Duration::from_secs(6), probe_gateway_status(&format!("http://{addr}"))).await.unwrap();
+        let result = tokio::time::timeout(
+            Duration::from_secs(6),
+            probe_gateway_status(&format!("http://{addr}")),
+        )
+        .await
+        .unwrap();
         assert!(result.is_err());
         assert!(start.elapsed() < Duration::from_secs(6));
         slow.store(false, Ordering::SeqCst);
-        assert!(probe_gateway_status(&format!("http://{addr}")).await.is_ok());
+        assert!(probe_gateway_status(&format!("http://{addr}"))
+            .await
+            .is_ok());
         server.abort();
     }
 }

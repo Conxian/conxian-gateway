@@ -23,6 +23,10 @@ fn invalid_status_base_fails_without_echoing_the_input() {
         .output()
         .unwrap();
     assert!(!output.status.success());
-    let combined = format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
     assert!(!combined.contains("private-synthetic-input"));
 }
