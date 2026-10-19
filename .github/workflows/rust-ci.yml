@@ -26,7 +26,7 @@ jobs:
         run: git clone --depth 1 https://github.com/Conxian/lib-conxian-core.git ../lib-conxian-core
 
       - name: Install declared minimum Rust toolchain
-        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: "1.98.1"
 
@@ -62,7 +62,7 @@ jobs:
           python3 tests/test_verify_release_hygiene.py
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: "1.98.1"
           components: rustfmt
@@ -74,7 +74,10 @@ jobs:
         run: python3 scripts/verify_contamination_guard.py
 
       - name: Verify required secrets declared
-        run: python3 scripts/verify_required_secrets.py
+        run: |
+          python3 -m unittest discover -s scripts -p test_startup_secret_preflight.py
+          python3 -m unittest discover -s tests -p test_verify_required_secrets.py
+          python3 scripts/verify_required_secrets.py
 
   clippy:
     name: Clippy
@@ -87,7 +90,7 @@ jobs:
         run: git clone --depth 1 https://github.com/Conxian/lib-conxian-core.git ../lib-conxian-core
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: "1.98.1"
           components: clippy
@@ -109,7 +112,7 @@ jobs:
         run: git clone --depth 1 https://github.com/Conxian/lib-conxian-core.git ../lib-conxian-core
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: "1.98.1"
 
@@ -122,6 +125,34 @@ jobs:
       - name: Run identity tests (mock-integrations)
         run: cargo test --workspace --features mock-integrations
 
+      - name: Validate CLI Compose interpolation without starting services
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+          import subprocess
+          import tempfile
+
+          binary = pathlib.Path("target/debug/conxian-cli").resolve()
+          with tempfile.TemporaryDirectory() as directory:
+              subprocess.run([str(binary), "init"], cwd=directory, check=True)
+              command = ["docker", "compose", "--env-file", ".env.production", "config", "--quiet"]
+              environment = {key: value for key, value in os.environ.items() if key not in ("GATEWAY_IMAGE", "API_PORT")}
+              result = subprocess.run(command, cwd=directory, env=environment, capture_output=True)
+              assert result.returncode != 0, "An image must be explicitly selected"
+              environment["GATEWAY_IMAGE"] = "example.invalid/gateway@sha256:" + "0" * 64
+              environment["API_PORT"] = "18080"
+              result = subprocess.run(command, cwd=directory, env=environment, capture_output=True)
+              assert result.returncode == 0, "Generated Compose must validate with explicit configuration"
+              result = subprocess.run(command[:-1] + ["--format", "json"], cwd=directory, env=environment, capture_output=True, check=True)
+              service = json.loads(result.stdout)["services"]["conxian-gateway"]
+              assert service["environment"]["API_PORT"] == "18080"
+              assert service["ports"][0]["target"] == 18080
+              assert service["ports"][0]["published"] == "18080"
+              assert service["ports"][0]["host_ip"] == "127.0.0.1"
+          PY
+
   rgb-native:
     name: RGB Native Feature Tests
     runs-on: ubuntu-latest
@@ -133,7 +164,7 @@ jobs:
         run: git clone --depth 1 https://github.com/Conxian/lib-conxian-core.git ../lib-conxian-core
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: "1.98.1"
 
@@ -157,7 +188,7 @@ jobs:
         run: git clone --depth 1 https://github.com/Conxian/lib-conxian-core.git ../lib-conxian-core
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: "1.98.1"
 

@@ -40,7 +40,12 @@ def _read(path: Path) -> str:
 
 
 def mandatory_keys(config_rs: str) -> set[str]:
-    return set(MANDATORY_RE.findall(config_rs))
+    keys = set(MANDATORY_RE.findall(config_rs))
+    # The runtime accepts one logical API token with a legacy input alias.
+    # New deploy configurations must still declare its canonical name.
+    if re.search(r"let\s+api_token\s*=\s*resolve_api_token_with\(", config_rs):
+        keys.add("API_TOKEN")
+    return keys
 
 
 def declared_keys(deploy_text: str, name: str) -> set[str]:

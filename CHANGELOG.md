@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Align CLI-generated templates with startup secret, API-port and persistent-state contracts; require explicit image selection, keep credentials out of Compose, bind locally by default and preserve existing files/symlinks with private Unix permissions (#466, Business #1411).
+
+### Fixed
+- Bind startup-secret documentation to the runtime/preflight contract, add an environment-independent contract description, and distinguish CLI configuration/liveness checks from connectivity and deployment readiness (#466; Business #1411/#1423).
+- Align installer/runtime startup authentication on `API_TOKEN`, retain absence-only legacy token compatibility, and keep preflight/deployment declarations consistent without replacing current runtime behavior (#544).
+
 ### Added
 
 - Consumed the immutable Core billing catalog/shared legacy rates and SDK provider-policy hardening, preserving MRR calculations and separating configuration from paid entitlement. Added golden calculation and dependency conformance checks (Business #1343/#1390).

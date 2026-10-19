@@ -1,5 +1,38 @@
 # Runtime initialization
 
+## CLI-generated configuration
+
+`conxian-cli init` creates incomplete `.env.production` and `docker-compose.yml`
+templates in a new directory. Both paths must be absent, including dangling
+symlinks. Existing content is never replaced; on Unix new files are owner-only.
+If creation fails part-way, inspect the newly created files before retrying;
+generation is not a two-file transactional deployment.
+
+The environment template declares the five current baseline secret names as
+unconfigured placeholders and disables optional providers. Supply real values
+only through the protected operator channel. It also requires an explicitly
+selected, reviewed `GATEWAY_IMAGE` (prefer an immutable image digest); the CLI
+does not assert that any public registry image exists or is qualified.
+
+Use `docker compose --env-file .env.production up -d` after completing the
+configuration. The same `API_PORT` interpolation binds the host mapping and
+container listener, even when overridden by the shell. The default mapping is
+loopback-only. The `/usr/app` volume covers both the declared state file and
+the runtime's relative offline queue. Keep one writer; backup/restore, RPC
+connectivity and operation qualification remain separate. Container loopback
+does not reach a host Bitcoin node: choose a reachable endpoint explicitly.
+
+Generated values are single-quoted literals, preventing dollar interpolation.
+The generator rejects newline/NUL, single-quote and backslash delimiters rather
+than emitting ambiguous dotenv input; errors withhold the input. Legacy
+serialized trust/database/OData fields are retained for compatibility, but the
+template no longer presents them as settings consumed by the Gateway binary.
+
+Compose interpolation reference:
+https://docs.docker.com/compose/how-tos/environment-variables/variable-interpolation/
+
+## Runtime image and deployment contract
+
 `API_PORT` remains the explicit HTTP-port override. With no override, the hosting
 platform's `PORT` is used; with neither variable present the default remains 3000.
 Invalid explicit ports stop startup instead of falling back to a different port.
@@ -37,6 +70,11 @@ Within the approved operator secret boundary, run:
 ```sh
 python3 scripts/startup_secret_preflight.py
 ```
+
+For source-only requirements without inspecting any environment values, run
+`python3 scripts/startup_secret_preflight.py --describe`. The generated startup
+contract in the root README is checked against this description, Rust startup
+and the Blueprint in CI. A contract description is not a presence check.
 
 The preflight reads the injected environment locally and reports only known
 missing/invalid key names and an exit code. It does not export values,
