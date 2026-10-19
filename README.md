@@ -1,5 +1,15 @@
 # Conxian Gateway
 
+### API token configuration migration
+
+New installer output uses `API_TOKEN`. Existing `CONXIAN_GATEWAY_AUTH_TOKEN`
+configurations remain accepted when `API_TOKEN` is absent. If both are set,
+`API_TOKEN` takes precedence; an explicitly empty or invalid canonical value
+fails instead of falling back. Empty, sentinel and installer-placeholder tokens
+are not configured secrets. Set real values only through the approved secret
+boundary; the local startup preflight reports names/status, never token values.
+Other startup requirements and deployment/release gates remain applicable.
+
 Current [capability discovery](docs/CAPABILITY_DISCOVERY.md) reports process registrations with separate health/evidence status. It does not infer live support from SDK inventory counts. See [architecture](ARCHITECTURE.md) for public protocol and managed-service ownership.
 
 The client SDK also provides an [offline ERP journal preview](docs/ERP_JOURNAL_PREVIEW.md) with exact debit/credit balancing and explicit source/accounting units. Its output remains unverified and grants no ERP posting authority.

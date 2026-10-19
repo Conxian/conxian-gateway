@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Align installer/runtime startup authentication on `API_TOKEN`, retain absence-only legacy token compatibility, and keep preflight/deployment declarations consistent without replacing current runtime behavior (#544).
+
 ### Added
 
 - Consumed the immutable Core billing catalog/shared legacy rates and SDK provider-policy hardening, preserving MRR calculations and separating configuration from paid entitlement. Added golden calculation and dependency conformance checks (Business #1343/#1390).

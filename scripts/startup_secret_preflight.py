@@ -13,6 +13,7 @@ REQUIRED = ("API_TOKEN", "FIAT_WEBHOOK_SECRET", "SETTLEMENT_INGRESS_SECRET",
 CONDITIONAL = {"RAMP_MODE": "RAMP_API_KEY", "ALCHEMY_PAY_MODE": "ALCHEMY_PAY_APP_ID",
                "INFOBIP_MODE": "INFOBIP_API_KEY"}
 ENABLED_MODES = frozenset(("active", "shadow", "true", "1"))
+LEGACY_API_TOKEN = "CONXIAN_GATEWAY_AUTH_TOKEN"
 
 
 def check(environment: Mapping[str, str]) -> dict:
@@ -22,10 +23,18 @@ def check(environment: Mapping[str, str]) -> dict:
             required.append(key)
     missing, invalid = [], []
     for key in required:
-        value = environment.get(key, "").strip()
+        source_key = LEGACY_API_TOKEN if key == "API_TOKEN" and key not in environment else key
+        value = environment.get(source_key, "").strip()
+        if key == "API_TOKEN":
+            try:
+                value.encode("utf-8")
+            except UnicodeError:
+                invalid.append(key)
+                continue
         if not value:
             missing.append(key)
-        elif value.startswith("sentinel_"):
+        elif value.startswith("sentinel_") or (
+                key == "API_TOKEN" and value == "CONXIAN_PROD_AUTH_TOKEN_REQUIRED"):
             invalid.append(key)
     left = environment.get("FIAT_WEBHOOK_SECRET", "").strip()
     right = environment.get("SETTLEMENT_INGRESS_SECRET", "").strip()
