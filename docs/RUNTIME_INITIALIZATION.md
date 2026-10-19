@@ -38,6 +38,11 @@ Within the approved operator secret boundary, run:
 python3 scripts/startup_secret_preflight.py
 ```
 
+For source-only requirements without inspecting any environment values, run
+`python3 scripts/startup_secret_preflight.py --describe`. The generated startup
+contract in the root README is checked against this description, Rust startup
+and the Blueprint in CI. A contract description is not a presence check.
+
 The preflight reads the injected environment locally and reports only known
 missing/invalid key names and an exit code. It does not export values,
 fingerprints, lengths, unrelated environment data or provider responses. Its

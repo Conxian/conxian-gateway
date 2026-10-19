@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Bind startup-secret documentation to the runtime/preflight contract, add an environment-independent contract description, and distinguish CLI configuration/liveness checks from connectivity and deployment readiness (#466; Business #1411/#1423).
 - Align installer/runtime startup authentication on `API_TOKEN`, retain absence-only legacy token compatibility, and keep preflight/deployment declarations consistent without replacing current runtime behavior (#544).
 
 ### Added

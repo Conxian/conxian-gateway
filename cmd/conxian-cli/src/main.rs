@@ -89,6 +89,7 @@ pub fn generate_docker_compose(config: &InstallerConfig, output_path: &Path) -> 
 pub struct DoctorReport {
     pub secret_valid: bool,
     pub tier_valid: bool,
+    // Historical field names retained; these indicate URL syntax, not probes.
     pub btc_rpc_reachable: bool,
     pub stacks_rpc_reachable: bool,
 }
@@ -111,26 +112,33 @@ pub fn run_doctor_checks(config: &InstallerConfig) -> DoctorReport {
 }
 
 pub async fn probe_gateway_status(gateway_url: &str) -> Result<String> {
-    let health_url = format!("{}/health", gateway_url.trim_end_matches('/'));
+    let mut health_url = url::Url::parse(gateway_url).context("Invalid Gateway base URL")?;
+    anyhow::ensure!(
+        matches!(health_url.scheme(), "http" | "https")
+            && health_url.host_str().is_some()
+            && health_url.username().is_empty()
+            && health_url.password().is_none()
+            && health_url.query().is_none()
+            && health_url.fragment().is_none()
+            && matches!(health_url.path().trim_end_matches('/'), "" | "/api/v1"),
+        "Gateway base URL must be an HTTP(S) origin or /api/v1 base without credentials, query or fragment"
+    );
+    health_url.set_path("/api/v1/health");
     tokio::task::spawn_blocking(move || {
-        let resp = minreq::get(&health_url)
+        let resp = minreq::get(health_url.as_str())
             .with_timeout(3)
-            .send()
-            .with_context(|| {
-                format!(
-                    "Failed to connect to Gateway health endpoint at {}",
-                    health_url
-                )
-            })?;
-
-        if resp.status_code == 200 {
-            Ok(format!(
-                "Gateway Online (HTTP 200) - Response: {}",
-                resp.as_str().unwrap_or("OK")
-            ))
-        } else {
-            Ok(format!("Gateway Error Status: {}", resp.status_code))
-        }
+            .with_follow_redirects(false)
+            .with_max_headers_size(8192)
+            .with_max_status_line_length(1024)
+            .send_lazy()
+            .map_err(|_| anyhow::anyhow!("Gateway liveness probe failed"))?;
+        anyhow::ensure!(
+            resp.status_code == 200,
+            "Gateway liveness returned HTTP {}",
+            resp.status_code
+        );
+        // Inspect headers/status only: never download or echo a provider body.
+        Ok("Gateway liveness observed (HTTP 200); readiness and provider connectivity not established".to_string())
     })
     .await
     .context("Task join error during gateway health probe")?
@@ -141,9 +149,9 @@ fn print_usage() {
     println!("Usage: conxian-cli <subcommand> [options]\n");
     println!("Subcommands:");
     println!("  init     Initialize client deployment configuration (.env, docker-compose.yml)");
-    println!("  doctor   Run preflight diagnostic checks on configuration and connectivity");
+    println!("  doctor   Inspect default installer configuration (no connectivity probes)");
     println!("  start    Print startup instructions or execute local gateway docker stack");
-    println!("  status   Probe local/remote Conxian Gateway health and multi-rail status");
+    println!("  status   Probe Gateway HTTP liveness only");
 }
 
 #[tokio::main]
@@ -169,7 +177,7 @@ async fn main() -> Result<()> {
                 "  [SUCCESS] Created Docker Compose file: {:?}",
                 compose_path
             );
-            println!("\nConfiguration ready. Run `conxian-cli doctor` to verify environment.");
+            println!("\nTemplates created. Complete the current startup secret and persistence contract before use.");
         }
         "doctor" => {
             println!("Running Conxian Preflight Diagnostic Checks...");
@@ -177,7 +185,7 @@ async fn main() -> Result<()> {
             let report = run_doctor_checks(&config);
 
             println!(
-                "  - Production Secret Validation: {}",
+                "  - Default installer API token configured (not a strength test): {}",
                 if report.secret_valid {
                     "PASS"
                 } else {
@@ -189,7 +197,7 @@ async fn main() -> Result<()> {
                 if report.tier_valid { "PASS" } else { "FAIL" }
             );
             println!(
-                "  - Bitcoin L1 RPC Reachability: {}",
+                "  - Bitcoin RPC URL syntax (connectivity not tested): {}",
                 if report.btc_rpc_reachable {
                     "PASS (Valid URL)"
                 } else {
@@ -197,7 +205,7 @@ async fn main() -> Result<()> {
                 }
             );
             println!(
-                "  - Stacks L2 RPC Reachability: {}",
+                "  - Stacks RPC URL syntax (connectivity not tested): {}",
                 if report.stacks_rpc_reachable {
                     "PASS (Valid URL)"
                 } else {
@@ -210,14 +218,15 @@ async fn main() -> Result<()> {
                 && report.btc_rpc_reachable
                 && report.stacks_rpc_reachable
             {
-                println!("\nSystem Diagnostics All PASS. Ready for deployment.");
+                println!("\nConfiguration checks passed; deployment readiness is not established.");
             } else {
                 println!("\nSystem Diagnostics Warnings Detected. Review above parameters.");
+                anyhow::bail!("Default installer configuration is incomplete; runtime readiness was not tested");
             }
         }
         "start" => {
             println!("Starting Conxian Sovereign Gateway Deployment Stack...");
-            println!("Executing docker compose up -d or starting `cmd/gateway` binary...");
+            println!("Startup instructions only; no process has been launched.");
             println!("For docker deployment, run: docker compose up -d");
             println!("For binary deployment, run: cargo run --bin gateway");
         }
@@ -225,10 +234,8 @@ async fn main() -> Result<()> {
             println!("Probing Conxian Gateway Health...");
             let gateway_url =
                 env::var("GATEWAY_URL").unwrap_or_else(|_| "http://127.0.0.1:8080".to_string());
-            match probe_gateway_status(&gateway_url).await {
-                Ok(msg) => println!("  [STATUS] {}", msg),
-                Err(err) => println!("  [STATUS] Gateway Offline / Unreachable: {}", err),
-            }
+            let message = probe_gateway_status(&gateway_url).await?;
+            println!("  [STATUS] {}", message);
         }
         _ => {
             print_usage();
@@ -291,7 +298,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_probe_gateway_status_mock_server() {
-        let app = Router::new().route("/health", get(|| async { "OK" }));
+        let app = Router::new().route("/api/v1/health", get(|| async { "private-test-body" }));
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
 
@@ -306,6 +313,101 @@ mod tests {
 
         let url = format!("http://{}", addr);
         let status = probe_gateway_status(&url).await.unwrap();
-        assert!(status.contains("Gateway Online"));
+        assert!(status.contains("liveness observed"));
+        assert!(status.contains("readiness and provider connectivity not established"));
+        assert!(!status.contains("private-test-body"));
+        let api_base_status = probe_gateway_status(&format!("{url}/api/v1/"))
+            .await
+            .unwrap();
+        assert_eq!(status, api_base_status);
+    }
+
+    #[tokio::test]
+    async fn status_rejects_redirects_errors_and_historical_health_routes() {
+        use axum::http::StatusCode;
+        use axum::response::Redirect;
+
+        let app = Router::new()
+            .route("/health", get(|| async { "private-historical-body" }))
+            .route(
+                "/api/v1/health",
+                get(|| async { Redirect::temporary("/health") }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let error = probe_gateway_status(&format!("http://{addr}"))
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("HTTP 307"));
+        assert!(!error.to_string().contains("private-historical-body"));
+        server.abort();
+
+        let app = Router::new().route(
+            "/api/v1/health",
+            get(|| async { (StatusCode::SERVICE_UNAVAILABLE, "private-error-body") }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let error = probe_gateway_status(&format!("http://{addr}"))
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("HTTP 503"));
+        assert!(!error.to_string().contains("private-error-body"));
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn status_rejects_ambiguous_or_credential_bearing_bases_without_echoing_them() {
+        for base in [
+            "file:///tmp/private-test-value",
+            "http://private-test-value@127.0.0.1",
+            "http://127.0.0.1?private-test-value",
+            "http://127.0.0.1#private-test-value",
+            "http://127.0.0.1/private-test-value",
+        ] {
+            let error = probe_gateway_status(base).await.unwrap_err();
+            assert!(!error.to_string().contains("private-test-value"));
+        }
+    }
+
+    #[tokio::test]
+    async fn status_times_out_before_slow_health_headers_and_recovers_on_the_next_probe() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+        use std::time::{Duration, Instant};
+
+        let slow = Arc::new(AtomicBool::new(true));
+        let state = slow.clone();
+        let app = Router::new().route(
+            "/api/v1/health",
+            get(move || {
+                let state = state.clone();
+                async move {
+                    if state.load(Ordering::SeqCst) {
+                        tokio::time::sleep(Duration::from_secs(10)).await;
+                    }
+                    "private-health-body"
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let start = Instant::now();
+        let result = tokio::time::timeout(
+            Duration::from_secs(6),
+            probe_gateway_status(&format!("http://{addr}")),
+        )
+        .await
+        .unwrap();
+        assert!(result.is_err());
+        assert!(start.elapsed() < Duration::from_secs(6));
+        slow.store(false, Ordering::SeqCst);
+        assert!(probe_gateway_status(&format!("http://{addr}"))
+            .await
+            .is_ok());
+        server.abort();
     }
 }
