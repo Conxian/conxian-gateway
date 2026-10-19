@@ -6,7 +6,6 @@ use url::Url;
 
 const FIAT_WEBHOOK_SECRET_SENTINEL: &str = "sentinel_FIAT_WEBHOOK_SECRET";
 const SETTLEMENT_INGRESS_SECRET_SENTINEL: &str = "sentinel_SETTLEMENT_INGRESS_SECRET";
-const API_TOKEN_SENTINEL: &str = "sentinel_API_TOKEN";
 const RAMP_API_KEY_SENTINEL: &str = "sentinel_RAMP_API_KEY";
 const ALCHEMY_PAY_APP_ID_SENTINEL: &str = "sentinel_ALCHEMY_PAY_APP_ID";
 const INFOBIP_API_KEY_SENTINEL: &str = "sentinel_INFOBIP_API_KEY";
@@ -17,6 +16,29 @@ const REDIS_USERNAME_SENTINEL: &str = "sentinel_REDIS_USERNAME";
 const REDIS_PASSWORD_SENTINEL: &str = "sentinel_REDIS_PASSWORD";
 const TOKEN_TTL_SENTINEL: &str = "sentinel_TOKEN_TTL";
 const EXCLUSIVE_LOCAL_WRITER_MODE: &str = "exclusive-local-writer";
+
+fn resolve_api_token_with(
+    get: impl Fn(&str) -> Result<String, env::VarError>,
+) -> Result<String, String> {
+    for key in ["API_TOKEN", "CONXIAN_GATEWAY_AUTH_TOKEN"] {
+        let raw = match get(key) {
+            Ok(value) => value,
+            Err(env::VarError::NotPresent) => continue,
+            Err(env::VarError::NotUnicode(_)) => {
+                return Err(format!("{key} must be valid unicode"));
+            }
+        };
+        let value = raw.trim();
+        if value.is_empty()
+            || value.starts_with("sentinel_")
+            || value == "CONXIAN_PROD_AUTH_TOKEN_REQUIRED"
+        {
+            return Err(format!("{key} must be a non-empty configured secret"));
+        }
+        return Ok(value.to_string());
+    }
+    Err("API_TOKEN must be set (legacy CONXIAN_GATEWAY_AUTH_TOKEN is also accepted)".to_string())
+}
 
 fn resolve_api_port_with(
     get: impl Fn(&str) -> Result<String, env::VarError>,
@@ -296,7 +318,8 @@ impl Config {
             "SETTLEMENT_INGRESS_SECRET",
             SETTLEMENT_INGRESS_SECRET_SENTINEL,
         );
-        let api_token = Self::get_mandatory_env("API_TOKEN", API_TOKEN_SENTINEL);
+        let api_token = resolve_api_token_with(|key| env::var(key))
+            .unwrap_or_else(|message| panic!("{message}"));
         let ramp_api_key = if Self::provider_enabled("RAMP_MODE") {
             Some(Self::get_mandatory_env(
                 "RAMP_API_KEY",
@@ -527,6 +550,52 @@ impl Config {
 mod tests {
     use super::*;
 
+    fn token_from(canonical: Option<&str>, legacy: Option<&str>) -> Result<String, String> {
+        resolve_api_token_with(|key| {
+            let value = match key {
+                "API_TOKEN" => canonical,
+                "CONXIAN_GATEWAY_AUTH_TOKEN" => legacy,
+                _ => panic!("unexpected environment lookup"),
+            };
+            value.map(str::to_string).ok_or(env::VarError::NotPresent)
+        })
+    }
+
+    #[test]
+    fn api_token_uses_canonical_precedence_and_absence_only_fallback() {
+        assert_eq!(
+            token_from(Some("canonical-test"), None).unwrap(),
+            "canonical-test"
+        );
+        assert_eq!(token_from(None, Some("legacy-test")).unwrap(), "legacy-test");
+        assert_eq!(
+            token_from(Some(" canonical-test "), Some("legacy-test")).unwrap(),
+            "canonical-test"
+        );
+        assert!(token_from(None, None).is_err());
+        for invalid in [
+            "",
+            "  ",
+            "sentinel_API_TOKEN",
+            "CONXIAN_PROD_AUTH_TOKEN_REQUIRED",
+        ] {
+            assert!(token_from(Some(invalid), Some("legacy-test")).is_err());
+            assert!(token_from(None, Some(invalid)).is_err());
+        }
+    }
+
+    #[test]
+    fn api_token_unicode_errors_do_not_fall_back_or_disclose_values() {
+        let error = resolve_api_token_with(|_| {
+            Err(env::VarError::NotUnicode(std::ffi::OsString::from(
+                "private-test-value",
+            )))
+        })
+        .unwrap_err();
+        assert!(!error.contains("private-test-value"));
+        assert!(error.contains("API_TOKEN"));
+    }
+
     #[test]
     fn hosting_port_respects_explicit_override_and_rejects_invalid_values() {
         let resolve = |api: Option<&str>, hosting: Option<&str>| {
@@ -574,6 +643,7 @@ mod tests {
                 "FIAT_WEBHOOK_SECRET",
                 "SETTLEMENT_INGRESS_SECRET",
                 "API_TOKEN",
+                "CONXIAN_GATEWAY_AUTH_TOKEN",
                 "RAMP_MODE",
                 "RAMP_API_KEY",
                 "STITCH_MODE",
