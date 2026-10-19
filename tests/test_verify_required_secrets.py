@@ -51,6 +51,11 @@ class RequiredSecretsTests(unittest.TestCase):
                                      "OFFLINE_QUEUE_SECRET"})
         self.assertLessEqual(applicable, guard.declared_keys(blueprint, "render.yaml"))
 
+    def test_api_alias_does_not_replace_canonical_deploy_requirement(self):
+        source = guard.CONFIG_RS.read_text()
+        self.assertIn("API_TOKEN", guard.mandatory_keys(source))
+        self.assertNotIn("CONXIAN_GATEWAY_AUTH_TOKEN", guard.mandatory_keys(source))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -34,7 +34,7 @@ impl Default for InstallerConfig {
 pub fn generate_env_file(config: &InstallerConfig, output_path: &Path) -> Result<()> {
     let content = format!(
         "# Conxian Gateway Environment Configuration\n\
-         CONXIAN_GATEWAY_AUTH_TOKEN={}\n\
+         API_TOKEN={}\n\
          CONXIAN_TRUST_TIER={}\n\
          BITCOIN_RPC_URL={}\n\
          STACKS_RPC_URL={}\n\
@@ -65,7 +65,7 @@ pub fn generate_docker_compose(config: &InstallerConfig, output_path: &Path) -> 
          \x20   ports:\n\
          \x20     - \"{}:8080\"\n\
          \x20   environment:\n\
-         \x20     - CONXIAN_GATEWAY_AUTH_TOKEN={}\n\
+         \x20     - API_TOKEN={}\n\
          \x20     - CONXIAN_TRUST_TIER={}\n\
          \x20     - BITCOIN_RPC_URL={}\n\
          \x20     - STACKS_RPC_URL={}\n\
@@ -94,7 +94,10 @@ pub struct DoctorReport {
 }
 
 pub fn run_doctor_checks(config: &InstallerConfig) -> DoctorReport {
-    let secret_valid = !config.auth_token.is_empty() && !config.auth_token.starts_with("sentinel_");
+    let token = config.auth_token.trim();
+    let secret_valid = !token.is_empty()
+        && !token.starts_with("sentinel_")
+        && token != "CONXIAN_PROD_AUTH_TOKEN_REQUIRED";
     let tier_valid = config.trust_tier == "T1" || config.trust_tier == "T2";
     let btc_rpc_reachable = url::Url::parse(&config.bitcoin_rpc_url).is_ok();
     let stacks_rpc_reachable = url::Url::parse(&config.stacks_rpc_url).is_ok();
@@ -248,7 +251,8 @@ mod tests {
         generate_env_file(&config, &env_file).unwrap();
 
         let content = fs::read_to_string(&env_file).unwrap();
-        assert!(content.contains("CONXIAN_GATEWAY_AUTH_TOKEN=CONXIAN_PROD_AUTH_TOKEN_REQUIRED"));
+        assert!(content.contains("API_TOKEN=CONXIAN_PROD_AUTH_TOKEN_REQUIRED"));
+        assert!(!content.contains("CONXIAN_GATEWAY_AUTH_TOKEN="));
         assert!(content.contains("CONXIAN_TRUST_TIER=T1"));
         assert!(content.contains("GATEWAY_PORT=8080"));
         let _ = fs::remove_file(env_file);
@@ -264,12 +268,16 @@ mod tests {
         let content = fs::read_to_string(&compose_file).unwrap();
         assert!(content.contains("image: conxian/gateway:v0.1.5"));
         assert!(content.contains("container_name: conxian-gateway"));
+        assert!(content.contains("- API_TOKEN=CONXIAN_PROD_AUTH_TOKEN_REQUIRED"));
+        assert!(!content.contains("CONXIAN_GATEWAY_AUTH_TOKEN="));
         let _ = fs::remove_file(compose_file);
     }
 
     #[test]
     fn test_doctor_checks() {
         let mut config = InstallerConfig::default();
+        assert!(!run_doctor_checks(&config).secret_valid);
+        config.auth_token = "installer-test-token".to_string();
         let report = run_doctor_checks(&config);
         assert!(report.secret_valid);
         assert!(report.tier_valid);
