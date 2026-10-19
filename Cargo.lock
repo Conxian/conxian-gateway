@@ -2369,7 +2369,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
- "sha2 0.11.1",
+ "sha2 0.11.0",
  "thiserror 2.0.21",
  "tracing",
  "uuid",
@@ -2395,7 +2395,7 @@ dependencies = [
  "lib-conxian-core",
  "libc",
  "minreq 3.0.0",
- "num-bigint 0.5.1",
+ "num-bigint 0.4.8",
  "num-traits",
  "redis",
  "reqwest",
@@ -3782,9 +3782,9 @@ dependencies = [
 
 [[package]]
 name = "hyper"
-version = "1.12.0"
+version = "1.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c3e324da4c95177d6291d4c8730197c0d1822f8a9766814a4a44fa5ab797c9c"
+checksum = "27b501faa50e7a26c3d3560ca625132f4078a17771f4810baf70475ae48cbe43"
 dependencies = [
  "atomic-waker",
  "bytes",
@@ -4304,6 +4304,8 @@ dependencies = [
  "k256 0.14.0",
  "lightning",
  "rand 0.10.3",
+ "rgb-core",
+ "rgb-std",
  "ripemd 0.2.0",
  "secp256k1 0.33.1",
  "semver 1.0.28",
@@ -7476,9 +7478,9 @@ checksum = "b6c140620e7ffbb22c2dee59cafe6084a59b5ffc27a8859a5f0d494b5d52b6be"
 
 [[package]]
 name = "uuid"
-version = "1.28.0"
+version = "1.26.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7cc1186384beb7dd8eedea376413fd654937285ea6c9cfbb928dc3043ea4b606"
+checksum = "2ef6dac1e96601b4fb3acccccff2139741fcb757cb9a36089bf5be91cfb285ce"
 dependencies = [
  "getrandom 0.4.3",
  "js-sys",
