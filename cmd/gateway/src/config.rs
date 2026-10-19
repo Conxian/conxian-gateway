@@ -567,7 +567,10 @@ mod tests {
             token_from(Some("canonical-test"), None).unwrap(),
             "canonical-test"
         );
-        assert_eq!(token_from(None, Some("legacy-test")).unwrap(), "legacy-test");
+        assert_eq!(
+            token_from(None, Some("legacy-test")).unwrap(),
+            "legacy-test"
+        );
         assert_eq!(
             token_from(Some(" canonical-test "), Some("legacy-test")).unwrap(),
             "canonical-test"
