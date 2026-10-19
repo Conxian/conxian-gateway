@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -31,59 +32,96 @@ impl Default for InstallerConfig {
     }
 }
 
-pub fn generate_env_file(config: &InstallerConfig, output_path: &Path) -> Result<()> {
-    let content = format!(
-        "# Conxian Gateway Environment Configuration\n\
-         API_TOKEN={}\n\
-         CONXIAN_TRUST_TIER={}\n\
-         BITCOIN_RPC_URL={}\n\
-         STACKS_RPC_URL={}\n\
-         DATABASE_URL={}\n\
-         GATEWAY_PORT={}\n\
-         ODATA_V4_WEBHOOK_URL={}\n",
-        config.auth_token,
-        config.trust_tier,
-        config.bitcoin_rpc_url,
-        config.stacks_rpc_url,
-        config.database_url,
-        config.gateway_port,
-        config.odata_v4_webhook_url.as_deref().unwrap_or("")
-    );
-    fs::write(output_path, content)
-        .with_context(|| format!("Failed to write env file to {:?}", output_path))?;
+fn ensure_absent(path: &Path) -> Result<()> {
+    match fs::symlink_metadata(path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        _ => anyhow::bail!("Refusing to replace an existing or inaccessible configuration path"),
+    }
+}
+
+fn write_new_private(path: &Path, content: &str) -> Result<()> {
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options
+        .open(path)
+        .context("Cannot create configuration; existing files and symlinks are preserved")?;
+    file.write_all(content.as_bytes())
+        .context("Failed to write new configuration")?;
     Ok(())
 }
 
-pub fn generate_docker_compose(config: &InstallerConfig, output_path: &Path) -> Result<()> {
-    let content = format!(
-        "version: '3.8'\n\n\
-         services:\n\
-         \x20 conxian-gateway:\n\
-         \x20   image: conxian/gateway:v0.1.5\n\
-         \x20   container_name: conxian-gateway\n\
-         \x20   restart: unless-stopped\n\
-         \x20   ports:\n\
-         \x20     - \"{}:8080\"\n\
-         \x20   environment:\n\
-         \x20     - API_TOKEN={}\n\
-         \x20     - CONXIAN_TRUST_TIER={}\n\
-         \x20     - BITCOIN_RPC_URL={}\n\
-         \x20     - STACKS_RPC_URL={}\n\
-         \x20     - DATABASE_URL={}\n\
-         \x20   volumes:\n\
-         \x20     - gateway_data:/var/lib/conxian\n\n\
-         volumes:\n\
-         \x20 gateway_data:\n",
-        config.gateway_port,
-        config.auth_token,
-        config.trust_tier,
-        config.bitcoin_rpc_url,
-        config.stacks_rpc_url,
-        config.database_url
+fn dotenv_literal(value: &str) -> Result<String> {
+    anyhow::ensure!(
+        !value
+            .chars()
+            .any(|c| matches!(c, '\n' | '\r' | '\0' | '\'' | '\\')),
+        "Template input contains an unsupported dotenv delimiter"
     );
-    fs::write(output_path, content)
-        .with_context(|| format!("Failed to write docker-compose.yml to {:?}", output_path))?;
-    Ok(())
+    // Compose single-quoted values are literal: dollar signs are not expanded.
+    Ok(format!("'{value}'"))
+}
+
+pub fn generate_env_file(config: &InstallerConfig, output_path: &Path) -> Result<()> {
+    anyhow::ensure!(config.gateway_port != 0, "API port must be non-zero");
+    let content = format!(
+        "# Incomplete Gateway template; no credentials or readiness are established.\n\
+         # Supply an accepted image@sha256:digest; no registry image is assumed.\n\
+         GATEWAY_IMAGE=\n\
+         API_TOKEN={}\n\
+         FIAT_WEBHOOK_SECRET='sentinel_FIAT_WEBHOOK_SECRET'\n\
+         SETTLEMENT_INGRESS_SECRET='sentinel_SETTLEMENT_INGRESS_SECRET'\n\
+         HMAC_SECRET='sentinel_HMAC_SECRET'\n\
+         OFFLINE_QUEUE_SECRET='sentinel_OFFLINE_QUEUE_SECRET'\n\
+         # RPC endpoints must be reachable from the container; loopback is container-local.\n\
+         BITCOIN_RPC_URL={}\n\
+         STACKS_RPC_URL={}\n\
+         API_PORT={}\n\
+         GATEWAY_STATE_PATH='/usr/app/gateway_state.json'\n\
+         GATEWAY_PERSISTENCE_MODE='exclusive-local-writer'\n\
+         GATEWAY_ALLOW_UNKNOWN_STATE_FILESYSTEM='false'\n\
+         RAMP_MODE='disabled'\n\
+         STITCH_MODE='disabled'\n\
+         OZOW_MODE='disabled'\n\
+         PAPSS_MODE='disabled'\n\
+         ALCHEMY_PAY_MODE='disabled'\n\
+         BANXA_MODE='disabled'\n\
+         INFOBIP_MODE='disabled'\n",
+        dotenv_literal(&config.auth_token)?,
+        dotenv_literal(&config.bitcoin_rpc_url)?,
+        dotenv_literal(&config.stacks_rpc_url)?,
+        config.gateway_port
+    );
+    // Legacy InstallerConfig trust/database/OData fields remain serializable,
+    // but are not advertised as inputs to the current Gateway binary.
+    write_new_private(output_path, &content)
+}
+
+pub fn generate_docker_compose(config: &InstallerConfig, output_path: &Path) -> Result<()> {
+    anyhow::ensure!(config.gateway_port != 0, "API port must be non-zero");
+    let content = r#"# Run with: docker compose --env-file .env.production up -d
+# One local writer only; this template does not qualify a deployment.
+services:
+  conxian-gateway:
+    image: "${GATEWAY_IMAGE:?Set GATEWAY_IMAGE to a reviewed image@sha256:digest}"
+    restart: unless-stopped
+    working_dir: /usr/app
+    env_file:
+      - .env.production
+    environment:
+      API_PORT: "${API_PORT:?Set API_PORT}"
+    ports:
+      - "127.0.0.1:${API_PORT:?Set API_PORT}:${API_PORT:?Set API_PORT}"
+    volumes:
+      - gateway_data:/usr/app
+volumes:
+  gateway_data:
+"#;
+    write_new_private(output_path, content)
 }
 
 pub struct DoctorReport {
@@ -150,7 +188,7 @@ fn print_usage() {
     println!("Subcommands:");
     println!("  init     Initialize client deployment configuration (.env, docker-compose.yml)");
     println!("  doctor   Inspect default installer configuration (no connectivity probes)");
-    println!("  start    Print startup instructions or execute local gateway docker stack");
+    println!("  start    Print startup instructions (does not launch a process)");
     println!("  status   Probe Gateway HTTP liveness only");
 }
 
@@ -169,6 +207,8 @@ async fn main() -> Result<()> {
             let env_path = PathBuf::from(".env.production");
             let compose_path = PathBuf::from("docker-compose.yml");
 
+            ensure_absent(&env_path)?;
+            ensure_absent(&compose_path)?;
             generate_env_file(&config, &env_path)?;
             generate_docker_compose(&config, &compose_path)?;
 
@@ -227,7 +267,7 @@ async fn main() -> Result<()> {
         "start" => {
             println!("Starting Conxian Sovereign Gateway Deployment Stack...");
             println!("Startup instructions only; no process has been launched.");
-            println!("For docker deployment, run: docker compose up -d");
+            println!("Complete .env.production, then run: docker compose --env-file .env.production up -d");
             println!("For binary deployment, run: cargo run --bin gateway");
         }
         "status" => {
@@ -258,10 +298,10 @@ mod tests {
         generate_env_file(&config, &env_file).unwrap();
 
         let content = fs::read_to_string(&env_file).unwrap();
-        assert!(content.contains("API_TOKEN=CONXIAN_PROD_AUTH_TOKEN_REQUIRED"));
+        assert!(content.contains("API_TOKEN='CONXIAN_PROD_AUTH_TOKEN_REQUIRED'"));
         assert!(!content.contains("CONXIAN_GATEWAY_AUTH_TOKEN="));
-        assert!(content.contains("CONXIAN_TRUST_TIER=T1"));
-        assert!(content.contains("GATEWAY_PORT=8080"));
+        assert!(content.contains("API_PORT=8080"));
+        assert!(!content.contains("GATEWAY_PORT="));
         let _ = fs::remove_file(env_file);
     }
 
@@ -273,9 +313,10 @@ mod tests {
         generate_docker_compose(&config, &compose_file).unwrap();
 
         let content = fs::read_to_string(&compose_file).unwrap();
-        assert!(content.contains("image: conxian/gateway:v0.1.5"));
-        assert!(content.contains("container_name: conxian-gateway"));
-        assert!(content.contains("- API_TOKEN=CONXIAN_PROD_AUTH_TOKEN_REQUIRED"));
+        assert!(content.contains("${GATEWAY_IMAGE:?"));
+        assert!(content.contains("gateway_data:/usr/app"));
+        assert!(content.contains(".env.production"));
+        assert!(!content.contains("API_TOKEN="));
         assert!(!content.contains("CONXIAN_GATEWAY_AUTH_TOKEN="));
         let _ = fs::remove_file(compose_file);
     }
@@ -294,6 +335,15 @@ mod tests {
         config.auth_token = "sentinel_API_TOKEN".to_string();
         let report2 = run_doctor_checks(&config);
         assert!(!report2.secret_valid);
+    }
+
+    #[test]
+    fn dotenv_values_are_literal_and_reject_delimiter_injection() {
+        assert_eq!(dotenv_literal("$SYNTHETIC # value").unwrap(), "'$SYNTHETIC # value'");
+        for value in ["private\nAPI_PORT=9", "private\rvalue", "private\0value", "private'value", "private\\value"] {
+            let error = dotenv_literal(value).unwrap_err().to_string();
+            assert!(!error.contains("private"));
+        }
     }
 
     #[tokio::test]

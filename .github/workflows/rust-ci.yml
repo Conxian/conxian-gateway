@@ -125,6 +125,34 @@ jobs:
       - name: Run identity tests (mock-integrations)
         run: cargo test --workspace --features mock-integrations
 
+      - name: Validate CLI Compose interpolation without starting services
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+          import subprocess
+          import tempfile
+
+          binary = pathlib.Path("target/debug/conxian-cli").resolve()
+          with tempfile.TemporaryDirectory() as directory:
+              subprocess.run([str(binary), "init"], cwd=directory, check=True)
+              command = ["docker", "compose", "--env-file", ".env.production", "config", "--quiet"]
+              environment = {key: value for key, value in os.environ.items() if key not in ("GATEWAY_IMAGE", "API_PORT")}
+              result = subprocess.run(command, cwd=directory, env=environment, capture_output=True)
+              assert result.returncode != 0, "An image must be explicitly selected"
+              environment["GATEWAY_IMAGE"] = "example.invalid/gateway@sha256:" + "0" * 64
+              environment["API_PORT"] = "18080"
+              result = subprocess.run(command, cwd=directory, env=environment, capture_output=True)
+              assert result.returncode == 0, "Generated Compose must validate with explicit configuration"
+              result = subprocess.run(command[:-1] + ["--format", "json"], cwd=directory, env=environment, capture_output=True, check=True)
+              service = json.loads(result.stdout)["services"]["conxian-gateway"]
+              assert service["environment"]["API_PORT"] == "18080"
+              assert service["ports"][0]["target"] == 18080
+              assert service["ports"][0]["published"] == "18080"
+              assert service["ports"][0]["host_ip"] == "127.0.0.1"
+          PY
+
   rgb-native:
     name: RGB Native Feature Tests
     runs-on: ubuntu-latest
