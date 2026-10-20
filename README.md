@@ -31,7 +31,31 @@ Institutional-grade middleware bridging Bitcoin and Stacks state logic with ente
 The Conxian Gateway provides a single API layer for indexing, verifying, and orchestrating settlement workflows across multiple Bitcoin layers. It simplifies the integration path for institutions and fintechs by providing mathematically verifiable state proofs and non-custodial signing interfaces.
 
 ## Status
-**Code-complete, undeployed (v0.1.5).** This repository contains Bitcoin and Stacks state-tracking runtime code, but the hosted gateway service is **not deployed** (blocked on ~11 owner secrets; see [#466](https://github.com/Conxian/conxian-gateway/issues/466)). Current focus is on expanding pilot lanes for Liquid and Rootstock adapters and implementing UCV-1 (Universal Chain Verification).
+**Runtime implementation and deployment qualification are separate.** This repository contains Bitcoin and Stacks state-tracking runtime code (v0.1.5). Hosted deployment, provider connectivity and operation-specific production acceptance require current receipts under [#466](https://github.com/Conxian/conxian-gateway/issues/466); source, CI and a historical secret inventory do not establish those states. See [runtime initialization](docs/RUNTIME_INITIALIZATION.md) for the current minimum lane and its remaining deployment gates.
+
+<!-- STARTUP-SECRET-CONTRACT:BEGIN -->
+### Startup secret requirements
+
+The minimum runtime lane requires **5 logical startup secrets**:
+`API_TOKEN`, `FIAT_WEBHOOK_SECRET`, `SETTLEMENT_INGRESS_SECRET`, `HMAC_SECRET`, `OFFLINE_QUEUE_SECRET`.
+
+| Enabled provider mode | Additional startup credential |
+| --- | --- |
+| `RAMP_MODE` | `RAMP_API_KEY` |
+| `ALCHEMY_PAY_MODE` | `ALCHEMY_PAY_APP_ID` |
+| `INFOBIP_MODE` | `INFOBIP_API_KEY` |
+
+A provider credential is required only for mode values `1`, `active`, `shadow`, `true`.
+The legacy token alias is one logical requirement, not an extra secret.
+Optional managed-auth/provider credentials and deployment, persistence, network,
+signer and release acceptance remain separate operation-specific requirements.
+
+Describe this source contract without inspecting the environment:
+`python3 scripts/startup_secret_preflight.py --describe`.
+Check injected secret presence only inside the approved operator boundary:
+`python3 scripts/startup_secret_preflight.py`.
+Neither command proves provisioning, secret strength or runtime readiness.
+<!-- STARTUP-SECRET-CONTRACT:END -->
 
 ## Audience
 - **Institutions & Fintechs**: Seeking a secure, non-custodial entry point into Bitcoin-native liquidity.
@@ -61,10 +85,10 @@ crash recovery, backup, mempool reconciliation, and shutdown procedures in
 The workspace includes a sovereign CLI installer (`cmd/conxian-cli`) to streamline client onboarding, environment diagnostics, and multi-rail lifecycle orchestration.
 
 ### Key Subcommands
-- **`conxian-cli init`**: Generates production environment templates (`.env`), database migration stubs, and trust policy configurations (`--tier T1 --mode production`).
-- **`conxian-cli doctor`**: Executes interactive preflight checks verifying mandatory secret entropy, RPC node connectivity, and port availability.
-- **`conxian-cli start`**: Renders Docker Compose manifests or launches background Gateway server processes.
-- **`conxian-cli status`**: Probes Gateway `/api/v1/health` and `/metrics` endpoints to report real-time node operational status.
+- **`conxian-cli init`**: Writes the default `.env.production` and `docker-compose.yml` installer templates. They require operator completion against the current startup/persistence contract before use.
+- **`conxian-cli doctor`**: Inspects default installer token configuration, tier and RPC URL syntax. It does not inspect injected production configuration, measure secret strength or test network/port connectivity.
+- **`conxian-cli start`**: Prints startup instructions; it does not launch a process or qualify a deployment.
+- **`conxian-cli status`**: Probes Gateway `/api/v1/health` for HTTP liveness only. It does not probe `/metrics`, RPC connectivity, provider qualification or deployment readiness.
 
 For full architectural blueprints, see [`docs/research/CLIENT_INSTALLATION_AND_DEPLOYMENT_BLUEPRINT.md`](docs/research/CLIENT_INSTALLATION_AND_DEPLOYMENT_BLUEPRINT.md).
 
