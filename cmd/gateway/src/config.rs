@@ -768,7 +768,11 @@ mod tests {
         let _guard = ENV_MUTEX.lock().unwrap();
         let _env_restore = FullEnvRestore::new();
         set_test_envs();
-        for value in [None, Some("sentinel_unused"), Some("configured-but-disabled")] {
+        for value in [
+            None,
+            Some("sentinel_unused"),
+            Some("configured-but-disabled"),
+        ] {
             restore_env("FIAT_WEBHOOK_SECRET", value.map(str::to_string));
             restore_env("HMAC_SECRET", value.map(str::to_string));
             let config = Config::from_env();
