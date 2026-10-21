@@ -24,8 +24,6 @@ services:
         value: info
       - key: API_TOKEN
         sync: false
-      - key: FIAT_WEBHOOK_SECRET
-        sync: false
       - key: SETTLEMENT_INGRESS_SECRET
         sync: false
       - key: RAMP_MODE
@@ -34,14 +32,14 @@ services:
         value: disabled
       - key: OZOW_MODE
         value: disabled
+      - key: PAPSS_MODE
+        value: disabled
       - key: ALCHEMY_PAY_MODE
         value: disabled
       - key: BANXA_MODE
         value: disabled
       - key: INFOBIP_MODE
         value: disabled
-      - key: HMAC_SECRET
-        sync: false
       - key: OFFLINE_QUEUE_SECRET
         sync: false
       # Add optional provider/managed credentials only through the protected

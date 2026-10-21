@@ -46,10 +46,25 @@ class RequiredSecretsTests(unittest.TestCase):
         source = guard.CONFIG_RS.read_text()
         blueprint = (ROOT / "render.yaml").read_text()
         applicable = guard.required_keys(source, blueprint, "render.yaml")
-        self.assertEqual(applicable, {"API_TOKEN", "FIAT_WEBHOOK_SECRET",
-                                     "SETTLEMENT_INGRESS_SECRET", "HMAC_SECRET",
+        self.assertEqual(applicable, {"API_TOKEN", "SETTLEMENT_INGRESS_SECRET",
                                      "OFFLINE_QUEUE_SECRET"})
         self.assertLessEqual(applicable, guard.declared_keys(blueprint, "render.yaml"))
+
+    def test_group_secret_requires_every_dependent_mode_explicitly_disabled(self):
+        source = guard.CONFIG_RS.read_text()
+        blueprint = (ROOT / "render.yaml").read_text()
+        for mode in guard.GROUPED["FIAT_WEBHOOK_SECRET"]:
+            for value in ("active", "shadow", "unknown", "${MODE}"):
+                changed = blueprint.replace(f"- key: {mode}\n        value: disabled",
+                                            f"- key: {mode}\n        value: {value}")
+                self.assertIn("FIAT_WEBHOOK_SECRET", guard.required_keys(source, changed, "render.yaml"))
+            missing = blueprint.replace(f"      - key: {mode}\n        value: disabled\n", "")
+            self.assertIn("FIAT_WEBHOOK_SECRET", guard.required_keys(source, missing, "render.yaml"))
+        changed = blueprint.replace("- key: INFOBIP_MODE\n        value: disabled",
+                                    "- key: INFOBIP_MODE\n        value: active")
+        self.assertIn("HMAC_SECRET", guard.required_keys(source, changed, "render.yaml"))
+        duplicate = blueprint + "      - key: INFOBIP_MODE\n        value: disabled\n"
+        self.assertIn("HMAC_SECRET", guard.required_keys(source, duplicate, "render.yaml"))
 
     def test_api_alias_does_not_replace_canonical_deploy_requirement(self):
         source = guard.CONFIG_RS.read_text()

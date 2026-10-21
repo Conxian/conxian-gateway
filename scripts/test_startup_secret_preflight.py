@@ -5,7 +5,7 @@ import subprocess
 import sys
 import unittest
 
-from startup_secret_preflight import CONDITIONAL, REQUIRED, check, describe, markdown_contract
+from startup_secret_preflight import CONDITIONAL, GROUPED, REQUIRED, check, describe, markdown_contract
 
 SCRIPT = Path(__file__).with_name("startup_secret_preflight.py")
 
@@ -17,7 +17,15 @@ class StartupPreflightTests(unittest.TestCase):
     def test_minimum_lane_does_not_require_disabled_provider_credentials(self):
         result = check(self.environment())
         self.assertTrue(result["ready"])
-        self.assertEqual(result["requiredCount"], 5)
+        self.assertEqual(result["requiredCount"], 3)
+
+    def test_each_fiat_provider_requires_webhook_secret_and_disabled_ignores_it(self):
+        for mode in GROUPED["FIAT_WEBHOOK_SECRET"]:
+            env = {**self.environment(), mode: "shadow"}
+            self.assertIn("FIAT_WEBHOOK_SECRET", check(env)["missing"])
+        env = {**self.environment(), "FIAT_WEBHOOK_SECRET": "sentinel_unused",
+               "HMAC_SECRET": "sentinel_unused"}
+        self.assertTrue(check(env)["ready"])
 
     def test_missing_required_secrets_fail(self):
         for key in REQUIRED:
@@ -36,7 +44,7 @@ class StartupPreflightTests(unittest.TestCase):
         env = self.environment()
         env["CONXIAN_GATEWAY_AUTH_TOKEN"] = env.pop("API_TOKEN")
         self.assertTrue(check(env)["ready"])
-        self.assertEqual(check(env)["requiredCount"], 5)
+        self.assertEqual(check(env)["requiredCount"], 3)
 
     def test_invalid_explicit_canonical_token_never_falls_back_to_legacy(self):
         for value in ("", "  ", "sentinel_API_TOKEN", "CONXIAN_PROD_AUTH_TOKEN_REQUIRED"):
@@ -72,7 +80,12 @@ class StartupPreflightTests(unittest.TestCase):
                 with self.subTest(mode=mode, value=value):
                     env = {**self.environment(), mode: value}
                     self.assertIn(key, check(env)["missing"])
-                    self.assertTrue(check({**env, key: "private-provider-test"})["ready"])
+                    env[key] = "private-provider-test"
+                    for grouped_key, modes in GROUPED.items():
+                        if mode in modes:
+                            self.assertIn(grouped_key, check(env)["missing"])
+                            env[grouped_key] = "grouped-test-" + grouped_key
+                    self.assertTrue(check(env)["ready"])
 
     def test_disabled_provider_values_are_not_read_or_reported(self):
         env = self.environment()
@@ -83,12 +96,15 @@ class StartupPreflightTests(unittest.TestCase):
 
     def test_webhook_domains_cannot_share_a_secret(self):
         env = self.environment()
-        env["SETTLEMENT_INGRESS_SECRET"] = " " + env["FIAT_WEBHOOK_SECRET"] + " "
+        env["STITCH_MODE"] = "active"
+        env["FIAT_WEBHOOK_SECRET"] = "shared-test-value"
+        env["SETTLEMENT_INGRESS_SECRET"] = " shared-test-value "
         self.assertEqual(check(env)["invalid"], ["FIAT_WEBHOOK_SECRET", "SETTLEMENT_INGRESS_SECRET"])
 
     def test_subprocess_output_contains_no_value_fingerprint_or_extra_environment(self):
         env = self.environment()
         env["UNRELATED_SECRET"] = "never-disclose-this-unrelated-value"
+        env["FIAT_WEBHOOK_SECRET"] = "webhook-test-value"
         env["RAMP_MODE"] = "active"
         env["RAMP_API_KEY"] = "arbitrary-test-value\nwith-log-injection"
         result = subprocess.run([sys.executable, str(SCRIPT)], env=env, capture_output=True,
@@ -113,7 +129,7 @@ class StartupPreflightTests(unittest.TestCase):
         required = set(re.findall(r'Self::get_mandatory_env\(\s*"([A-Z0-9_]+)"', startup))
         self.assertRegex(startup, r"let\s+api_token\s*=\s*resolve_api_token_with\(")
         required.add("API_TOKEN")
-        self.assertEqual(required, set(REQUIRED) | set(CONDITIONAL.values()))
+        self.assertEqual(required, set(REQUIRED) | set(CONDITIONAL.values()) | set(GROUPED))
         bindings = dict(re.findall(r'if Self::provider_enabled\("([A-Z0-9_]+)"\)\s*\{\s*Some\(Self::get_mandatory_env\(\s*"([A-Z0-9_]+)"', startup))
         self.assertEqual(bindings, CONDITIONAL)
 
@@ -122,7 +138,7 @@ class StartupPreflightTests(unittest.TestCase):
         with patch("startup_secret_preflight.os.environ", None):
             contract = describe()
         self.assertEqual(contract["minimumRequiredCount"], len(REQUIRED))
-        self.assertEqual(contract["maximumConditionalRequiredCount"], len(REQUIRED) + len(CONDITIONAL))
+        self.assertEqual(contract["maximumConditionalRequiredCount"], len(REQUIRED) + len(CONDITIONAL) + len(GROUPED))
         self.assertFalse(contract["environmentInspected"])
         self.assertFalse(contract["runtimeReadinessEstablished"])
         result = subprocess.run([sys.executable, str(SCRIPT), "--describe"],
@@ -140,9 +156,14 @@ class StartupPreflightTests(unittest.TestCase):
                 env[mode] = "active" if active else "disabled"
                 if active:
                     env[key] = "provider-test-value"
+            grouped_count = 0
+            for key, modes in GROUPED.items():
+                if any(env.get(mode) == "active" for mode in modes):
+                    env[key] = "grouped-test-" + key
+                    grouped_count += 1
             result = check(env)
             self.assertTrue(result["ready"])
-            self.assertEqual(result["requiredCount"], len(REQUIRED) + sum(enabled))
+            self.assertEqual(result["requiredCount"], len(REQUIRED) + sum(enabled) + grouped_count)
 
     def test_readme_contract_is_generated_from_the_runtime_bound_preflight(self):
         readme = (SCRIPT.parents[1] / "README.md").read_text()

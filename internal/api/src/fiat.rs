@@ -280,6 +280,18 @@ impl FiatRouter {
             )));
         }
 
+        let provider =
+            FiatOnRampProvider::from_str(&payload.provider).map_err(ConxianError::Security)?;
+        if !self
+            .adapters
+            .iter()
+            .any(|adapter| adapter.provider() == provider)
+        {
+            return Err(ConxianError::Security(
+                "fiat webhook provider is not enabled".to_string(),
+            ));
+        }
+
         if payload.signature.is_empty() {
             return Ok(false);
         }
@@ -427,6 +439,15 @@ mod tests {
     async fn test_verify_stitch_webhook() {
         let (payload, secret) = signed_webhook("stitch", "stitch-secret");
         assert!(test_router().verify_webhook(&payload, &secret).unwrap());
+    }
+
+    #[test]
+    fn disabled_provider_rejects_even_a_correctly_signed_webhook() {
+        let (payload, secret) = signed_webhook("ramp", "webhook-secret");
+        let disabled = FiatRouter::from_enabled(None, None, None, None, None, None);
+        assert!(disabled.verify_webhook(&payload, &secret).is_err());
+        let another = FiatRouter::from_enabled(None, Some(StitchAdapter), None, None, None, None);
+        assert!(another.verify_webhook(&payload, &secret).is_err());
     }
 
     #[tokio::test]

@@ -21,7 +21,7 @@ import re
 import sys
 from pathlib import Path
 
-from startup_secret_preflight import CONDITIONAL
+from startup_secret_preflight import CONDITIONAL, GROUPED
 
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG_RS = ROOT / "cmd" / "gateway" / "src" / "config.rs"
@@ -61,13 +61,19 @@ def required_keys(config_rs: str, deploy_text: str, name: str) -> set[str]:
     if name != "render.yaml":
         return required
     declarations = RENDER_ENV_RE.findall(deploy_text)
-    for mode, secret in CONDITIONAL.items():
+    def explicitly_disabled(mode: str) -> bool:
         disabled = re.search(
             rf'^([ ]*)- key: {re.escape(mode)}[ \t]*\n\1[ ]+value: '
             r'(?:disabled|"disabled"|\'disabled\')[ \t]*(?:#.*)?$',
             deploy_text, re.MULTILINE,
         )
-        if declarations.count(mode) == 1 and disabled:
+        return declarations.count(mode) == 1 and bool(disabled)
+
+    for mode, secret in CONDITIONAL.items():
+        if explicitly_disabled(mode):
+            required.discard(secret)
+    for secret, modes in GROUPED.items():
+        if all(explicitly_disabled(mode) for mode in modes):
             required.discard(secret)
     return required
 
