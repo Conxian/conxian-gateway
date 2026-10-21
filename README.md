@@ -36,14 +36,16 @@ The Conxian Gateway provides a single API layer for indexing, verifying, and orc
 <!-- STARTUP-SECRET-CONTRACT:BEGIN -->
 ### Startup secret requirements
 
-The minimum runtime lane requires **5 logical startup secrets**:
-`API_TOKEN`, `FIAT_WEBHOOK_SECRET`, `SETTLEMENT_INGRESS_SECRET`, `HMAC_SECRET`, `OFFLINE_QUEUE_SECRET`.
+The minimum runtime lane requires **3 logical startup secrets**:
+`API_TOKEN`, `SETTLEMENT_INGRESS_SECRET`, `OFFLINE_QUEUE_SECRET`.
 
 | Enabled provider mode | Additional startup credential |
 | --- | --- |
 | `RAMP_MODE` | `RAMP_API_KEY` |
 | `ALCHEMY_PAY_MODE` | `ALCHEMY_PAY_APP_ID` |
 | `INFOBIP_MODE` | `INFOBIP_API_KEY` |
+| `RAMP_MODE` or `STITCH_MODE` or `OZOW_MODE` or `PAPSS_MODE` or `ALCHEMY_PAY_MODE` or `BANXA_MODE` | `FIAT_WEBHOOK_SECRET` |
+| `INFOBIP_MODE` | `HMAC_SECRET` |
 
 A provider credential is required only for mode values `1`, `active`, `shadow`, `true`.
 The legacy token alias is one logical requirement, not an extra secret.

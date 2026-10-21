@@ -312,8 +312,21 @@ impl Config {
     }
 
     pub fn from_env() -> Self {
-        let fiat_webhook_secret =
-            Self::get_mandatory_env("FIAT_WEBHOOK_SECRET", FIAT_WEBHOOK_SECRET_SENTINEL);
+        let fiat_enabled = [
+            "RAMP_MODE",
+            "STITCH_MODE",
+            "OZOW_MODE",
+            "PAPSS_MODE",
+            "ALCHEMY_PAY_MODE",
+            "BANXA_MODE",
+        ]
+        .iter()
+        .any(|mode| Self::provider_enabled(mode));
+        let fiat_webhook_secret = if fiat_enabled {
+            Self::get_mandatory_env("FIAT_WEBHOOK_SECRET", FIAT_WEBHOOK_SECRET_SENTINEL)
+        } else {
+            String::new()
+        };
         let settlement_ingress_secret = Self::get_mandatory_env(
             "SETTLEMENT_INGRESS_SECRET",
             SETTLEMENT_INGRESS_SECRET_SENTINEL,
@@ -348,7 +361,11 @@ impl Config {
         } else {
             None
         };
-        let hmac_secret = Self::get_mandatory_env("HMAC_SECRET", HMAC_SECRET_SENTINEL);
+        let hmac_secret = if infobip_api_key.is_some() {
+            Self::get_mandatory_env("HMAC_SECRET", HMAC_SECRET_SENTINEL)
+        } else {
+            String::new()
+        };
         let offline_queue_secret =
             Self::get_mandatory_env("OFFLINE_QUEUE_SECRET", OFFLINE_QUEUE_SECRET_SENTINEL);
         let redis_url = env::var("REDIS_URL").ok().and_then(|val| {
@@ -747,11 +764,56 @@ mod tests {
     }
 
     #[test]
+    fn disabled_business_providers_do_not_require_or_retain_their_secrets() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        let _env_restore = FullEnvRestore::new();
+        set_test_envs();
+        for value in [
+            None,
+            Some("sentinel_unused"),
+            Some("configured-but-disabled"),
+        ] {
+            restore_env("FIAT_WEBHOOK_SECRET", value.map(str::to_string));
+            restore_env("HMAC_SECRET", value.map(str::to_string));
+            let config = Config::from_env();
+            assert!(config.fiat_webhook_secret.is_empty());
+            assert!(config.hmac_secret.is_empty());
+            assert!(config.infobip_api_key.is_none());
+        }
+    }
+
+    #[test]
+    fn enabled_business_providers_require_their_authentication_secrets() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        let _env_restore = FullEnvRestore::new();
+        for mode in [
+            "RAMP_MODE",
+            "STITCH_MODE",
+            "OZOW_MODE",
+            "PAPSS_MODE",
+            "ALCHEMY_PAY_MODE",
+            "BANXA_MODE",
+        ] {
+            set_test_envs();
+            env::set_var(mode, "active");
+            env::remove_var("FIAT_WEBHOOK_SECRET");
+            assert!(std::panic::catch_unwind(Config::from_env).is_err());
+        }
+        set_test_envs();
+        env::set_var("INFOBIP_MODE", "active");
+        env::remove_var("HMAC_SECRET");
+        assert!(std::panic::catch_unwind(Config::from_env).is_err());
+        env::set_var("HMAC_SECRET", "configured-otp-test");
+        assert_eq!(Config::from_env().hmac_secret, "configured-otp-test");
+    }
+
+    #[test]
     fn from_env_trims_secret_whitespace() {
         let _guard = ENV_MUTEX.lock().unwrap();
         let _env_restore = FullEnvRestore::new();
         set_test_envs();
 
+        env::set_var("STITCH_MODE", "active");
         env::set_var("FIAT_WEBHOOK_SECRET", "  fiat-secret  ");
         env::set_var("SETTLEMENT_INGRESS_SECRET", "\tsettlement-secret\n");
 
@@ -766,6 +828,7 @@ mod tests {
         let _env_restore = FullEnvRestore::new();
         set_test_envs();
 
+        env::set_var("STITCH_MODE", "active");
         env::set_var("FIAT_WEBHOOK_SECRET", "shared-secret");
         env::set_var("SETTLEMENT_INGRESS_SECRET", " shared-secret ");
 

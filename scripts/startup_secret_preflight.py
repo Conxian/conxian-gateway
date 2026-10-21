@@ -9,8 +9,10 @@ import json
 import os
 from typing import Mapping
 
-REQUIRED = ("API_TOKEN", "FIAT_WEBHOOK_SECRET", "SETTLEMENT_INGRESS_SECRET",
-            "HMAC_SECRET", "OFFLINE_QUEUE_SECRET")
+REQUIRED = ("API_TOKEN", "SETTLEMENT_INGRESS_SECRET", "OFFLINE_QUEUE_SECRET")
+FIAT_MODES = ("RAMP_MODE", "STITCH_MODE", "OZOW_MODE", "PAPSS_MODE",
+              "ALCHEMY_PAY_MODE", "BANXA_MODE")
+GROUPED = {"FIAT_WEBHOOK_SECRET": FIAT_MODES, "HMAC_SECRET": ("INFOBIP_MODE",)}
 CONDITIONAL = {"RAMP_MODE": "RAMP_API_KEY", "ALCHEMY_PAY_MODE": "ALCHEMY_PAY_APP_ID",
                "INFOBIP_MODE": "INFOBIP_API_KEY"}
 ENABLED_MODES = frozenset(("active", "shadow", "true", "1"))
@@ -22,7 +24,8 @@ def describe() -> dict:
     return {"schemaVersion": 1, "scope": "startup-secret-contract-only",
             "minimumRequiredCount": len(REQUIRED), "required": list(REQUIRED),
             "conditional": dict(CONDITIONAL), "enabledModes": sorted(ENABLED_MODES),
-            "maximumConditionalRequiredCount": len(REQUIRED) + len(CONDITIONAL),
+            "conditionalAny": {key: list(modes) for key, modes in GROUPED.items()},
+            "maximumConditionalRequiredCount": len(REQUIRED) + len(CONDITIONAL) + len(GROUPED),
             "aliases": {"API_TOKEN": [LEGACY_API_TOKEN]},
             "aliasPolicy": "canonical-absence-only",
             "environmentInspected": False, "runtimeReadinessEstablished": False}
@@ -36,6 +39,8 @@ def markdown_contract() -> str:
              "| Enabled provider mode | Additional startup credential |",
              "| --- | --- |"]
     lines.extend(f"| `{mode}` | `{key}` |" for mode, key in CONDITIONAL.items())
+    lines.extend(f"| {' or '.join(f'`{mode}`' for mode in modes)} | `{key}` |"
+                 for key, modes in GROUPED.items())
     lines.extend(["", "A provider credential is required only for mode values "
                   + ", ".join(f"`{mode}`" for mode in sorted(ENABLED_MODES)) + ".",
                   "The legacy token alias is one logical requirement, not an extra secret.",
@@ -55,6 +60,9 @@ def check(environment: Mapping[str, str]) -> dict:
     for mode, key in CONDITIONAL.items():
         if environment.get(mode, "").strip().lower() in ENABLED_MODES:
             required.append(key)
+    for key, modes in GROUPED.items():
+        if any(environment.get(mode, "").strip().lower() in ENABLED_MODES for mode in modes):
+            required.append(key)
     missing, invalid = [], []
     for key in required:
         source_key = LEGACY_API_TOKEN if key == "API_TOKEN" and key not in environment else key
@@ -72,7 +80,7 @@ def check(environment: Mapping[str, str]) -> dict:
             invalid.append(key)
     left = environment.get("FIAT_WEBHOOK_SECRET", "").strip()
     right = environment.get("SETTLEMENT_INGRESS_SECRET", "").strip()
-    if left and right and left == right:
+    if "FIAT_WEBHOOK_SECRET" in required and left and right and left == right:
         invalid.extend(("FIAT_WEBHOOK_SECRET", "SETTLEMENT_INGRESS_SECRET"))
     return {"schemaVersion": 1, "scope": "startup-secret-presence-only",
             "ready": not missing and not invalid, "requiredCount": len(required),
