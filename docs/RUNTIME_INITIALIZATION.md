@@ -8,7 +8,7 @@ symlinks. Existing content is never replaced; on Unix new files are owner-only.
 If creation fails part-way, inspect the newly created files before retrying;
 generation is not a two-file transactional deployment.
 
-The environment template declares the five current baseline secret names as
+The environment template declares the baseline and optional provider secret names as
 unconfigured placeholders and disables optional providers. Supply real values
 only through the protected operator channel. It also requires an explicitly
 selected, reviewed `GATEWAY_IMAGE` (prefer an immutable image digest); the CLI
@@ -86,7 +86,15 @@ network, database, provider entitlement or release acceptance. Disabled
 providers remain unavailable even when the minimum startup-secret set passes.
 Smoke-test failures report only fixed phase labels.
 
-The Blueprint now prompts for only those five unconditional startup secrets.
+The Blueprint prompts for three unconditional startup secrets: API_TOKEN,
+SETTLEMENT_INGRESS_SECRET and OFFLINE_QUEUE_SECRET. FIAT_WEBHOOK_SECRET is
+required when any fiat provider mode is enabled; HMAC_SECRET is required when
+INFOBIP_MODE enables OTP. Disabled modes do not load those two credentials, and
+webhooks for disabled providers are rejected even with a valid signature.
+The baseline Blueprint omits disabled credentials rather than overwriting
+existing values. Before enabling a provider, provision its required credentials
+through the protected operator channel and run the preflight. Missing or invalid
+credentials for an enabled provider remain startup errors.
 Credentials for disabled providers and optional managed authentication are
 provisioned separately when their operations are qualified. Render preserves
 existing environment variables omitted from a Blueprint; omissions do not
