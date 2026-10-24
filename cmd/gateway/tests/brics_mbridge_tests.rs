@@ -192,6 +192,7 @@ async fn test_ingress_mbridge_api_route() {
         Some(conxian_api::fiat::RampAdapter::new("ramp-key".to_string())),
         Some(conxian_api::fiat::StitchAdapter),
         Some(conxian_api::fiat::OzowAdapter),
+        Some(conxian_api::fiat::PapssAdapter),
         Some(conxian_api::fiat::AlchemyPayAdapter::new(
             "alchemy-id".to_string(),
         )),

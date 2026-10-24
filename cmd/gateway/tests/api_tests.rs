@@ -138,6 +138,7 @@ fn setup_app_with_lightning_and_persistence(
         Some(conxian_api::fiat::RampAdapter::new("ramp-key".to_string())),
         Some(conxian_api::fiat::StitchAdapter),
         Some(conxian_api::fiat::OzowAdapter),
+        Some(conxian_api::fiat::PapssAdapter),
         Some(conxian_api::fiat::AlchemyPayAdapter::new(
             "alchemy-id".to_string(),
         )),
@@ -1326,7 +1327,13 @@ async fn test_ingress_iso20022_authorized() {
     let xml_payload = r#"<?xml version="1.0" encoding="UTF-8"?>
 <Document xmlns="urn:iso:std:iso:20022:tech:xsd:pacs.008.001.07">
     <FIToFICstmrCdtTrf>
-        <Grphdr><MsgId>MSG-001</MsgId></Grphdr>
+        <GrpHdr><MsgId>MSG-001</MsgId><IntrBkSttlmDt>2026-10-13</IntrBkSttlmDt></GrpHdr>
+        <CdtTrfTxInf>
+            <PmtId><InstrId>INSTR-001</InstrId><EndToEndId>E2E-001</EndToEndId></PmtId>
+            <IntrBkSttlmAmt Ccy="ZAR">125.50</IntrBkSttlmAmt>
+            <Dbtr><Nm>Originating Bank</Nm></Dbtr>
+            <Cdtr><Nm>Receiving Bank</Nm></Cdtr>
+        </CdtTrfTxInf>
     </FIToFICstmrCdtTrf>
 </Document>"#;
 
@@ -1377,6 +1384,12 @@ async fn test_ingress_iso20022_authorized() {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let proposal: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(proposal["envelope"]["payload"]["transaction_id"], "MSG-001");
+    assert_eq!(proposal["envelope"]["payload"]["amount_minor"], 12_550);
+    assert_eq!(proposal["envelope"]["payload"]["currency"], "ZAR");
+    assert_eq!(proposal["envelope"]["payload"]["finality"], "UNKNOWN");
 }
 
 #[tokio::test]

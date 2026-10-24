@@ -13,7 +13,7 @@ pub struct OnRampSessionRequest {
     pub wallet_address: String,
     pub amount: f64,
     pub currency: String,
-    pub provider: String, // "ramp", "stitch", "ozow", "alchemypay", or "banxa"
+    pub provider: String, // "ramp", "stitch", "ozow", "papss", "alchemypay", or "banxa"
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -41,6 +41,7 @@ pub enum FiatOnRampProvider {
     Ramp,
     Stitch,
     Ozow,
+    Papss,
     AlchemyPay,
     Banxa,
 }
@@ -51,6 +52,7 @@ impl FiatOnRampProvider {
             Self::Ramp => "ramp",
             Self::Stitch => "stitch",
             Self::Ozow => "ozow",
+            Self::Papss => "papss",
             Self::AlchemyPay => "alchemypay",
             Self::Banxa => "banxa",
         }
@@ -65,6 +67,7 @@ impl FromStr for FiatOnRampProvider {
             "ramp" => Ok(Self::Ramp),
             "stitch" => Ok(Self::Stitch),
             "ozow" => Ok(Self::Ozow),
+            "papss" => Ok(Self::Papss),
             "alchemypay" => Ok(Self::AlchemyPay),
             "banxa" => Ok(Self::Banxa),
             _ => Err(format!("unsupported fiat on-ramp provider: {s}")),
@@ -137,6 +140,24 @@ impl FiatOnRampAdapter for OzowAdapter {
     }
 }
 
+/// Pan-African cross-border rail via PAPSS (Afreximbank): instant settlement
+/// across African central banks in local currency. Modeled as a hosted
+/// initiation like Stitch/Ozow; full ISO 20022 integration is a follow-up.
+pub struct PapssAdapter;
+
+impl FiatOnRampAdapter for PapssAdapter {
+    fn provider(&self) -> FiatOnRampProvider {
+        FiatOnRampProvider::Papss
+    }
+
+    fn build_redirect_url(&self, request: &OnRampSessionRequest, session_id: &str) -> String {
+        format!(
+            "https://papss.afreximbank.com/payments/initiate?reference={}&amount={}&currency={}",
+            session_id, request.amount, request.currency
+        )
+    }
+}
+
 pub struct AlchemyPayAdapter {
     app_id: String,
 }
@@ -186,6 +207,7 @@ impl FiatRouter {
         ramp: Option<RampAdapter>,
         stitch: Option<StitchAdapter>,
         ozow: Option<OzowAdapter>,
+        papss: Option<PapssAdapter>,
         alchemy_pay: Option<AlchemyPayAdapter>,
         banxa: Option<BanxaAdapter>,
     ) -> Self {
@@ -197,6 +219,9 @@ impl FiatRouter {
             adapters.push(Box::new(adapter));
         }
         if let Some(adapter) = ozow {
+            adapters.push(Box::new(adapter));
+        }
+        if let Some(adapter) = papss {
             adapters.push(Box::new(adapter));
         }
         if let Some(adapter) = alchemy_pay {
@@ -255,6 +280,18 @@ impl FiatRouter {
             )));
         }
 
+        let provider =
+            FiatOnRampProvider::from_str(&payload.provider).map_err(ConxianError::Security)?;
+        if !self
+            .adapters
+            .iter()
+            .any(|adapter| adapter.provider() == provider)
+        {
+            return Err(ConxianError::Security(
+                "fiat webhook provider is not enabled".to_string(),
+            ));
+        }
+
         if payload.signature.is_empty() {
             return Ok(false);
         }
@@ -284,6 +321,7 @@ mod tests {
             Some(RampAdapter::new("test-key".to_string())),
             Some(StitchAdapter),
             Some(OzowAdapter),
+            Some(PapssAdapter),
             Some(AlchemyPayAdapter::new("ap-app-id".to_string())),
             Some(BanxaAdapter),
         )
@@ -324,6 +362,16 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_create_papss_session() {
+        let res = test_router()
+            .create_session(request("papss"))
+            .await
+            .unwrap();
+        assert_eq!(res.provider, "papss");
+        assert!(res.redirect_url.contains("papss.afreximbank.com"));
+    }
+
+    #[tokio::test]
     async fn test_create_alchemypay_session() {
         let res = test_router()
             .create_session(request("alchemypay"))
@@ -352,7 +400,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_session_rejects_disabled_provider() {
-        let router = FiatRouter::from_enabled(None, None, None, None, None);
+        let router = FiatRouter::from_enabled(None, None, None, None, None, None);
         let res = router.create_session(request("ramp")).await;
         assert!(res.is_err());
     }
@@ -391,6 +439,15 @@ mod tests {
     async fn test_verify_stitch_webhook() {
         let (payload, secret) = signed_webhook("stitch", "stitch-secret");
         assert!(test_router().verify_webhook(&payload, &secret).unwrap());
+    }
+
+    #[test]
+    fn disabled_provider_rejects_even_a_correctly_signed_webhook() {
+        let (payload, secret) = signed_webhook("ramp", "webhook-secret");
+        let disabled = FiatRouter::from_enabled(None, None, None, None, None, None);
+        assert!(disabled.verify_webhook(&payload, &secret).is_err());
+        let another = FiatRouter::from_enabled(None, Some(StitchAdapter), None, None, None, None);
+        assert!(another.verify_webhook(&payload, &secret).is_err());
     }
 
     #[tokio::test]
