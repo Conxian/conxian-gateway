@@ -5,6 +5,8 @@ mempool fee-bump boundary, and Gateway process supervision. The canonical
 implementation is `pkg/conxian-core/src/persistence.rs`; Gateway consumes it
 through `internal/engine/src/persistence.rs`.
 
+See [native replicated storage and decentralised recovery research](research/NATIVE_PERSISTENT_STORAGE_2026_10_25.md) for candidate placement and the operator volume conformance command. Research does not change the supported topology below.
+
 ## Supported topology
 
 Set `GATEWAY_STATE_PATH` to a state file on a trusted local filesystem. The
