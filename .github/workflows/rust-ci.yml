@@ -31,7 +31,7 @@ jobs:
           toolchain: "1.98.1"
 
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2.7.7
+        uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31 # v2.7.7
 
       - name: Check locked workspace at declared MSRV
         run: cargo check --workspace --locked
@@ -96,7 +96,7 @@ jobs:
           components: clippy
 
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2.7.7
+        uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31 # v2.7.7
 
       - name: Run clippy
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
@@ -117,7 +117,7 @@ jobs:
           toolchain: "1.98.1"
 
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2.7.7
+        uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31 # v2.7.7
 
       - name: Run tests
         run: cargo test --workspace
@@ -169,7 +169,7 @@ jobs:
           toolchain: "1.98.1"
 
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2.7.7
+        uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31 # v2.7.7
 
       - name: Test engine RGB native feature
         run: cargo test -p conxian_engine --features rgb-native
@@ -193,7 +193,7 @@ jobs:
           toolchain: "1.98.1"
 
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2.7.7
+        uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31 # v2.7.7
 
       - name: Build release
         run: cargo build --release

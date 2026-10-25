@@ -410,7 +410,7 @@ jobs:
           printf 'target=%s\n' "${TARGET_TRIPLE}" >> "${GITHUB_OUTPUT}"
 
       - name: Install pinned CycloneDX generator
-        uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
+        uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
         with:
           tool: cargo-cyclonedx@0.5.9
           fallback: none
