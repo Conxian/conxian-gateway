@@ -1,5 +1,7 @@
 # Conxian Gateway
 
+[Native persistent storage and decentralised recovery](docs/research/NATIVE_PERSISTENT_STORAGE_2026_10_25.md) compares compatible placements and provides a volume conformance command; candidate research does not establish production acceptance.
+
 ### API token configuration migration
 
 New installer output uses `API_TOKEN`. Existing `CONXIAN_GATEWAY_AUTH_TOKEN`
