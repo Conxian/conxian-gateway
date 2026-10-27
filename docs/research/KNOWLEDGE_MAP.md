@@ -116,3 +116,8 @@
 - **[CXIP-1317 Org-Wide Upgrade Proposal](CXIP_ORG_WIDE_UPGRADE_PROPOSAL.md)**: Canonical architecture for org-wide system refinement, multi-rail settlement, machine economy, zero-trust Wasm verification, and release discipline.
 - **[Verification Improvement Proposal](VERIFICATION_IMPROVEMENT_PROPOSAL.md)**: Universal Chain Verification (UCV-1) generic adapter dispatch and trust policy integration.
 - **[Sovereign Sharding & Verification](SOVEREIGN_SHARDING_VERIFICATION.md)**: SSV-1 research for BitVM3 garbled circuits and recursive proof folding.
+
+
+## Reference Specifications
+
+- **Production Readiness & Nexus Partner Ecosystem Specification**: [`NEXUS_PARTNER_ECOSYSTEM_AND_PRODUCTION_READINESS.md`](./NEXUS_PARTNER_ECOSYSTEM_AND_PRODUCTION_READINESS.md)
