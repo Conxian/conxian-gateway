@@ -108,11 +108,13 @@
 | **Candidate R** | Machine Economy & DePIN Settlement | `internal/api/src/handlers.rs` & `@conxian/client-sdk` | ✅ Shipped |
 | **Candidate S** | Canton CCIP Cross-Chain Gateway | `internal/api/src/handlers.rs` | 🟡 Gated; authenticity verifier required |
 | **Candidate T** | SWIFT camt.053 Real-Time ERP Reporting | `internal/api/src/camt.rs` & `@conxian/client-sdk` | 🚀 Active |
+| **Candidate U** | Weighted Product Score (WPS) Billing Engine | `internal/engine/src/billing.rs` | ✅ Shipped |
 
 ---
 
 ## Strategic Governance & Research Proposals
 
+- **[Nexus Partner Ecosystem & Production Readiness](NEXUS_PARTNER_ECOSYSTEM_AND_PRODUCTION_READINESS.md)** (`cxn-rf-2026-pr-nexus-001`): Production readiness gates, decentralized partner ecosystem fault offloading, business opportunities, and GitHub management framework.
 - **[CXIP-1317 Org-Wide Upgrade Proposal](CXIP_ORG_WIDE_UPGRADE_PROPOSAL.md)**: Canonical architecture for org-wide system refinement, multi-rail settlement, machine economy, zero-trust Wasm verification, and release discipline.
 - **[Verification Improvement Proposal](VERIFICATION_IMPROVEMENT_PROPOSAL.md)**: Universal Chain Verification (UCV-1) generic adapter dispatch and trust policy integration.
 - **[Sovereign Sharding & Verification](SOVEREIGN_SHARDING_VERIFICATION.md)**: SSV-1 research for BitVM3 garbled circuits and recursive proof folding.
