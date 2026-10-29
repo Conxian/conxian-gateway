@@ -217,6 +217,12 @@ impl ZkcVerifier {
                 ));
             }
         };
+        // Party names are transient compliance input. Retained settlement state uses
+        // opaque, role-scoped references derived from the already retained payload
+        // digest so the gateway does not persist or return raw personal names.
+        let digest_prefix = &event.payload_sha256[..16];
+        let debtor_reference = format!("iso20022:debtor:{digest_prefix}");
+        let creditor_reference = format!("iso20022:creditor:{digest_prefix}");
 
         Ok(SettlementEnvelope {
             version: "1.0".to_string(),
@@ -226,8 +232,8 @@ impl ZkcVerifier {
                 amount_minor: event.amount_minor,
                 amount_scale: event.amount_scale,
                 currency: event.currency.clone(),
-                sender: event.debtor,
-                receiver: event.creditor,
+                sender: debtor_reference,
+                receiver: creditor_reference,
                 timestamp: 0,
                 status: SettlementStatus::Ingested,
                 rail: None,
@@ -1226,5 +1232,27 @@ mod zkc_iso20022_tests {
         let res = verifier.validate_iso20022_xml_structure(bad_syntax_xml);
         assert!(res.is_err());
         assert!(res.unwrap_err().to_string().contains("syntax error"));
+    }
+
+    #[test]
+    fn normalize_iso20022_does_not_retain_party_names() {
+        let verifier = ZkcVerifier::new();
+        let xml = r#"<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pacs.008.001.08"><FIToFICstmrCdtTrf><GrpHdr><MsgId>MSG-PII</MsgId></GrpHdr><CdtTrfTxInf><IntrBkSttlmAmt Ccy="ZAR">10.00</IntrBkSttlmAmt><Dbtr><Nm>Alice Example</Nm></Dbtr><Cdtr><Nm>Bob Example</Nm></Cdtr></CdtTrfTxInf></FIToFICstmrCdtTrf></Document>"#;
+        let digest = hex::encode(Sha256::digest(xml.as_bytes()));
+
+        let envelope = verifier
+            .normalize_iso20022_ingress(xml, digest.clone())
+            .expect("valid ISO 20022 ingress");
+
+        assert_eq!(
+            envelope.payload.sender,
+            format!("iso20022:debtor:{}", &digest[..16])
+        );
+        assert_eq!(
+            envelope.payload.receiver,
+            format!("iso20022:creditor:{}", &digest[..16])
+        );
+        assert!(!envelope.payload.sender.contains("Alice"));
+        assert!(!envelope.payload.receiver.contains("Bob"));
     }
 }
