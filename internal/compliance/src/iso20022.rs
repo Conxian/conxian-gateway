@@ -244,10 +244,14 @@ fn capture_xml_value(
             | "IntrBkSttlmAmt"
             | "InstdAmt"
             | "IntrBkSttlmDt"
+            | "ReqdExctnDt"
             | "Dt"
             | "DtTm"
             | "Nm"
     ) {
+        return Ok(());
+    }
+    if name == "ReqdExctnDt" && raw.trim().is_empty() {
         return Ok(());
     }
     let value = field(raw, name)?;
@@ -260,6 +264,9 @@ fn capture_xml_value(
             profile.currency = amount_currency;
         }
         "IntrBkSttlmDt" if profile.settlement_date.is_none() => {
+            profile.settlement_date = Some(value)
+        }
+        "ReqdExctnDt" if profile.settlement_date.is_none() => {
             profile.settlement_date = Some(value)
         }
         "Dt" | "DtTm"
@@ -470,6 +477,13 @@ mod tests {
     fn accepts_structured_execution_date_without_validating_empty_container_text() {
         let xml = br#"<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pain.001.001.09"><CstmrCdtTrfInitn><GrpHdr><MsgId>MSG-DATE</MsgId></GrpHdr><PmtInf><ReqdExctnDt><Dt>2026-10-29</Dt></ReqdExctnDt><CdtTrfTxInf><Amt><InstdAmt Ccy="ZAR">10.00</InstdAmt></Amt><Dbtr><Nm>Alice</Nm></Dbtr><Cdtr><Nm>Bob</Nm></Cdtr></CdtTrfTxInf></PmtInf></CstmrCdtTrfInitn></Document>"#;
         let event = translate(xml).expect("structured execution date profile");
+        assert_eq!(event.settlement_date.as_deref(), Some("2026-10-29"));
+    }
+
+    #[test]
+    fn preserves_text_valued_execution_date() {
+        let xml = br#"<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pain.001.001.09"><CstmrCdtTrfInitn><GrpHdr><MsgId>MSG-DATE-TEXT</MsgId></GrpHdr><PmtInf><ReqdExctnDt>2026-10-29</ReqdExctnDt><CdtTrfTxInf><Amt><InstdAmt Ccy="ZAR">10.00</InstdAmt></Amt><Dbtr><Nm>Alice</Nm></Dbtr><Cdtr><Nm>Bob</Nm></Cdtr></CdtTrfTxInf></PmtInf></CstmrCdtTrfInitn></Document>"#;
+        let event = translate(xml).expect("text-valued execution date profile");
         assert_eq!(event.settlement_date.as_deref(), Some("2026-10-29"));
     }
 
