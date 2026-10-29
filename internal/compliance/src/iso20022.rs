@@ -266,9 +266,7 @@ fn capture_xml_value(
         "IntrBkSttlmDt" if profile.settlement_date.is_none() => {
             profile.settlement_date = Some(value)
         }
-        "ReqdExctnDt" if profile.settlement_date.is_none() => {
-            profile.settlement_date = Some(value)
-        }
+        "ReqdExctnDt" if profile.settlement_date.is_none() => profile.settlement_date = Some(value),
         "Dt" | "DtTm"
             if profile.settlement_date.is_none()
                 && path
