@@ -244,7 +244,8 @@ fn capture_xml_value(
             | "IntrBkSttlmAmt"
             | "InstdAmt"
             | "IntrBkSttlmDt"
-            | "ReqdExctnDt"
+            | "Dt"
+            | "DtTm"
             | "Nm"
     ) {
         return Ok(());
@@ -258,7 +259,17 @@ fn capture_xml_value(
             profile.amount = Some(value);
             profile.currency = amount_currency;
         }
-        "IntrBkSttlmDt" | "ReqdExctnDt" if profile.settlement_date.is_none() => {
+        "IntrBkSttlmDt" if profile.settlement_date.is_none() => {
+            profile.settlement_date = Some(value)
+        }
+        "Dt" | "DtTm"
+            if profile.settlement_date.is_none()
+                && path
+                    .iter()
+                    .rev()
+                    .nth(1)
+                    .is_some_and(|parent| parent == "ReqdExctnDt") =>
+        {
             profile.settlement_date = Some(value)
         }
         "Nm" if profile.debtor.is_none() && path.iter().any(|part| part == "Dbtr") => {
@@ -285,12 +296,24 @@ fn build_event(
     settlement_date: Option<String>,
     payload_sha256: String,
 ) -> ConxianResult<Iso20022RoutingEvent> {
+    let message_id = field(&message_id, "MsgId")?;
+    let instruction_id = instruction_id
+        .map(|value| field(&value, "InstrId"))
+        .transpose()?;
+    let end_to_end_id = end_to_end_id
+        .map(|value| field(&value, "EndToEndId"))
+        .transpose()?;
+    let debtor = field(&debtor, "debtor")?;
+    let creditor = field(&creditor, "creditor")?;
+    let settlement_date = settlement_date
+        .map(|value| field(&value, "settlement date"))
+        .transpose()?;
     let (amount_minor, amount_scale) = decimal_to_minor_units(&amount)?;
     let currency = field(&currency.to_ascii_uppercase(), "currency")?;
     if currency.len() != 3 || !currency.bytes().all(|byte| byte.is_ascii_uppercase()) {
         return Err(compliance("currency must be a three-letter uppercase code"));
     }
-    if message_id == "NOTPROVIDED" || message_id.is_empty() {
+    if message_id == "NOTPROVIDED" {
         return Err(compliance("MsgId must identify the source message"));
     }
 
@@ -441,5 +464,23 @@ mod tests {
         let event = translate(fragmented).expect("fragmented text profile");
         assert_eq!(event.debtor, "Alice Smith");
         assert_eq!(event.creditor, "Bob Jones");
+    }
+
+    #[test]
+    fn accepts_structured_execution_date_without_validating_empty_container_text() {
+        let xml = br#"<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pain.001.001.09"><CstmrCdtTrfInitn><GrpHdr><MsgId>MSG-DATE</MsgId></GrpHdr><PmtInf><ReqdExctnDt><Dt>2026-10-29</Dt></ReqdExctnDt><CdtTrfTxInf><Amt><InstdAmt Ccy="ZAR">10.00</InstdAmt></Amt><Dbtr><Nm>Alice</Nm></Dbtr><Cdtr><Nm>Bob</Nm></Cdtr></CdtTrfTxInf></PmtInf></CstmrCdtTrfInitn></Document>"#;
+        let event = translate(xml).expect("structured execution date profile");
+        assert_eq!(event.settlement_date.as_deref(), Some("2026-10-29"));
+    }
+
+    #[test]
+    fn rejects_invalid_json_identifiers_and_parties() {
+        for json in [
+            br#"{"message_type":"pain001","message_id":" ","instruction_id":null,"end_to_end_id":null,"amount":"10.00","currency":"ZAR","debtor":"Alice","creditor":"Bob","settlement_date":null}"#.as_slice(),
+            br#"{"message_type":"pain001","message_id":"MSG-JSON","instruction_id":null,"end_to_end_id":null,"amount":"10.00","currency":"ZAR","debtor":"","creditor":"Bob","settlement_date":null}"#.as_slice(),
+            br#"{"message_type":"pain001","message_id":"MSG-JSON","instruction_id":"bad\u0000id","end_to_end_id":null,"amount":"10.00","currency":"ZAR","debtor":"Alice","creditor":"Bob","settlement_date":null}"#.as_slice(),
+        ] {
+            assert!(translate(json).is_err());
+        }
     }
 }
