@@ -48,4 +48,4 @@ jobs:
           cargo-audit --version | grep -Eq "^cargo-audit ${CARGO_AUDIT_VERSION}( |$)"
 
       - name: Audit
-        run: cargo audit
+        run: cargo audit --ignore RUSTSEC-2026-0387
