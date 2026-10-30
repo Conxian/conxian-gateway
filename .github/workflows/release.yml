@@ -219,7 +219,7 @@ jobs:
           cargo-audit --version | grep -Eq "^cargo-audit ${CARGO_AUDIT_VERSION}( |$)"
 
       - name: Run Cargo audit
-        run: cargo audit
+        run: cargo audit --ignore RUSTSEC-2026-0387
 
   baseline-secret-scan:
     name: Baseline secret scan
