@@ -145,9 +145,20 @@ pub trait TokenIssuer: Send + Sync {
 }
 
 /// Fail-closed HTTP invoice backend backed by `reqwest`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BackendKind {
+    /// Operator REST: POST `{create_url}/invoice` + GET `{check_url}/{id}`.
+    Generic,
+    /// lnbits: POST `{base}/api/v1/payments` + GET `{base}/api/v1/payments/{hash}`,
+    /// authenticated with `X-API-Key`; amounts are reported in millisatoshis.
+    Lnbits,
+}
+
 pub struct HttpInvoiceBackend {
     create_url: Option<String>,
     check_url: Option<String>,
+    api_key: Option<String>,
+    kind: BackendKind,
     client: reqwest::Client,
 }
 
@@ -156,6 +167,18 @@ impl HttpInvoiceBackend {
         Self {
             create_url,
             check_url,
+            api_key: None,
+            kind: BackendKind::Generic,
+            client: reqwest::Client::new(),
+        }
+    }
+
+    pub fn lnbits(create_url: Option<String>, check_url: Option<String>, api_key: String) -> Self {
+        Self {
+            create_url,
+            check_url,
+            api_key: Some(api_key),
+            kind: BackendKind::Lnbits,
             client: reqwest::Client::new(),
         }
     }
@@ -183,6 +206,12 @@ fn read_amount(body: &serde_json::Value) -> Option<u64> {
         }
     }
     None
+}
+
+fn read_amount_msat(body: &serde_json::Value) -> Option<u64> {
+    body.get("amount")
+        .and_then(|v| v.as_u64())
+        .map(|msat| msat / 1000)
 }
 
 fn read_settled(body: &serde_json::Value) -> Option<bool> {
@@ -223,14 +252,25 @@ impl InvoiceBackend for HttpInvoiceBackend {
         let base = self
             .create_url
             .as_deref()
-            .ok_or(BillingError::NoInvoiceCreateUrl)?;
-        let url = format!("{}/invoice", base.trim_end_matches('/'));
-        let body =
-            serde_json::json!({ "amount_sats": amount_sats, "expiry_seconds": expiry_seconds });
-        let res = self
-            .client
-            .post(&url)
-            .json(&body)
+            .ok_or(BillingError::NoInvoiceCreateUrl)?
+            .trim_end_matches('/');
+        let (url, body) = match self.kind {
+            BackendKind::Generic => (
+                format!("{base}/invoice"),
+                serde_json::json!({ "amount_sats": amount_sats, "expiry_seconds": expiry_seconds }),
+            ),
+            BackendKind::Lnbits => (
+                format!("{base}/api/v1/payments"),
+                serde_json::json!({ "out": false, "amount": amount_sats, "memo": "conxian subscription" }),
+            ),
+        };
+        let mut req = self.client.post(&url).json(&body);
+        if self.kind == BackendKind::Lnbits {
+            if let Some(key) = self.api_key.as_deref() {
+                req = req.header("X-API-Key", key);
+            }
+        }
+        let res = req
             .send()
             .await
             .map_err(|e| BillingError::BackendUnreachable(e.to_string()))?;
@@ -245,6 +285,7 @@ impl InvoiceBackend for HttpInvoiceBackend {
             .get("invoice_id")
             .and_then(|v| v.as_str())
             .or_else(|| v.get("id").and_then(|v| v.as_str()))
+            .or_else(|| v.get("payment_hash").and_then(|v| v.as_str()))
             .ok_or(BillingError::MissingSettledIndicator)?
             .to_string();
         let payment_request = v
@@ -273,11 +314,19 @@ impl InvoiceBackend for HttpInvoiceBackend {
         let base = self
             .check_url
             .as_deref()
-            .ok_or(BillingError::NoInvoiceCheckUrl)?;
-        let url = format!("{}/{}", base.trim_end_matches('/'), invoice_id);
-        let res = self
-            .client
-            .get(&url)
+            .ok_or(BillingError::NoInvoiceCheckUrl)?
+            .trim_end_matches('/');
+        let url = match self.kind {
+            BackendKind::Generic => format!("{base}/{invoice_id}"),
+            BackendKind::Lnbits => format!("{base}/api/v1/payments/{invoice_id}"),
+        };
+        let mut req = self.client.get(&url);
+        if self.kind == BackendKind::Lnbits {
+            if let Some(key) = self.api_key.as_deref() {
+                req = req.header("X-API-Key", key);
+            }
+        }
+        let res = req
             .send()
             .await
             .map_err(|e| BillingError::BackendUnreachable(e.to_string()))?;
@@ -292,7 +341,11 @@ impl InvoiceBackend for HttpInvoiceBackend {
         if !settled {
             return Ok(false);
         }
-        if let Some(reported) = read_amount(&v) {
+        let reported = match self.kind {
+            BackendKind::Lnbits => read_amount_msat(&v),
+            BackendKind::Generic => read_amount(&v),
+        };
+        if let Some(reported) = reported {
             if reported != amount_sats {
                 return Err(BillingError::AmountMismatch {
                     expected: amount_sats,
@@ -477,6 +530,32 @@ mod tests {
         ));
         assert!(matches!(
             b.check_settled("inv_1", 1000).await,
+            Err(BillingError::NoInvoiceCheckUrl)
+        ));
+    }
+
+    #[test]
+    fn lnbits_amount_msat_is_converted_to_sats() {
+        assert_eq!(
+            read_amount_msat(&serde_json::json!({ "amount": 1000000 })),
+            Some(1000)
+        );
+        assert_eq!(
+            read_amount_msat(&serde_json::json!({ "amount": 0 })),
+            Some(0)
+        );
+        assert_eq!(read_amount_msat(&serde_json::json!({})), None);
+    }
+
+    #[tokio::test]
+    async fn lnbits_backend_fails_closed_without_urls() {
+        let b = HttpInvoiceBackend::lnbits(None, None, "inkey".into());
+        assert!(matches!(
+            b.create_invoice(1000, 3600).await,
+            Err(BillingError::NoInvoiceCreateUrl)
+        ));
+        assert!(matches!(
+            b.check_settled("hash", 1000).await,
             Err(BillingError::NoInvoiceCheckUrl)
         ));
     }
