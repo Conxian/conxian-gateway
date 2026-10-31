@@ -146,10 +146,8 @@ impl FusionJwt {
         Ok(TenantContext { tenant_id, tier })
     }
 
-    /// Issue a token (test/offline helper; the billing webhook is the issuer in
-    /// production).
-    #[cfg(test)]
-    fn issue(&self, tenant_id: &str, tier: &str, ttl_seconds: u64) -> String {
+    /// Issue a short-lived HS256 token (billing activation path).
+    pub(crate) fn issue(&self, tenant_id: &str, tier: &str, ttl_seconds: u64) -> String {
         use base64::engine::general_purpose::URL_SAFE_NO_PAD as E;
         let header = E.encode(br#"{"alg":"HS256","typ":"JWT"}"#);
         let now = SystemTime::now()
@@ -164,8 +162,8 @@ impl FusionJwt {
         );
         let payload = E.encode(claims.as_bytes());
         let signing_input = format!("{}.{}", header, payload);
-        let mut mac =
-            HmacSha256::new_from_slice(self.secret.as_deref().unwrap().as_bytes()).unwrap();
+        let secret = self.secret.as_deref().unwrap_or_default();
+        let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).unwrap();
         mac.update(signing_input.as_bytes());
         let sig = E.encode(mac.finalize().into_bytes());
         format!("{}.{}.{}", header, payload, sig)
