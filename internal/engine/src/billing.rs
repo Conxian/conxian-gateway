@@ -1,3 +1,6 @@
+// Pricing architecture: see Conxian/conxian-business ADR-009 — the gateway is the
+// single monetization surface; market fee-bps feeds the gateway meter and nexus
+// tiers are gateway entitlements (not separate bills).
 //! Gateway MRR (Monthly Recurring Revenue) billing module.
 //!
 //! Tracks gateway service usage and generates per-period billing reports.
