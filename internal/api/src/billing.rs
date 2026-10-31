@@ -144,25 +144,56 @@ pub trait TokenIssuer: Send + Sync {
     fn issue(&self, tenant_id: &str, tier: &str, expires_at: u64) -> String;
 }
 
-/// Fail-closed HTTP invoice backend backed by `reqwest`.
+/// Fail-closed HTTP invoice backend backed by `reqwest`. lnbits-native: the
+/// create/check URLs are lnbits endpoints and the `X-Api-Key` header carries the
+/// invoice key.
 pub struct HttpInvoiceBackend {
     create_url: Option<String>,
     check_url: Option<String>,
+    api_key: Option<String>,
     client: reqwest::Client,
 }
 
 impl HttpInvoiceBackend {
-    pub fn new(create_url: Option<String>, check_url: Option<String>) -> Self {
+    pub fn new(
+        create_url: Option<String>,
+        check_url: Option<String>,
+        api_key: Option<String>,
+    ) -> Self {
         Self {
             create_url,
             check_url,
+            api_key,
             client: reqwest::Client::new(),
         }
+    }
+
+    pub(crate) fn from_env() -> Self {
+        Self::new(
+            std::env::var("LIGHTNING_INVOICE_CREATE_URL").ok(),
+            std::env::var("LIGHTNING_INVOICE_CHECK_URL").ok(),
+            std::env::var("LIGHTNING_INVOICE_API_KEY").ok(),
+        )
     }
 }
 
 fn read_amount(body: &serde_json::Value) -> Option<u64> {
-    for key in ["amount_sat", "value", "amount"] {
+    // lnbits reports `amount` in millisatoshis (real lnbits top-level; FakeWallet
+    // nests it under `details`).
+    for path in ["/amount", "/details/amount"] {
+        if let Some(v) = body.pointer(path) {
+            if let Some(n) = v.as_u64() {
+                return Some(n / 1000);
+            }
+            if let Some(s) = v.as_str() {
+                if let Ok(n) = s.parse::<u64>() {
+                    return Some(n / 1000);
+                }
+            }
+        }
+    }
+    // sats-native fallbacks (non-lnbits backends)
+    for key in ["amount_sat", "value"] {
         if let Some(v) = body.get(key) {
             if let Some(n) = v.as_u64() {
                 return Some(n);
@@ -174,23 +205,20 @@ fn read_amount(body: &serde_json::Value) -> Option<u64> {
             }
         }
     }
-    // millisatoshi form
-    for key in ["amount_msat", "value_msat"] {
-        if let Some(v) = body.get(key).and_then(|v| v.as_str()) {
-            if let Ok(n) = v.parse::<u64>() {
-                return Some(n / 1000);
-            }
-        }
-    }
     None
 }
 
 fn read_settled(body: &serde_json::Value) -> Option<bool> {
+    // Explicit indicators first (lnbits FakeWallet uses top-level `paid`/`status`;
+    // real lnbits uses `pending`/`preimage`).
+    if let Some(b) = body.get("paid").and_then(|v| v.as_bool()) {
+        return Some(b);
+    }
     if let Some(b) = body.get("settled").and_then(|v| v.as_bool()) {
         return Some(b);
     }
-    if let Some(b) = body.get("paid").and_then(|v| v.as_bool()) {
-        return Some(b);
+    if let Some(b) = body.get("pending").and_then(|v| v.as_bool()) {
+        return Some(!b);
     }
     if let Some(s) = body.get("status").and_then(|v| v.as_str()) {
         let s = s.to_ascii_lowercase();
@@ -210,6 +238,12 @@ fn read_settled(body: &serde_json::Value) -> Option<bool> {
             return Some(false);
         }
     }
+    // A non-empty preimage confirms settlement (real lnbits / CLN style).
+    if let Some(preimage) = body.get("preimage").and_then(|v| v.as_str()) {
+        if !preimage.is_empty() {
+            return Some(true);
+        }
+    }
     None
 }
 
@@ -220,17 +254,17 @@ impl InvoiceBackend for HttpInvoiceBackend {
         amount_sats: u64,
         expiry_seconds: u64,
     ) -> Result<Invoice, BillingError> {
-        let base = self
+        let url = self
             .create_url
             .as_deref()
             .ok_or(BillingError::NoInvoiceCreateUrl)?;
-        let url = format!("{}/invoice", base.trim_end_matches('/'));
         let body =
-            serde_json::json!({ "amount_sats": amount_sats, "expiry_seconds": expiry_seconds });
-        let res = self
-            .client
-            .post(&url)
-            .json(&body)
+            serde_json::json!({ "out": false, "amount": amount_sats, "expiry": expiry_seconds });
+        let mut req = self.client.post(url).json(&body);
+        if let Some(key) = self.api_key.as_deref() {
+            req = req.header("X-Api-Key", key);
+        }
+        let res = req
             .send()
             .await
             .map_err(|e| BillingError::BackendUnreachable(e.to_string()))?;
@@ -242,8 +276,9 @@ impl InvoiceBackend for HttpInvoiceBackend {
             .await
             .map_err(|e| BillingError::BackendUnreachable(e.to_string()))?;
         let invoice_id = v
-            .get("invoice_id")
+            .get("payment_hash")
             .and_then(|v| v.as_str())
+            .or_else(|| v.get("invoice_id").and_then(|v| v.as_str()))
             .or_else(|| v.get("id").and_then(|v| v.as_str()))
             .ok_or(BillingError::MissingSettledIndicator)?
             .to_string();
@@ -275,9 +310,11 @@ impl InvoiceBackend for HttpInvoiceBackend {
             .as_deref()
             .ok_or(BillingError::NoInvoiceCheckUrl)?;
         let url = format!("{}/{}", base.trim_end_matches('/'), invoice_id);
-        let res = self
-            .client
-            .get(&url)
+        let mut req = self.client.get(&url);
+        if let Some(key) = self.api_key.as_deref() {
+            req = req.header("X-Api-Key", key);
+        }
+        let res = req
             .send()
             .await
             .map_err(|e| BillingError::BackendUnreachable(e.to_string()))?;
@@ -366,6 +403,96 @@ fn now_secs() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0)
+}
+
+/// Mints deterministic `cxn_agent_<tenant>` keys on activation. Registration of
+/// the minted key into `TenantKeyRegistry` (for authenticated `/agent/*` calls)
+/// is the follow-up; the activation path only needs the key returned.
+pub struct TenantKeyMinter;
+
+impl KeyMinter for TenantKeyMinter {
+    fn mint(&self, tenant_id: &str, _tier: &str, _expires_at: u64) -> String {
+        format!("cxn_agent_{tenant_id}")
+    }
+}
+
+/// Issues Fusion HS256 JWTs on activation via `tenant::FusionJwt`.
+pub struct FusionTokenIssuer {
+    fusion: crate::tenant::FusionJwt,
+}
+
+impl FusionTokenIssuer {
+    pub(crate) fn from_env() -> Self {
+        let secret = std::env::var("FUSION_JWT_SECRET").ok();
+        Self {
+            fusion: crate::tenant::FusionJwt::new(secret),
+        }
+    }
+}
+
+impl TokenIssuer for FusionTokenIssuer {
+    fn issue(&self, tenant_id: &str, tier: &str, expires_at: u64) -> String {
+        let ttl = expires_at.saturating_sub(now_secs()).max(60);
+        self.fusion.issue(tenant_id, tier, ttl)
+    }
+}
+
+/// Concrete billing service used by the HTTP handlers (fail-closed lnbits backend).
+type BillingService =
+    LightningSubscriptionService<HttpInvoiceBackend, TenantKeyMinter, FusionTokenIssuer>;
+
+fn billing_service() -> &'static std::sync::Arc<BillingService> {
+    static SVC: std::sync::OnceLock<std::sync::Arc<BillingService>> = std::sync::OnceLock::new();
+    SVC.get_or_init(|| {
+        let backend = HttpInvoiceBackend::from_env();
+        let minter = TenantKeyMinter;
+        let issuer = FusionTokenIssuer::from_env();
+        std::sync::Arc::new(LightningSubscriptionService::new(backend, minter, issuer))
+    })
+}
+
+#[derive(Deserialize)]
+pub struct SubscribeRequest {
+    pub plan: String,
+}
+
+#[derive(Deserialize)]
+pub struct VerifyRequest {
+    pub plan: String,
+    pub tenant_id: String,
+    pub invoice_id: String,
+}
+
+pub(crate) async fn subscribe_handler(
+    axum::Json(req): axum::Json<SubscribeRequest>,
+) -> Result<axum::Json<Invoice>, (axum::http::StatusCode, String)> {
+    let plan = plan_by_id(&req.plan).ok_or_else(|| {
+        (
+            axum::http::StatusCode::BAD_REQUEST,
+            format!("unknown plan: {}", req.plan),
+        )
+    })?;
+    let invoice = billing_service()
+        .subscribe(plan, "")
+        .await
+        .map_err(|e| (axum::http::StatusCode::SERVICE_UNAVAILABLE, e.to_string()))?;
+    Ok(axum::Json(invoice))
+}
+
+pub(crate) async fn verify_handler(
+    axum::Json(req): axum::Json<VerifyRequest>,
+) -> Result<axum::Json<SubscriptionActivation>, (axum::http::StatusCode, String)> {
+    let plan = plan_by_id(&req.plan).ok_or_else(|| {
+        (
+            axum::http::StatusCode::BAD_REQUEST,
+            format!("unknown plan: {}", req.plan),
+        )
+    })?;
+    let activation = billing_service()
+        .verify(plan, &req.tenant_id, &req.invoice_id)
+        .await
+        .map_err(|e| (axum::http::StatusCode::PAYMENT_REQUIRED, e.to_string()))?;
+    Ok(axum::Json(activation))
 }
 
 #[cfg(test)]
@@ -470,7 +597,7 @@ mod tests {
 
     #[tokio::test]
     async fn http_backend_fails_closed_without_urls() {
-        let b = HttpInvoiceBackend::new(None, None);
+        let b = HttpInvoiceBackend::new(None, None, None);
         assert!(matches!(
             b.create_invoice(1000, 3600).await,
             Err(BillingError::NoInvoiceCreateUrl)
@@ -479,5 +606,42 @@ mod tests {
             b.check_settled("inv_1", 1000).await,
             Err(BillingError::NoInvoiceCheckUrl)
         ));
+    }
+
+    #[test]
+    fn read_settled_handles_fakewallet_and_real_lnbits_shapes() {
+        // FakeWallet unpaid: paid=false + status=pending + preimage=null.
+        let fw = serde_json::json!({"paid": false, "status": "pending", "preimage": null});
+        assert_eq!(read_settled(&fw), Some(false));
+        // FakeWallet settled: paid=true.
+        let fw_paid = serde_json::json!({"paid": true, "status": "paid", "preimage": null});
+        assert_eq!(read_settled(&fw_paid), Some(true));
+        // Real lnbits: pending=false => settled; pending=true => unsettled.
+        assert_eq!(
+            read_settled(&serde_json::json!({"pending": false})),
+            Some(true)
+        );
+        assert_eq!(
+            read_settled(&serde_json::json!({"pending": true})),
+            Some(false)
+        );
+        // A null preimage must NOT count as settled (regression guard).
+        let real_pre = serde_json::json!({"preimage": "abc123"});
+        assert_eq!(read_settled(&real_pre), Some(true));
+        assert_eq!(read_settled(&serde_json::json!({"preimage": null})), None);
+    }
+
+    #[test]
+    fn read_amount_handles_msat_and_details() {
+        // FakeWallet nests amount under `details` (msat).
+        assert_eq!(
+            read_amount(&serde_json::json!({"details": {"amount": 100000000}})),
+            Some(100000)
+        );
+        // Real lnbits top-level `amount` (msat).
+        assert_eq!(
+            read_amount(&serde_json::json!({"amount": 100000000})),
+            Some(100000)
+        );
     }
 }
