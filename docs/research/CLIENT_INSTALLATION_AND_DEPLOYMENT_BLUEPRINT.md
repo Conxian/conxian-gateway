@@ -18,7 +18,7 @@ When an institutional client (bank, central bank, enterprise treasury, or DePIN 
 +-----------------------------------------------------------------------------------+
 | 1. License & Enterprise Provisioning                                              |
 |    - License agreement execution & Organization ID issuance in Conxian Portal      |
-|    - Generation of deployment credentials, API tokens, and trust tier (T1/T2) keys  |
+|    - Generation of deployment credentials, API tokens, and trust tier (T1–T4) keys  |
 +-----------------------------------------------------------------------------------+
                                          │
                                          ▼
@@ -60,11 +60,11 @@ To achieve production readiness, the client configures the following inputs duri
 
 | Category | Input Parameter | Description & Requirement |
 |---|---|---|
-| **Authentication** | `CONXIAN_GATEWAY_AUTH_TOKEN` | Bearer token for API protection (must not use `sentinel_` prefix in prod) |
-| **Trust Policy** | `x-conxian-trust-metadata` | Ingress header specifying system (`IBC`), trust tier (`T1`), policy context, and evidence |
+| **Authentication** | `API_TOKEN` | Bearer token for API protection (must not use `sentinel_` prefix in prod) |
+| **Trust Policy** | `x-conxian-trust-metadata` | Ingress header specifying system (`IBC`), trust tier (`T1`–`T4`), policy context, and evidence |
 | **Blockchain Nodes** | `BITCOIN_RPC_URL`, `STACKS_RPC_URL` | Client or dedicated Bitcoin L1 and Stacks node RPC endpoints |
 | **Signing & Enclave** | `ENCLAVE_KMS_KEY_ID`, `AWS_KMS_ARN` | Hardware key references for non-custodial transaction authorization |
-| **Database & Persistence** | `DATABASE_URL` / SQLite | Local or PostgreSQL persistence for state tracking and offline queue |
+| **Database & Persistence** | `GATEWAY_STATE_PATH`, `GATEWAY_PERSISTENCE_MODE`, `REDIS_URL` | Single-writer file state path (`exclusive-local-writer`) or Redis-backed persistence for state tracking and offline queue |
 | **ERP Webhooks** | `ODATA_V4_WEBHOOK_URL` | Enterprise ERP (SAP/Oracle) callback URL for real-time `camt.053` updates |
 
 ---
