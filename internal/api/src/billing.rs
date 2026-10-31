@@ -27,7 +27,10 @@ pub const DEFAULT_PERIOD_SECONDS: u64 = 30 * 24 * 3600;
 /// Sats-denominated subscription amounts. These mirror the only canonicalised
 /// sats prices (`lib-conxian-core/src/billing.rs` `nexus::PRO_UPGRADE_SATS` /
 /// `ENTERPRISE_UPGRADE_SATS`); no new pricing is invented here.
-pub const PLAN_PRO_AMOUNT_SATS: u64 = 100_000;
+pub const PLAN_STARTER_AMOUNT_SATS: u64 = 0;
+pub const PLAN_INDIE_AMOUNT_SATS: u64 = 37_700; // ~$29 (ADR-009 Indie)
+pub const PLAN_BUSINESS_AMOUNT_SATS: u64 = 128_000; // ~$99 (ADR-009 Business)
+pub const PLAN_PRO_AMOUNT_SATS: u64 = 100_000; // legacy alias -> Business
 pub const PLAN_ENTERPRISE_AMOUNT_SATS: u64 = 1_000_000;
 
 /// A subscription plan. Sats-denominated (Lightning-native), so no fiat->sats
@@ -50,9 +53,28 @@ pub const PLAN_ENTERPRISE: SubscriptionPlan = SubscriptionPlan {
     tier: "enterprise",
 };
 
+pub const PLAN_STARTER: SubscriptionPlan = SubscriptionPlan {
+    id: "starter",
+    amount_sats: PLAN_STARTER_AMOUNT_SATS,
+    tier: "starter",
+};
+pub const PLAN_INDIE: SubscriptionPlan = SubscriptionPlan {
+    id: "indie",
+    amount_sats: PLAN_INDIE_AMOUNT_SATS,
+    tier: "indie",
+};
+pub const PLAN_BUSINESS: SubscriptionPlan = SubscriptionPlan {
+    id: "business",
+    amount_sats: PLAN_BUSINESS_AMOUNT_SATS,
+    tier: "business",
+};
+
 pub fn plan_by_id(id: &str) -> Option<SubscriptionPlan> {
     match id {
-        "pro" => Some(PLAN_PRO),
+        "starter" => Some(PLAN_STARTER),
+        "indie" => Some(PLAN_INDIE),
+        "business" => Some(PLAN_BUSINESS),
+        "pro" => Some(PLAN_PRO), // legacy alias
         "enterprise" => Some(PLAN_ENTERPRISE),
         _ => None,
     }
