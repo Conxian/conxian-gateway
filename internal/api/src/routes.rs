@@ -27,6 +27,8 @@ pub fn configure_routes(
 
     let public_routes = Router::new()
         .route("/health", get(handlers::get_health))
+        .route("/billing/subscribe", post(crate::billing::subscribe_handler))
+        .route("/billing/verify", post(crate::billing::verify_handler))
         .with_state(state.clone());
 
     let token_for_admin = api_token.clone();
