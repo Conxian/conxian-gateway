@@ -258,7 +258,8 @@ impl InvoiceBackend for HttpInvoiceBackend {
             .create_url
             .as_deref()
             .ok_or(BillingError::NoInvoiceCreateUrl)?;
-        let body = serde_json::json!({ "out": false, "amount": amount_sats, "expiry": expiry_seconds });
+        let body =
+            serde_json::json!({ "out": false, "amount": amount_sats, "expiry": expiry_seconds });
         let mut req = self.client.post(url).json(&body);
         if let Some(key) = self.api_key.as_deref() {
             req = req.header("X-Api-Key", key);
@@ -616,8 +617,14 @@ mod tests {
         let fw_paid = serde_json::json!({"paid": true, "status": "paid", "preimage": null});
         assert_eq!(read_settled(&fw_paid), Some(true));
         // Real lnbits: pending=false => settled; pending=true => unsettled.
-        assert_eq!(read_settled(&serde_json::json!({"pending": false})), Some(true));
-        assert_eq!(read_settled(&serde_json::json!({"pending": true})), Some(false));
+        assert_eq!(
+            read_settled(&serde_json::json!({"pending": false})),
+            Some(true)
+        );
+        assert_eq!(
+            read_settled(&serde_json::json!({"pending": true})),
+            Some(false)
+        );
         // A null preimage must NOT count as settled (regression guard).
         let real_pre = serde_json::json!({"preimage": "abc123"});
         assert_eq!(read_settled(&real_pre), Some(true));
@@ -627,8 +634,14 @@ mod tests {
     #[test]
     fn read_amount_handles_msat_and_details() {
         // FakeWallet nests amount under `details` (msat).
-        assert_eq!(read_amount(&serde_json::json!({"details": {"amount": 100000000}})), Some(100000));
+        assert_eq!(
+            read_amount(&serde_json::json!({"details": {"amount": 100000000}})),
+            Some(100000)
+        );
         // Real lnbits top-level `amount` (msat).
-        assert_eq!(read_amount(&serde_json::json!({"amount": 100000000})), Some(100000));
+        assert_eq!(
+            read_amount(&serde_json::json!({"amount": 100000000})),
+            Some(100000)
+        );
     }
 }
