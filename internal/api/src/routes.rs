@@ -32,6 +32,8 @@ pub fn configure_routes(
             post(crate::billing::subscribe_handler),
         )
         .route("/billing/verify", post(crate::billing::verify_handler))
+        .route("/billing/quote", post(crate::billing::quote_handler))
+        .route("/billing/balance", get(crate::billing::balance_handler))
         .with_state(state.clone());
 
     let token_for_admin = api_token.clone();
