@@ -43,7 +43,8 @@ fn init_templates_match_startup_inputs_without_embedding_secrets_in_compose() {
         assert!(env.contains(&format!("{key}=")));
         assert!(!compose.contains(key));
     }
-    assert!(env.contains("API_PORT=8080"));
+    assert!(env.contains("API_PORT=3000"));
+    assert!(env.contains("CONXIAN_NETWORK=mainnet"));
     assert!(!env.contains("GATEWAY_PORT="));
     assert!(!env.contains("DATABASE_URL="));
     assert!(env.contains("GATEWAY_STATE_PATH='/usr/app/gateway_state.json'"));
