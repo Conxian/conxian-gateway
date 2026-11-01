@@ -58,3 +58,7 @@ Passing bar: at 10x concurrency, **error rate < 0.1%** and **p95 < 200 ms**
   cloud autoscaling, metrics/alerting (Prometheus `/metrics` already exists).
 - **G6 (hyperscale test)**: `scripts/load_test.py`. Run it against a live
   deployment after G1.
+
+## Deploy triggers
+
+`deploy.yml` runs on push to `main` (paths: internal/cmd/pkg/Dockerfile/Cargo) and on manual dispatch. It is intentionally NOT triggered by dev/staged PRs.
