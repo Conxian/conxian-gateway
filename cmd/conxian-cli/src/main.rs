@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 pub struct InstallerConfig {
     pub auth_token: String,
     pub trust_tier: String,
+    pub network: String,
     pub bitcoin_rpc_url: String,
     pub stacks_rpc_url: String,
     pub database_url: String,
@@ -21,10 +22,11 @@ impl Default for InstallerConfig {
         Self {
             auth_token: "CONXIAN_PROD_AUTH_TOKEN_REQUIRED".to_string(),
             trust_tier: "T1".to_string(),
+            network: "mainnet".to_string(),
             bitcoin_rpc_url: "http://127.0.0.1:8332".to_string(),
             stacks_rpc_url: "https://api.mainnet.hiro.so".to_string(),
             database_url: "sqlite://gateway_state.db".to_string(),
-            gateway_port: 8080,
+            gateway_port: 3000,
             odata_v4_webhook_url: Some(
                 "https://erp.client-domain.com/odata/v4/BankStatements".to_string(),
             ),
@@ -81,6 +83,7 @@ pub fn generate_env_file(config: &InstallerConfig, output_path: &Path) -> Result
          BITCOIN_RPC_URL={}\n\
          STACKS_RPC_URL={}\n\
          API_PORT={}\n\
+         CONXIAN_NETWORK={}\n\
          GATEWAY_STATE_PATH='/usr/app/gateway_state.json'\n\
          GATEWAY_PERSISTENCE_MODE='exclusive-local-writer'\n\
          GATEWAY_ALLOW_UNKNOWN_STATE_FILESYSTEM='false'\n\
@@ -94,7 +97,8 @@ pub fn generate_env_file(config: &InstallerConfig, output_path: &Path) -> Result
         dotenv_literal(&config.auth_token)?,
         dotenv_literal(&config.bitcoin_rpc_url)?,
         dotenv_literal(&config.stacks_rpc_url)?,
-        config.gateway_port
+        config.gateway_port,
+        config.network
     );
     // Legacy InstallerConfig trust/database/OData fields remain serializable,
     // but are not advertised as inputs to the current Gateway binary.
@@ -300,7 +304,8 @@ mod tests {
         let content = fs::read_to_string(&env_file).unwrap();
         assert!(content.contains("API_TOKEN='CONXIAN_PROD_AUTH_TOKEN_REQUIRED'"));
         assert!(!content.contains("CONXIAN_GATEWAY_AUTH_TOKEN="));
-        assert!(content.contains("API_PORT=8080"));
+        assert!(content.contains("API_PORT=3000"));
+        assert!(content.contains("CONXIAN_NETWORK=mainnet"));
         assert!(!content.contains("GATEWAY_PORT="));
         let _ = fs::remove_file(env_file);
     }
