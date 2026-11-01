@@ -1,8 +1,38 @@
 # Deploy + Load (G4/G6) — operator runbook
 
-This wires the gateway's remaining hyperscale-readiness gaps: continuous
-delivery to production and a repeatable load test. Both are **prepared but
-require owner-held credentials** to run.
+Production status (2026-11-01): the gateway is **live** in two environments —
+Render (`conxian-gateway`, branch `staged`, Docker) and the DigitalOcean droplet
+`conxian-gateway-node` (161.35.222.194, systemd service, bare binary). Both serve
+billing (`/api/v1/billing/quote`, `/balance`) with fail-closed `/billing/verify` and
+`/billing/subscribe`. The droplet deploy is the systemd method below (§0); the
+`deploy.yml` Docker path (§1) is the CI alternative for horizontal scaling.
+
+## 0. Production droplet deploy (systemd, current)
+
+The droplet runs the gateway as a bare binary under systemd (no Docker on the
+host). Build from `staged`, upload, replace, restart:
+
+```bash
+# on a build host with Rust 1.98.1
+git clone https://github.com/Conxian/conxian-gateway && cd conxian-gateway
+git checkout origin/staged
+cargo build --release --locked --bin gateway   # -> target/release/gateway
+
+# upload + deploy to the droplet
+scp target/release/gateway root@161.35.222.194:/tmp/conxian-gateway.new
+ssh root@161.35.222.194 '
+  cp -a /usr/local/bin/conxian-gateway /usr/local/bin/conxian-gateway.old.$(date +%s)
+  chmod 755 /tmp/conxian-gateway.new
+  mv /tmp/conxian-gateway.new /usr/local/bin/conxian-gateway
+  systemctl restart conxian-gateway
+'
+```
+
+- Unit: `/etc/systemd/system/conxian-gateway.service` → `ExecStart=/usr/local/bin/conxian-gateway`,
+  `EnvironmentFile=/etc/conxian-gateway.env`, `WorkingDirectory=/srv/conxian/gateway`, listens `:3000`.
+- Rollback: `mv /usr/local/bin/conxian-gateway.old.<ts> /usr/local/bin/conxian-gateway && systemctl restart conxian-gateway`.
+- Smoke: `/api/v1/health`, `/api/v1/version`, `/api/v1/billing/quote` (POST `{"plan":"indie","term":"monthly"}`), `/api/v1/billing/balance`.
+- The workspace binary name is `gateway`; it is renamed to `conxian-gateway` on the host.
 
 ## 1. Continuous delivery (`deploy.yml`)
 
