@@ -65,11 +65,12 @@ impl Term {
             Self::Monthly => 1,
             Self::Founding => 6,
             Self::Annual => 10,
-            // Two months free per year, plus one extra free month per year
-            // beyond the first (2y -> 5 free / 19 paid, 3y -> 8 free / 28 paid).
+            // Benchmarked against 2026 SaaS norms: annual 15-25% off, then
+            // +5-10% per additional year. Annual = 2 free (16.7%); 2y = 6 free
+            // (25%); 3y = 10 free (27.8%). All sit exactly at the 1.5x ceiling.
             Self::Bulk { years } => {
                 let years = u16::from(years);
-                years * 10 - (years - 1)
+                years * 9 - (years - 2)
             }
         }
     }
@@ -354,12 +355,12 @@ mod tests {
     fn bulk_terms_deepen_the_discount_and_stay_under_cap() {
         let two_year = quote_commitment("indie", INDIE_SATS, Term::Bulk { years: 2 }).unwrap();
         assert_eq!(two_year.service_months, 24);
-        assert_eq!(two_year.paid_months, 19);
+        assert_eq!(two_year.paid_months, 18);
         assert!(two_year.bonus_ratio_bps <= MAX_BONUS_RATIO_BPS);
 
         let three_year = quote_commitment("indie", INDIE_SATS, Term::Bulk { years: 3 }).unwrap();
         assert_eq!(three_year.service_months, 36);
-        assert_eq!(three_year.paid_months, 28);
+        assert_eq!(three_year.paid_months, 26);
         assert!(three_year.bonus_ratio_bps <= MAX_BONUS_RATIO_BPS);
 
         // Longer bulk terms are cheaper per month.
@@ -368,6 +369,31 @@ mod tests {
         // And grant more absolute credit than annual.
         let annual = quote_commitment("indie", INDIE_SATS, Term::Annual).unwrap();
         assert!(two_year.total_credit_sats > annual.total_credit_sats);
+    }
+
+    #[test]
+    fn term_discounts_sit_within_industry_benchmarks() {
+        // 2026 SaaS norms: annual 15-25% off list, multi-year adds ~5-10% per
+        // extra year. Keep every committed term inside a 15-30% band and
+        // monotonically deeper with term length.
+        let terms = [
+            Term::Annual,
+            Term::Bulk { years: 2 },
+            Term::Bulk { years: 3 },
+        ];
+        let mut last = 0;
+        for term in terms {
+            let q = quote_commitment("indie", INDIE_SATS, term).unwrap();
+            let discount_bps = u64::from(q.service_months - q.paid_months) * BPS_DENOMINATOR
+                / u64::from(q.service_months);
+            // 100% == 10_000 bps, so 15% == 1_500 bps and 30% == 3_000 bps.
+            assert!(
+                (1_500..=3_000).contains(&discount_bps),
+                "{term:?} discount {discount_bps}bps outside the 15-30% benchmark band"
+            );
+            assert!(discount_bps >= last, "{term:?} discount must not decrease");
+            last = discount_bps;
+        }
     }
 
     #[test]
