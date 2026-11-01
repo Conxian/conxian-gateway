@@ -7,6 +7,7 @@ pub mod auth;
 pub mod billing;
 pub mod camt;
 pub mod capabilities;
+pub mod credit_ledger;
 pub mod fiat;
 pub mod handlers;
 pub mod lightning;
