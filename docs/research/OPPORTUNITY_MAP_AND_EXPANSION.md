@@ -4,6 +4,8 @@ This document expands on existing research and maps emerging opportunities for t
 
 ## 0. Conxian Improvement Proposal Alignment (CXIP-1317)
 
+- **Production Readiness & Partner Opportunities Specification**: [`NEXUS_PARTNER_ECOSYSTEM_AND_PRODUCTION_READINESS.md`](./NEXUS_PARTNER_ECOSYSTEM_AND_PRODUCTION_READINESS.md)
+
 - **Canonical Research**: [`CXIP_ORG_WIDE_UPGRADE_PROPOSAL.md`](./CXIP_ORG_WIDE_UPGRADE_PROPOSAL.md)
 - **Scope**: Org-wide architectural evolution across four operational pillars:
   1. **Pillar I**: Multi-Rail Institutional Settlement & UCV-1 Expansion (SWIFT ISO 20022 `pacs.008`/`camt.053`, Canton CCIP & CBTC, BRICS mBridge/CIPS).

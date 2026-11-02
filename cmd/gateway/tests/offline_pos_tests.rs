@@ -23,6 +23,7 @@ fn setup_app(
         Some(conxian_api::fiat::RampAdapter::new("simulated".into())),
         Some(conxian_api::fiat::StitchAdapter),
         Some(conxian_api::fiat::OzowAdapter),
+        Some(conxian_api::fiat::PapssAdapter),
         Some(conxian_api::fiat::AlchemyPayAdapter::new(
             "simulated".into(),
         )),

@@ -123,3 +123,16 @@ This document synthesizes current protocol readiness across 19 active candidate 
 ## 4. Conclusion & Next Actions
 
 CXIP-1317 provides a cohesive framework unifying institutional banking compliance, non-custodial Bitcoin reserve proofs, autonomous machine micro-settlements, and zero-trust Wasm verification. Continued adherence to automated hygiene controls and branch promotion policy ensures that all future additions maintain the high standard required for institutional deployment.
+
+
+## 5. BitVM3 Garbled-Circuit Fraud Proof Execution Framework (v0.4.23 Alignment)
+
+To align the Conxian Nexus v0.4.23 engine with trust-minimized light-client bridge architectures across the market, CXIP-1317 specifies the BitVM3 garbled-circuit fraud-proof execution framework:
+
+1. **Garbled-Circuit Fraud-Proof Architecture**:
+   - Executes off-chain garbled circuits for BitVM3 32-bit CPU instruction state transitions.
+   - On-chain dispute resolution posts <200-byte challenge transactions on Bitcoin Taproot script paths upon invalid state transition detection.
+
+2. **Sub-200k Cycle Recursive Proof Folding**:
+   - Uses recursive Groth16 / IVC (Incrementally Verifiable Computation) proof folding to compress multi-step CPU trace attestations to under 200,000 gas/cycle equivalents.
+   - Integrates with `BitVm3Adapter` in `internal/engine/src/bitcoin/bitvm3_adapter.rs` and client-side Wasm verifier modules (`@conxian/client-sdk`) to validate state transition fraud proofs in real time.

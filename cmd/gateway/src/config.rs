@@ -6,7 +6,6 @@ use url::Url;
 
 const FIAT_WEBHOOK_SECRET_SENTINEL: &str = "sentinel_FIAT_WEBHOOK_SECRET";
 const SETTLEMENT_INGRESS_SECRET_SENTINEL: &str = "sentinel_SETTLEMENT_INGRESS_SECRET";
-const API_TOKEN_SENTINEL: &str = "sentinel_API_TOKEN";
 const RAMP_API_KEY_SENTINEL: &str = "sentinel_RAMP_API_KEY";
 const ALCHEMY_PAY_APP_ID_SENTINEL: &str = "sentinel_ALCHEMY_PAY_APP_ID";
 const INFOBIP_API_KEY_SENTINEL: &str = "sentinel_INFOBIP_API_KEY";
@@ -17,6 +16,50 @@ const REDIS_USERNAME_SENTINEL: &str = "sentinel_REDIS_USERNAME";
 const REDIS_PASSWORD_SENTINEL: &str = "sentinel_REDIS_PASSWORD";
 const TOKEN_TTL_SENTINEL: &str = "sentinel_TOKEN_TTL";
 const EXCLUSIVE_LOCAL_WRITER_MODE: &str = "exclusive-local-writer";
+
+fn resolve_api_token_with(
+    get: impl Fn(&str) -> Result<String, env::VarError>,
+) -> Result<String, String> {
+    for key in ["API_TOKEN", "CONXIAN_GATEWAY_AUTH_TOKEN"] {
+        let raw = match get(key) {
+            Ok(value) => value,
+            Err(env::VarError::NotPresent) => continue,
+            Err(env::VarError::NotUnicode(_)) => {
+                return Err(format!("{key} must be valid unicode"));
+            }
+        };
+        let value = raw.trim();
+        if value.is_empty()
+            || value.starts_with("sentinel_")
+            || value == "CONXIAN_PROD_AUTH_TOKEN_REQUIRED"
+        {
+            return Err(format!("{key} must be a non-empty configured secret"));
+        }
+        return Ok(value.to_string());
+    }
+    Err("API_TOKEN must be set (legacy CONXIAN_GATEWAY_AUTH_TOKEN is also accepted)".to_string())
+}
+
+fn resolve_api_port_with(
+    get: impl Fn(&str) -> Result<String, env::VarError>,
+) -> Result<u16, String> {
+    for key in ["API_PORT", "PORT"] {
+        match get(key) {
+            Ok(raw) => {
+                let port: u16 = raw.parse().map_err(|_| format!("Invalid {key}"))?;
+                if port == 0 {
+                    return Err(format!("{key} must be a non-zero TCP port"));
+                }
+                return Ok(port);
+            }
+            Err(env::VarError::NotPresent) => continue,
+            Err(env::VarError::NotUnicode(_)) => {
+                return Err(format!("{key} must be valid unicode"))
+            }
+        }
+    }
+    Ok(3000)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FilesystemClass {
@@ -175,6 +218,7 @@ pub struct Config {
     pub ramp_api_key: Option<String>,
     pub stitch_enabled: bool,
     pub ozow_enabled: bool,
+    pub papss_enabled: bool,
     pub alchemy_pay_app_id: Option<String>,
     pub banxa_enabled: bool,
     pub infobip_api_key: Option<String>,
@@ -268,13 +312,27 @@ impl Config {
     }
 
     pub fn from_env() -> Self {
-        let fiat_webhook_secret =
-            Self::get_mandatory_env("FIAT_WEBHOOK_SECRET", FIAT_WEBHOOK_SECRET_SENTINEL);
+        let fiat_enabled = [
+            "RAMP_MODE",
+            "STITCH_MODE",
+            "OZOW_MODE",
+            "PAPSS_MODE",
+            "ALCHEMY_PAY_MODE",
+            "BANXA_MODE",
+        ]
+        .iter()
+        .any(|mode| Self::provider_enabled(mode));
+        let fiat_webhook_secret = if fiat_enabled {
+            Self::get_mandatory_env("FIAT_WEBHOOK_SECRET", FIAT_WEBHOOK_SECRET_SENTINEL)
+        } else {
+            String::new()
+        };
         let settlement_ingress_secret = Self::get_mandatory_env(
             "SETTLEMENT_INGRESS_SECRET",
             SETTLEMENT_INGRESS_SECRET_SENTINEL,
         );
-        let api_token = Self::get_mandatory_env("API_TOKEN", API_TOKEN_SENTINEL);
+        let api_token = resolve_api_token_with(|key| env::var(key))
+            .unwrap_or_else(|message| panic!("{message}"));
         let ramp_api_key = if Self::provider_enabled("RAMP_MODE") {
             Some(Self::get_mandatory_env(
                 "RAMP_API_KEY",
@@ -285,6 +343,7 @@ impl Config {
         };
         let stitch_enabled = Self::provider_enabled("STITCH_MODE");
         let ozow_enabled = Self::provider_enabled("OZOW_MODE");
+        let papss_enabled = Self::provider_enabled("PAPSS_MODE");
         let alchemy_pay_app_id = if Self::provider_enabled("ALCHEMY_PAY_MODE") {
             Some(Self::get_mandatory_env(
                 "ALCHEMY_PAY_APP_ID",
@@ -302,7 +361,11 @@ impl Config {
         } else {
             None
         };
-        let hmac_secret = Self::get_mandatory_env("HMAC_SECRET", HMAC_SECRET_SENTINEL);
+        let hmac_secret = if infobip_api_key.is_some() {
+            Self::get_mandatory_env("HMAC_SECRET", HMAC_SECRET_SENTINEL)
+        } else {
+            String::new()
+        };
         let offline_queue_secret =
             Self::get_mandatory_env("OFFLINE_QUEUE_SECRET", OFFLINE_QUEUE_SECRET_SENTINEL);
         let redis_url = env::var("REDIS_URL").ok().and_then(|val| {
@@ -465,14 +528,13 @@ impl Config {
                 .unwrap_or_else(|_| "30".to_string())
                 .parse()
                 .unwrap_or(30),
-            api_port: env::var("API_PORT")
-                .unwrap_or_else(|_| "3000".to_string())
-                .parse()
-                .unwrap_or(3000),
+            api_port: resolve_api_port_with(|key| env::var(key))
+                .unwrap_or_else(|error| panic!("{error}")),
             api_token,
             ramp_api_key,
             stitch_enabled,
             ozow_enabled,
+            papss_enabled,
             alchemy_pay_app_id,
             banxa_enabled,
             infobip_api_key,
@@ -504,6 +566,82 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn token_from(canonical: Option<&str>, legacy: Option<&str>) -> Result<String, String> {
+        resolve_api_token_with(|key| {
+            let value = match key {
+                "API_TOKEN" => canonical,
+                "CONXIAN_GATEWAY_AUTH_TOKEN" => legacy,
+                _ => panic!("unexpected environment lookup"),
+            };
+            value.map(str::to_string).ok_or(env::VarError::NotPresent)
+        })
+    }
+
+    #[test]
+    fn api_token_uses_canonical_precedence_and_absence_only_fallback() {
+        assert_eq!(
+            token_from(Some("canonical-test"), None).unwrap(),
+            "canonical-test"
+        );
+        assert_eq!(
+            token_from(None, Some("legacy-test")).unwrap(),
+            "legacy-test"
+        );
+        assert_eq!(
+            token_from(Some(" canonical-test "), Some("legacy-test")).unwrap(),
+            "canonical-test"
+        );
+        assert!(token_from(None, None).is_err());
+        for invalid in [
+            "",
+            "  ",
+            "sentinel_API_TOKEN",
+            "CONXIAN_PROD_AUTH_TOKEN_REQUIRED",
+        ] {
+            assert!(token_from(Some(invalid), Some("legacy-test")).is_err());
+            assert!(token_from(None, Some(invalid)).is_err());
+        }
+    }
+
+    #[test]
+    fn api_token_unicode_errors_do_not_fall_back_or_disclose_values() {
+        let error = resolve_api_token_with(|_| {
+            Err(env::VarError::NotUnicode(std::ffi::OsString::from(
+                "private-test-value",
+            )))
+        })
+        .unwrap_err();
+        assert!(!error.contains("private-test-value"));
+        assert!(error.contains("API_TOKEN"));
+    }
+
+    #[test]
+    fn hosting_port_respects_explicit_override_and_rejects_invalid_values() {
+        let resolve = |api: Option<&str>, hosting: Option<&str>| {
+            resolve_api_port_with(|key| {
+                match key {
+                    "API_PORT" => api,
+                    "PORT" => hosting,
+                    _ => None,
+                }
+                .map(str::to_owned)
+                .ok_or(env::VarError::NotPresent)
+            })
+        };
+        assert_eq!(resolve(None, None).unwrap(), 3000);
+        assert_eq!(resolve(None, Some("10000")).unwrap(), 10000);
+        assert_eq!(resolve(Some("3001"), Some("10000")).unwrap(), 3001);
+        assert_eq!(resolve(Some("3001"), Some("invalid")).unwrap(), 3001);
+        for invalid in ["", "invalid", "0", "65536", "-1", " 10000 "] {
+            assert!(resolve(None, Some(invalid)).is_err());
+            assert!(resolve(Some(invalid), Some("10000")).is_err());
+        }
+        assert!(resolve_api_port_with(|_| {
+            Err(env::VarError::NotUnicode(std::ffi::OsString::new()))
+        })
+        .is_err());
+    }
     use std::sync::Mutex;
 
     static ENV_MUTEX: Mutex<()> = Mutex::new(());
@@ -525,10 +663,12 @@ mod tests {
                 "FIAT_WEBHOOK_SECRET",
                 "SETTLEMENT_INGRESS_SECRET",
                 "API_TOKEN",
+                "CONXIAN_GATEWAY_AUTH_TOKEN",
                 "RAMP_MODE",
                 "RAMP_API_KEY",
                 "STITCH_MODE",
                 "OZOW_MODE",
+                "PAPSS_MODE",
                 "ALCHEMY_PAY_MODE",
                 "ALCHEMY_PAY_APP_ID",
                 "BANXA_MODE",
@@ -578,6 +718,7 @@ mod tests {
         env::set_var("RAMP_API_KEY", "ramp-key");
         env::set_var("STITCH_MODE", "disabled");
         env::set_var("OZOW_MODE", "disabled");
+        env::set_var("PAPSS_MODE", "disabled");
         env::set_var("ALCHEMY_PAY_MODE", "disabled");
         env::set_var("ALCHEMY_PAY_APP_ID", "alchemy-id");
         env::set_var("BANXA_MODE", "disabled");
@@ -606,6 +747,7 @@ mod tests {
         assert_eq!(config.ramp_api_key, None);
         assert!(!config.stitch_enabled);
         assert!(!config.ozow_enabled);
+        assert!(!config.papss_enabled);
         assert_eq!(config.alchemy_pay_app_id, None);
         assert!(!config.banxa_enabled);
         assert_eq!(config.infobip_api_key, None);
@@ -622,11 +764,56 @@ mod tests {
     }
 
     #[test]
+    fn disabled_business_providers_do_not_require_or_retain_their_secrets() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        let _env_restore = FullEnvRestore::new();
+        set_test_envs();
+        for value in [
+            None,
+            Some("sentinel_unused"),
+            Some("configured-but-disabled"),
+        ] {
+            restore_env("FIAT_WEBHOOK_SECRET", value.map(str::to_string));
+            restore_env("HMAC_SECRET", value.map(str::to_string));
+            let config = Config::from_env();
+            assert!(config.fiat_webhook_secret.is_empty());
+            assert!(config.hmac_secret.is_empty());
+            assert!(config.infobip_api_key.is_none());
+        }
+    }
+
+    #[test]
+    fn enabled_business_providers_require_their_authentication_secrets() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        let _env_restore = FullEnvRestore::new();
+        for mode in [
+            "RAMP_MODE",
+            "STITCH_MODE",
+            "OZOW_MODE",
+            "PAPSS_MODE",
+            "ALCHEMY_PAY_MODE",
+            "BANXA_MODE",
+        ] {
+            set_test_envs();
+            env::set_var(mode, "active");
+            env::remove_var("FIAT_WEBHOOK_SECRET");
+            assert!(std::panic::catch_unwind(Config::from_env).is_err());
+        }
+        set_test_envs();
+        env::set_var("INFOBIP_MODE", "active");
+        env::remove_var("HMAC_SECRET");
+        assert!(std::panic::catch_unwind(Config::from_env).is_err());
+        env::set_var("HMAC_SECRET", "configured-otp-test");
+        assert_eq!(Config::from_env().hmac_secret, "configured-otp-test");
+    }
+
+    #[test]
     fn from_env_trims_secret_whitespace() {
         let _guard = ENV_MUTEX.lock().unwrap();
         let _env_restore = FullEnvRestore::new();
         set_test_envs();
 
+        env::set_var("STITCH_MODE", "active");
         env::set_var("FIAT_WEBHOOK_SECRET", "  fiat-secret  ");
         env::set_var("SETTLEMENT_INGRESS_SECRET", "\tsettlement-secret\n");
 
@@ -641,6 +828,7 @@ mod tests {
         let _env_restore = FullEnvRestore::new();
         set_test_envs();
 
+        env::set_var("STITCH_MODE", "active");
         env::set_var("FIAT_WEBHOOK_SECRET", "shared-secret");
         env::set_var("SETTLEMENT_INGRESS_SECRET", " shared-secret ");
 

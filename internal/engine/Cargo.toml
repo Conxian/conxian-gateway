@@ -27,7 +27,9 @@ uuid.workspace = true
 bp = { package = "bp-core", version = "0.12.0", optional = true }
 rgbcore = { package = "rgb-core", version = "0.12", optional = true, features = ["bitcoin", "serde"] }
 rgb = { package = "rgb-std", version = "0.12.0-rc.3", optional = true }
-esplora = { package = "bp-esplora", version = "0.12.0-rc.3", optional = true, default-features = false, features = ["blocking-https-rustls"] }
+# minreq 2.x's Rustls backend resolves vulnerable rustls 0.21. Use its
+# upstream native HTTPS backend; Docker already provides libssl and CA roots.
+esplora = { package = "bp-esplora", version = "0.12.0-rc.3", optional = true, default-features = false, features = ["blocking-https-native"] }
 rgb-persist-fs = { version = "=0.12.0-rc.3", optional = true }
 binfile = { version = "=0.2.0", optional = true }
 strict_encoding = { version = "=2.9.1", optional = true }

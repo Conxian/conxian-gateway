@@ -108,3 +108,32 @@ Candidate Q initiates local-first zero-trust client verification by compiling th
 - **Unified 8-Adapter UCV-1 Verification Matrix**: Universal Chain Verification (UCV-1) is finalized across all 8 multi-chain adapters (`LiquidAdapter`, `RootstockAdapter`, `BabylonAdapter`, `BitVmAdapter`, `BitVm3Adapter`, `StrataAdapter`, `FedimintAdapter`, and `CitreaAdapter`).
 - **Liquid & Rootstock Pilot Lane Completion**: Pilot lanes for Liquid (Elements UTXO / Confidential Assets) and Rootstock (EVM / RSK bridge / merged-mining finality) are fully verified and integrated with unit test suites and Gateway API routes (`/api/v1/chains/liquid/*` and `/api/v1/chains/rootstock/*`).
 - **Institutional Zero-Trust Fail-Closed Policy**: Zero-trust proof verification fails closed across all chain adapters, ensuring unverified or tampered cross-chain state proofs are rejected without risking protocol safety.
+
+
+## 11. Multi-Dimensional WPS Scoring & Live Escrow Integration (CON-1437 / CON-1440 / CON-1436)
+
+To eliminate dependency on synthetic ERP mock schemas (`erp_mock`) and simulated $1.0B valuation projections, the Multi-Dimensional Weighted Product Scoring (WPS) engine in Phase 6 is upgraded to consume live settlement inputs:
+
+1. **x402 Payment Telemetry Ingress**:
+   - Integrates real-time Lightning/X402 settlement volume feeds directly into WPS calculation nodes.
+   - Evaluates request throughput, invoice preimages, and settlement velocity across M2M payment paths.
+
+2. **ERC-8183 On-Chain Escrow State Assertions**:
+   - Direct verification of ERC-8183 smart contract escrow locking, milestone state transitions, and release attestations.
+   - Binds escrow state changes to cryptographic job card completions and non-custodial settlement envelopes.
+
+3. **Valuation Impact Calculation**:
+   - Replaces hardcoded $1.0B valuation figures with dynamic valuation scoring derived from verified x402 payment volume and on-chain ERC-8183 collateral locks.
+
+
+## 12. Universal Verification Adapter Upgrade: BitVM3 Garbled-Circuit Execution (CXIP-1317)
+
+To align the Conxian Nexus v0.4.23 engine with trust-minimized light-client bridge architectures, CXIP-1317 upgrades the universal verification adapter framework for BitVM3 garbled-circuit fraud proofs:
+
+1. **Garbled-Circuit Fraud-Proof Pipeline**:
+   - Executes 32-bit CPU state instruction verification via off-chain garbled circuits.
+   - Enables <200-byte Taproot script challenge transactions on Bitcoin L1 during dispute windows.
+
+2. **Recursive Circuit Folding & Light-Client Integration**:
+   - Compresses execution trace proofs using sub-200,000 cycle recursive Groth16 / IVC accumulators.
+   - Connects `BitVm3Adapter` (`internal/engine/src/bitcoin/bitvm3_adapter.rs`) with client-side Wasm verifiers (`@conxian/client-sdk`) for trust-minimized zero-knowledge light-client cross-chain verification.

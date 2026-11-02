@@ -3,6 +3,7 @@ compile_error!("feature mock-integrations must not be enabled in release builds"
 
 pub mod crypto;
 pub mod identity;
+pub mod iso20022;
 pub mod verifier;
 pub mod zkc;
 

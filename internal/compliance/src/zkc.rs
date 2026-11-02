@@ -200,31 +200,54 @@ impl ZkcVerifier {
         raw_xml: &str,
         tx_hash: String,
     ) -> ConxianResult<SettlementEnvelope> {
-        info!("Normalizing ISO 20022 XML payload");
-        self.validate_iso20022_xml_structure(raw_xml)?;
-
-        let source = if raw_xml.contains("pain.001") {
-            SettlementSource::Iso20022Pain001
-        } else {
-            SettlementSource::Iso20022Pacs008
+        info!("Normalizing bounded ISO 20022 ingress payload");
+        let event = crate::iso20022::translate(raw_xml.as_bytes())?;
+        if event.payload_sha256 != tx_hash {
+            return Err(ConxianError::Compliance(
+                "ISO 20022 payload digest does not match the ingress digest".to_string(),
+            ));
+        }
+        let source = match event.message_type {
+            crate::iso20022::Iso20022MessageType::Pacs008 => SettlementSource::Iso20022Pacs008,
+            crate::iso20022::Iso20022MessageType::Pacs009 => SettlementSource::Iso20022Pacs009,
+            crate::iso20022::Iso20022MessageType::Pain001 => SettlementSource::Iso20022Pain001,
+            crate::iso20022::Iso20022MessageType::Camt053 => {
+                return Err(ConxianError::Compliance(
+                    "camt.053 is a reporting message and cannot initiate settlement".to_string(),
+                ));
+            }
         };
+        // Party names are transient compliance input. Retained settlement state uses
+        // opaque, role-scoped references derived from the already retained payload
+        // digest so the gateway does not persist or return raw personal names.
+        let digest_prefix = &event.payload_sha256[..16];
+        let debtor_reference = format!("iso20022:debtor:{digest_prefix}");
+        let creditor_reference = format!("iso20022:creditor:{digest_prefix}");
 
         Ok(SettlementEnvelope {
             version: "1.0".to_string(),
             payload: NormalizedSettlement {
                 source,
-                transaction_id: "ISO-SIM-123".into(),
-                amount_minor: 5000,
-                amount_scale: 2,
-                currency: "USD".into(),
-                sender: "sim-sender".into(),
-                receiver: "sim-receiver".into(),
-                timestamp: 123456789,
+                transaction_id: event.message_id.clone(),
+                amount_minor: event.amount_minor,
+                amount_scale: event.amount_scale,
+                currency: event.currency.clone(),
+                sender: debtor_reference,
+                receiver: creditor_reference,
+                timestamp: 0,
                 status: SettlementStatus::Ingested,
                 rail: None,
-                finality: SettlementFinality::Final,
+                finality: SettlementFinality::Unknown,
                 settled_at: None,
-                identifiers: SettlementIdentifiers::default(),
+                identifiers: SettlementIdentifiers {
+                    message_id: Some(event.message_id),
+                    transaction_reference: event.instruction_id,
+                    settlement_reference: None,
+                    end_to_end_id: event.end_to_end_id,
+                    settlement_amount: event.amount_minor.to_string(),
+                    settlement_currency: event.currency,
+                    settlement_date: event.settlement_date.unwrap_or_default(),
+                },
                 raw_payload_hash: tx_hash,
                 industrial_intent: Default::default(),
             },
@@ -1209,5 +1232,27 @@ mod zkc_iso20022_tests {
         let res = verifier.validate_iso20022_xml_structure(bad_syntax_xml);
         assert!(res.is_err());
         assert!(res.unwrap_err().to_string().contains("syntax error"));
+    }
+
+    #[test]
+    fn normalize_iso20022_does_not_retain_party_names() {
+        let verifier = ZkcVerifier::new();
+        let xml = r#"<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pacs.008.001.08"><FIToFICstmrCdtTrf><GrpHdr><MsgId>MSG-PII</MsgId></GrpHdr><CdtTrfTxInf><IntrBkSttlmAmt Ccy="ZAR">10.00</IntrBkSttlmAmt><Dbtr><Nm>Alice Example</Nm></Dbtr><Cdtr><Nm>Bob Example</Nm></Cdtr></CdtTrfTxInf></FIToFICstmrCdtTrf></Document>"#;
+        let digest = hex::encode(Sha256::digest(xml.as_bytes()));
+
+        let envelope = verifier
+            .normalize_iso20022_ingress(xml, digest.clone())
+            .expect("valid ISO 20022 ingress");
+
+        assert_eq!(
+            envelope.payload.sender,
+            format!("iso20022:debtor:{}", &digest[..16])
+        );
+        assert_eq!(
+            envelope.payload.receiver,
+            format!("iso20022:creditor:{}", &digest[..16])
+        );
+        assert!(!envelope.payload.sender.contains("Alice"));
+        assert!(!envelope.payload.receiver.contains("Bob"));
     }
 }

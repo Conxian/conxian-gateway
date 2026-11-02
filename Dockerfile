@@ -12,31 +12,12 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /usr/src/app
 
-# Copy workspace configuration
-COPY Cargo.toml Cargo.lock ./
-
-# Copy crate configurations to allow dependency caching
-COPY cmd/gateway/Cargo.toml cmd/gateway/Cargo.toml
-COPY internal/api/Cargo.toml internal/api/Cargo.toml
-COPY internal/compliance/Cargo.toml internal/compliance/Cargo.toml
-COPY internal/engine/Cargo.toml internal/engine/Cargo.toml
-COPY pkg/conxian-core/Cargo.toml pkg/conxian-core/Cargo.toml
-
-# Create dummy source files for dependency caching
-RUN mkdir -p cmd/gateway/src && echo "fn main() {}" > cmd/gateway/src/main.rs
-RUN mkdir -p internal/api/src && touch internal/api/src/lib.rs
-RUN mkdir -p internal/compliance/src && touch internal/compliance/src/lib.rs
-RUN mkdir -p internal/engine/src && touch internal/engine/src/lib.rs
-RUN mkdir -p pkg/conxian-core/src && touch pkg/conxian-core/src/lib.rs
-
-# Cache dependencies
-RUN cargo build --release --bin gateway
-
-# Copy actual source code
+# Build the actual source against the committed dependency graph. A dummy
+# workspace can neither model all targets nor prove the shipped binary's source.
 COPY . .
 
 # Build actual binary
-RUN cargo build --release --bin gateway
+RUN cargo build --release --locked --bin gateway
 
 # Stage 2: Runtime
 FROM debian:bookworm-slim

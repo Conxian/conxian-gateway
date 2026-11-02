@@ -27,6 +27,13 @@ pub fn configure_routes(
 
     let public_routes = Router::new()
         .route("/health", get(handlers::get_health))
+        .route(
+            "/billing/subscribe",
+            post(crate::billing::subscribe_handler),
+        )
+        .route("/billing/verify", post(crate::billing::verify_handler))
+        .route("/billing/quote", post(crate::billing::quote_handler))
+        .route("/billing/balance", get(crate::billing::balance_handler))
         .with_state(state.clone());
 
     let token_for_admin = api_token.clone();
@@ -52,6 +59,7 @@ pub fn configure_routes(
         .with_state(state.clone());
 
     let private_routes = Router::new()
+        .route("/capabilities", get(crate::capabilities::get_capabilities))
         .route("/metrics", get(handlers::get_metrics))
         .route(
             "/bitcoin/mempool/telemetry",
@@ -180,6 +188,10 @@ pub fn configure_routes(
     // https://api.conxian-labs.com/v1/agent in production. Multi-tenant keys or
     // Fusion JWTs are accepted; legacy institutional bearer tokens remain valid.
     let managed_routes = Router::new()
+        .route(
+            "/agent/capabilities",
+            get(crate::capabilities::get_capabilities),
+        )
         .route("/agent/settle", post(handlers::settle_job_card))
         .route("/agent/verify", post(handlers::verify_attestation))
         .route("/agent/chains", get(handlers::list_supported_chains))

@@ -64,8 +64,7 @@ impl StacksRpcClient {
 #[derive(Deserialize)]
 struct StacksInfo {
     stacks_tip_height: u64,
-    mode: String,
-    stacks_tip_epoch: String,
+    network_id: u32,
     burn_block_height: u64,
 }
 
@@ -144,8 +143,8 @@ impl StacksRpc for StacksRpcClient {
 
             Ok(StacksNetworkInfo {
                 height: info.stacks_tip_height,
-                network: info.mode,
-                epoch: info.stacks_tip_epoch,
+                network: info.network_id.to_string(),
+                epoch: String::new(),
                 burn_block_height: info.burn_block_height,
             })
         })

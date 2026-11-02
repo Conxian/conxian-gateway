@@ -309,6 +309,9 @@ async fn main() -> anyhow::Result<()> {
             .ozow_enabled
             .then_some(conxian_api::fiat::OzowAdapter),
         config
+            .papss_enabled
+            .then_some(conxian_api::fiat::PapssAdapter),
+        config
             .alchemy_pay_app_id
             .clone()
             .map(conxian_api::fiat::AlchemyPayAdapter::new),

@@ -1,17 +1,24 @@
-/target
-/node_modules
-.next
-dist
+# Generated runtime directories & artifacts
+**/target/
+**/node_modules/
+**/.next/
+**/dist/
+**/build/
+**/coverage/
+**/playwright-report/
+**/test-results/
+**/.vite/
+
+# Runtime state files & logs
 *.log
-test-results/
-coverage/
-*.lcov
+**/*.log
 gateway_state.json
 .gateway_state.json.transaction.lock
 .gateway_state.json.ownership.lock
 offline_queue.db
 *.db
 *.sqlite
+*.lcov
 
 # Environment configuration & secret files
 .env*
@@ -25,24 +32,11 @@ offline_queue.db
 *.secret
 *.keystore
 
-# Build outputs
-build/
-
-# Generated Vitest cache
-**/.vite/
-# Workspace node_modules
-apps/*/node_modules/
-examples/*/node_modules/
-packages/*/node_modules/
-
 # Python compilation artifacts & cache
-__pycache__/
+**/__pycache__/
 *.pyc
 *.pyo
 *.pyd
 .pytest_cache/
 .coverage
 htmlcov/
-
-# Playwright reports
-playwright-report/
