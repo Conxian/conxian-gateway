@@ -35,6 +35,7 @@ def run_native(command, **options):
         try:
             os.killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError:
+            # The process group already exited between the timeout and the kill.
             pass
         process.communicate(timeout=5)
         raise
