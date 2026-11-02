@@ -69,6 +69,8 @@ def main():
                         if code == 200 and len(body) <= 65536 and json.loads(body).get("status") == "ok":
                             break
                     except (OSError, ValueError):
+                        # Transient connection or JSON errors are expected while the
+                        # gateway is still starting; keep polling until the deadline.
                         pass
                     if time.monotonic() > deadline:
                         raise RuntimeError("Gateway did not initialize")
