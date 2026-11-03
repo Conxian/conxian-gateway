@@ -22,6 +22,13 @@ Nexus signature quotas and satoshi upgrade amounts are a separate product.
 eligibility; it does not prove payment or alter Gateway's MRR volume discount.
 No cross-product entitlement mapping or currency conversion is inferred.
 
+Access-token lifetime is separate from subscription and credit expiry.
+Fusion-issued JWTs are capped at the existing managed-auth maximum of 900
+seconds, even when activation passes a 30-day subscription expiry. Claims
+are encoded as JSON data so tenant identity cannot alter the claim structure.
+This does not introduce token refresh, revocation or a commercial-plan to
+authorization-tier mapping; those remain under #507 before paid acceptance.
+
 The calculator remains a local reporting library. This change does not add a
 billing HTTP endpoint, authenticate a customer's subscription, collect charges
 or confirm MRR. Merchant webhook signatures/replay handling, durable

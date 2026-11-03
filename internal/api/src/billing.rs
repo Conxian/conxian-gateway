@@ -724,6 +724,24 @@ pub(crate) async fn balance_handler(
 mod tests {
     use super::*;
 
+    #[test]
+    fn production_token_issuer_obeys_managed_auth_lifetime_contract() {
+        let issuer = FusionTokenIssuer {
+            fusion: crate::tenant::FusionJwt::new(Some("billing-fixture-secret".into())),
+        };
+        let token = issuer.issue(
+            "tenant-42",
+            "enterprise",
+            now_secs() + DEFAULT_PERIOD_SECONDS,
+        );
+        let tenant = issuer
+            .fusion
+            .verify(&token)
+            .expect("issued token accepted by managed auth");
+        assert_eq!(tenant.tenant_id, "tenant-42");
+        assert_eq!(tenant.tier, "enterprise");
+    }
+
     struct MockBackend {
         settled: bool,
         amount: u64,
