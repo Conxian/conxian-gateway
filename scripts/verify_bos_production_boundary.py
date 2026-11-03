@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import sys
-from pathlib import Path
 
 def main():
     print("Verifying BOS production boundary...")
