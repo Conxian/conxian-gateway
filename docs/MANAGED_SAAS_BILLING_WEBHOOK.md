@@ -58,8 +58,8 @@ rotate flow works.
 1. **Mint** — on `subscription_created`: generate `cxn_agent_<32-hex>`, store
    only `SHA-256(key)` in `api_key_hash`, mark `active`.
 2. **Rotate** — on `subscription_updated` / manual `rotate`: retire the current
-   row (`rotating`), insert a new `active` row. The gateway picks up the change
-   via `MANAGED_API_KEYS`.
+   row (`rotating`), insert a new `active` row. The gateway resolves the new key
+   by hash from the durable store on the next request (no env reload needed).
 3. **Revoke** — on `cancelled`/`expired`/`payment_failed`: set `revoked`.
 4. **Idempotency** — key the webhook on the MoR event `id`; a replay of an
    already-processed event is a no-op (enforced by the `billing_webhook_events`
