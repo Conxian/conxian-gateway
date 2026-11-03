@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import sys
-import os
 
 def main():
     print("Checking submodules for secret filename leaks...")
