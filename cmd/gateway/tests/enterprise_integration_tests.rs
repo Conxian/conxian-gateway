@@ -122,7 +122,10 @@ fn test_app() -> axum::Router {
         Arc::new(RwLock::new(conxian_core::GatewayState::default()));
     let fiat = Arc::new(conxian_api::fiat::FiatRouter::from_enabled(
         Some(conxian_api::fiat::RampAdapter::new("ramp-key".to_string())),
-        Some(conxian_api::fiat::StitchAdapter),
+        Some(conxian_api::fiat::StitchAdapter::new(
+            "test-stitch-id".to_string(),
+            "test-stitch-secret".to_string(),
+        )),
         Some(conxian_api::fiat::OzowAdapter),
         Some(conxian_api::fiat::PapssAdapter),
         Some(conxian_api::fiat::AlchemyPayAdapter::new(

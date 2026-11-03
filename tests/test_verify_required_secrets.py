@@ -48,7 +48,23 @@ class RequiredSecretsTests(unittest.TestCase):
         applicable = guard.required_keys(source, blueprint, "render.yaml")
         self.assertEqual(applicable, {"API_TOKEN", "SETTLEMENT_INGRESS_SECRET",
                                      "OFFLINE_QUEUE_SECRET"})
+        # Stitch is disabled in the blueprint, so its two credentials are not
+        # required at initial creation.
+        self.assertNotIn("STITCH_CLIENT_ID", applicable)
+        self.assertNotIn("STITCH_CLIENT_SECRET", applicable)
         self.assertLessEqual(applicable, guard.declared_keys(blueprint, "render.yaml"))
+
+    def test_multi_credential_provider_relaxes_only_when_explicitly_disabled(self):
+        source = guard.CONFIG_RS.read_text()
+        blueprint = (ROOT / "render.yaml").read_text()
+        disabled = blueprint.replace("- key: STITCH_MODE\n        value: disabled",
+                                     "- key: STITCH_MODE\n        value: active")
+        for key in ("STITCH_CLIENT_ID", "STITCH_CLIENT_SECRET"):
+            self.assertIn(key, guard.required_keys(source, disabled, "render.yaml"))
+            self.assertNotIn(key, guard.required_keys(source, blueprint, "render.yaml"))
+        missing = blueprint.replace("      - key: STITCH_MODE\n        value: disabled\n", "")
+        for key in ("STITCH_CLIENT_ID", "STITCH_CLIENT_SECRET"):
+            self.assertIn(key, guard.required_keys(source, missing, "render.yaml"))
 
     def test_group_secret_requires_every_dependent_mode_explicitly_disabled(self):
         source = guard.CONFIG_RS.read_text()

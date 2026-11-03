@@ -303,8 +303,10 @@ async fn main() -> anyhow::Result<()> {
             .clone()
             .map(conxian_api::fiat::RampAdapter::new),
         config
-            .stitch_enabled
-            .then_some(conxian_api::fiat::StitchAdapter),
+            .stitch_client_id
+            .clone()
+            .zip(config.stitch_client_secret.clone())
+            .map(|(id, secret)| conxian_api::fiat::StitchAdapter::new(id, secret)),
         config
             .ozow_enabled
             .then_some(conxian_api::fiat::OzowAdapter),
