@@ -16,6 +16,28 @@ change, not a code change. See `MANAGED_SAAS_BILLING_WEBHOOK.md` for the design.
 3. The managed key store migration is applied (step 1) — the store fails closed
    on a missing table, so an unmigrated database would reject every delivery.
 
+## Step 0 — Lemon Squeezy store, product and checkout
+
+The selected provider is **Lemon Squeezy** (`MOR_PROVIDER=lemonsqueezy`). Set the
+store up so it produces exactly what the handler reads:
+
+1. **Store** — create the store (name `Conxian Labs`, a unique slug, and the
+   country of the registered legal entity).
+2. **Product + variant** — one subscription product whose variant name is the
+   tier (`managed`, `indie`, or `business`). The handler reads the tier from
+   `data.attributes.variant_name`.
+3. **Checkout custom data** — the buyer's checkout link must carry
+   `checkout[custom][tenant_id]=<tenant_id>` (via the checkout URL query or the
+   checkout API `checkout_data.custom`). The handler reads
+   `meta.custom_data.tenant_id` to decide which tenant to mint a key for; a
+   delivery with no tenant id is rejected (fail closed).
+4. **Webhook destination** — add a destination pointing at
+   `https://gateway.conxian.org/api/v1/billing/mor/webhook`, subscribed to
+   `subscription_created`, `subscription_updated`, `subscription_cancelled`,
+   `subscription_expired`, `subscription_payment_failed`, `subscription_resumed`,
+   `subscription_paused`. Copy the destination **signing secret** for
+   `MOR_WEBHOOK_SECRET`.
+
 ## Step 1 — apply the key-store migration
 
 The gateway does not run migrations at boot. Apply
@@ -38,7 +60,7 @@ through the protected channel, never committed:
 
 | Variable | Value |
 |----------|-------|
-| `MOR_PROVIDER` | `lemonsqueezy` or `paddle` |
+| `MOR_PROVIDER` | `lemonsqueezy` (selected) |
 | `MOR_WEBHOOK_SECRET` | the MoR webhook signing secret for this destination |
 | `MOR_WEBHOOK_DATABASE_URL` | Neon connection string for the key store (same database as step 1) |
 
