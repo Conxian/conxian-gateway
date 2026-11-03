@@ -13,6 +13,10 @@ Cap issued access-token lifetime at the existing verifier maximum and encode
 claims with serde_json. Subscription expiry and credit expiry remain separate
 from access-token expiry. Preserve zero-duration token rejection and all
 existing verifier restrictions. No tier entitlement mapping is introduced.
+Preflight the real signer/verifier contract before creating invoices and before
+settlement lookup or credit mutation. Missing/empty signing configuration,
+invalid tenant claims and unsupported tiers fail closed without returning a
+credential or contacting the payment backend; unavailable activation is HTTP 503.
 
 ## Verification and release
 
