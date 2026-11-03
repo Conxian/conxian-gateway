@@ -74,6 +74,14 @@ into the in-memory registry; per-tenant rate limiting and Sentinel secret
 filtering are enforced in `internal/api/src/tenant.rs`. The managed subscriber
 surface is `https://api.conxian-labs.com/v1/agent/*`.
 
+When `MOR_WEBHOOK_DATABASE_URL` is set, the managed-auth path also resolves a
+presented `cxn_agent_*` bearer by its SHA-256 hash against the same durable store
+the webhook writes to (`KeyStore::active_key_by_hash`). This means a key minted
+by a webhook authenticates immediately, without mirroring the plaintext into
+`MANAGED_API_KEYS` or restarting the process. `MANAGED_API_KEYS` remains the
+fallback for keys provisioned out of band. A store lookup error denies the
+request (fail closed).
+
 ## Environment
 
 | Variable | Purpose |

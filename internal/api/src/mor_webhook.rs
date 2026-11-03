@@ -348,6 +348,11 @@ pub trait KeyStore: Send + Sync {
         -> Result<(), String>;
     /// Returns the currently active key record for a tenant, if any.
     async fn active_key(&self, tenant_id: &str) -> Result<Option<StoredKey>, String>;
+    /// Resolves an active key by its SHA-256 hex hash. The managed-auth path
+    /// uses this so a key minted by the webhook authenticates against the
+    /// durable store without the plaintext ever being mirrored into the
+    /// process environment.
+    async fn active_key_by_hash(&self, api_key_hash: &str) -> Result<Option<StoredKey>, String>;
 }
 
 /// Generates a fresh `cxn_agent_<32-hex>` key and its SHA-256 hex hash.
@@ -355,8 +360,14 @@ fn mint_material() -> (String, String) {
     // A random 128-bit key is unguessable; UUID v4 draws from the OS CSPRNG.
     let bytes = uuid::Uuid::new_v4().into_bytes();
     let key = format!("cxn_agent_{}", hex::encode(bytes));
-    let hash = hex::encode(Sha256::digest(key.as_bytes()));
+    let hash = hash_key(&key);
     (key, hash)
+}
+
+/// SHA-256 hex of a key. The single definition shared by minting and the
+/// managed-auth lookup so the two can never drift apart.
+pub fn hash_key(key: &str) -> String {
+    hex::encode(Sha256::digest(key.as_bytes()))
 }
 
 fn now_secs() -> u64 {
@@ -625,6 +636,20 @@ mod tests {
                 .iter()
                 .rev()
                 .find(|k| k.0 == tenant_id && k.3)
+                .map(|k| StoredKey {
+                    tenant_id: k.0.clone(),
+                    api_key_hash: k.1.clone(),
+                    tier: k.2.clone(),
+                }))
+        }
+        async fn active_key_by_hash(&self, hash: &str) -> Result<Option<StoredKey>, String> {
+            Ok(self
+                .keys
+                .lock()
+                .unwrap()
+                .iter()
+                .rev()
+                .find(|k| k.1 == hash && k.3)
                 .map(|k| StoredKey {
                     tenant_id: k.0.clone(),
                     api_key_hash: k.1.clone(),

@@ -107,4 +107,20 @@ impl KeyStore for PgKeyStore {
             tier,
         }))
     }
+
+    async fn active_key_by_hash(&self, api_key_hash: &str) -> Result<Option<StoredKey>, String> {
+        let row: Option<(String, String, String)> = sqlx::query_as(
+            "SELECT tenant_id, api_key_hash, tier FROM managed_api_keys \
+             WHERE api_key_hash = $1 AND status = 'active' LIMIT 1",
+        )
+        .bind(api_key_hash)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| format!("select active key by hash: {e}"))?;
+        Ok(row.map(|(tenant_id, api_key_hash, tier)| StoredKey {
+            tenant_id,
+            api_key_hash,
+            tier,
+        }))
+    }
 }
