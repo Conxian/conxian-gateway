@@ -28,6 +28,11 @@ seconds, even when activation passes a 30-day subscription expiry. Claims
 are encoded as JSON data so tenant identity cannot alter the claim structure.
 This does not introduce token refresh, revocation or a commercial-plan to
 authorization-tier mapping; those remain under #507 before paid acceptance.
+The real issuer now checks signing configuration and the existing verifier's
+allowed tier contract before invoice creation, and validates the exact tenant
+claims before settlement lookup or credit grants. Failed activation preflight
+returns HTTP 503 without exposing configuration values. Unsupported commercial
+tiers remain unavailable until an explicit entitlement mapping is reviewed.
 
 The calculator remains a local reporting library. This change does not add a
 billing HTTP endpoint, authenticate a customer's subscription, collect charges

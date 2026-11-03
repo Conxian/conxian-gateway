@@ -148,6 +148,7 @@ pub enum BillingError {
     UnknownPlan(String),
     Quote(String),
     InvoiceExpired,
+    ActivationUnavailable,
 }
 
 impl fmt::Display for BillingError {
@@ -177,6 +178,7 @@ impl fmt::Display for BillingError {
             Self::UnknownPlan(id) => write!(f, "unknown subscription plan: {id}"),
             Self::Quote(detail) => write!(f, "credit quote failed: {detail}"),
             Self::InvoiceExpired => write!(f, "invoice expired"),
+            Self::ActivationUnavailable => write!(f, "subscription activation unavailable"),
         }
     }
 }
@@ -274,6 +276,15 @@ pub trait KeyMinter: Send + Sync {
 
 /// Issues a short-lived Fusion JWT on activation (gateway adapts `FusionJwt`).
 pub trait TokenIssuer: Send + Sync {
+    /// Configuration-only check before creating an invoice. The fixed subject
+    /// is not a customer identity and never creates an entitlement.
+    fn validate_plan(&self, tier: &str) -> Result<(), BillingError> {
+        self.validate_activation("billing-plan-preflight", tier)
+    }
+
+    /// Check the exact identity/tier against the issuer and verifier contract
+    /// before settlement lookup or credit mutations. Never return secret data.
+    fn validate_activation(&self, tenant_id: &str, tier: &str) -> Result<(), BillingError>;
     fn issue(&self, tenant_id: &str, tier: &str, expires_at: u64) -> String;
 }
 
@@ -510,6 +521,7 @@ where
         _tenant_id: &str,
         term: Term,
     ) -> Result<SubscribeInvoice, BillingError> {
+        self.issuer.validate_plan(plan.tier)?;
         let quote = self.quote(plan, term)?;
         let invoice = self
             .backend
@@ -535,6 +547,7 @@ where
         invoice_id: &str,
         term: Term,
     ) -> Result<SubscriptionActivation, BillingError> {
+        self.issuer.validate_activation(tenant_id, plan.tier)?;
         let quote = self.quote(plan, term)?;
         let settled = self
             .backend
@@ -599,6 +612,16 @@ impl FusionTokenIssuer {
 }
 
 impl TokenIssuer for FusionTokenIssuer {
+    fn validate_activation(&self, tenant_id: &str, tier: &str) -> Result<(), BillingError> {
+        // Exercise the same signer and verifier used by managed requests.
+        // This token is local preflight data and is never returned or logged.
+        let candidate = self.fusion.issue(tenant_id, tier, 60);
+        self.fusion
+            .verify(&candidate)
+            .map(|_| ())
+            .map_err(|_| BillingError::ActivationUnavailable)
+    }
+
     fn issue(&self, tenant_id: &str, tier: &str, expires_at: u64) -> String {
         let ttl = expires_at.saturating_sub(now_secs()).max(60);
         self.fusion.issue(tenant_id, tier, ttl)
@@ -706,7 +729,14 @@ pub(crate) async fn verify_handler(
     let activation = billing_service()
         .verify(plan, &req.tenant_id, &req.invoice_id, term)
         .await
-        .map_err(|e| (axum::http::StatusCode::PAYMENT_REQUIRED, e.to_string()))?;
+        .map_err(|e| {
+            let status = if e == BillingError::ActivationUnavailable {
+                axum::http::StatusCode::SERVICE_UNAVAILABLE
+            } else {
+                axum::http::StatusCode::PAYMENT_REQUIRED
+            };
+            (status, e.to_string())
+        })?;
     Ok(axum::Json(activation))
 }
 
@@ -723,6 +753,86 @@ pub(crate) async fn balance_handler(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct NoBackendCalls;
+
+    #[async_trait::async_trait]
+    impl InvoiceBackend for NoBackendCalls {
+        async fn create_invoice(&self, _: u64, _: u64) -> Result<Invoice, BillingError> {
+            panic!("activation preflight must not create invoices");
+        }
+
+        async fn check_settled(&self, _: &str, _: u64) -> Result<bool, BillingError> {
+            panic!("invalid activation must fail before backend lookup");
+        }
+    }
+
+    #[tokio::test]
+    async fn invalid_production_issuer_never_grants_credit_or_contacts_backend() {
+        for (secret, tenant, plan) in [
+            (None, "tenant-42", PLAN_ENTERPRISE),
+            (Some(""), "tenant-42", PLAN_ENTERPRISE),
+            (Some("fixture-secret"), "", PLAN_ENTERPRISE),
+            (Some("fixture-secret"), "tenant\n42", PLAN_ENTERPRISE),
+            (Some("fixture-secret"), "tenant-42", PLAN_INDIE),
+        ] {
+            let service = LightningSubscriptionService::new(
+                NoBackendCalls,
+                FixedMinter,
+                FusionTokenIssuer {
+                    fusion: crate::tenant::FusionJwt::new(secret.map(str::to_owned)),
+                },
+                InMemoryCreditStore::new(),
+            );
+            assert_eq!(
+                service
+                    .verify(plan, tenant, "fixture-invoice", Term::Monthly)
+                    .await
+                    .unwrap_err(),
+                BillingError::ActivationUnavailable
+            );
+            assert_eq!(service.balance(tenant), 0);
+        }
+    }
+
+    #[tokio::test]
+    async fn invalid_production_plan_never_creates_an_invoice() {
+        for (secret, plan) in [
+            (None, PLAN_ENTERPRISE),
+            (Some(""), PLAN_ENTERPRISE),
+            (Some("fixture-secret"), PLAN_INDIE),
+        ] {
+            let service = LightningSubscriptionService::new(
+                NoBackendCalls,
+                FixedMinter,
+                FusionTokenIssuer {
+                    fusion: crate::tenant::FusionJwt::new(secret.map(str::to_owned)),
+                },
+                InMemoryCreditStore::new(),
+            );
+            assert_eq!(
+                service
+                    .subscribe(plan, "", Term::Monthly)
+                    .await
+                    .unwrap_err(),
+                BillingError::ActivationUnavailable
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn invalid_http_activation_returns_unavailable_without_configuration_details() {
+        let error = verify_handler(axum::Json(VerifyRequest {
+            plan: "enterprise".into(),
+            tenant_id: String::new(),
+            invoice_id: "fixture-never-looked-up".into(),
+            term: Some("monthly".into()),
+        }))
+        .await
+        .unwrap_err();
+        assert_eq!(error.0, axum::http::StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(error.1, "subscription activation unavailable");
+    }
 
     #[test]
     fn production_token_issuer_obeys_managed_auth_lifetime_contract() {
@@ -786,6 +896,10 @@ mod tests {
 
     struct FixedIssuer;
     impl TokenIssuer for FixedIssuer {
+        fn validate_activation(&self, _tenant_id: &str, _tier: &str) -> Result<(), BillingError> {
+            Ok(())
+        }
+
         fn issue(&self, tenant_id: &str, tier: &str, _expires_at: u64) -> String {
             format!("jwt.{tenant_id}.{tier}")
         }
