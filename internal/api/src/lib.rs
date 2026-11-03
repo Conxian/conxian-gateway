@@ -13,6 +13,8 @@ pub mod handlers;
 pub mod lightning;
 pub mod mempool_telemetry;
 pub mod middleware;
+pub mod mor_webhook;
+pub mod mor_webhook_store;
 pub mod nostr;
 pub mod rate_limit;
 pub mod routes;

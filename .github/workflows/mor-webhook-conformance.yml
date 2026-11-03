@@ -1,0 +1,87 @@
+name: MoR webhook conformance
+
+# Gateway #507: verify the Merchant-of-Record billing webhook key store against a
+# real, disposable PostgreSQL fixture. The store mints/rotates/revokes tenant
+# API keys and must be durable and exactly-once, so a skipped database test is a
+# failure, not a pass. The fixture is an ephemeral service container; no
+# production credential, provider secret or live payment is involved.
+
+on:
+  pull_request:
+    branches: [main, staged, dev]
+    paths:
+      - 'internal/api/src/mor_webhook.rs'
+      - 'internal/api/src/mor_webhook_store.rs'
+      - 'internal/api/tests/mor_webhook_pg.rs'
+      - 'migrations/**'
+      - 'internal/api/Cargo.toml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/mor-webhook-conformance.yml'
+  push:
+    branches: [main, staged, dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  # Local, trust-authenticated disposable fixture; no credential is required.
+  MOR_WEBHOOK_TEST_DATABASE_URL: postgres://gw_mor@127.0.0.1:5432/gw_mor_test
+
+jobs:
+  conformance:
+    name: PostgreSQL key-store conformance
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17@sha256:3b0cda93be7c8dba2ed484d19393d93845dc3dafb88973e248ba8e6d99d784e1
+        env:
+          POSTGRES_USER: gw_mor
+          POSTGRES_DB: gw_mor_test
+          # Disposable fixture: trust auth on a loopback-only service so the
+          # workflow needs no credential at all.
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U gw_mor -d gw_mor_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Checkout lib-conxian-core
+        run: git clone --depth 1 https://github.com/Conxian/lib-conxian-core.git ../lib-conxian-core
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+        with:
+          toolchain: "1.98.1"
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31 # v2.7.7
+
+      - name: Confirm the disposable fixture is reachable
+        run: |
+          for attempt in $(seq 1 10); do
+            if pg_isready -h 127.0.0.1 -p 5432 -U gw_mor -d gw_mor_test; then
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "PostgreSQL fixture did not become ready" >&2
+          exit 1
+
+      - name: Run PostgreSQL-backed key-store conformance
+        run: cargo test --locked -p conxian_api --test mor_webhook_pg -- --ignored --test-threads=1
+
+      - name: Run webhook unit tests
+        run: cargo test --locked -p conxian_api mor_webhook
