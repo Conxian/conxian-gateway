@@ -154,13 +154,12 @@ impl FusionJwt {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
-        let claims = format!(
-            r#"{{"sub":"{}","tier":"{}","exp":{}}}"#,
-            tenant_id,
-            tier,
-            now + ttl_seconds
-        );
-        let payload = E.encode(claims.as_bytes());
+        let claims = serde_json::json!({
+            "sub": tenant_id,
+            "tier": tier,
+            "exp": now.saturating_add(ttl_seconds.min(MAX_FUSION_JWT_REMAINING_TTL_SECONDS)),
+        });
+        let payload = E.encode(claims.to_string().as_bytes());
         let signing_input = format!("{}.{}", header, payload);
         let secret = self.secret.as_deref().unwrap_or_default();
         let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).unwrap();
@@ -341,6 +340,35 @@ mod tests {
         let token = fusion.issue("tenant-42", "managed", FUSION_JWT_TTL_SECONDS);
         let ctx = fusion.verify(&token).expect("valid token");
         assert_eq!(ctx.tenant_id, "tenant-42");
+        assert_eq!(ctx.tier, "managed");
+    }
+
+    #[test]
+    fn subscription_lifetime_does_not_become_access_token_lifetime() {
+        let fusion = FusionJwt::new(Some("test-fusion-secret".to_string()));
+        let token = fusion.issue("tenant-42", "managed", 30 * 24 * 3600);
+        let ctx = fusion
+            .verify(&token)
+            .expect("short-lived subscription token");
+        assert_eq!(ctx.tenant_id, "tenant-42");
+        let payload = URL_SAFE_NO_PAD
+            .decode(token.split('.').nth(1).unwrap())
+            .unwrap();
+        let claims: serde_json::Value = serde_json::from_slice(&payload).unwrap();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        assert!(claims["exp"].as_u64().unwrap() <= now + MAX_FUSION_JWT_REMAINING_TTL_SECONDS);
+    }
+
+    #[test]
+    fn tenant_identity_is_json_data_and_cannot_inject_claims() {
+        let fusion = FusionJwt::new(Some("test-fusion-secret".to_string()));
+        let tenant_id = r#"tenant-42","tier":"strict"#;
+        let token = fusion.issue(tenant_id, "managed", FUSION_JWT_TTL_SECONDS);
+        let ctx = fusion.verify(&token).expect("escaped tenant identity");
+        assert_eq!(ctx.tenant_id, tenant_id);
         assert_eq!(ctx.tier, "managed");
     }
 
