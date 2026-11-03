@@ -344,9 +344,10 @@ impl FiatOnRampAdapter for StitchAdapter {
     }
 
     /// Stitch Express checkouts are created server-side by
-    /// `create_hosted_checkout`, which always supplies the real link; this
-    /// static value is a non-functional placeholder kept only to satisfy the
-    /// trait.
+    /// `create_hosted_checkout`, which always supplies the real link. This
+    /// value is a defensive fallback only: it is returned when the caller
+    /// uses the generic redirect path instead of the hosted-checkout path,
+    /// so it names the Stitch Express host rather than a payable link.
     fn build_redirect_url(&self, _request: &OnRampSessionRequest, _session_id: &str) -> String {
         self.base_url.clone()
     }

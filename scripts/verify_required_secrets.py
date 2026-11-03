@@ -21,7 +21,7 @@ import re
 import sys
 from pathlib import Path
 
-from startup_secret_preflight import CONDITIONAL, GROUPED
+from startup_secret_preflight import CONDITIONAL, GROUPED, MULTI_CONDITIONAL
 
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG_RS = ROOT / "cmd" / "gateway" / "src" / "config.rs"
@@ -75,6 +75,10 @@ def required_keys(config_rs: str, deploy_text: str, name: str) -> set[str]:
     for secret, modes in GROUPED.items():
         if all(explicitly_disabled(mode) for mode in modes):
             required.discard(secret)
+    for mode, secrets in MULTI_CONDITIONAL.items():
+        if explicitly_disabled(mode):
+            for secret in secrets:
+                required.discard(secret)
     return required
 
 
