@@ -1,8 +1,12 @@
 name: Deploy Gateway
 
-# Continuous delivery to the production VPS. Gated on `main` so a deployment
-# only follows a release that has cleared dev -> staged -> main promotion and
-# the release gate. Requires the secrets listed in docs/DEPLOY_AND_LOAD.md.
+# Continuous delivery for the MANAGED gateway (Render service
+# srv-dbji535g1s2s73fqgrtg -> https://gateway.conxian.org).
+#
+# Gated on `main` so a deployment only follows a release that has cleared
+# dev -> staged -> main promotion and the release gate. The sovereign reference
+# droplet is intentionally NOT a target here; see docs/DEPLOY_MODES.md and
+# scripts/deploy-sovereign.sh.
 
 on:
   push:
@@ -25,97 +29,74 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  IMAGE: conxian-gateway
+  RENDER_SERVICE_ID: srv-dbji535g1s2s73fqgrtg
+  PUBLIC_BASE_URL: https://gateway.conxian.org
 
 jobs:
   deploy:
-    name: Build image and deploy to production
+    name: Deploy managed gateway and smoke-check
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 1
-          persist-credentials: false
-
-      - name: Build Docker image
-        run: docker build --tag "${IMAGE}:${GITHUB_SHA::12}" --tag "${IMAGE}:latest" .
-
-      - name: Export image archive
-        id: archive
-        run: |
-          archive="gateway-${GITHUB_SHA::12}.tar.gz"
-          docker save "${IMAGE}:latest" | gzip -n > "${archive}"
-          echo "name=${archive}" >> "${GITHUB_OUTPUT}"
-
-      - name: Upload image archive
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: gateway-image
-          path: "${{ steps.archive.outputs.name }}"
-          if-no-files-found: error
-          retention-days: 1
-
-      - name: Deploy to production over SSH
+      - name: Require managed deploy credential
         env:
-          PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
-          PROD_SSH_USER: ${{ secrets.PROD_SSH_USER }}
-          PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
         run: |
           set -euo pipefail
-          for var in PROD_SSH_HOST PROD_SSH_USER PROD_SSH_KEY; do
-            if [[ -z "${!var}" ]]; then
-              echo "error: ${var} is not configured in the production environment" >&2
-              exit 1
-            fi
+          if [[ -z "${RENDER_API_KEY}" ]]; then
+            echo "error: RENDER_API_KEY is not configured in the production environment" >&2
+            exit 1
+          fi
+
+      - name: Trigger managed deploy
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+        run: |
+          set -euo pipefail
+          code="$(curl -s -o /tmp/deploy.json -w '%{http_code}' \
+            -X POST "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/deploys" \
+            -H "Authorization: Bearer ${RENDER_API_KEY}" \
+            -H 'content-type: application/json' \
+            -d '{"clearCache":"do_not_clear"}')"
+          if [[ "${code}" != "201" && "${code}" != "200" ]]; then
+            echo "error: Render deploy trigger returned ${code}" >&2
+            exit 1
+          fi
+
+      - name: Wait for managed deploy to go live
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+        run: |
+          set -euo pipefail
+          deploy_id="$(python3 -c 'import json;print(json.load(open("/tmp/deploy.json")).get("id",""))')"
+          if [[ -z "${deploy_id}" ]]; then
+            echo "error: deploy id unavailable" >&2
+            exit 1
+          fi
+          for attempt in $(seq 1 60); do
+            status="$(curl -s "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/deploys/${deploy_id}" \
+              -H "Authorization: Bearer ${RENDER_API_KEY}" \
+              | python3 -c 'import sys,json;print(json.load(sys.stdin).get("status","unknown"))')"
+            echo "attempt ${attempt}: status=${status}"
+            case "${status}" in
+              live) echo "managed deploy live"; exit 0 ;;
+              build_failed|update_failed|canceled|pre_deploy_failed)
+                echo "error: managed deploy ${status}" >&2; exit 1 ;;
+            esac
+            sleep 15
           done
+          echo "error: managed deploy did not reach live within timeout" >&2
+          exit 1
 
-          mkdir -p ~/.ssh
-          printf '%s\n' "${PROD_SSH_KEY}" > ~/.ssh/id_deploy
-          chmod 600 ~/.ssh/id_deploy
-          ssh-keyscan -H "${PROD_SSH_HOST}" >> ~/.ssh/known_hosts 2>/dev/null
-
-          archive="gateway-${GITHUB_SHA::12}.tar.gz"
-          remote="${PROD_SSH_USER}@${PROD_SSH_HOST}"
-
-          # Keep the current image as a rollback target.
-          ssh -i ~/.ssh/id_deploy "${remote}" \
-            "docker tag ${IMAGE}:latest ${IMAGE}:previous 2>/dev/null || true"
-
-          scp -i ~/.ssh/id_deploy "${archive}" "${remote}:/tmp/${archive}"
-
-          ssh -i ~/.ssh/id_deploy "${remote}" \
-            "set -euo pipefail; \
-             gunzip -c /tmp/${archive} | docker load; \
-             docker stop ${IMAGE} 2>/dev/null || true; \
-             docker rm ${IMAGE} 2>/dev/null || true; \
-             docker run -d --name ${IMAGE} \
-               --restart unless-stopped \
-               -p 3000:3000 \
-               --env-file /etc/conxian/gateway.env \
-               ${IMAGE}:latest; \
-             rm -f /tmp/${archive}; \
-             echo 'deployed ${archive}'"
-
-      - name: Smoke-check health and billing endpoints
-        env:
-          PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
-          PROD_SSH_USER: ${{ secrets.PROD_SSH_USER }}
-          PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
+      - name: Smoke-check managed public surface
         run: |
           set -euo pipefail
-          mkdir -p ~/.ssh
-          printf '%s\n' "${PROD_SSH_KEY}" > ~/.ssh/id_deploy
-          chmod 600 ~/.ssh/id_deploy
-          ssh-keyscan -H "${PROD_SSH_HOST}" >> ~/.ssh/known_hosts 2>/dev/null
-          remote="${PROD_SSH_USER}@${PROD_SSH_HOST}"
-          for spec in "health" "billing/balance?tenant_id=smoke"; do
-            code="$(ssh -i ~/.ssh/id_deploy "${remote}" \
-              "curl -s -o /dev/null -w '%{http_code}' 'http://localhost:3000/${spec}'")"
-            echo "/${spec} -> ${code}"
-            if [[ "${code}" != "200" ]]; then
-              echo "error: /${spec} returned ${code}; expected 200" >&2
+          for spec in "health:200" "version:200" "billing/balance?tenant_id=smoke:200"; do
+            path="${spec%:*}"; want="${spec##*:}"
+            code="$(curl -s -o /dev/null -w '%{http_code}' "${PUBLIC_BASE_URL}/api/v1/${path}")"
+            echo "/api/v1/${path} -> ${code}"
+            if [[ "${code}" != "${want}" ]]; then
+              echo "error: /api/v1/${path} returned ${code}; expected ${want}" >&2
               exit 1
             fi
           done
