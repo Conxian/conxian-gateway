@@ -15,6 +15,8 @@ FIAT_MODES = ("RAMP_MODE", "STITCH_MODE", "OZOW_MODE", "PAPSS_MODE",
 GROUPED = {"FIAT_WEBHOOK_SECRET": FIAT_MODES, "HMAC_SECRET": ("INFOBIP_MODE",)}
 CONDITIONAL = {"RAMP_MODE": "RAMP_API_KEY", "ALCHEMY_PAY_MODE": "ALCHEMY_PAY_APP_ID",
                "INFOBIP_MODE": "INFOBIP_API_KEY"}
+# Providers whose checkout is created server-side need more than one credential.
+MULTI_CONDITIONAL = {"STITCH_MODE": ("STITCH_CLIENT_ID", "STITCH_CLIENT_SECRET")}
 ENABLED_MODES = frozenset(("active", "shadow", "true", "1"))
 LEGACY_API_TOKEN = "CONXIAN_GATEWAY_AUTH_TOKEN"
 
@@ -25,7 +27,9 @@ def describe() -> dict:
             "minimumRequiredCount": len(REQUIRED), "required": list(REQUIRED),
             "conditional": dict(CONDITIONAL), "enabledModes": sorted(ENABLED_MODES),
             "conditionalAny": {key: list(modes) for key, modes in GROUPED.items()},
-            "maximumConditionalRequiredCount": len(REQUIRED) + len(CONDITIONAL) + len(GROUPED),
+            "multiConditional": {mode: list(keys) for mode, keys in MULTI_CONDITIONAL.items()},
+            "maximumConditionalRequiredCount": len(REQUIRED) + len(CONDITIONAL)
+            + len(GROUPED) + sum(len(keys) for keys in MULTI_CONDITIONAL.values()),
             "aliases": {"API_TOKEN": [LEGACY_API_TOKEN]},
             "aliasPolicy": "canonical-absence-only",
             "environmentInspected": False, "runtimeReadinessEstablished": False}
@@ -41,6 +45,8 @@ def markdown_contract() -> str:
     lines.extend(f"| `{mode}` | `{key}` |" for mode, key in CONDITIONAL.items())
     lines.extend(f"| {' or '.join(f'`{mode}`' for mode in modes)} | `{key}` |"
                  for key, modes in GROUPED.items())
+    lines.extend(f"| `{mode}` | " + ", ".join(f"`{key}`" for key in keys) + " |"
+                 for mode, keys in MULTI_CONDITIONAL.items())
     lines.extend(["", "A provider credential is required only for mode values "
                   + ", ".join(f"`{mode}`" for mode in sorted(ENABLED_MODES)) + ".",
                   "The legacy token alias is one logical requirement, not an extra secret.",
@@ -63,6 +69,9 @@ def check(environment: Mapping[str, str]) -> dict:
     for key, modes in GROUPED.items():
         if any(environment.get(mode, "").strip().lower() in ENABLED_MODES for mode in modes):
             required.append(key)
+    for mode, keys in MULTI_CONDITIONAL.items():
+        if environment.get(mode, "").strip().lower() in ENABLED_MODES:
+            required.extend(keys)
     missing, invalid = [], []
     for key in required:
         source_key = LEGACY_API_TOKEN if key == "API_TOKEN" and key not in environment else key

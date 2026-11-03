@@ -3,6 +3,14 @@
 **Status:** Live (T1 Production) | **Lines:** 1,396 (fiat.rs + camt.rs + x402.rs)
 **Last refreshed:** 2026-08-07 | **Session:** 49
 
+> **Correction (2026-11-03):** the Stitch row below described a redirect-only
+> integration with an HMAC webhook. Stitch is consumed as **Stitch Express**
+> (`express.stitch.money`), which creates the hosted payment link **server-side**
+> from a client id/secret token exchange, and delivers webhooks through **Svix**
+> (`svix-id`/`svix-timestamp`/`svix-signature`, HMAC-SHA256 over
+> `{id}.{timestamp}.{raw-body}`), not a bare HMAC header. The other rows are
+> unchanged. Detail: `openspec/changes/2026-11-03-stitch-express-checkout/`.
+
 ---
 
 ## Executive Summary
@@ -64,7 +72,7 @@ Source: `BRICS_FINANCIAL_SYSTEMS_RESEARCH.md`
 | Provider | Region | Integration Type | Gateway Status |
 |----------|--------|-----------------|----------------|
 | **Ramp Network** | UK/EU (HQ London) | Redirect URL + HMAC webhook | ✅ Live |
-| **Stitch** | South Africa (bank-agnostic) | Redirect URL + HMAC webhook | ✅ Live |
+| **Stitch** | South Africa (bank-agnostic) | Server-side payment link (Stitch Express) + Svix webhook | ✅ Live |
 | **Ozow** | South Africa (instant EFT) | Redirect URL + HMAC webhook | ✅ Live |
 | **AlchemyPay** | APAC | Redirect URL + HMAC webhook | ✅ Stub (CON-41) |
 | **Banxa** | Global | Redirect URL + HMAC webhook | ✅ Stub (CON-41) |
@@ -87,7 +95,7 @@ HTTP Request
     ├─ POST /fiat/onramp/session
     │   └─ FiatRouter::create_session(request)
     │       ├─ create_ramp_session()      → buy.ramp.network
-    │       ├─ create_stitch_session()    → checkout.stitch.money
+    │       ├─ create_stitch_session()    → express.stitch.money (server-side payment link)
     │       ├─ create_ozow_session()      → pay.ozow.com
     │       ├─ create_alchemypay_session()→ ramp.alchemypay.org  (CON-41)
     │       └─ create_banxa_session()     → conxian-labs.banxa.com (CON-41)
@@ -219,7 +227,7 @@ but the full end-to-end flow is untested.
 | Provider | Verification | Status |
 |----------|-------------|--------|
 | Ramp Network | HMAC-SHA256(secret, raw_payload) | ✅ Live |
-| Stitch | HMAC-SHA256; fails-closed if secret empty | ✅ Live |
+| Stitch | Svix HMAC-SHA256 over `{id}.{ts}.{body}`; fails-closed if secret empty | ✅ Live |
 | Ozow | HMAC-SHA256; fails-closed if secret empty | ✅ Live |
 | AlchemyPay | HMAC-SHA256 | ✅ Stub |
 | Banxa | HMAC-SHA256 | ✅ Stub |

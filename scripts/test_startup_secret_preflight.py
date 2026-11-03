@@ -5,7 +5,8 @@ import subprocess
 import sys
 import unittest
 
-from startup_secret_preflight import CONDITIONAL, GROUPED, REQUIRED, check, describe, markdown_contract
+from startup_secret_preflight import (CONDITIONAL, GROUPED, MULTI_CONDITIONAL, REQUIRED,
+                                      check, describe, markdown_contract)
 
 SCRIPT = Path(__file__).with_name("startup_secret_preflight.py")
 
@@ -92,6 +93,10 @@ class StartupPreflightTests(unittest.TestCase):
         for mode, key in CONDITIONAL.items():
             env[mode] = "disabled"
             env[key] = "sentinel_" + key
+        for mode, keys in MULTI_CONDITIONAL.items():
+            env[mode] = "disabled"
+            for key in keys:
+                env[key] = "sentinel_" + key
         self.assertTrue(check(env)["ready"])
 
     def test_webhook_domains_cannot_share_a_secret(self):
@@ -129,7 +134,8 @@ class StartupPreflightTests(unittest.TestCase):
         required = set(re.findall(r'Self::get_mandatory_env\(\s*"([A-Z0-9_]+)"', startup))
         self.assertRegex(startup, r"let\s+api_token\s*=\s*resolve_api_token_with\(")
         required.add("API_TOKEN")
-        self.assertEqual(required, set(REQUIRED) | set(CONDITIONAL.values()) | set(GROUPED))
+        self.assertEqual(required, set(REQUIRED) | set(CONDITIONAL.values()) | set(GROUPED)
+                         | {key for keys in MULTI_CONDITIONAL.values() for key in keys})
         bindings = dict(re.findall(r'if Self::provider_enabled\("([A-Z0-9_]+)"\)\s*\{\s*Some\(Self::get_mandatory_env\(\s*"([A-Z0-9_]+)"', startup))
         self.assertEqual(bindings, CONDITIONAL)
 
@@ -138,7 +144,9 @@ class StartupPreflightTests(unittest.TestCase):
         with patch("startup_secret_preflight.os.environ", None):
             contract = describe()
         self.assertEqual(contract["minimumRequiredCount"], len(REQUIRED))
-        self.assertEqual(contract["maximumConditionalRequiredCount"], len(REQUIRED) + len(CONDITIONAL) + len(GROUPED))
+        self.assertEqual(contract["maximumConditionalRequiredCount"],
+                         len(REQUIRED) + len(CONDITIONAL) + len(GROUPED)
+                         + sum(len(keys) for keys in MULTI_CONDITIONAL.values()))
         self.assertFalse(contract["environmentInspected"])
         self.assertFalse(contract["runtimeReadinessEstablished"])
         result = subprocess.run([sys.executable, str(SCRIPT), "--describe"],
@@ -161,9 +169,32 @@ class StartupPreflightTests(unittest.TestCase):
                 if any(env.get(mode) == "active" for mode in modes):
                     env[key] = "grouped-test-" + key
                     grouped_count += 1
+            multi_count = 0
+            for mode, keys in MULTI_CONDITIONAL.items():
+                if env.get(mode) == "active":
+                    for key in keys:
+                        env[key] = "multi-test-" + key
+                        multi_count += 1
             result = check(env)
             self.assertTrue(result["ready"])
-            self.assertEqual(result["requiredCount"], len(REQUIRED) + sum(enabled) + grouped_count)
+            self.assertEqual(result["requiredCount"],
+                             len(REQUIRED) + sum(enabled) + grouped_count + multi_count)
+
+    def test_stitch_requires_both_credentials_when_enabled(self):
+        env = {**self.environment(), "STITCH_MODE": "active",
+               "FIAT_WEBHOOK_SECRET": "webhook-test-value"}
+        self.assertEqual(sorted(check(env)["missing"]),
+                         ["STITCH_CLIENT_ID", "STITCH_CLIENT_SECRET"])
+        env["STITCH_CLIENT_ID"] = "id-test-value"
+        self.assertEqual(check(env)["missing"], ["STITCH_CLIENT_SECRET"])
+        env["STITCH_CLIENT_SECRET"] = "secret-test-value"
+        self.assertTrue(check(env)["ready"])
+
+    def test_stitch_credentials_are_not_read_when_disabled(self):
+        env = {**self.environment(), "STITCH_MODE": "disabled",
+               "STITCH_CLIENT_ID": "sentinel_STITCH_CLIENT_ID",
+               "STITCH_CLIENT_SECRET": "sentinel_STITCH_CLIENT_SECRET"}
+        self.assertTrue(check(env)["ready"])
 
     def test_readme_contract_is_generated_from_the_runtime_bound_preflight(self):
         readme = (SCRIPT.parents[1] / "README.md").read_text()

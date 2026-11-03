@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Create the Stitch Express hosted checkout server-side (token exchange + payment
+  link, integer ZAR minor units, sanitised merchant reference) instead of a static
+  redirect URL; require `STITCH_CLIENT_ID`/`STITCH_CLIENT_SECRET` when `STITCH_MODE`
+  is enabled and verify Svix webhook signatures in constant time (Gateway #466;
+  Business #1390).
+
 - Consumed the immutable Core billing catalog/shared legacy rates and SDK provider-policy hardening, preserving MRR calculations and separating configuration from paid entitlement. Added golden calculation and dependency conformance checks (Business #1343/#1390).
 - Offline, versioned ERP journal previews in `@conxian/client-sdk`, with exact debit/credit validation, separate asset/accounting units, source references and deterministic scope/payload digests. Previews grant no posting or verification authority.
 - Implemented Bitcoin L1 Merkle Proof Verification (`verify_bitcoin_merkle_proof`) in `internal/engine/src/stacks/sbtc.rs` for sBTC peg-in/out transaction validation (G-SB3).
