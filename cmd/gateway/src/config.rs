@@ -7,6 +7,8 @@ use url::Url;
 const FIAT_WEBHOOK_SECRET_SENTINEL: &str = "sentinel_FIAT_WEBHOOK_SECRET";
 const SETTLEMENT_INGRESS_SECRET_SENTINEL: &str = "sentinel_SETTLEMENT_INGRESS_SECRET";
 const RAMP_API_KEY_SENTINEL: &str = "sentinel_RAMP_API_KEY";
+const STITCH_CLIENT_ID_SENTINEL: &str = "sentinel_STITCH_CLIENT_ID";
+const STITCH_CLIENT_SECRET_SENTINEL: &str = "sentinel_STITCH_CLIENT_SECRET";
 const ALCHEMY_PAY_APP_ID_SENTINEL: &str = "sentinel_ALCHEMY_PAY_APP_ID";
 const INFOBIP_API_KEY_SENTINEL: &str = "sentinel_INFOBIP_API_KEY";
 const HMAC_SECRET_SENTINEL: &str = "sentinel_HMAC_SECRET";
@@ -216,7 +218,8 @@ pub struct Config {
     pub api_port: u16,
     pub api_token: String,
     pub ramp_api_key: Option<String>,
-    pub stitch_enabled: bool,
+    pub stitch_client_id: Option<String>,
+    pub stitch_client_secret: Option<String>,
     pub ozow_enabled: bool,
     pub papss_enabled: bool,
     pub alchemy_pay_app_id: Option<String>,
@@ -342,6 +345,20 @@ impl Config {
             None
         };
         let stitch_enabled = Self::provider_enabled("STITCH_MODE");
+        let (stitch_client_id, stitch_client_secret) = if stitch_enabled {
+            (
+                Some(Self::get_mandatory_env(
+                    "STITCH_CLIENT_ID",
+                    STITCH_CLIENT_ID_SENTINEL,
+                )),
+                Some(Self::get_mandatory_env(
+                    "STITCH_CLIENT_SECRET",
+                    STITCH_CLIENT_SECRET_SENTINEL,
+                )),
+            )
+        } else {
+            (None, None)
+        };
         let ozow_enabled = Self::provider_enabled("OZOW_MODE");
         let papss_enabled = Self::provider_enabled("PAPSS_MODE");
         let alchemy_pay_app_id = if Self::provider_enabled("ALCHEMY_PAY_MODE") {
@@ -532,7 +549,8 @@ impl Config {
                 .unwrap_or_else(|error| panic!("{error}")),
             api_token,
             ramp_api_key,
-            stitch_enabled,
+            stitch_client_id,
+            stitch_client_secret,
             ozow_enabled,
             papss_enabled,
             alchemy_pay_app_id,
@@ -667,6 +685,8 @@ mod tests {
                 "RAMP_MODE",
                 "RAMP_API_KEY",
                 "STITCH_MODE",
+                "STITCH_CLIENT_ID",
+                "STITCH_CLIENT_SECRET",
                 "OZOW_MODE",
                 "PAPSS_MODE",
                 "ALCHEMY_PAY_MODE",
@@ -717,6 +737,8 @@ mod tests {
         env::set_var("RAMP_MODE", "disabled");
         env::set_var("RAMP_API_KEY", "ramp-key");
         env::set_var("STITCH_MODE", "disabled");
+        env::set_var("STITCH_CLIENT_ID", "stitch-id");
+        env::set_var("STITCH_CLIENT_SECRET", "stitch-secret");
         env::set_var("OZOW_MODE", "disabled");
         env::set_var("PAPSS_MODE", "disabled");
         env::set_var("ALCHEMY_PAY_MODE", "disabled");
@@ -745,7 +767,8 @@ mod tests {
         // Default (disabled) -> no provider enabled, no secrets required.
         let config = Config::from_env();
         assert_eq!(config.ramp_api_key, None);
-        assert!(!config.stitch_enabled);
+        assert_eq!(config.stitch_client_id, None);
+        assert_eq!(config.stitch_client_secret, None);
         assert!(!config.ozow_enabled);
         assert!(!config.papss_enabled);
         assert_eq!(config.alchemy_pay_app_id, None);
@@ -760,6 +783,24 @@ mod tests {
         // Active without the secret -> fail closed.
         env::set_var("RAMP_MODE", "active");
         env::remove_var("RAMP_API_KEY");
+        assert!(std::panic::catch_unwind(Config::from_env).is_err());
+        env::set_var("RAMP_MODE", "disabled");
+        env::set_var("RAMP_API_KEY", "ramp-key");
+
+        // Stitch Express is server-side: active requires both credentials.
+        env::set_var("STITCH_MODE", "active");
+        let config = Config::from_env();
+        assert_eq!(config.stitch_client_id.as_deref(), Some("stitch-id"));
+        assert_eq!(
+            config.stitch_client_secret.as_deref(),
+            Some("stitch-secret")
+        );
+
+        env::remove_var("STITCH_CLIENT_SECRET");
+        assert!(std::panic::catch_unwind(Config::from_env).is_err());
+        env::set_var("STITCH_CLIENT_SECRET", "stitch-secret");
+
+        env::remove_var("STITCH_CLIENT_ID");
         assert!(std::panic::catch_unwind(Config::from_env).is_err());
     }
 
