@@ -1,5 +1,6 @@
 use crate::auth::auth_middleware;
 use crate::middleware::latency_tracker;
+use crate::mor_webhook::{provider_from_env, KeyStore, MorWebhookState};
 use crate::tenant::{managed_auth_middleware, ManagedAuth};
 use crate::world_id;
 use crate::AppState;
@@ -11,6 +12,35 @@ use axum::{
     Router,
 };
 use std::time::Instant;
+
+/// Builds the MoR webhook state from the environment, or `None` when the
+/// provider or signing secret is unconfigured (the route is then not mounted).
+///
+/// A configured `MOR_WEBHOOK_DATABASE_URL` selects the durable Neon/Postgres
+/// store; without it the webhook stays unconfigured rather than falling back to
+/// a non-durable store, so an entitlement is never granted from volatile state.
+fn mor_webhook_state_from_env() -> Option<MorWebhookState> {
+    let provider = provider_from_env()?;
+    let secret = std::env::var("MOR_WEBHOOK_SECRET")
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())?;
+    let database_url = std::env::var("MOR_WEBHOOK_DATABASE_URL")
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())?;
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(5)
+        .connect_lazy(&database_url)
+        .ok()?;
+    let store: std::sync::Arc<dyn KeyStore> =
+        std::sync::Arc::new(crate::mor_webhook_store::PgKeyStore::new(pool));
+    Some(MorWebhookState {
+        provider,
+        secret,
+        store,
+    })
+}
 
 pub fn configure_routes(
     state: AppState,
@@ -201,6 +231,20 @@ pub fn configure_routes(
         ))
         .with_state(state.clone());
 
+    // Merchant-of-Record billing webhook (Gateway #507). Mounted only when a
+    // provider and signing secret are configured; the route is not advertised
+    // when unconfigured. The handler verifies the HMAC over the raw body before
+    // any entitlement mutation (fail closed).
+    let webhook_routes = match mor_webhook_state_from_env() {
+        Some(webhook_state) => Router::new()
+            .route(
+                "/billing/mor/webhook",
+                post(crate::mor_webhook::mor_webhook_handler),
+            )
+            .with_state(webhook_state),
+        None => Router::new(),
+    };
+
     Router::new()
         .route("/api/v1/version", get(|| async { conxian_core::VERSION }))
         .layer(middleware::from_fn_with_state(
@@ -213,7 +257,8 @@ pub fn configure_routes(
             public_routes
                 .merge(private_routes)
                 .merge(alex_routes)
-                .merge(managed_routes),
+                .merge(managed_routes)
+                .merge(webhook_routes),
         )
         .nest("/admin/v1", admin_routes)
         .with_state(state.clone())
