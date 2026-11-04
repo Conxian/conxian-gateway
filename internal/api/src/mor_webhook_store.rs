@@ -23,10 +23,7 @@ impl PgKeyStore {
 
 #[async_trait::async_trait]
 impl KeyStore for PgKeyStore {
-    async fn apply_event_atomic(
-        &self,
-        event: &SubscriptionEvent,
-    ) -> Result<ApplyOutcome, String> {
+    async fn apply_event_atomic(&self, event: &SubscriptionEvent) -> Result<ApplyOutcome, String> {
         let mut tx = self
             .pool
             .begin()
