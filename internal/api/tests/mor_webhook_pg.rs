@@ -196,7 +196,6 @@ async fn pg_key_store_fails_closed_when_tables_are_absent() {
     assert!(store.mint_key("t-absent", "hash", "indie").await.is_err());
 }
 
-
 #[tokio::test]
 #[ignore = "requires MOR_WEBHOOK_TEST_DATABASE_URL and a PostgreSQL fixture"]
 async fn failed_provisioning_rolls_back_event_for_provider_retry() {

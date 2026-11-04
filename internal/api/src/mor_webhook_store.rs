@@ -5,7 +5,9 @@
 //! SHA-256 hex hash. Every method fails closed by returning `Err` rather than
 //! silently succeeding.
 
-use crate::mor_webhook::{mint_material, ApplyOutcome, KeyAction, KeyStore, StoredKey, SubscriptionEvent};
+use crate::mor_webhook::{
+    mint_material, ApplyOutcome, KeyAction, KeyStore, StoredKey, SubscriptionEvent,
+};
 use sqlx::PgPool;
 
 /// Postgres-backed key store and idempotency ledger.
