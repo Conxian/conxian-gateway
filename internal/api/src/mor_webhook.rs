@@ -335,10 +335,7 @@ pub trait KeyStore: Send + Sync {
     /// Applies idempotency and the entitlement mutation as one durable unit.
     /// A failed mint/rotate/revoke must roll back the event record so the
     /// provider retry remains executable.
-    async fn apply_event_atomic(
-        &self,
-        event: &SubscriptionEvent,
-    ) -> Result<ApplyOutcome, String>;
+    async fn apply_event_atomic(&self, event: &SubscriptionEvent) -> Result<ApplyOutcome, String>;
 
     /// Atomically records the event as processed. Returns `false` if the event
     /// id already exists (idempotent replay).
