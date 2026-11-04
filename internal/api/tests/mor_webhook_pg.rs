@@ -208,7 +208,12 @@ async fn failed_provisioning_rolls_back_event_for_provider_retry() {
     .await
     .unwrap();
     let store = PgKeyStore::new(pool.clone());
-    let failed = event("evt-retryable", "tenant-retry", "force-failure", KeyAction::Mint);
+    let failed = event(
+        "evt-retryable",
+        "tenant-retry",
+        "force-failure",
+        KeyAction::Mint,
+    );
 
     assert!(apply_event(&store, &failed).await.is_err());
     let recorded: i64 =
