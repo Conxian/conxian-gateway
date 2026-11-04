@@ -492,9 +492,7 @@ mod tests {
                 &self,
                 _event: &crate::mor_webhook::SubscriptionEvent,
             ) -> Result<crate::mor_webhook::ApplyOutcome, String> {
-                Err(
-                    "read-only authentication fixture cannot apply billing events".into(),
-                )
+                Err("read-only authentication fixture cannot apply billing events".into())
             }
             async fn record_event(
                 &self,
