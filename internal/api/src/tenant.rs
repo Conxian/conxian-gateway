@@ -488,6 +488,12 @@ mod tests {
         struct OneKeyStore(StoredKey);
         #[async_trait::async_trait]
         impl KeyStore for OneKeyStore {
+            async fn apply_event_atomic(
+                &self,
+                _event: &crate::mor_webhook::SubscriptionEvent,
+            ) -> Result<crate::mor_webhook::ApplyOutcome, String> {
+                Err("read-only authentication fixture cannot apply billing events".into())
+            }
             async fn record_event(
                 &self,
                 _e: &str,

@@ -5,7 +5,9 @@
 //! SHA-256 hex hash. Every method fails closed by returning `Err` rather than
 //! silently succeeding.
 
-use crate::mor_webhook::{KeyStore, StoredKey};
+use crate::mor_webhook::{
+    mint_material, ApplyOutcome, KeyAction, KeyStore, StoredKey, SubscriptionEvent,
+};
 use sqlx::PgPool;
 
 /// Postgres-backed key store and idempotency ledger.
@@ -21,6 +23,77 @@ impl PgKeyStore {
 
 #[async_trait::async_trait]
 impl KeyStore for PgKeyStore {
+    async fn apply_event_atomic(&self, event: &SubscriptionEvent) -> Result<ApplyOutcome, String> {
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| format!("begin event tx: {e}"))?;
+
+        let inserted = sqlx::query(
+            "INSERT INTO billing_webhook_events (id, event_type, tenant_id, payload) \
+             VALUES ($1, $2, $3, $4::jsonb) ON CONFLICT (id) DO NOTHING",
+        )
+        .bind(&event.event_id)
+        .bind(format!("{:?}", event.action))
+        .bind(&event.tenant_id)
+        .bind("{}")
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| format!("record event: {e}"))?;
+        if inserted.rows_affected() == 0 {
+            tx.rollback()
+                .await
+                .map_err(|e| format!("rollback duplicate event: {e}"))?;
+            return Ok(ApplyOutcome::Duplicate);
+        }
+
+        let outcome = match event.action {
+            KeyAction::Mint | KeyAction::Rotate => {
+                let (key, hash) = mint_material();
+                sqlx::query(
+                    "UPDATE managed_api_keys SET status = 'rotating', rotated_at = now() \
+                     WHERE tenant_id = $1 AND status = 'active'",
+                )
+                .bind(&event.tenant_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| format!("retire previous key: {e}"))?;
+                sqlx::query(
+                    "INSERT INTO managed_api_keys (tenant_id, tier, api_key_hash, status) \
+                     VALUES ($1, $2, $3, 'active')",
+                )
+                .bind(&event.tenant_id)
+                .bind(&event.plan)
+                .bind(&hash)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| format!("insert key: {e}"))?;
+                match event.action {
+                    KeyAction::Mint => ApplyOutcome::Minted { key },
+                    KeyAction::Rotate => ApplyOutcome::Rotated { key },
+                    KeyAction::Revoke => unreachable!(),
+                }
+            }
+            KeyAction::Revoke => {
+                sqlx::query(
+                    "UPDATE managed_api_keys SET status = 'revoked', revoked_at = now() \
+                     WHERE tenant_id = $1 AND status = 'active'",
+                )
+                .bind(&event.tenant_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| format!("revoke key: {e}"))?;
+                ApplyOutcome::Revoked
+            }
+        };
+
+        tx.commit()
+            .await
+            .map_err(|e| format!("commit event tx: {e}"))?;
+        Ok(outcome)
+    }
+
     async fn record_event(
         &self,
         event_id: &str,
