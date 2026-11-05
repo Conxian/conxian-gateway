@@ -21,7 +21,10 @@ fn setup_app(
 ) -> axum::Router {
     let fiat = Arc::new(FiatRouter::from_enabled(
         Some(conxian_api::fiat::RampAdapter::new("simulated".into())),
-        Some(conxian_api::fiat::StitchAdapter),
+        Some(conxian_api::fiat::StitchAdapter::new(
+            "test-stitch-id".to_string(),
+            "test-stitch-secret".to_string(),
+        )),
         Some(conxian_api::fiat::OzowAdapter),
         Some(conxian_api::fiat::PapssAdapter),
         Some(conxian_api::fiat::AlchemyPayAdapter::new(

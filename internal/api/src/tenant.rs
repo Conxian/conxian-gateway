@@ -28,6 +28,7 @@ use sha2::Sha256;
 use subtle::ConstantTimeEq;
 use tracing::{info, warn};
 
+use crate::mor_webhook::{hash_key, KeyStore};
 use crate::rate_limit::RateLimiter;
 use crate::sentinel::Sentinel;
 
@@ -154,13 +155,12 @@ impl FusionJwt {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
-        let claims = format!(
-            r#"{{"sub":"{}","tier":"{}","exp":{}}}"#,
-            tenant_id,
-            tier,
-            now + ttl_seconds
-        );
-        let payload = E.encode(claims.as_bytes());
+        let claims = serde_json::json!({
+            "sub": tenant_id,
+            "tier": tier,
+            "exp": now.saturating_add(ttl_seconds.min(MAX_FUSION_JWT_REMAINING_TTL_SECONDS)),
+        });
+        let payload = E.encode(claims.to_string().as_bytes());
         let signing_input = format!("{}.{}", header, payload);
         let secret = self.secret.as_deref().unwrap_or_default();
         let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).unwrap();
@@ -243,10 +243,18 @@ pub struct ManagedAuth {
     fusion: FusionJwt,
     limiter: RateLimiter,
     sentinel: Sentinel,
+    /// Durable key store (Neon/Postgres) for keys minted by the MoR webhook.
+    /// When present, a `cxn_agent_*` bearer is resolved by SHA-256 hash against
+    /// the store, so a freshly minted key authenticates without any env reload.
+    store: Option<Arc<dyn KeyStore>>,
 }
 
 impl ManagedAuth {
     pub fn from_env(legacy_token: &str) -> Self {
+        Self::from_env_with_store(legacy_token, None)
+    }
+
+    pub fn from_env_with_store(legacy_token: &str, store: Option<Arc<dyn KeyStore>>) -> Self {
         let registry = TenantKeyRegistry::from_env(legacy_token);
         let fusion_secret = std::env::var("FUSION_JWT_SECRET")
             .ok()
@@ -266,19 +274,38 @@ impl ManagedAuth {
             fusion,
             limiter,
             sentinel,
+            store,
         }
     }
 
-    /// Authenticate a request, preferring a Fusion JWT then falling back to a
-    /// managed API key or the legacy institutional token.
-    fn authenticate_request(&self, req: &Request) -> Option<TenantContext> {
-        let header = req.headers().get(header::AUTHORIZATION)?.to_str().ok()?;
-        let bearer = header.strip_prefix("Bearer ")?;
-
+    /// Authenticate a request bearer, preferring a Fusion JWT then falling back
+    /// to a managed API key or the legacy institutional token.
+    async fn authenticate_bearer(&self, bearer: &str) -> Option<TenantContext> {
         if let Ok(ctx) = self.fusion.verify(bearer) {
             return Some(ctx);
         }
-        self.registry.authenticate(bearer)
+        if let Some(ctx) = self.registry.authenticate(bearer) {
+            return Some(ctx);
+        }
+        // Durable store fallback: keys minted by the MoR webhook live only as
+        // SHA-256 hashes in Neon, so resolve the presented key by hash. This is
+        // what makes a fresh mint usable without an env reload. A store error
+        // denies the request (fail closed).
+        let store = self.store.as_ref()?;
+        if !bearer.starts_with("cxn_agent_") {
+            return None;
+        }
+        match store.active_key_by_hash(&hash_key(bearer)).await {
+            Ok(Some(key)) => Some(TenantContext {
+                tenant_id: key.tenant_id,
+                tier: key.tier,
+            }),
+            Ok(None) => None,
+            Err(err) => {
+                warn!(error = %err, "Durable key lookup failed; denying managed request");
+                None
+            }
+        }
     }
 }
 
@@ -288,7 +315,18 @@ pub async fn managed_auth_middleware(
     mut req: Request,
     next: Next,
 ) -> Result<Response, StatusCode> {
-    let tenant = match auth.authenticate_request(&req) {
+    // Extract the bearer before the await so the non-`Sync` request body is not
+    // held across the durable-store lookup (keeps the middleware future `Send`).
+    let bearer = req
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|h| h.to_str().ok())
+        .and_then(|h| h.strip_prefix("Bearer "))
+        .map(str::to_string);
+    let tenant = match match bearer {
+        Some(ref b) => auth.authenticate_bearer(b).await,
+        None => None,
+    } {
         Some(t) => t,
         None => {
             warn!(
@@ -329,6 +367,7 @@ pub async fn managed_auth_middleware(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mor_webhook::StoredKey;
     use std::sync::Mutex;
 
     // `std::env::set_var`/`remove_var` are process-global, so tests that mutate
@@ -341,6 +380,35 @@ mod tests {
         let token = fusion.issue("tenant-42", "managed", FUSION_JWT_TTL_SECONDS);
         let ctx = fusion.verify(&token).expect("valid token");
         assert_eq!(ctx.tenant_id, "tenant-42");
+        assert_eq!(ctx.tier, "managed");
+    }
+
+    #[test]
+    fn subscription_lifetime_does_not_become_access_token_lifetime() {
+        let fusion = FusionJwt::new(Some("test-fusion-secret".to_string()));
+        let token = fusion.issue("tenant-42", "managed", 30 * 24 * 3600);
+        let ctx = fusion
+            .verify(&token)
+            .expect("short-lived subscription token");
+        assert_eq!(ctx.tenant_id, "tenant-42");
+        let payload = URL_SAFE_NO_PAD
+            .decode(token.split('.').nth(1).unwrap())
+            .unwrap();
+        let claims: serde_json::Value = serde_json::from_slice(&payload).unwrap();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        assert!(claims["exp"].as_u64().unwrap() <= now + MAX_FUSION_JWT_REMAINING_TTL_SECONDS);
+    }
+
+    #[test]
+    fn tenant_identity_is_json_data_and_cannot_inject_claims() {
+        let fusion = FusionJwt::new(Some("test-fusion-secret".to_string()));
+        let tenant_id = r#"tenant-42","tier":"strict"#;
+        let token = fusion.issue(tenant_id, "managed", FUSION_JWT_TTL_SECONDS);
+        let ctx = fusion.verify(&token).expect("escaped tenant identity");
+        assert_eq!(ctx.tenant_id, tenant_id);
         assert_eq!(ctx.tier, "managed");
     }
 
@@ -410,5 +478,62 @@ mod tests {
         assert!(!cleaned.contains("cxn_agent_secret_999"));
         assert!(cleaned.contains("[REDACTED]"));
         std::env::remove_var("MANAGED_API_KEYS");
+    }
+
+    /// A webhook-minted key is stored only as a SHA-256 hash in the durable
+    /// store; the managed-auth path must resolve it by hash so a fresh mint
+    /// authorizes without any `MANAGED_API_KEYS` env reload.
+    #[tokio::test]
+    async fn durable_store_resolves_webhook_minted_key() {
+        struct OneKeyStore(StoredKey);
+        #[async_trait::async_trait]
+        impl KeyStore for OneKeyStore {
+            async fn record_event(
+                &self,
+                _e: &str,
+                _t: &str,
+                _tenant: &str,
+            ) -> Result<bool, String> {
+                Ok(true)
+            }
+            async fn revoke_active(&self, _tenant: &str) -> Result<u64, String> {
+                Ok(0)
+            }
+            async fn mint_key(&self, _tenant: &str, _h: &str, _tier: &str) -> Result<(), String> {
+                Ok(())
+            }
+            async fn active_key(&self, _tenant: &str) -> Result<Option<StoredKey>, String> {
+                Ok(None)
+            }
+            async fn active_key_by_hash(&self, hash: &str) -> Result<Option<StoredKey>, String> {
+                Ok((self.0.api_key_hash == hash).then(|| self.0.clone()))
+            }
+        }
+
+        let minted = "cxn_agent_0123456789abcdef0123456789abcdef";
+        let store: Arc<dyn KeyStore> = Arc::new(OneKeyStore(StoredKey {
+            tenant_id: "tenant-store".into(),
+            api_key_hash: hash_key(minted),
+            tier: "indie".into(),
+        }));
+        let auth = {
+            let _guard = ENV_MUTEX.lock().unwrap();
+            std::env::remove_var("MANAGED_API_KEYS");
+            ManagedAuth::from_env_with_store("legacy", Some(store))
+        };
+
+        let ctx = auth.authenticate_bearer(minted).await.expect("minted key");
+        assert_eq!(ctx.tenant_id, "tenant-store");
+        assert_eq!(ctx.tier, "indie");
+
+        // An unknown key, and a non-managed-prefixed key, are rejected.
+        assert!(auth
+            .authenticate_bearer("cxn_agent_unknown")
+            .await
+            .is_none());
+        assert!(auth
+            .authenticate_bearer("not-a-managed-key")
+            .await
+            .is_none());
     }
 }

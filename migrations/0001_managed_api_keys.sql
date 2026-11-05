@@ -15,11 +15,18 @@ CREATE TABLE IF NOT EXISTS managed_api_keys (
     plan            TEXT        NOT NULL DEFAULT 'monthly',
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     rotated_at      TIMESTAMPTZ,
-    revoked_at      TIMESTAMPTZ,
-    UNIQUE (tenant_id)
+    revoked_at      TIMESTAMPTZ
 );
 
--- Idempotent key rotation: revoke all prior keys for a tenant atomically.
+-- Correct the earlier draft's global tenant uniqueness, which prevented the
+-- documented rotate flow (insert a new active row, then revoke the previous).
+ALTER TABLE managed_api_keys DROP CONSTRAINT IF EXISTS managed_api_keys_tenant_id_key;
+
+-- Idempotent key rotation: at most one active key per tenant.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_managed_api_keys_tenant_active
+    ON managed_api_keys (tenant_id)
+    WHERE status = 'active';
+
 CREATE INDEX IF NOT EXISTS idx_managed_api_keys_tenant_status
     ON managed_api_keys (tenant_id, status);
 

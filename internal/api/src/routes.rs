@@ -1,5 +1,6 @@
 use crate::auth::auth_middleware;
 use crate::middleware::latency_tracker;
+use crate::mor_webhook::{provider_from_env, KeyStore, MorWebhookState};
 use crate::tenant::{managed_auth_middleware, ManagedAuth};
 use crate::world_id;
 use crate::AppState;
@@ -12,6 +13,42 @@ use axum::{
 };
 use std::time::Instant;
 
+/// Builds the MoR webhook state from the environment, or `None` when the
+/// provider or signing secret is unconfigured (the route is then not mounted).
+///
+/// A configured `MOR_WEBHOOK_DATABASE_URL` selects the durable Neon/Postgres
+/// store; without it the webhook stays unconfigured rather than falling back to
+/// a non-durable store, so an entitlement is never granted from volatile state.
+fn mor_webhook_state_from_env(store: std::sync::Arc<dyn KeyStore>) -> Option<MorWebhookState> {
+    let provider = provider_from_env()?;
+    let secret = std::env::var("MOR_WEBHOOK_SECRET")
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())?;
+    Some(MorWebhookState {
+        provider,
+        secret,
+        store,
+    })
+}
+
+/// Builds the durable managed-key store from `MOR_WEBHOOK_DATABASE_URL`, if set.
+/// Used both by the MoR webhook receiver and the managed-auth path so a key
+/// minted by a webhook authenticates against the same store.
+fn mor_key_store_from_env() -> Option<std::sync::Arc<dyn KeyStore>> {
+    let database_url = std::env::var("MOR_WEBHOOK_DATABASE_URL")
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())?;
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(5)
+        .connect_lazy(&database_url)
+        .ok()?;
+    Some(std::sync::Arc::new(
+        crate::mor_webhook_store::PgKeyStore::new(pool),
+    ))
+}
+
 pub fn configure_routes(
     state: AppState,
     api_token: String,
@@ -21,9 +58,13 @@ pub fn configure_routes(
     let token_for_auth = api_token.clone();
     let token_for_alex = api_token.clone();
 
+    // Durable managed-key store, shared by the MoR webhook receiver and the
+    // managed-auth path so a webhook-minted key authenticates immediately.
+    let mor_store = mor_key_store_from_env();
+
     // Multi-tenant managed-subscriber auth (managed API keys + Fusion JWT +
     // per-tenant rate limiting + Sentinel secret filtering).
-    let managed_auth = ManagedAuth::from_env(&api_token);
+    let managed_auth = ManagedAuth::from_env_with_store(&api_token, mor_store.clone());
 
     let public_routes = Router::new()
         .route("/health", get(handlers::get_health))
@@ -201,6 +242,23 @@ pub fn configure_routes(
         ))
         .with_state(state.clone());
 
+    // Merchant-of-Record billing webhook (Gateway #507). Mounted only when a
+    // provider and signing secret are configured; the route is not advertised
+    // when unconfigured. The handler verifies the HMAC over the raw body before
+    // any entitlement mutation (fail closed).
+    let webhook_routes = match mor_store
+        .as_ref()
+        .and_then(|store| mor_webhook_state_from_env(store.clone()))
+    {
+        Some(webhook_state) => Router::new()
+            .route(
+                "/billing/mor/webhook",
+                post(crate::mor_webhook::mor_webhook_handler),
+            )
+            .with_state(webhook_state),
+        None => Router::new(),
+    };
+
     Router::new()
         .route("/api/v1/version", get(|| async { conxian_core::VERSION }))
         .layer(middleware::from_fn_with_state(
@@ -213,7 +271,8 @@ pub fn configure_routes(
             public_routes
                 .merge(private_routes)
                 .merge(alex_routes)
-                .merge(managed_routes),
+                .merge(managed_routes)
+                .merge(webhook_routes),
         )
         .nest("/admin/v1", admin_routes)
         .with_state(state.clone())

@@ -48,6 +48,7 @@ The minimum runtime lane requires **3 logical startup secrets**:
 | `INFOBIP_MODE` | `INFOBIP_API_KEY` |
 | `RAMP_MODE` or `STITCH_MODE` or `OZOW_MODE` or `PAPSS_MODE` or `ALCHEMY_PAY_MODE` or `BANXA_MODE` | `FIAT_WEBHOOK_SECRET` |
 | `INFOBIP_MODE` | `HMAC_SECRET` |
+| `STITCH_MODE` | `STITCH_CLIENT_ID`, `STITCH_CLIENT_SECRET` |
 
 A provider credential is required only for mode values `1`, `active`, `shadow`, `true`.
 The legacy token alias is one logical requirement, not an extra secret.
