@@ -18,6 +18,16 @@
 > hypothesis. Gateway routing must therefore remain based on observed node,
 > mempool, block, and confirmation data rather than BIP-110 status alone.
 
+> **Correction (2026-11-06):** the canonical BIP-110 text is now marked
+> **`Status: Closed`** (Version 1.0.1, 2026-08-09 — "Mark as Closed, following a
+> chain split with stalled mining"). It was previously `Complete`
+> (2026-06-25 → 2026-08-09) and was never activated on any network. The
+> `Status: Complete` cells recorded below were accurate for the 2026-07-22 audit
+> snapshot; the current authoritative status is `Closed`. This does not change
+> the executive finding — a `Closed` proposal is even less evidence of active
+> consensus than a `Complete` one. Source:
+> https://github.com/bitcoin/bips/blob/master/bip-0110.mediawiki
+
 ## 1. Scope and decision record
 
 This report answers a narrow question: what can the Gateway safely observe or
