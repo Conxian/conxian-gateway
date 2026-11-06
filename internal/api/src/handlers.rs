@@ -66,7 +66,9 @@ async fn load_persisted_state(persistence: Arc<dyn Persistence>) -> Result<Persi
 }
 
 pub async fn get_health() -> Json<Value> {
-    Json(json!({ "status": "ok" }))
+    // `service` is the runtime identity the status surface checks before it
+    // will report this host as a verified, independent service.
+    Json(json!({ "status": "ok", "service": "conxian-gateway" }))
 }
 
 pub async fn get_state(State(state): State<AppState>) -> Json<conxian_core::GatewayState> {
