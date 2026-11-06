@@ -267,6 +267,10 @@ pub fn configure_routes(
             "/.well-known/api-catalog",
             get(crate::discovery::get_api_catalog),
         )
+        .route(
+            "/.well-known/x402",
+            get(crate::discovery::get_x402_discovery),
+        )
         .layer(middleware::from_fn_with_state(
             state.clone(),
             latency_tracker,
