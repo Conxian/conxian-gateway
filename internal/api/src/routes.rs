@@ -261,6 +261,12 @@ pub fn configure_routes(
 
     Router::new()
         .route("/api/v1/version", get(|| async { conxian_core::VERSION }))
+        // Standards-based, unauthenticated API discovery (Gateway #711).
+        .route("/openapi.json", get(crate::discovery::get_openapi))
+        .route(
+            "/.well-known/api-catalog",
+            get(crate::discovery::get_api_catalog),
+        )
         .layer(middleware::from_fn_with_state(
             state.clone(),
             latency_tracker,
