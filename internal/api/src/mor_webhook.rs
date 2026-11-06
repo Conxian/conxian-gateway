@@ -332,6 +332,11 @@ pub struct StoredKey {
 /// implementation backs unit tests. Every method fails closed on error.
 #[async_trait::async_trait]
 pub trait KeyStore: Send + Sync {
+    /// Applies idempotency and the entitlement mutation as one durable unit.
+    /// A failed mint/rotate/revoke must roll back the event record so the
+    /// provider retry remains executable.
+    async fn apply_event_atomic(&self, event: &SubscriptionEvent) -> Result<ApplyOutcome, String>;
+
     /// Atomically records the event as processed. Returns `false` if the event
     /// id already exists (idempotent replay).
     async fn record_event(
@@ -356,7 +361,7 @@ pub trait KeyStore: Send + Sync {
 }
 
 /// Generates a fresh `cxn_agent_<32-hex>` key and its SHA-256 hex hash.
-fn mint_material() -> (String, String) {
+pub(crate) fn mint_material() -> (String, String) {
     // A random 128-bit key is unguessable; UUID v4 draws from the OS CSPRNG.
     let bytes = uuid::Uuid::new_v4().into_bytes();
     let key = format!("cxn_agent_{}", hex::encode(bytes));
@@ -386,32 +391,7 @@ pub async fn apply_event(
     store: &dyn KeyStore,
     event: &SubscriptionEvent,
 ) -> Result<ApplyOutcome, String> {
-    let is_new = store
-        .record_event(
-            &event.event_id,
-            &format!("{:?}", event.action),
-            &event.tenant_id,
-        )
-        .await?;
-    if !is_new {
-        return Ok(ApplyOutcome::Duplicate);
-    }
-    match event.action {
-        KeyAction::Mint => {
-            let (key, hash) = mint_material();
-            store.mint_key(&event.tenant_id, &hash, &event.plan).await?;
-            Ok(ApplyOutcome::Minted { key })
-        }
-        KeyAction::Rotate => {
-            let (key, hash) = mint_material();
-            store.mint_key(&event.tenant_id, &hash, &event.plan).await?;
-            Ok(ApplyOutcome::Rotated { key })
-        }
-        KeyAction::Revoke => {
-            store.revoke_active(&event.tenant_id).await?;
-            Ok(ApplyOutcome::Revoked)
-        }
-    }
+    store.apply_event_atomic(event).await
 }
 
 /// Resolves the configured MoR provider, if any.
@@ -599,6 +579,37 @@ mod tests {
 
     #[async_trait::async_trait]
     impl KeyStore for MemStore {
+        async fn apply_event_atomic(
+            &self,
+            event: &SubscriptionEvent,
+        ) -> Result<ApplyOutcome, String> {
+            let is_new = self
+                .record_event(
+                    &event.event_id,
+                    &format!("{:?}", event.action),
+                    &event.tenant_id,
+                )
+                .await?;
+            if !is_new {
+                return Ok(ApplyOutcome::Duplicate);
+            }
+            match event.action {
+                KeyAction::Mint | KeyAction::Rotate => {
+                    let (key, hash) = mint_material();
+                    self.mint_key(&event.tenant_id, &hash, &event.plan).await?;
+                    Ok(match event.action {
+                        KeyAction::Mint => ApplyOutcome::Minted { key },
+                        KeyAction::Rotate => ApplyOutcome::Rotated { key },
+                        KeyAction::Revoke => unreachable!(),
+                    })
+                }
+                KeyAction::Revoke => {
+                    self.revoke_active(&event.tenant_id).await?;
+                    Ok(ApplyOutcome::Revoked)
+                }
+            }
+        }
+
         async fn record_event(
             &self,
             event_id: &str,

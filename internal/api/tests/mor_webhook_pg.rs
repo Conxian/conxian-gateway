@@ -195,3 +195,42 @@ async fn pg_key_store_fails_closed_when_tables_are_absent() {
     assert!(store.record_event("evt", "Mint", "t-absent").await.is_err());
     assert!(store.mint_key("t-absent", "hash", "indie").await.is_err());
 }
+
+#[tokio::test]
+#[ignore = "requires MOR_WEBHOOK_TEST_DATABASE_URL and a PostgreSQL fixture"]
+async fn failed_provisioning_rolls_back_event_for_provider_retry() {
+    let pool = fixture_pool().await;
+    sqlx::query(
+        "ALTER TABLE managed_api_keys ADD CONSTRAINT reject_fixture_tier \
+         CHECK (tier <> 'force-failure')",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let store = PgKeyStore::new(pool.clone());
+    let failed = event(
+        "evt-retryable",
+        "tenant-retry",
+        "force-failure",
+        KeyAction::Mint,
+    );
+
+    assert!(apply_event(&store, &failed).await.is_err());
+    let recorded: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM billing_webhook_events WHERE id = $1")
+            .bind("evt-retryable")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(recorded, 0, "failed mutation must not consume the event id");
+
+    sqlx::query("ALTER TABLE managed_api_keys DROP CONSTRAINT reject_fixture_tier")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let retry = event("evt-retryable", "tenant-retry", "business", KeyAction::Mint);
+    assert!(matches!(
+        apply_event(&store, &retry).await.unwrap(),
+        ApplyOutcome::Minted { .. }
+    ));
+}
