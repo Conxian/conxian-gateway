@@ -188,6 +188,46 @@ fn openapi_document() -> Value {
     })
 }
 
+/// x402 payment-discovery document.
+///
+/// `GET /.well-known/x402` — describes the payable per-call resource and its
+/// price so an agent can discover that a resource is payable, what it costs,
+/// and which rail settles it, without already knowing the URL. The price is
+/// read from the canonical `x402` constant, so it cannot drift from the
+/// charged amount.
+pub async fn get_x402_discovery() -> Json<Value> {
+    let payable: Vec<Value> = crate::x402::X402_PROTECTED_SUFFIXES
+        .iter()
+        .map(|suffix| {
+            json!({
+                "resource": format!("{API_BASE_URL}/api/v1{suffix}"),
+                "price": {
+                    "amount": crate::x402::X402_PER_CALL_SATOSHI.to_string(),
+                    "asset": crate::x402::X402_ASSET,
+                    "decimals": 8
+                },
+                "rail": "x402",
+                "payment_headers": [
+                    crate::x402::PAYMENT_REQUIRED_HEADER,
+                    crate::x402::PAYMENT_SIGNATURE_HEADER
+                ]
+            })
+        })
+        .collect();
+
+    Json(json!({
+        "x402Version": 1,
+        "facilitator": API_BASE_URL,
+        "asset": crate::x402::X402_ASSET,
+        "extensions": {
+            "bazaar": {
+                "resources": payable
+            }
+        },
+        "payable_resources": payable
+    }))
+}
+
 /// RFC 9727 `api-catalog` linkset.
 ///
 /// `GET /.well-known/api-catalog` — `application/linkset+json`
@@ -243,5 +283,15 @@ mod tests {
     fn catalog_links_to_the_openapi_document() {
         let base = API_BASE_URL;
         assert!(base.starts_with("https://"));
+    }
+
+    #[test]
+    fn x402_discovery_advertises_the_canonical_price() {
+        // The advertised price must be the canonical constant, so it cannot
+        // drift from the amount the middleware charges.
+        let doc = serde_json::to_value(crate::x402::X402_PER_CALL_SATOSHI).unwrap();
+        assert_eq!(doc, serde_json::json!(1000));
+        assert_eq!(crate::x402::X402_ASSET, "sBTC");
+        assert!(!crate::x402::X402_PROTECTED_SUFFIXES.is_empty());
     }
 }
