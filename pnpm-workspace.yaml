@@ -16,3 +16,7 @@ overrides:
   brace-expansion: ^2.1.7
   source-map-js: ^1.2.2
   vite: ^8.2.4
+  # minimatch <11.0.1 (GHSA-g3hv-75wg-m249) reaches us only through
+  # @typescript-eslint/typescript-estree; scope the override to that parent so
+  # consumers that still need the 3.x API are untouched.
+  '@typescript-eslint/typescript-estree>minimatch': ^11.0.4
