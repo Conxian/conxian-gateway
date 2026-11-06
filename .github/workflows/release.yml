@@ -118,7 +118,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
-          ref: ${{ needs.release-identity.outputs.commit }}
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - name: Install Rust toolchain
@@ -149,7 +149,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
-          ref: ${{ needs.release-identity.outputs.commit }}
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - name: Setup Node.js
@@ -192,7 +192,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
-          ref: ${{ needs.release-identity.outputs.commit }}
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - name: Install Rust toolchain
@@ -224,7 +224,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
-          ref: ${{ needs.release-identity.outputs.commit }}
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - name: Download and verify pinned Gitleaks archive
@@ -272,7 +272,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
-          ref: ${{ needs.release-identity.outputs.commit }}
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - name: Install Rust toolchain
@@ -309,14 +309,14 @@ jobs:
     outputs:
       version: ${{ needs.release-identity.outputs.version }}
       tag: ${{ needs.release-identity.outputs.tag }}
-      commit: ${{ needs.release-identity.outputs.commit }}
+      commit: ${{ github.sha }}
       target: ${{ steps.package.outputs.target }}
     steps:
       - name: Checkout exact release commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
-          ref: ${{ needs.release-identity.outputs.commit }}
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - name: Install Rust
@@ -368,7 +368,7 @@ jobs:
         shell: bash
         env:
           RELEASE_VERSION: ${{ needs.release-identity.outputs.version }}
-          RELEASE_COMMIT: ${{ needs.release-identity.outputs.commit }}
+          RELEASE_COMMIT: ${{ github.sha }}
         run: |
           set -euo pipefail
 
@@ -447,7 +447,7 @@ jobs:
       - name: Verify packaged release artifacts
         env:
           RELEASE_VERSION: ${{ needs.release-identity.outputs.version }}
-          RELEASE_COMMIT: ${{ needs.release-identity.outputs.commit }}
+          RELEASE_COMMIT: ${{ github.sha }}
         run: |
           python3 scripts/verify_release_artifacts.py \
             --directory release-assets \
@@ -481,7 +481,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
-          ref: ${{ needs.package-release.outputs.commit }}
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - name: Install Rust toolchain for locked metadata verification
@@ -506,7 +506,7 @@ jobs:
       - name: Reverify exact release artifact set before attestation
         env:
           RELEASE_VERSION: ${{ needs.package-release.outputs.version }}
-          RELEASE_COMMIT: ${{ needs.package-release.outputs.commit }}
+          RELEASE_COMMIT: ${{ github.sha }}
         run: |
           python3 scripts/verify_release_artifacts.py \
             --directory release-assets \
@@ -566,7 +566,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
-          ref: ${{ needs.package-release.outputs.commit }}
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - name: Install Rust toolchain for locked metadata verification
@@ -660,7 +660,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
-          ref: ${{ needs.package-release.outputs.commit }}
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - name: Install Rust
