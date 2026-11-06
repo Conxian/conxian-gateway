@@ -79,6 +79,17 @@ arbitrary unreviewed commit is therefore not an allowed release source.
 
 ### Exact-commit baseline jobs
 
+Every job that builds or verifies release content checks out `github.sha` — the
+exact tag commit this workflow run resolved to — rather than a value re-exported
+from another job. `release-identity` has already asserted that `github.sha`
+equals the tag commit and is reachable from reviewed `main` history, so the
+checkout ref is the immutable workflow identity and cannot be influenced by a
+`workflow_dispatch` input. This keeps the tainted `release_version` input out of
+every `actions/checkout` `ref`, which is what the `actions/cache-poisoning`
+analysis flags.
+
+
+
 The following jobs each check out the commit emitted by `release-identity`, not
 the moving branch name and not a prior check-run result:
 
