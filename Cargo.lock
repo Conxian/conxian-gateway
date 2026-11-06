@@ -2377,6 +2377,7 @@ dependencies = [
  "hex",
  "lib-conxian-core",
  "libc",
+ "musig2",
  "rusqlite",
  "serde",
  "serde_json",

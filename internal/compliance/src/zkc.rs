@@ -984,14 +984,7 @@ impl conxian_core::musig2::MuSig2Orchestrator for ZkcVerifier {
             "Aggregating {} public keys via MuSig2 (BIP-327)...",
             pubkeys.len()
         );
-
-        let mut sorted_pks = pubkeys.to_vec();
-        sorted_pks.sort();
-
-        Ok(conxian_core::musig2::MuSig2AggregatedKey {
-            aggregated_pubkey: format!("agg-{}", &sorted_pks[0][..8]),
-            participant_pubkeys: sorted_pks,
-        })
+        conxian_core::musig2::aggregate_musig2_pubkeys(pubkeys)
     }
 
     fn aggregate_signatures(
@@ -1004,14 +997,11 @@ impl conxian_core::musig2::MuSig2Orchestrator for ZkcVerifier {
             "Aggregating MuSig2 signatures for message hash: {}",
             hex::encode(message_hash)
         );
-
-        if partial_sigs.len() != aggregated_key.participant_pubkeys.len() {
-            return Err(conxian_core::ConxianError::Compliance(
-                "Incomplete partial signatures".to_string(),
-            ));
-        }
-
-        Ok(format!("final-sig-{}", hex::encode(&message_hash[..8])))
+        conxian_core::musig2::aggregate_musig2_signatures(
+            aggregated_key,
+            partial_sigs,
+            message_hash,
+        )
     }
 }
 #[cfg(test)]

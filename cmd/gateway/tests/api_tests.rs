@@ -2232,29 +2232,23 @@ async fn test_map_dlc_bond_to_usi_in_compliance() {
 async fn test_musig2_aggregation_in_compliance() {
     use conxian_core::musig2::MuSig2Orchestrator;
     let verifier = ZkcVerifier::new();
-    let pubkeys = vec!["pk1-12345678".to_string(), "pk2-87654321".to_string()];
+    // Real compressed secp256k1 public keys (generator multiples).
+    let pubkeys = vec![
+        "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798".to_string(),
+        "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5".to_string(),
+    ];
 
     let agg_key = verifier.aggregate_pubkeys(&pubkeys).unwrap();
     assert_eq!(agg_key.participant_pubkeys.len(), 2);
+    // Real aggregation yields a compressed point, not a "agg-" placeholder.
+    assert_eq!(agg_key.aggregated_pubkey.len(), 66);
+    assert!(!agg_key.aggregated_pubkey.starts_with("agg-"));
+    assert!(hex::decode(&agg_key.aggregated_pubkey).is_ok());
 
-    let message_hash = [0u8; 32];
-    let partial_sigs = vec![
-        conxian_core::musig2::MuSig2PartialSignature {
-            participant_pubkey: "pk1-12345678".to_string(),
-            partial_signature: "sig1".to_string(),
-            nonce: "nonce1".to_string(),
-        },
-        conxian_core::musig2::MuSig2PartialSignature {
-            participant_pubkey: "pk2-87654321".to_string(),
-            partial_signature: "sig2".to_string(),
-            nonce: "nonce2".to_string(),
-        },
-    ];
-
-    let final_sig = verifier
-        .aggregate_signatures(&agg_key, &partial_sigs, &message_hash)
-        .unwrap();
-    assert!(final_sig.starts_with("final-sig-"));
+    // Malformed input is rejected rather than silently accepted.
+    assert!(verifier
+        .aggregate_pubkeys(&["not-a-pubkey".to_string()])
+        .is_err());
 }
 
 #[tokio::test]
@@ -2516,8 +2510,8 @@ async fn test_musig2_aggregate_keys() {
 
     let pubkeys = json!({
         "pubkeys": [
-            "02aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899",
-            "03aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899"
+            "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
         ]
     });
 
@@ -2538,7 +2532,36 @@ async fn test_musig2_aggregate_keys() {
     assert_eq!(response.status(), StatusCode::OK);
     let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
     let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
-    assert!(body["aggregated_pubkey"].as_str().is_some());
+    let aggregated = body["aggregated_pubkey"].as_str().unwrap();
+    // Real BIP-327 aggregation returns a compressed point, not a placeholder.
+    assert_eq!(aggregated.len(), 66);
+    assert!(hex::decode(aggregated).is_ok());
+}
+
+#[tokio::test]
+async fn test_musig2_aggregate_keys_rejects_invalid_points() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let pubkeys = json!({
+        "pubkeys": ["not-a-valid-secp256k1-pubkey"]
+    });
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/musig2/aggregate-keys")
+                .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("x-402-payment", "proof-test")
+                .header("Content-Type", "application/json")
+                .body(Body::from(serde_json::to_string(&pubkeys).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
 // ============================================================
