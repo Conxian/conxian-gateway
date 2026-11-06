@@ -389,7 +389,10 @@ async fn test_health_check() {
     assert_eq!(response.status(), StatusCode::OK);
     let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
     let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
-    assert_eq!(body, serde_json::json!({ "status": "ok" }));
+    assert_eq!(
+        body,
+        serde_json::json!({ "status": "ok", "service": "conxian-gateway" })
+    );
 }
 
 #[tokio::test]
