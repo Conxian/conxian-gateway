@@ -1509,13 +1509,24 @@ mod offline_queue_tests {
     }
 
     #[test]
-    fn claim_replay_key_rejects_duplicate_until_expiry() {
+    fn claim_replay_key_rejects_duplicate() {
         let db_path = tmp_db_path("replay_claim");
         let queue = EncryptedOfflineQueue::new(&db_path, [7u8; 32]).unwrap();
 
-        assert!(queue.claim_replay_key("ramp:sig:hash", 1).unwrap());
-        assert!(!queue.claim_replay_key("ramp:sig:hash", 1).unwrap());
+        // Use a TTL well beyond the test's own runtime so the duplicate-rejection
+        // assertion cannot race the expiry boundary on a slow, instrumented runner.
+        assert!(queue.claim_replay_key("ramp:sig:hash", 300).unwrap());
+        assert!(!queue.claim_replay_key("ramp:sig:hash", 300).unwrap());
 
+        let _ = std::fs::remove_file(db_path);
+    }
+
+    #[test]
+    fn claim_replay_key_allows_reclaim_after_expiry() {
+        let db_path = tmp_db_path("replay_expiry");
+        let queue = EncryptedOfflineQueue::new(&db_path, [7u8; 32]).unwrap();
+
+        assert!(queue.claim_replay_key("ramp:sig:hash", 1).unwrap());
         std::thread::sleep(Duration::from_secs(2));
         assert!(queue.claim_replay_key("ramp:sig:hash", 1).unwrap());
 
