@@ -22,6 +22,26 @@ use tracing::{info, warn};
 
 pub const PAYMENT_REQUIRED_HEADER: &str = "payment-required";
 pub const PAYMENT_SIGNATURE_HEADER: &str = "payment-signature";
+
+/// Canonical per-call x402 price, in satoshi. Single source of truth: the
+/// payment challenge, the payload parser and the `/.well-known/x402` discovery
+/// document all read this constant, so the advertised price and the charged
+/// price cannot drift.
+pub const X402_PER_CALL_SATOSHI: u128 = 1000;
+
+/// Canonical x402 settlement asset for the per-call price.
+pub const X402_ASSET: &str = "sBTC";
+
+/// Routes that require an x402 payment. Kept as one list so the middleware and
+/// the discovery document describe the same payable surface.
+pub const X402_PROTECTED_SUFFIXES: &[&str] = &[
+    "/settle",
+    "/ingress/iso20022",
+    "/ingress/pain001",
+    "/ingress/papss",
+    "/ingress/brics",
+    "/erp/sync",
+];
 const LEGACY_PAYMENT_HEADER: &str = "x-402-payment";
 const PAYMENT_REQUIRED_ALIASES: &[&str] = &[
     PAYMENT_REQUIRED_HEADER,
@@ -113,8 +133,8 @@ pub async fn x402_filter(
                 "error": "Payment Required",
                 "code": "x402_required",
                 "challenge": uuid::Uuid::new_v4().to_string(),
-                "amount_satoshi": 1000,
-                "asset": "sBTC"
+                "amount_satoshi": X402_PER_CALL_SATOSHI,
+                "asset": X402_ASSET
             })),
         ));
     }
@@ -194,12 +214,9 @@ pub async fn x402_filter(
 }
 
 fn is_strictly_protected_path(path: &str) -> bool {
-    path.ends_with("/settle")
-        || path.ends_with("/ingress/iso20022")
-        || path.ends_with("/ingress/pain001")
-        || path.ends_with("/ingress/papss")
-        || path.ends_with("/ingress/brics")
-        || path.ends_with("/erp/sync")
+    X402_PROTECTED_SUFFIXES
+        .iter()
+        .any(|suffix| path.ends_with(suffix))
 }
 
 fn has_payment_headers(headers: &HeaderMap) -> bool {
@@ -267,8 +284,8 @@ pub fn parse_gateway_x402_payload(
             });
         } else {
             return Ok(X402PaymentPayload {
-                amount: 1000,
-                asset: "sBTC".to_string(),
+                amount: X402_PER_CALL_SATOSHI,
+                asset: X402_ASSET.to_string(),
                 challenge: uuid::Uuid::new_v4().to_string(),
                 expiry: SystemTime::now()
                     .duration_since(UNIX_EPOCH)
