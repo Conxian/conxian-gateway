@@ -32,9 +32,7 @@ pub trait MuSig2Orchestrator: Send + Sync {
 /// Participant order is significant: BIP-327 aggregation is order-dependent,
 /// so callers must agree on the key order (the SDK's `MuSig2Session` uses the
 /// same order the participants supply).
-pub fn aggregate_musig2_pubkeys(
-    pubkeys: &[String],
-) -> ConxianResult<MuSig2AggregatedKey> {
+pub fn aggregate_musig2_pubkeys(pubkeys: &[String]) -> ConxianResult<MuSig2AggregatedKey> {
     if pubkeys.is_empty() {
         return Err(crate::ConxianError::Api(
             "at least one pubkey is required".to_string(),
@@ -47,14 +45,15 @@ pub fn aggregate_musig2_pubkeys(
             crate::ConxianError::Api(format!("participant pubkey is not valid hex: {pk}"))
         })?;
         let point = musig2::secp::Point::from_slice(&bytes).map_err(|_| {
-            crate::ConxianError::Api(format!("participant pubkey is not a valid secp256k1 point: {pk}"))
+            crate::ConxianError::Api(format!(
+                "participant pubkey is not a valid secp256k1 point: {pk}"
+            ))
         })?;
         points.push(point);
     }
 
-    let key_agg_ctx = musig2::KeyAggContext::new(points).map_err(|_| {
-        crate::ConxianError::Api("MuSig2 key aggregation failed".to_string())
-    })?;
+    let key_agg_ctx = musig2::KeyAggContext::new(points)
+        .map_err(|_| crate::ConxianError::Api("MuSig2 key aggregation failed".to_string()))?;
     let aggregated: musig2::secp::Point = key_agg_ctx.aggregated_pubkey();
 
     Ok(MuSig2AggregatedKey {
@@ -93,13 +92,14 @@ pub fn aggregate_musig2_signatures(
             crate::ConxianError::Api(format!("participant pubkey is not valid hex: {pk}"))
         })?;
         let point = musig2::secp::Point::from_slice(&bytes).map_err(|_| {
-            crate::ConxianError::Api(format!("participant pubkey is not a valid secp256k1 point: {pk}"))
+            crate::ConxianError::Api(format!(
+                "participant pubkey is not a valid secp256k1 point: {pk}"
+            ))
         })?;
         points.push(point);
     }
-    let key_agg_ctx = musig2::KeyAggContext::new(points).map_err(|_| {
-        crate::ConxianError::Api("MuSig2 key aggregation failed".to_string())
-    })?;
+    let key_agg_ctx = musig2::KeyAggContext::new(points)
+        .map_err(|_| crate::ConxianError::Api("MuSig2 key aggregation failed".to_string()))?;
 
     let mut pub_nonces = Vec::with_capacity(partial_sigs.len());
     let mut partial_signatures = Vec::with_capacity(partial_sigs.len());
@@ -108,7 +108,9 @@ pub fn aggregate_musig2_signatures(
             crate::ConxianError::Api("partial signature nonce is not valid hex".to_string())
         })?;
         let pub_nonce = musig2::PubNonce::from_bytes(&nonce_bytes).map_err(|_| {
-            crate::ConxianError::Api("partial signature nonce is not a valid MuSig2 public nonce".to_string())
+            crate::ConxianError::Api(
+                "partial signature nonce is not a valid MuSig2 public nonce".to_string(),
+            )
         })?;
         pub_nonces.push(pub_nonce);
 
@@ -146,20 +148,18 @@ mod tests {
             musig2::secp::Scalar::from_slice(&[0x11u8; 32]).unwrap(),
             musig2::secp::Scalar::from_slice(&[0x22u8; 32]).unwrap(),
         ];
-        let points: Vec<musig2::secp::Point> = seckeys
-            .iter()
-            .map(|sk| sk.base_point_mul())
-            .collect();
-        let pubkey_hexes: Vec<String> = points
-            .iter()
-            .map(|p| hex::encode(p.serialize()))
-            .collect();
+        let points: Vec<musig2::secp::Point> =
+            seckeys.iter().map(|sk| sk.base_point_mul()).collect();
+        let pubkey_hexes: Vec<String> = points.iter().map(|p| hex::encode(p.serialize())).collect();
 
         let aggregated_key = aggregate_musig2_pubkeys(&pubkey_hexes).unwrap();
         let expected: musig2::secp::Point = KeyAggContext::new(points.clone())
             .unwrap()
             .aggregated_pubkey();
-        assert_eq!(aggregated_key.aggregated_pubkey, hex::encode(expected.serialize()));
+        assert_eq!(
+            aggregated_key.aggregated_pubkey,
+            hex::encode(expected.serialize())
+        );
 
         let key_agg_ctx = KeyAggContext::new(points.clone()).unwrap();
         let aggregated_point: musig2::secp::Point = key_agg_ctx.aggregated_pubkey();
@@ -169,13 +169,7 @@ mod tests {
             .iter()
             .enumerate()
             .map(|(i, sk)| {
-                SecNonce::generate(
-                    [i as u8 + 1; 32],
-                    *sk,
-                    aggregated_point,
-                    message,
-                    [0u8; 0],
-                )
+                SecNonce::generate([i as u8 + 1; 32], *sk, aggregated_point, message, [0u8; 0])
             })
             .collect();
         let pub_nonces: Vec<musig2::PubNonce> =
