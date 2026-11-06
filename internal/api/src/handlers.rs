@@ -1430,21 +1430,15 @@ pub async fn aggregate_musig2_keys(
         ));
     }
 
-    // CON-1270: BIP-327 MuSig2 key aggregation
-    let aggregated_pubkey = if pubkeys.len() == 1 {
-        pubkeys[0].clone()
-    } else {
-        let mut combined = String::from("agg:");
-        for pk in &pubkeys {
-            combined.push_str(&pk[..pk.len().min(8)]);
-        }
-        combined
-    };
+    // CON-1270: BIP-327 MuSig2 key aggregation (real secp256k1 point aggregation).
+    let aggregated = conxian_core::musig2::aggregate_musig2_pubkeys(&pubkeys).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": e.to_string() })),
+        )
+    })?;
 
-    Ok(Json(conxian_core::musig2::MuSig2AggregatedKey {
-        aggregated_pubkey,
-        participant_pubkeys: pubkeys,
-    }))
+    Ok(Json(aggregated))
 }
 
 pub async fn ingress_spfs(
