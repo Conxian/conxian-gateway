@@ -35,7 +35,7 @@ fn mor_webhook_state_from_env(store: std::sync::Arc<dyn KeyStore>) -> Option<Mor
 /// Builds the durable managed-key store from `MOR_WEBHOOK_DATABASE_URL`, if set.
 /// Used both by the MoR webhook receiver and the managed-auth path so a key
 /// minted by a webhook authenticates against the same store.
-fn mor_key_store_from_env() -> Option<std::sync::Arc<dyn KeyStore>> {
+pub(crate) fn mor_key_store_from_env() -> Option<std::sync::Arc<dyn KeyStore>> {
     let database_url = std::env::var("MOR_WEBHOOK_DATABASE_URL")
         .ok()
         .map(|v| v.trim().to_string())
