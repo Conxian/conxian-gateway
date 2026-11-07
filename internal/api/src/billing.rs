@@ -798,6 +798,22 @@ mod tests {
 
     struct NoBackendCalls;
 
+    /// Backend that behaves like a real, unconfigured HTTP backend: it fails
+    /// closed without touching the network. Used to assert the preflight lets a
+    /// valid activation through to invoice creation.
+    struct UnconfiguredBackend;
+
+    #[async_trait::async_trait]
+    impl InvoiceBackend for UnconfiguredBackend {
+        async fn create_invoice(&self, _: u64, _: u64) -> Result<Invoice, BillingError> {
+            Err(BillingError::NoInvoiceCreateUrl)
+        }
+
+        async fn check_settled(&self, _: &str, _: u64) -> Result<bool, BillingError> {
+            Err(BillingError::NoInvoiceCheckUrl)
+        }
+    }
+
     #[async_trait::async_trait]
     impl InvoiceBackend for NoBackendCalls {
         async fn create_invoice(&self, _: u64, _: u64) -> Result<Invoice, BillingError> {
@@ -816,7 +832,6 @@ mod tests {
             (Some(""), "tenant-42", PLAN_ENTERPRISE),
             (Some("fixture-secret"), "", PLAN_ENTERPRISE),
             (Some("fixture-secret"), "tenant\n42", PLAN_ENTERPRISE),
-            (Some("fixture-secret"), "tenant-42", PLAN_INDIE),
         ] {
             let service = LightningSubscriptionService::new(
                 NoBackendCalls,
@@ -838,12 +853,31 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn valid_issuer_and_plan_pass_activation_preflight() {
+        // A valid secret + real plan tier must pass the activation preflight and
+        // reach invoice creation; an unconfigured backend then fails closed with
+        // NoInvoiceCreateUrl, not ActivationUnavailable. Regression guard for the
+        // plan-tier allowlist that previously rejected every subscription tier.
+        let service = LightningSubscriptionService::new(
+            UnconfiguredBackend,
+            FixedMinter,
+            FusionTokenIssuer {
+                fusion: crate::tenant::FusionJwt::new(Some("fixture-secret".into())),
+            },
+            InMemoryCreditStore::new(),
+        );
+        assert_eq!(
+            service
+                .subscribe(PLAN_INDIE, "", Term::Monthly)
+                .await
+                .unwrap_err(),
+            BillingError::NoInvoiceCreateUrl
+        );
+    }
+
+    #[tokio::test]
     async fn invalid_production_plan_never_creates_an_invoice() {
-        for (secret, plan) in [
-            (None, PLAN_ENTERPRISE),
-            (Some(""), PLAN_ENTERPRISE),
-            (Some("fixture-secret"), PLAN_INDIE),
-        ] {
+        for (secret, plan) in [(None, PLAN_ENTERPRISE), (Some(""), PLAN_ENTERPRISE)] {
             let service = LightningSubscriptionService::new(
                 NoBackendCalls,
                 FixedMinter,

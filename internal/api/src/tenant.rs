@@ -38,6 +38,17 @@ const DEFAULT_RATE_LIMIT_PER_MINUTE: u32 = 120;
 const MAX_FUSION_JWT_REMAINING_TTL_SECONDS: u64 = 900;
 const MAX_TENANT_ID_BYTES: usize = 128;
 
+/// The tiers a Fusion token may carry. Managed/internal tiers are issued by the
+/// registry; subscription tiers are issued by the billing activation path
+/// (`validate_activation` signs with the plan tier), so the verifier must accept
+/// them or activation fails closed for every paid plan.
+fn is_accepted_fusion_tier(tier: &str) -> bool {
+    matches!(
+        tier,
+        "managed" | "enterprise" | "strict" | "starter" | "indie" | "business" | "pro"
+    )
+}
+
 #[cfg(test)]
 const FUSION_JWT_TTL_SECONDS: u64 = 300;
 
@@ -131,7 +142,7 @@ impl FusionJwt {
             return Err(JwtError::MissingClaims);
         }
         let tier = claims.tier.unwrap_or_else(|| "managed".to_string());
-        if !matches!(tier.as_str(), "managed" | "enterprise" | "strict") {
+        if !is_accepted_fusion_tier(&tier) {
             return Err(JwtError::MissingClaims);
         }
 
@@ -381,6 +392,31 @@ mod tests {
         let ctx = fusion.verify(&token).expect("valid token");
         assert_eq!(ctx.tenant_id, "tenant-42");
         assert_eq!(ctx.tier, "managed");
+    }
+
+    #[test]
+    fn fusion_jwt_accepts_every_subscription_plan_tier() {
+        // The activation preflight signs with the plan tier and immediately
+        // verifies it; if any plan tier is rejected here, self-serve activation
+        // returns 503 for that plan.
+        let fusion = FusionJwt::new(Some("test-fusion-secret".to_string()));
+        for tier in ["starter", "indie", "business", "pro", "enterprise"] {
+            let token = fusion.issue("tenant-42", tier, FUSION_JWT_TTL_SECONDS);
+            let ctx = fusion
+                .verify(&token)
+                .unwrap_or_else(|_| panic!("plan tier {tier:?} must verify"));
+            assert_eq!(ctx.tier, tier);
+        }
+    }
+
+    #[test]
+    fn fusion_jwt_rejects_unknown_tier() {
+        let fusion = FusionJwt::new(Some("test-fusion-secret".to_string()));
+        let token = fusion.issue("tenant-42", "root", FUSION_JWT_TTL_SECONDS);
+        assert!(matches!(
+            fusion.verify(&token),
+            Err(JwtError::MissingClaims)
+        ));
     }
 
     #[test]
