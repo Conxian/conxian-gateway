@@ -26,7 +26,7 @@ The current managed-auth middleware provides strict JWT/API-key validation, a si
 
 Institutional-grade middleware bridging Bitcoin and Stacks state logic with enterprise compliance.
 
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-MIT%20%2B%20AGPL--3.0-blue.svg)](LICENSING.md)
 [![Status](https://img.shields.io/badge/Status-v0.1.5-orange.svg)](#status)
 
 ## Purpose
@@ -175,7 +175,7 @@ For a detailed map of repository readiness, refer to [docs/READINESS_GATES.md](d
 
 As an institutional middleware provider, we maintain a comprehensive set of governance and security policies:
 
-- **[LICENSE](LICENSE)**: MIT License.
+- **[LICENSE](LICENSE)**: MIT License (transport core, `cmd/`) and **AGPL-3.0-or-later** (`internal/api`, `internal/engine`, `internal/compliance`). See **[LICENSING.md](LICENSING.md)** for the boundary.
 - **[SECURITY.md](SECURITY.md)**: Vulnerability reporting and incident handling procedures.
 - **[CONTRIBUTING.md](CONTRIBUTING.md)**: Technical standards and submission process.
 - **[RELEASE.md](RELEASE.md)**: Release runbook and control sign-off checklist.
