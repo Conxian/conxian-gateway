@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 description = "Conxian Gateway API - HTTP API layer for institutional Bitcoin/Stacks gateway"
-license = "MIT"
+license = "AGPL-3.0-or-later"
 
 [features]
 mock-integrations = []
