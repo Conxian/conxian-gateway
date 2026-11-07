@@ -149,6 +149,7 @@ pub enum BillingError {
     Quote(String),
     InvoiceExpired,
     ActivationUnavailable,
+    KeyMint(String),
 }
 
 impl fmt::Display for BillingError {
@@ -179,6 +180,7 @@ impl fmt::Display for BillingError {
             Self::Quote(detail) => write!(f, "credit quote failed: {detail}"),
             Self::InvoiceExpired => write!(f, "invoice expired"),
             Self::ActivationUnavailable => write!(f, "subscription activation unavailable"),
+            Self::KeyMint(detail) => write!(f, "key minting failed: {detail}"),
         }
     }
 }
@@ -269,9 +271,20 @@ pub trait InvoiceBackend: Send + Sync {
         -> Result<bool, BillingError>;
 }
 
-/// Mints a managed API key on activation (gateway adapts `TenantKeyRegistry`).
+/// Mints a managed API key on activation and records its hash so the managed-auth
+/// path can resolve it (gateway adapts the durable key store).
+///
+/// Async because the durable path persists `SHA-256(key)` to Postgres; the
+/// in-memory path ignores it. The plaintext key is returned exactly once and
+/// never stored.
+#[async_trait::async_trait]
 pub trait KeyMinter: Send + Sync {
-    fn mint(&self, tenant_id: &str, tier: &str, expires_at: u64) -> String;
+    async fn mint(
+        &self,
+        tenant_id: &str,
+        tier: &str,
+        expires_at: u64,
+    ) -> Result<String, BillingError>;
 }
 
 /// Issues a short-lived Fusion JWT on activation (gateway adapts `FusionJwt`).
@@ -560,7 +573,11 @@ where
         self.credits
             .grant(tenant_id, &quote, now_secs() + CREDIT_EXPIRY_SECONDS)
             .map_err(BillingError::Quote)?;
-        let api_key = self.minter.mint(tenant_id, plan.tier, expires_at);
+        let api_key = self
+            .minter
+            .mint(tenant_id, plan.tier, expires_at)
+            .await
+            .map_err(|e| BillingError::KeyMint(e.to_string()))?;
         let jwt = self.issuer.issue(tenant_id, plan.tier, expires_at);
         Ok(SubscriptionActivation {
             api_key,
@@ -586,14 +603,39 @@ fn now_secs() -> u64 {
         .unwrap_or(0)
 }
 
-/// Mints deterministic `cxn_agent_<tenant>` keys on activation. Registration of
-/// the minted key into `TenantKeyRegistry` (for authenticated `/agent/*` calls)
-/// is the follow-up; the activation path only needs the key returned.
-pub struct TenantKeyMinter;
+/// Mints an unguessable `cxn_agent_<32-hex>` key on activation and, when a
+/// durable store is configured, records its `SHA-256` hash so the managed-auth
+/// path (`ManagedAuth::authenticate_bearer`) can resolve it immediately.
+///
+/// Without the store the key is returned but not registered, so it will not
+/// authenticate — that path is only for tests and explicitly out-of-band keys.
+pub struct StoreKeyMinter {
+    store: Option<std::sync::Arc<dyn crate::mor_webhook::KeyStore>>,
+}
 
-impl KeyMinter for TenantKeyMinter {
-    fn mint(&self, tenant_id: &str, _tier: &str, _expires_at: u64) -> String {
-        format!("cxn_agent_{tenant_id}")
+impl StoreKeyMinter {
+    pub fn new(store: Option<std::sync::Arc<dyn crate::mor_webhook::KeyStore>>) -> Self {
+        Self { store }
+    }
+}
+
+#[async_trait::async_trait]
+impl KeyMinter for StoreKeyMinter {
+    async fn mint(
+        &self,
+        tenant_id: &str,
+        tier: &str,
+        _expires_at: u64,
+    ) -> Result<String, BillingError> {
+        // Shared with the MoR webhook so the key format and hash can never drift.
+        let (key, hash) = crate::mor_webhook::mint_material();
+        if let Some(store) = self.store.as_ref() {
+            store
+                .mint_key(tenant_id, &hash, tier)
+                .await
+                .map_err(BillingError::KeyMint)?;
+        }
+        Ok(key)
     }
 }
 
@@ -628,11 +670,11 @@ impl TokenIssuer for FusionTokenIssuer {
     }
 }
 
-/// Concrete billing service used by the HTTP handlers (fail-closed lnbits
-/// backend + in-memory credit store).
+/// Concrete billing service used by the HTTP handlers (fail-closed invoice
+/// backend + durable key store + in-memory credit store).
 type BillingService = LightningSubscriptionService<
     HttpInvoiceBackend,
-    TenantKeyMinter,
+    StoreKeyMinter,
     FusionTokenIssuer,
     InMemoryCreditStore,
 >;
@@ -641,7 +683,7 @@ fn billing_service() -> &'static std::sync::Arc<BillingService> {
     static SVC: std::sync::OnceLock<std::sync::Arc<BillingService>> = std::sync::OnceLock::new();
     SVC.get_or_init(|| {
         let backend = HttpInvoiceBackend::from_env();
-        let minter = TenantKeyMinter;
+        let minter = StoreKeyMinter::new(crate::routes::mor_key_store_from_env());
         let issuer = FusionTokenIssuer::from_env();
         let credits = InMemoryCreditStore::new();
         std::sync::Arc::new(LightningSubscriptionService::new(
@@ -756,6 +798,22 @@ mod tests {
 
     struct NoBackendCalls;
 
+    /// Backend that behaves like a real, unconfigured HTTP backend: it fails
+    /// closed without touching the network. Used to assert the preflight lets a
+    /// valid activation through to invoice creation.
+    struct UnconfiguredBackend;
+
+    #[async_trait::async_trait]
+    impl InvoiceBackend for UnconfiguredBackend {
+        async fn create_invoice(&self, _: u64, _: u64) -> Result<Invoice, BillingError> {
+            Err(BillingError::NoInvoiceCreateUrl)
+        }
+
+        async fn check_settled(&self, _: &str, _: u64) -> Result<bool, BillingError> {
+            Err(BillingError::NoInvoiceCheckUrl)
+        }
+    }
+
     #[async_trait::async_trait]
     impl InvoiceBackend for NoBackendCalls {
         async fn create_invoice(&self, _: u64, _: u64) -> Result<Invoice, BillingError> {
@@ -774,7 +832,6 @@ mod tests {
             (Some(""), "tenant-42", PLAN_ENTERPRISE),
             (Some("fixture-secret"), "", PLAN_ENTERPRISE),
             (Some("fixture-secret"), "tenant\n42", PLAN_ENTERPRISE),
-            (Some("fixture-secret"), "tenant-42", PLAN_INDIE),
         ] {
             let service = LightningSubscriptionService::new(
                 NoBackendCalls,
@@ -796,12 +853,31 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn valid_issuer_and_plan_pass_activation_preflight() {
+        // A valid secret + real plan tier must pass the activation preflight and
+        // reach invoice creation; an unconfigured backend then fails closed with
+        // NoInvoiceCreateUrl, not ActivationUnavailable. Regression guard for the
+        // plan-tier allowlist that previously rejected every subscription tier.
+        let service = LightningSubscriptionService::new(
+            UnconfiguredBackend,
+            FixedMinter,
+            FusionTokenIssuer {
+                fusion: crate::tenant::FusionJwt::new(Some("fixture-secret".into())),
+            },
+            InMemoryCreditStore::new(),
+        );
+        assert_eq!(
+            service
+                .subscribe(PLAN_INDIE, "", Term::Monthly)
+                .await
+                .unwrap_err(),
+            BillingError::NoInvoiceCreateUrl
+        );
+    }
+
+    #[tokio::test]
     async fn invalid_production_plan_never_creates_an_invoice() {
-        for (secret, plan) in [
-            (None, PLAN_ENTERPRISE),
-            (Some(""), PLAN_ENTERPRISE),
-            (Some("fixture-secret"), PLAN_INDIE),
-        ] {
+        for (secret, plan) in [(None, PLAN_ENTERPRISE), (Some(""), PLAN_ENTERPRISE)] {
             let service = LightningSubscriptionService::new(
                 NoBackendCalls,
                 FixedMinter,
@@ -888,9 +964,15 @@ mod tests {
     }
 
     struct FixedMinter;
+    #[async_trait::async_trait]
     impl KeyMinter for FixedMinter {
-        fn mint(&self, tenant_id: &str, _tier: &str, _expires_at: u64) -> String {
-            format!("cxn_agent_{tenant_id}")
+        async fn mint(
+            &self,
+            tenant_id: &str,
+            _tier: &str,
+            _expires_at: u64,
+        ) -> Result<String, BillingError> {
+            Ok(format!("cxn_agent_{tenant_id}"))
         }
     }
 
@@ -1072,5 +1154,81 @@ mod tests {
             read_amount(&serde_json::json!({"amount": 100000000})),
             Some(100000)
         );
+    }
+
+    /// Records every `mint_key` call so the test can assert the durable
+    /// registration that makes a minted key authenticable.
+    #[derive(Default)]
+    struct RecordingStore {
+        minted: std::sync::Mutex<Vec<(String, String, String)>>,
+    }
+
+    #[async_trait::async_trait]
+    impl crate::mor_webhook::KeyStore for RecordingStore {
+        async fn apply_event_atomic(
+            &self,
+            _e: &crate::mor_webhook::SubscriptionEvent,
+        ) -> Result<crate::mor_webhook::ApplyOutcome, String> {
+            Err("not used".into())
+        }
+        async fn record_event(&self, _e: &str, _t: &str, _tenant: &str) -> Result<bool, String> {
+            Ok(true)
+        }
+        async fn revoke_active(&self, _tenant: &str) -> Result<u64, String> {
+            Ok(0)
+        }
+        async fn mint_key(
+            &self,
+            tenant_id: &str,
+            api_key_hash: &str,
+            tier: &str,
+        ) -> Result<(), String> {
+            self.minted.lock().unwrap().push((
+                tenant_id.to_string(),
+                api_key_hash.to_string(),
+                tier.to_string(),
+            ));
+            Ok(())
+        }
+        async fn active_key(
+            &self,
+            _tenant: &str,
+        ) -> Result<Option<crate::mor_webhook::StoredKey>, String> {
+            Ok(None)
+        }
+        async fn active_key_by_hash(
+            &self,
+            _hash: &str,
+        ) -> Result<Option<crate::mor_webhook::StoredKey>, String> {
+            Ok(None)
+        }
+    }
+
+    #[tokio::test]
+    async fn store_minter_mints_unguessable_key_and_registers_its_hash() {
+        let store = std::sync::Arc::new(RecordingStore::default());
+        let minter = StoreKeyMinter::new(Some(store.clone()));
+        let key = minter.mint("tenant-42", "indie", u64::MAX).await.unwrap();
+
+        // Unguessable shape, not the old forgeable `cxn_agent_<tenant>`.
+        assert!(key.starts_with("cxn_agent_"));
+        assert_ne!(key, "cxn_agent_tenant-42");
+        assert_eq!(key.len(), "cxn_agent_".len() + 32);
+
+        // The SHA-256 hash of exactly this key is what the store received, so
+        // `ManagedAuth::authenticate_bearer` can resolve it.
+        let recorded = store.minted.lock().unwrap();
+        assert_eq!(recorded.len(), 1);
+        assert_eq!(recorded[0].0, "tenant-42");
+        assert_eq!(recorded[0].1, crate::mor_webhook::hash_key(&key));
+        assert_eq!(recorded[0].2, "indie");
+    }
+
+    #[tokio::test]
+    async fn store_minter_without_store_still_returns_a_key() {
+        let minter = StoreKeyMinter::new(None);
+        let key = minter.mint("tenant-9", "indie", u64::MAX).await.unwrap();
+        assert!(key.starts_with("cxn_agent_"));
+        assert_eq!(key.len(), "cxn_agent_".len() + 32);
     }
 }
