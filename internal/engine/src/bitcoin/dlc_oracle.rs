@@ -1283,6 +1283,111 @@ mod tests {
     }
 
     #[test]
+    fn dlc_cet_end_to_end_pipeline_reaches_executed() {
+        // End-to-end: funding -> adaptor CET (locked) -> oracle attest -> completed
+        // & verified -> lifecycle Executed. This composes the real pipeline the
+        // market drives; it does not construct a serializable Bitcoin transaction.
+        use secp256k1::{Secp256k1, SecretKey};
+        let secp = Secp256k1::new();
+
+        let oracle_sk = SecretKey::from_slice(&[0x11; 32]).unwrap();
+        let oracle_pk = secp256k1::PublicKey::from_secret_key(&secp, &oracle_sk);
+        let oracle_nonce_sk = SecretKey::from_slice(&[0x22; 32]).unwrap();
+        let oracle_nonce_pk = secp256k1::PublicKey::from_secret_key(&secp, &oracle_nonce_sk);
+
+        let spec = DlcContractSpec {
+            contract_id: "dlc-e2e-001".into(),
+            party_a_pubkey: "pk_a".into(),
+            party_b_pubkey: "pk_b".into(),
+            party_a_payout_address: "bc1qparty_a".into(),
+            party_b_payout_address: "bc1qparty_b".into(),
+            total_collateral_sats: 100_000_000,
+            funding_inputs: vec![
+                DlcFundingInput {
+                    txid: "aa".repeat(32),
+                    vout: 0,
+                    amount_sats: 60_000_000,
+                    party: "party_a".into(),
+                },
+                DlcFundingInput {
+                    txid: "bb".repeat(32),
+                    vout: 1,
+                    amount_sats: 40_000_000,
+                    party: "party_b".into(),
+                },
+            ],
+            oracle_pubkey: hex::encode(oracle_pk.serialize()),
+            event_id: "btc-usd-2026q3".into(),
+            outcomes: vec![DlcOutcomePayout {
+                outcome: "up".into(),
+                party_a_payout_sats: 80_000_000,
+                party_b_payout_sats: 20_000_000,
+            }],
+            refund_locktime: 1751328000,
+            feerate_sats_per_vbyte: 10,
+        };
+
+        // 1) Funding.
+        let funding_tx = DlcExecutionEngine::build_funding_tx(&spec).unwrap();
+        assert_eq!(funding_tx.total_funding_sats, 100_000_000);
+        let mut record = DlcExecutionEngine::initialize_contract_state(spec.clone()).unwrap();
+        assert_eq!(record.state, DlcBondLifecycleState::Offered);
+
+        // 2) Offer -> Accepted -> Signed (adaptor CET presigned).
+        DlcExecutionEngine::transition_contract_state(&mut record, DlcBondLifecycleState::Accepted)
+            .unwrap();
+        let locked = DlcExecutionEngine::build_adaptor_cet(
+            &spec,
+            "up",
+            &oracle_nonce_pk.serialize(),
+            &[0x33u8; 32],
+            &[0x44u8; 32],
+            None,
+        )
+        .unwrap();
+        assert!(!locked.broadcast_ready);
+        DlcExecutionEngine::transition_contract_state(&mut record, DlcBondLifecycleState::Signed)
+            .unwrap();
+
+        // 3) Funded.
+        DlcExecutionEngine::transition_contract_state(&mut record, DlcBondLifecycleState::Funded)
+            .unwrap();
+
+        // 4) Oracle attests: reveal s = k_o + e_o * d_o for the CET sighash.
+        let message = hex::decode(&locked.cet.sighash).unwrap();
+        let e_o = {
+            let mut h = Sha256::new();
+            h.update(b"DLC-ADAPTOR-V1/challenge");
+            h.update(oracle_nonce_pk.serialize());
+            h.update(oracle_pk.serialize());
+            h.update(&message);
+            let d: [u8; 32] = h.finalize().into();
+            secp256k1::Scalar::from_be_bytes(d).unwrap()
+        };
+        let d_o_e = oracle_sk.mul_tweak(&e_o).unwrap();
+        let e_o_scalar = secp256k1::Scalar::from_be_bytes(d_o_e.secret_bytes()).unwrap();
+        let s_oracle = oracle_nonce_sk.add_tweak(&e_o_scalar).unwrap();
+
+        let ready = DlcExecutionEngine::build_adaptor_cet(
+            &spec,
+            "up",
+            &oracle_nonce_pk.serialize(),
+            &[0x33u8; 32],
+            &[0x44u8; 32],
+            Some(&s_oracle.secret_bytes()),
+        )
+        .unwrap();
+        assert!(ready.broadcast_ready);
+        assert_eq!(ready.completed_signature.as_ref().unwrap().len(), 64);
+
+        // 5) Executed.
+        DlcExecutionEngine::transition_contract_state(&mut record, DlcBondLifecycleState::Executed)
+            .unwrap();
+        assert_eq!(record.state, DlcBondLifecycleState::Executed);
+        assert_eq!(record.contract_id, "dlc-e2e-001");
+    }
+
+    #[test]
     fn dlc_execution_engine_builds_valid_cets() {
         let spec = DlcContractSpec {
             contract_id: "dlc-001".into(),
