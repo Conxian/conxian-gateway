@@ -53,12 +53,27 @@ pub fn discover_registered_adapters(
     }
 }
 
+/// The capability ids advertised by the gateway: the runtime chain adapters plus
+/// the always-mounted `dlc` settlement-rail capability.
+pub fn advertised_capability_ids(
+    chain_ids: impl IntoIterator<Item = String>,
+) -> impl Iterator<Item = String> {
+    chain_ids
+        .into_iter()
+        .chain(std::iter::once("dlc".to_string()))
+}
+
 pub async fn get_capabilities(State(state): State<AppState>) -> impl axum::response::IntoResponse {
+    // The manifest advertises the registered capability/adapter set. Chain
+    // adapters come from the runtime map; `dlc` is a settlement-rail capability
+    // (the adaptor-signature CET path served at `POST /api/v1/dlc/cet`), which
+    // is always mounted. It is advertised as a capability id so a consumer can
+    // gate on it without inferring production support.
     (
         [(header::CACHE_CONTROL, "no-store")],
-        Json(discover_registered_adapters(
+        Json(discover_registered_adapters(advertised_capability_ids(
             state.multi_chain.keys().cloned(),
-        )),
+        ))),
     )
 }
 
@@ -85,5 +100,30 @@ mod tests {
     #[test]
     fn an_empty_runtime_does_not_gain_registry_support() {
         assert!(discover_registered_adapters(Vec::new()).adapters.is_empty());
+    }
+
+    #[test]
+    fn dlc_capability_is_always_advertised_and_sorted() {
+        let manifest = discover_registered_adapters(advertised_capability_ids(
+            ["evm", "bitcoin"].map(String::from),
+        ));
+        assert_eq!(
+            manifest
+                .adapters
+                .iter()
+                .map(|a| a.adapter_id.as_str())
+                .collect::<Vec<_>>(),
+            ["bitcoin", "dlc", "evm"]
+        );
+        // Even with no runtime chains, the dlc capability is still advertised.
+        let manifest = discover_registered_adapters(advertised_capability_ids(Vec::new()));
+        assert_eq!(
+            manifest
+                .adapters
+                .iter()
+                .map(|a| a.adapter_id.as_str())
+                .collect::<Vec<_>>(),
+            ["dlc"]
+        );
     }
 }
