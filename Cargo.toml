@@ -18,7 +18,7 @@ license = "MIT"
 description = "Institutional-grade Bitcoin/Stacks Gateway"
 
 [workspace.dependencies]
-lib-conxian-core = { git = "https://github.com/Conxian/lib-conxian-core", rev = "9dd3676bb64a5ba327cc2717d9e9d32bd09a2c95" }
+lib-conxian-core = { git = "https://github.com/Conxian/lib-conxian-core", rev = "071e3a5d3ff5abcc6b237da9f232ba9c06199e41" }
 urlencoding = "2.1.3"
 blake2 = "0.11.0"
 minreq = { version = "3.0.0", features = ["https"] }
