@@ -1,0 +1,85 @@
+name: Onboarding conformance
+
+# Gateway #713: verify the self-serve onboarding store against a real,
+# disposable PostgreSQL fixture. The store must be durable and exactly-once on
+# the idempotency key, so a skipped database test is a failure, not a pass. The
+# fixture is an ephemeral service container; no production credential, provider
+# secret or live payment is involved.
+
+on:
+  pull_request:
+    branches: [main, staged, dev]
+    paths:
+      - 'internal/api/src/onboarding.rs'
+      - 'internal/api/src/onboarding_store.rs'
+      - 'internal/api/tests/onboarding_pg.rs'
+      - 'migrations/**'
+      - 'internal/api/Cargo.toml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/onboarding-conformance.yml'
+  push:
+    branches: [main, staged, dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  # Local, trust-authenticated disposable fixture; no credential is required.
+  ONBOARDING_TEST_DATABASE_URL: postgres://gw_onb@127.0.0.1:5432/gw_onb_test
+
+jobs:
+  conformance:
+    name: PostgreSQL onboarding conformance
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17@sha256:3b0cda93be7c8dba2ed484d19393d93845dc3dafb88973e248ba8e6d99d784e1
+        env:
+          POSTGRES_USER: gw_onb
+          POSTGRES_DB: gw_onb_test
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U gw_onb -d gw_onb_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Checkout lib-conxian-core
+        run: git clone --depth 1 https://github.com/Conxian/lib-conxian-core.git ../lib-conxian-core
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+        with:
+          toolchain: "1.98.1"
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31 # v2.7.7
+
+      - name: Confirm the disposable fixture is reachable
+        run: |
+          for attempt in $(seq 1 10); do
+            if pg_isready -h 127.0.0.1 -p 5432 -U gw_onb -d gw_onb_test; then
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "PostgreSQL fixture did not become ready" >&2
+          exit 1
+
+      - name: Run PostgreSQL-backed onboarding conformance
+        run: cargo test --locked -p conxian_api --test onboarding_pg -- --ignored --test-threads=1
+
+      - name: Run onboarding unit tests
+        run: cargo test --locked -p conxian_api --lib onboarding
