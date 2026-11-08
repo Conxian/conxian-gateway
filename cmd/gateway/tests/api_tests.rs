@@ -2499,6 +2499,129 @@ async fn test_create_dlc_bond_rejects_missing_bond_id() {
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
+#[tokio::test]
+async fn test_create_dlc_cet_returns_locked_then_broadcast_ready_adaptor_cet() {
+    use secp256k1::Secp256k1;
+
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+    let secp = Secp256k1::new();
+
+    // Oracle announcement + signer keys.
+    let oracle_sk = SecretKey::from_slice(&[0x11; 32]).unwrap();
+    let oracle_pk = PublicKey::from_secret_key(&secp, &oracle_sk);
+    let oracle_nonce_sk = SecretKey::from_slice(&[0x22; 32]).unwrap();
+    let oracle_nonce_pk = PublicKey::from_secret_key(&secp, &oracle_nonce_sk);
+
+    let signer_secret = [0x33u8; 32];
+    let signer_nonce = [0x44u8; 32];
+
+    let spec = json!({
+        "party_a_pubkey": "pk_a",
+        "party_b_pubkey": "pk_b",
+        "party_a_payout_address": "bc1qparty_a",
+        "party_b_payout_address": "bc1qparty_b",
+        "total_collateral_sats": 100000000u64,
+        "oracle_pubkey": hex::encode(oracle_pk.serialize()),
+        "event_id": "btc-usd-2026q3",
+        "refund_locktime": 1751328000u64,
+        "feerate_sats_per_vbyte": 10u64,
+        "funding_inputs": [
+            {"txid": "00".repeat(32), "vout": 0, "amount_sats": 50000000u64, "party": "party_a"},
+            {"txid": "11".repeat(32), "vout": 1, "amount_sats": 50000000u64, "party": "party_b"}
+        ],
+        "outcomes": [
+            {"outcome": "up", "party_a_payout_sats": 80000000u64, "party_b_payout_sats": 20000000u64}
+        ]
+    });
+
+    let base = json!({
+        "contract_id": "dlc-cet-001",
+        "outcome": "up",
+        "oracle_nonce": hex::encode(oracle_nonce_pk.serialize()),
+        "signer_secret": hex::encode(signer_secret),
+        "signer_nonce": hex::encode(signer_nonce),
+        "spec": spec.clone()
+    });
+
+    // 1) Without the oracle scalar: locked, not broadcast-ready.
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/dlc/cet")
+                .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("x-402-payment", "proof-test")
+                .header("Content-Type", "application/json")
+                .body(Body::from(serde_json::to_string(&base).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let locked: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(locked["broadcast_ready"], json!(false));
+    assert_eq!(locked["completed_signature"], json!(null));
+    assert_eq!(locked["adaptor_scalar"].as_str().unwrap().len(), 64);
+
+    // 2) Oracle reveals s = k_o + e_o * d_o for the CET sighash.
+    let sighash = hex::decode(locked["cet_sighash"].as_str().unwrap()).unwrap();
+    let e_o = {
+        let mut h = Sha256::new();
+        h.update(b"DLC-ADAPTOR-V1/challenge");
+        h.update(oracle_nonce_pk.serialize());
+        h.update(oracle_pk.serialize());
+        h.update(&sighash);
+        let d: [u8; 32] = h.finalize().into();
+        secp256k1::Scalar::from_be_bytes(d).unwrap()
+    };
+    let d_o_e = oracle_sk.mul_tweak(&e_o).unwrap();
+    let e_o_scalar = secp256k1::Scalar::from_be_bytes(d_o_e.secret_bytes()).unwrap();
+    let s_oracle = oracle_nonce_sk.add_tweak(&e_o_scalar).unwrap();
+
+    let mut with_scalar = base.clone();
+    with_scalar["oracle_attestation_scalar"] = json!(hex::encode(s_oracle.secret_bytes()));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/dlc/cet")
+                .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("x-402-payment", "proof-test")
+                .header("Content-Type", "application/json")
+                .body(Body::from(serde_json::to_string(&with_scalar).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let ready: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(ready["broadcast_ready"], json!(true));
+    assert_eq!(ready["completed_signature"].as_str().unwrap().len(), 64);
+
+    // 3) Malformed oracle nonce fails closed.
+    let mut bad = base.clone();
+    bad["oracle_nonce"] = json!("zzzz");
+    let response = setup_app(Arc::new(RwLock::new(GatewayState::default())))
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/dlc/cet")
+                .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("x-402-payment", "proof-test")
+                .header("Content-Type", "application/json")
+                .body(Body::from(serde_json::to_string(&bad).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
 // ============================================================
 // G-26: MuSig2 Key Aggregation Test
 // ============================================================
