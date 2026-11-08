@@ -487,6 +487,36 @@ pub struct DlcExecutionPayload {
     pub broadcast_ready: bool,
 }
 
+/// A DLC CET carrying a real adaptor (pre-)signature, plus the completed
+/// signature once the oracle reveals its attestation scalar.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DlcAdaptorCet {
+    pub contract_id: String,
+    pub outcome: String,
+    pub cet: DlcCet,
+    /// Adapted nonce point `R_adapted` (hex-encoded compressed secp256k1 point).
+    pub adapted_nonce: String,
+    /// The adaptor scalar `s'` (hex-encoded, 32 bytes).
+    pub adaptor_scalar: String,
+    /// The completed signature scalar `s = s' + s_oracle` once the oracle
+    /// attestation is supplied; `None` until then.
+    pub completed_signature: Option<String>,
+    /// True only when a completed signature is present and verifies.
+    pub broadcast_ready: bool,
+}
+
+/// Derives the compressed public key for a 32-byte big-endian secret scalar.
+fn signer_public_key(signer_secret: &[u8]) -> ConxianResult<Vec<u8>> {
+    use secp256k1::{PublicKey, Secp256k1, SecretKey};
+    let bytes: [u8; 32] = signer_secret.try_into().map_err(|_| {
+        conxian_core::ConxianError::Security("signer secret must be 32 bytes".into())
+    })?;
+    let sk = SecretKey::from_slice(&bytes)
+        .map_err(|e| conxian_core::ConxianError::Security(format!("invalid signer secret: {e}")))?;
+    let secp = Secp256k1::new();
+    Ok(PublicKey::from_secret_key(&secp, &sk).serialize().to_vec())
+}
+
 /// Deterministic DLC Funding Transaction parameters and 2-of-2 multisig output details.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DlcFundingTx {
@@ -676,6 +706,89 @@ impl DlcExecutionEngine {
             attestation: attestation.clone(),
             is_verified: true,
             broadcast_ready: true,
+        })
+    }
+
+    /// Builds and completes a real adaptor-signature CET for a DLC outcome.
+    ///
+    /// This is the Phase 2 wiring of the core adaptor primitive
+    /// (`lib_conxian_core::protocol::dlc::DlcManager`): it presigns the CET with
+    /// an adaptor signature locked to the oracle's per-outcome nonce, and — when
+    /// the oracle attestation scalar `s` is supplied — completes it to a valid
+    /// CET signature and verifies it. Until the oracle reveals `s`, the CET is
+    /// un-broadcastable (`broadcast_ready: false`).
+    ///
+    /// `signer_secret`/`signer_nonce` are 32-byte scalars; `oracle_nonce` is the
+    /// oracle's per-outcome nonce point (serialized secp256k1 point). All inputs
+    /// are bytes so this works across the gateway's `secp256k1` 0.29 and core's
+    /// 0.33.
+    #[allow(clippy::too_many_arguments)]
+    pub fn build_adaptor_cet(
+        spec: &DlcContractSpec,
+        outcome: &str,
+        oracle_nonce: &[u8],
+        signer_secret: &[u8],
+        signer_nonce: &[u8],
+        oracle_attestation_scalar: Option<&[u8]>,
+    ) -> ConxianResult<DlcAdaptorCet> {
+        let cet = Self::build_cets(spec)?
+            .into_iter()
+            .find(|c| c.outcome == outcome)
+            .ok_or_else(|| {
+                conxian_core::ConxianError::Internal(format!(
+                    "Outcome '{outcome}' not found in contract specification"
+                ))
+            })?;
+
+        let oracle_pubkey = hex::decode(&spec.oracle_pubkey).map_err(|e| {
+            conxian_core::ConxianError::Internal(format!("DLC oracle pubkey hex: {e}"))
+        })?;
+
+        // The CET message is the deterministic sighash the CET commits to.
+        let message = hex::decode(&cet.sighash)
+            .map_err(|e| conxian_core::ConxianError::Internal(format!("CET sighash hex: {e}")))?;
+
+        let adaptor = lib_conxian_core::protocol::dlc::DlcManager::create_adaptor_signature_bytes(
+            signer_secret,
+            signer_nonce,
+            oracle_nonce,
+            &oracle_pubkey,
+            &message,
+        )
+        .map_err(|e| {
+            conxian_core::ConxianError::Security(format!("adaptor signature creation failed: {e}"))
+        })?;
+
+        let mut broadcast_ready = false;
+        let mut completed_signature = None;
+        if let Some(s_oracle) = oracle_attestation_scalar {
+            let completed =
+                lib_conxian_core::protocol::dlc::DlcManager::complete_adaptor_signature(
+                    &adaptor, s_oracle, &message,
+                )
+                .map_err(|e| {
+                    conxian_core::ConxianError::Security(format!("adaptor completion failed: {e}"))
+                })?;
+            // The completed signature must verify under the signer key; if not, the
+            // CET must not be marked broadcast-ready.
+            let signer_pubkey = signer_public_key(signer_secret)?;
+            broadcast_ready =
+                lib_conxian_core::protocol::dlc::DlcManager::verify_completed_cet_signature(
+                    &completed,
+                    &signer_pubkey,
+                )
+                .unwrap_or(false);
+            completed_signature = Some(hex::encode(completed.signature_scalar));
+        }
+
+        Ok(DlcAdaptorCet {
+            contract_id: spec.contract_id.clone(),
+            outcome: outcome.to_string(),
+            cet,
+            adapted_nonce: hex::encode(&adaptor.adapted_nonce),
+            adaptor_scalar: hex::encode(adaptor.adaptor_scalar),
+            completed_signature,
+            broadcast_ready,
         })
     }
 
@@ -1067,6 +1180,106 @@ mod tests {
         assert!(!coordinator
             .verify_threshold_attestations(&secp, "btc-usd-2026q3", "up", &[att1, forged_att2])
             .unwrap());
+    }
+
+    #[test]
+    fn dlc_adaptor_cet_is_locked_until_oracle_reveals_scalar() {
+        use secp256k1::{Secp256k1, SecretKey};
+        let secp = Secp256k1::new();
+
+        // Oracle announcement: nonce point + pubkey (compressed hex).
+        let oracle_sk = SecretKey::from_slice(&[0x11; 32]).unwrap();
+        let oracle_pk = secp256k1::PublicKey::from_secret_key(&secp, &oracle_sk);
+        let oracle_nonce_sk = SecretKey::from_slice(&[0x22; 32]).unwrap();
+        let oracle_nonce_pk = secp256k1::PublicKey::from_secret_key(&secp, &oracle_nonce_sk);
+
+        let spec = DlcContractSpec {
+            contract_id: "dlc-adaptor-001".into(),
+            party_a_pubkey: "pk_a".into(),
+            party_b_pubkey: "pk_b".into(),
+            party_a_payout_address: "bc1qparty_a".into(),
+            party_b_payout_address: "bc1qparty_b".into(),
+            total_collateral_sats: 100_000_000,
+            funding_inputs: vec![
+                DlcFundingInput {
+                    txid: "00".repeat(32),
+                    vout: 0,
+                    amount_sats: 50_000_000,
+                    party: "party_a".into(),
+                },
+                DlcFundingInput {
+                    txid: "11".repeat(32),
+                    vout: 1,
+                    amount_sats: 50_000_000,
+                    party: "party_b".into(),
+                },
+            ],
+            oracle_pubkey: hex::encode(oracle_pk.serialize()),
+            event_id: "btc-usd-2026q3".into(),
+            outcomes: vec![DlcOutcomePayout {
+                outcome: "up".into(),
+                party_a_payout_sats: 80_000_000,
+                party_b_payout_sats: 20_000_000,
+            }],
+            refund_locktime: 1751328000,
+            feerate_sats_per_vbyte: 10,
+        };
+
+        let signer_secret = [0x33u8; 32];
+        let signer_nonce = [0x44u8; 32];
+
+        // Before the oracle reveals s: un-broadcastable adaptor pre-signature.
+        let locked = DlcExecutionEngine::build_adaptor_cet(
+            &spec,
+            "up",
+            &oracle_nonce_pk.serialize(),
+            &signer_secret,
+            &signer_nonce,
+            None,
+        )
+        .unwrap();
+        assert!(!locked.broadcast_ready);
+        assert!(locked.completed_signature.is_none());
+        assert_eq!(locked.adaptor_scalar.len(), 64);
+
+        // Oracle reveals its attestation scalar for the CET message.
+        let message = hex::decode(&locked.cet.sighash).unwrap();
+        let e_o = {
+            let mut h = Sha256::new();
+            h.update(b"DLC-ADAPTOR-V1/challenge");
+            h.update(oracle_nonce_pk.serialize());
+            h.update(oracle_pk.serialize());
+            h.update(&message);
+            let d: [u8; 32] = h.finalize().into();
+            secp256k1::Scalar::from_be_bytes(d).unwrap()
+        };
+        let d_o_e = oracle_sk.mul_tweak(&e_o).unwrap();
+        let e_o_scalar = secp256k1::Scalar::from_be_bytes(d_o_e.secret_bytes()).unwrap();
+        let s_oracle = oracle_nonce_sk.add_tweak(&e_o_scalar).unwrap();
+
+        let ready = DlcExecutionEngine::build_adaptor_cet(
+            &spec,
+            "up",
+            &oracle_nonce_pk.serialize(),
+            &signer_secret,
+            &signer_nonce,
+            Some(&s_oracle.secret_bytes()),
+        )
+        .unwrap();
+        assert!(ready.broadcast_ready);
+        assert_eq!(ready.completed_signature.as_ref().unwrap().len(), 64);
+
+        // A wrong outcome scalar does not produce a broadcast-ready CET.
+        let wrong = DlcExecutionEngine::build_adaptor_cet(
+            &spec,
+            "up",
+            &oracle_nonce_pk.serialize(),
+            &signer_secret,
+            &signer_nonce,
+            Some(&[0x55u8; 32]),
+        )
+        .unwrap();
+        assert!(!wrong.broadcast_ready);
     }
 
     #[test]

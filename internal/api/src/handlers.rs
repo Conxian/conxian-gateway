@@ -1409,6 +1409,151 @@ pub async fn create_dlc_bond(
     ))
 }
 
+/// Request for `POST /api/v1/dlc/cet`: build a real adaptor-signature CET for a
+/// DLC outcome. This is the executable half of the DLC settlement path — the
+/// CET is cryptographically locked to the oracle nonce until the oracle reveals
+/// its attestation scalar.
+#[derive(Debug, Deserialize)]
+pub struct DlcCetRequest {
+    pub contract_id: String,
+    pub outcome: String,
+    /// Hex-encoded oracle per-outcome nonce point (R).
+    pub oracle_nonce: String,
+    /// Hex-encoded signer secret scalar (32 bytes) — the signing party's key
+    /// material. Supplied on every call (the endpoint is stateless).
+    pub signer_secret: String,
+    /// Hex-encoded signer nonce scalar (32 bytes).
+    pub signer_nonce: String,
+    /// Hex-encoded oracle attestation scalar `s` (32 bytes). Absent until the
+    /// oracle attests; without it the CET is returned locked (un-broadcastable).
+    #[serde(default)]
+    pub oracle_attestation_scalar: Option<String>,
+    pub spec: DlcSpecRequest,
+}
+
+/// Wire spec for a DLC contract (mirrors `conxian_engine` DLC types).
+#[derive(Debug, Deserialize)]
+pub struct DlcSpecRequest {
+    pub party_a_pubkey: String,
+    pub party_b_pubkey: String,
+    pub party_a_payout_address: String,
+    pub party_b_payout_address: String,
+    pub total_collateral_sats: u64,
+    pub oracle_pubkey: String,
+    pub event_id: String,
+    pub refund_locktime: u64,
+    #[serde(default = "default_feerate")]
+    pub feerate_sats_per_vbyte: u64,
+    pub funding_inputs: Vec<DlcFundingInputRequest>,
+    pub outcomes: Vec<DlcOutcomeRequest>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DlcFundingInputRequest {
+    pub txid: String,
+    pub vout: u32,
+    pub amount_sats: u64,
+    pub party: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DlcOutcomeRequest {
+    pub outcome: String,
+    pub party_a_payout_sats: u64,
+    pub party_b_payout_sats: u64,
+}
+
+fn default_feerate() -> u64 {
+    1
+}
+
+/// Builds a real adaptor-signature CET via the engine's DLC execution path.
+///
+/// Fails closed with `400` on malformed hex or unknown outcome, and returns
+/// `broadcast_ready: false` until a valid oracle attestation scalar completes
+/// the CET signature.
+pub async fn create_dlc_cet(
+    Json(req): Json<DlcCetRequest>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let decode = |label: &str, value: &str| -> Result<Vec<u8>, (StatusCode, Json<Value>)> {
+        hex::decode(value).map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"error": format!("{label} must be hex: {e}")})),
+            )
+        })
+    };
+
+    let oracle_nonce = decode("oracle_nonce", &req.oracle_nonce)?;
+    let signer_secret = decode("signer_secret", &req.signer_secret)?;
+    let signer_nonce = decode("signer_nonce", &req.signer_nonce)?;
+    let oracle_attestation_scalar = match req.oracle_attestation_scalar.as_deref() {
+        Some(value) if !value.is_empty() => Some(decode("oracle_attestation_scalar", value)?),
+        _ => None,
+    };
+
+    let spec = conxian_engine::bitcoin::DlcContractSpec {
+        contract_id: req.contract_id.clone(),
+        party_a_pubkey: req.spec.party_a_pubkey,
+        party_b_pubkey: req.spec.party_b_pubkey,
+        party_a_payout_address: req.spec.party_a_payout_address,
+        party_b_payout_address: req.spec.party_b_payout_address,
+        total_collateral_sats: req.spec.total_collateral_sats,
+        funding_inputs: req
+            .spec
+            .funding_inputs
+            .into_iter()
+            .map(|i| conxian_engine::bitcoin::DlcFundingInput {
+                txid: i.txid,
+                vout: i.vout,
+                amount_sats: i.amount_sats,
+                party: i.party,
+            })
+            .collect(),
+        oracle_pubkey: req.spec.oracle_pubkey,
+        event_id: req.spec.event_id,
+        outcomes: req
+            .spec
+            .outcomes
+            .into_iter()
+            .map(|o| conxian_engine::bitcoin::DlcOutcomePayout {
+                outcome: o.outcome,
+                party_a_payout_sats: o.party_a_payout_sats,
+                party_b_payout_sats: o.party_b_payout_sats,
+            })
+            .collect(),
+        refund_locktime: req.spec.refund_locktime,
+        feerate_sats_per_vbyte: req.spec.feerate_sats_per_vbyte,
+    };
+
+    let adaptor = conxian_engine::bitcoin::DlcExecutionEngine::build_adaptor_cet(
+        &spec,
+        &req.outcome,
+        &oracle_nonce,
+        &signer_secret,
+        &signer_nonce,
+        oracle_attestation_scalar.as_deref(),
+    )
+    .map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": e.to_string()})),
+        )
+    })?;
+
+    Ok(Json(json!({
+        "contract_id": adaptor.contract_id,
+        "outcome": adaptor.outcome,
+        "cet_txid": adaptor.cet.txid,
+        "cet_sighash": adaptor.cet.sighash,
+        "adapted_nonce": adaptor.adapted_nonce,
+        "adaptor_scalar": adaptor.adaptor_scalar,
+        "completed_signature": adaptor.completed_signature,
+        "broadcast_ready": adaptor.broadcast_ready,
+        "semantics": "adaptor-cet; locked until the oracle attestation scalar completes it",
+    })))
+}
+
 pub async fn aggregate_musig2_keys(
     State(_state): State<AppState>,
     Json(payload): Json<Value>,

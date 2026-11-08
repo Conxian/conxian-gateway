@@ -201,6 +201,7 @@ pub fn configure_routes(
             post(handlers::verify_cbtc_attestation),
         )
         .route("/dlc/bond", post(handlers::create_dlc_bond))
+        .route("/dlc/cet", post(handlers::create_dlc_cet))
         .route(
             "/musig2/aggregate-keys",
             post(handlers::aggregate_musig2_keys),
