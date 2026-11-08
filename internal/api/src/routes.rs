@@ -8,7 +8,7 @@ use crate::{admin, camt, handlers, shadow_observation, x402::x402_filter};
 use axum::{
     extract::DefaultBodyLimit,
     middleware,
-    routing::{get, post},
+    routing::{delete, get, post},
     Router,
 };
 use std::time::Instant;
@@ -47,6 +47,29 @@ pub(crate) fn mor_key_store_from_env() -> Option<std::sync::Arc<dyn KeyStore>> {
     Some(std::sync::Arc::new(
         crate::mor_webhook_store::PgKeyStore::new(pool),
     ))
+}
+
+/// Builds the self-serve onboarding API state (Gateway #713) from the
+/// environment, or `None` when unconfigured.
+///
+/// The lane requires `ONBOARDING_TOKEN` (the no-card evaluation credential) and
+/// a durable database (`MOR_WEBHOOK_DATABASE_URL`). Without a durable store the
+/// routes are not mounted, so an entitlement is never granted from volatile
+/// state — mirroring the MoR webhook's fail-closed mounting.
+fn onboarding_api_from_env(
+    key_store: Option<std::sync::Arc<dyn KeyStore>>,
+) -> Option<crate::onboarding::OnboardingApi> {
+    let database_url = std::env::var("MOR_WEBHOOK_DATABASE_URL")
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())?;
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(5)
+        .connect_lazy(&database_url)
+        .ok()?;
+    let store = std::sync::Arc::new(crate::onboarding_store::PgOnboardingStore::new(pool));
+    let service = crate::onboarding::OnboardingService::from_env(store, key_store);
+    crate::onboarding::OnboardingApi::from_env(service)
 }
 
 pub fn configure_routes(
@@ -259,6 +282,47 @@ pub fn configure_routes(
         None => Router::new(),
     };
 
+    // Self-serve onboarding API (Gateway #713). The public `POST /v1/onboard`
+    // is gated by the no-card onboarding token; the tenant-scoped reads/writes
+    // require a managed tenant key. Mounted only when a durable store and the
+    // onboarding token are configured (fail closed).
+    let onboarding_routes = match onboarding_api_from_env(mor_store.clone()) {
+        Some(api) => {
+            let tenant_scoped = Router::new()
+                .route("/onboard/{tenant_id}", get(crate::onboarding::get_onboard))
+                .route(
+                    "/tenants/{tenant_id}/limits",
+                    get(crate::onboarding::get_limits),
+                )
+                .route(
+                    "/tenants/{tenant_id}/keys",
+                    post(crate::onboarding::rotate_key),
+                )
+                .route(
+                    "/tenants/{tenant_id}/keys/{key_id}",
+                    delete(crate::onboarding::revoke_key),
+                )
+                .route(
+                    "/tenants/{tenant_id}/deploy",
+                    post(crate::onboarding::post_deploy),
+                )
+                .route(
+                    "/tenants/{tenant_id}/usage",
+                    get(crate::onboarding::get_usage),
+                )
+                .layer(middleware::from_fn_with_state(
+                    managed_auth.clone(),
+                    managed_auth_middleware,
+                ))
+                .with_state(api.clone());
+            Router::new()
+                .route("/onboard", post(crate::onboarding::post_onboard))
+                .with_state(api)
+                .merge(tenant_scoped)
+        }
+        None => Router::new(),
+    };
+
     Router::new()
         .route("/api/v1/version", get(|| async { conxian_core::VERSION }))
         // Standards-based, unauthenticated API discovery (Gateway #711).
@@ -282,7 +346,8 @@ pub fn configure_routes(
                 .merge(private_routes)
                 .merge(alex_routes)
                 .merge(managed_routes)
-                .merge(webhook_routes),
+                .merge(webhook_routes)
+                .merge(onboarding_routes),
         )
         .nest("/admin/v1", admin_routes)
         .with_state(state.clone())
