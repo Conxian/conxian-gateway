@@ -18,17 +18,24 @@ managed-auth path as a webhook-minted key.
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
 | `POST` | `/api/v1/onboard` | onboarding token | Provision a tenant; returns a receipt. Idempotent on `idempotency_key`. |
-| `GET` | `/api/v1/onboard/{tenant_id}` | managed key | Current onboarding state + per-step detail. |
+| `GET` | `/api/v1/onboard/{tenant_id}` | onboarding token | Current onboarding state + per-step detail. |
 | `GET` | `/api/v1/tenants/{tenant_id}/limits` | managed key | Published quota / trial / always-free data. |
 | `POST` | `/api/v1/tenants/{tenant_id}/keys` | managed key | Rotate the active key (new plaintext returned once). |
 | `DELETE` | `/api/v1/tenants/{tenant_id}/keys/{key_id}` | managed key | Revoke the active key. |
-| `POST` | `/api/v1/tenants/{tenant_id}/deploy` | managed key | Resume/re-run provisioning. |
+| `POST` | `/api/v1/tenants/{tenant_id}/deploy` | onboarding token | Resume/re-run provisioning. |
 | `GET` | `/api/v1/tenants/{tenant_id}/usage` | managed key | Quota for the current period. |
 
-`POST /api/v1/onboard` is gated by the no-card **onboarding token**
-(`ONBOARDING_TOKEN`), because the caller does not yet have a tenant key. Every
-tenant-scoped route is gated by the existing managed-auth middleware and enforces
-that the authenticated tenant matches the path tenant (403 on mismatch).
+The gate is split by what the caller can hold:
+
+- **Provisioning operations** (`onboard`, `status`, `deploy`) require the no-card
+  **onboarding token** (`ONBOARDING_TOKEN`). They must be reachable *without* a
+  tenant key, because a tenant that failed at the key step has none and would
+  otherwise be unable to read its state or resume.
+- **Tenant self-service** (`limits`, `usage`, `rotate`, `revoke`) requires the
+  **managed tenant key**, and enforces that the authenticated tenant matches the
+  path tenant (403 on mismatch). Verifying a minted key against `/limits` is the
+  self-verification step: a 200 proves the key authenticates through the same
+  managed-auth path as any other key.
 
 ## Design rules enforced
 
@@ -72,10 +79,29 @@ active ─► terminated  (key revoked)
 - Keys live in `managed_api_keys` (hash only), minted through the shared
   `KeyStore`.
 
+## Client
+
+The single onboarding command lives in the CLI:
+
+```bash
+export ONBOARDING_TOKEN=...            # never a flag; read from the environment only
+conxian-cli onboard --gateway https://api.conxian-labs.com --tier sandbox --write-env .env.tenant
+```
+
+It issues the one `POST /v1/onboard` call, then **verifies the minted key** by
+calling `GET /v1/tenants/{id}/limits` with it — a returned key is a working key,
+not an untested string. `--write-env <path>` writes the key to a `0600` file
+(create-new; an existing file is never overwritten). On an idempotent replay no
+new key is minted and the command says so.
+
 ## Tests
 
 - `internal/api/src/onboarding.rs` — unit tests for idempotency, resumability,
-  fail-closed minting, rotation, revocation and the limits catalog.
+  fail-closed minting, rotation, revocation, the limits catalog, and the
+  provisioning-vs-tenant auth split.
+- `cmd/conxian-cli/src/main.rs` — unit tests for the onboard command: URL/tenant
+  validation without network, an end-to-end provision+verify against a stand-in
+  server, and fail-closed behavior when the minted key is rejected.
 - `internal/api/tests/onboarding_pg.rs` — real PostgreSQL conformance for the
   durable store (round-trip, upsert, idempotency uniqueness), run by
   `.github/workflows/onboarding-conformance.yml`.

@@ -219,7 +219,7 @@ fn openapi_document() -> Value {
                 "get": {
                     "operationId": "onboardStatus",
                     "summary": "Current onboarding state and per-step detail",
-                    "security": [ { "managedKey": [] } ],
+                    "security": [ { "onboardingToken": [] } ],
                     "parameters": [ { "name": "tenant_id", "in": "path", "required": true, "schema": { "type": "string" } } ],
                     "responses": { "200": { "description": "Tenant record." }, "404": { "description": "Unknown tenant." } }
                 }
@@ -258,7 +258,7 @@ fn openapi_document() -> Value {
                 "post": {
                     "operationId": "tenantDeploy",
                     "summary": "Resume/re-run provisioning (Trigger-Deploy-style single call)",
-                    "security": [ { "managedKey": [] } ],
+                    "security": [ { "onboardingToken": [] } ],
                     "parameters": [ { "name": "tenant_id", "in": "path", "required": true, "schema": { "type": "string" } } ],
                     "responses": { "200": { "description": "Receipt." } }
                 }

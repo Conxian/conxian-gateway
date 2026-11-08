@@ -282,17 +282,31 @@ pub fn configure_routes(
         None => Router::new(),
     };
 
-    // Self-serve onboarding API (Gateway #713). The public `POST /v1/onboard`
-    // is gated by the no-card onboarding token; the tenant-scoped reads/writes
-    // require a managed tenant key. Mounted only when a durable store and the
+    // Self-serve onboarding API (Gateway #713). Provisioning operations
+    // (`onboard`, `status`, `deploy`) are gated by the no-card onboarding token:
+    // a tenant that failed at the key step has no key, so status and resume must
+    // be reachable without one. Tenant self-service (`limits`, `usage`,
+    // `rotate`, `revoke`) is gated by the managed tenant key, which also proves
+    // the key is a working key. Both mount only when a durable store and the
     // onboarding token are configured (fail closed).
     let onboarding_routes = match onboarding_api_from_env(mor_store.clone()) {
         Some(api) => {
-            let tenant_scoped = Router::new()
+            let operator_routes = Router::new()
+                .route("/onboard", post(crate::onboarding::post_onboard))
                 .route("/onboard/{tenant_id}", get(crate::onboarding::get_onboard))
+                .route(
+                    "/tenants/{tenant_id}/deploy",
+                    post(crate::onboarding::post_deploy),
+                )
+                .with_state(api.clone());
+            let tenant_routes = Router::new()
                 .route(
                     "/tenants/{tenant_id}/limits",
                     get(crate::onboarding::get_limits),
+                )
+                .route(
+                    "/tenants/{tenant_id}/usage",
+                    get(crate::onboarding::get_usage),
                 )
                 .route(
                     "/tenants/{tenant_id}/keys",
@@ -302,23 +316,12 @@ pub fn configure_routes(
                     "/tenants/{tenant_id}/keys/{key_id}",
                     delete(crate::onboarding::revoke_key),
                 )
-                .route(
-                    "/tenants/{tenant_id}/deploy",
-                    post(crate::onboarding::post_deploy),
-                )
-                .route(
-                    "/tenants/{tenant_id}/usage",
-                    get(crate::onboarding::get_usage),
-                )
                 .layer(middleware::from_fn_with_state(
                     managed_auth.clone(),
                     managed_auth_middleware,
                 ))
-                .with_state(api.clone());
-            Router::new()
-                .route("/onboard", post(crate::onboarding::post_onboard))
-                .with_state(api)
-                .merge(tenant_scoped)
+                .with_state(api);
+            operator_routes.merge(tenant_routes)
         }
         None => Router::new(),
     };

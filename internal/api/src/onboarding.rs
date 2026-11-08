@@ -671,16 +671,20 @@ pub async fn post_onboard(
     }
 }
 
-/// `GET /v1/onboard/{tenant_id}` — current onboarding state. Tenant-scoped.
+/// `GET /v1/onboard/{tenant_id}` — current onboarding state.
+///
+/// Gated by the onboarding token (not a tenant key): a tenant that failed at
+/// the key step has no key yet, so status and resume must be reachable without
+/// one. The tenant id is the identifier; the operator holds the token.
 pub async fn get_onboard(
     State(api): State<OnboardingApi>,
-    Extension(ctx): Extension<TenantContext>,
+    headers: header::HeaderMap,
     Path(tenant_id): Path<String>,
 ) -> Result<Json<Value>, ApiError> {
-    if !tenant_matches(&ctx, &tenant_id) {
+    if !api.token_ok(&headers) {
         return Err((
-            StatusCode::FORBIDDEN,
-            Json(json!({"error": "tenant mismatch"})),
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"error": "invalid onboarding token"})),
         ));
     }
     match api.service.get(&tenant_id).await {
@@ -752,15 +756,18 @@ pub async fn revoke_key(
 }
 
 /// `POST /v1/tenants/{tenant_id}/deploy` — resume/re-run provisioning.
+///
+/// Gated by the onboarding token, like `POST /v1/onboard`: resume is a
+/// provisioning operation, and a tenant that failed at the key step has no key.
 pub async fn post_deploy(
     State(api): State<OnboardingApi>,
-    Extension(ctx): Extension<TenantContext>,
+    headers: header::HeaderMap,
     Path(tenant_id): Path<String>,
 ) -> Result<Json<Value>, ApiError> {
-    if !tenant_matches(&ctx, &tenant_id) {
+    if !api.token_ok(&headers) {
         return Err((
-            StatusCode::FORBIDDEN,
-            Json(json!({"error": "tenant mismatch"})),
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"error": "invalid onboarding token"})),
         ));
     }
     match api.service.resume(&tenant_id).await {
@@ -1159,5 +1166,58 @@ mod tests {
         let resumed = svc.resume(&out.record.tenant_id).await.unwrap();
         assert_eq!(resumed.record.state, "active");
         assert!(resumed.record.step_done("activation"));
+    }
+
+    #[tokio::test]
+    async fn provisioning_routes_require_the_onboarding_token_not_a_tenant_key() {
+        use axum::body::Body;
+        use axum::http::Request;
+        use axum::routing::{get, post};
+        use tower::ServiceExt;
+
+        // A minimal router mirroring routes.rs: operator routes carry no
+        // managed-auth layer; tenant routes do. This pins the split so a failed
+        // (key-less) tenant can still read status and resume with the token.
+        let api = OnboardingApi {
+            service: Arc::new(service_with(
+                Arc::new(InMemoryOnboardingStore::new()),
+                Some(Arc::new(MemKeyStore::default())),
+            )),
+            onboarding_token: "onboarding-secret".to_string(),
+        };
+        let operator = axum::Router::new()
+            .route("/onboard", post(post_onboard))
+            .route("/onboard/{tenant_id}", get(get_onboard))
+            .route("/tenants/{tenant_id}/deploy", post(post_deploy))
+            .with_state(api.clone());
+        let app = operator;
+
+        // No token: rejected.
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/onboard/t_abc")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
+        // Onboarding token: accepted (404 here only because t_abc does not exist).
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/onboard/t_abc")
+                    .header(header::AUTHORIZATION, "Bearer onboarding-secret")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_ne!(resp.status(), StatusCode::UNAUTHORIZED);
     }
 }
