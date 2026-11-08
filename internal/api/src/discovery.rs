@@ -48,6 +48,11 @@ fn openapi_document() -> Value {
                     "in": "header",
                     "name": "x-api-key",
                     "description": "Multi-tenant managed API key issued through the Merchant-of-Record billing flow."
+                },
+                "onboardingToken": {
+                    "type": "http",
+                    "scheme": "bearer",
+                    "description": "No-card onboarding bearer token (Authorization: Bearer <token>) used only to provision a first tenant."
                 }
             },
             "schemas": {
@@ -63,6 +68,14 @@ fn openapi_document() -> Value {
                     "type": "object",
                     "required": ["plan"],
                     "properties": { "plan": { "type": "string" } }
+                },
+                "OnboardRequest": {
+                    "type": "object",
+                    "required": ["idempotency_key"],
+                    "properties": {
+                        "idempotency_key": { "type": "string", "description": "Client-supplied key; a retry returns the existing receipt." },
+                        "tier": { "type": "string", "description": "Requested tier. Defaults to the no-card sandbox lane." }
+                    }
                 },
                 "Error": {
                     "type": "object",
@@ -183,6 +196,81 @@ fn openapi_document() -> Value {
                     "security": [],
                     "responses": { "200": { "description": "Registered adapters." } }
                 }
+            },
+            "/api/v1/onboard": {
+                "post": {
+                    "operationId": "onboardCreate",
+                    "summary": "Provision a tenant (idempotent, no-card evaluation lane)",
+                    "description": "Sequences entitlement, endpoint, key and activation behind one call. A repeat with the same idempotency key returns the existing receipt. Requires the onboarding bearer token.",
+                    "security": [ { "onboardingToken": [] } ],
+                    "requestBody": {
+                        "required": true,
+                        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OnboardRequest" } } }
+                    },
+                    "responses": {
+                        "200": { "description": "Onboarding receipt (api_key present exactly once)." },
+                        "400": { "description": "Unknown tier or empty idempotency key." },
+                        "401": { "description": "Invalid onboarding token." },
+                        "503": { "description": "A durable step failed; the tenant is resumable." }
+                    }
+                }
+            },
+            "/api/v1/onboard/{tenant_id}": {
+                "get": {
+                    "operationId": "onboardStatus",
+                    "summary": "Current onboarding state and per-step detail",
+                    "security": [ { "onboardingToken": [] } ],
+                    "parameters": [ { "name": "tenant_id", "in": "path", "required": true, "schema": { "type": "string" } } ],
+                    "responses": { "200": { "description": "Tenant record." }, "404": { "description": "Unknown tenant." } }
+                }
+            },
+            "/api/v1/tenants/{tenant_id}/limits": {
+                "get": {
+                    "operationId": "tenantLimits",
+                    "summary": "Published, machine-readable limits for the tenant tier",
+                    "security": [ { "managedKey": [] } ],
+                    "parameters": [ { "name": "tenant_id", "in": "path", "required": true, "schema": { "type": "string" } } ],
+                    "responses": { "200": { "description": "Quota, trial window and always-free allowance as data." }, "404": { "description": "Unknown tenant." } }
+                }
+            },
+            "/api/v1/tenants/{tenant_id}/keys": {
+                "post": {
+                    "operationId": "tenantKeyRotate",
+                    "summary": "Rotate the tenant's active key (re-view/rotation, no show-once)",
+                    "security": [ { "managedKey": [] } ],
+                    "parameters": [ { "name": "tenant_id", "in": "path", "required": true, "schema": { "type": "string" } } ],
+                    "responses": { "200": { "description": "New key returned exactly once." } }
+                }
+            },
+            "/api/v1/tenants/{tenant_id}/keys/{key_id}": {
+                "delete": {
+                    "operationId": "tenantKeyRevoke",
+                    "summary": "Revoke the tenant's active key",
+                    "security": [ { "managedKey": [] } ],
+                    "parameters": [
+                        { "name": "tenant_id", "in": "path", "required": true, "schema": { "type": "string" } },
+                        { "name": "key_id", "in": "path", "required": true, "schema": { "type": "string" } }
+                    ],
+                    "responses": { "204": { "description": "Revoked." }, "404": { "description": "Key not active for tenant." } }
+                }
+            },
+            "/api/v1/tenants/{tenant_id}/deploy": {
+                "post": {
+                    "operationId": "tenantDeploy",
+                    "summary": "Resume/re-run provisioning (Trigger-Deploy-style single call)",
+                    "security": [ { "onboardingToken": [] } ],
+                    "parameters": [ { "name": "tenant_id", "in": "path", "required": true, "schema": { "type": "string" } } ],
+                    "responses": { "200": { "description": "Receipt." } }
+                }
+            },
+            "/api/v1/tenants/{tenant_id}/usage": {
+                "get": {
+                    "operationId": "tenantUsage",
+                    "summary": "Quota for the current period",
+                    "security": [ { "managedKey": [] } ],
+                    "parameters": [ { "name": "tenant_id", "in": "path", "required": true, "schema": { "type": "string" } } ],
+                    "responses": { "200": { "description": "Usage/quota." } }
+                }
             }
         }
     })
@@ -274,9 +362,16 @@ mod tests {
         let paths = doc["paths"].as_object().expect("paths object");
         assert!(paths.contains_key("/api/v1/health"));
         assert!(paths.contains_key("/api/v1/agent/settle"));
+        // The self-serve onboarding lane (#713) is advertised.
+        assert!(paths.contains_key("/api/v1/onboard"));
+        assert!(paths.contains_key("/api/v1/tenants/{tenant_id}/limits"));
         // Every referenced schema resolves.
         let schemas = doc["components"]["schemas"].as_object().unwrap();
         assert!(schemas.contains_key("Health"));
+        assert!(schemas.contains_key("OnboardRequest"));
+        // The onboarding token scheme is declared.
+        let schemes = doc["components"]["securitySchemes"].as_object().unwrap();
+        assert!(schemes.contains_key("onboardingToken"));
     }
 
     #[test]

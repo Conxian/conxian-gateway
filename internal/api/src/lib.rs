@@ -17,6 +17,8 @@ pub mod middleware;
 pub mod mor_webhook;
 pub mod mor_webhook_store;
 pub mod nostr;
+pub mod onboarding;
+pub mod onboarding_store;
 pub mod rate_limit;
 pub mod routes;
 pub mod sentinel;
