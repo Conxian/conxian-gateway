@@ -18,8 +18,8 @@
 
 ## Current State
 - **Version**: v0.1.5 (Cargo.toml)
-- **lib-conxian-core**: v0.3.3 (tag `v0.3.3`, published to crates.io)
-- **Dependency**: `lib-conxian-core = { git = "...", tag = "v0.3.3" }`
+- **lib-conxian-core**: v0.3.3 line (pinned by exact full-SHA `rev`, published to crates.io)
+- **Dependency**: `lib-conxian-core = { git = "https://github.com/Conxian/lib-conxian-core", rev = "071e3a5d3ff5abcc6b237da9f232ba9c06199e41" }` (exact full-SHA pin; the direct-source policy prohibits `tag` declarations)
 - **Rust toolchain**: 1.98.1 effective floor (workspace baseline)
 
 ## Architecture
