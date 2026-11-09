@@ -49,7 +49,7 @@ id, so its idempotency key is derived from `meta.event_name` + `data.id`.
 
 `migrations/0001_managed_api_keys.sql` — `managed_api_keys` (key hashes, never
 plaintext) + `billing_webhook_events` (idempotency ledger). Target project:
-**Gateway** (`noisy-cloud-41146057`). The tenant column is not globally unique;
+**Gateway** (`neon-project-<redacted>`). The tenant column is not globally unique;
 a partial unique index enforces at most one `active` key per tenant so the
 rotate flow works.
 
