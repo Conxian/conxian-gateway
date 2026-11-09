@@ -4,7 +4,7 @@
 # systemd. This is the self-managed lane described in docs/DEPLOY_MODES.md.
 #
 # It is NOT the managed production path. The managed gateway (Render
-# srv-dbji535g1s2s73fqgrtg -> https://gateway.conxian.org) is deployed by
+# srv-<redacted> -> https://gateway.conxian.org) is deployed by
 # .github/workflows/deploy.yml. Never point a public hostname at a sovereign
 # reference host.
 #

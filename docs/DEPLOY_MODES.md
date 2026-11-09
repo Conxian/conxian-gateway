@@ -7,7 +7,7 @@ never an unowned duplicate.
 | | Managed | Sovereign |
 |---|---|---|
 | Who operates it | Conxian-Labs | The client (self-managed), or Conxian-Labs under a managed-deployment contract (on-site, cloud, co-located) |
-| Provisioned by | Render service `conxian-gateway` (`srv-dbji535g1s2s73fqgrtg`), autoDeploy from `main` | `conxian-cli init` / `docker compose up` from the client's own host, or the operator script `scripts/deploy-sovereign.sh` |
+| Provisioned by | Render service `conxian-gateway` (`srv-<redacted>`), autoDeploy from `main` | `conxian-cli init` / `docker compose up` from the client's own host, or the operator script `scripts/deploy-sovereign.sh` |
 | Public host | `gateway.conxian.org` (Cloudflare Worker `conxian-proxy` → Render) | The client's own hostname; the org reference instance is reachable only on its private `:3000` |
 | TLS / WAF | Cloudflare (proxied) | Client's perimeter |
 | Secrets | Render env vars | Client-held (`EnvironmentFile`, KMS/HSM) |
@@ -56,6 +56,6 @@ The droplet runs the bare binary under systemd:
 ## Managed host (CI)
 
 `.github/workflows/deploy.yml` triggers the Render deploy for
-`srv-dbji535g1s2s73fqgrtg` after a `main` promotion and smoke-checks
+`srv-<redacted>` after a `main` promotion and smoke-checks
 `https://gateway.conxian.org/api/v1/health` + `/api/v1/billing/balance`. It
 requires the `RENDER_DEPLOY_HOOK_URL` secret in the `production` environment.
