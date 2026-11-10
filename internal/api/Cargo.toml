@@ -14,6 +14,7 @@ urlencoding = "2.1.3"
 conxian_compliance = { path = "../compliance" }
 conxian_engine = { path = "../engine" }
 conxian_core = { path = "../../pkg/conxian-core" }
+lib-conxian-core = { workspace = true }
 axum.workspace = true
 tower.workspace = true
 tower-http.workspace = true

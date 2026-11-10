@@ -197,3 +197,32 @@ impl KeyStore for PgKeyStore {
         }))
     }
 }
+
+/// The idempotent schema migrations for the MoR/onboarding stores.
+///
+/// Both files use `CREATE TABLE IF NOT EXISTS` / `IF NOT EXISTS` throughout, so
+/// applying them on every startup is safe and converges the schema without a
+/// separate migration tool.
+pub const MANAGED_API_KEYS_MIGRATION: &str =
+    include_str!("../../../migrations/0001_managed_api_keys.sql");
+pub const ONBOARDING_TENANTS_MIGRATION: &str =
+    include_str!("../../../migrations/0002_onboarding_tenants.sql");
+
+/// Applies the idempotent schema migrations to `pool`.
+///
+/// Call once at startup when `MOR_WEBHOOK_DATABASE_URL` is configured so the
+/// durable stores have their tables before any webhook, managed-auth lookup or
+/// onboarding request is served. Fails closed: an error is returned to the
+/// caller rather than swallowed, so a half-provisioned schema is never served.
+pub async fn run_migrations(pool: &PgPool) -> Result<(), String> {
+    for (label, sql) in [
+        ("0001_managed_api_keys", MANAGED_API_KEYS_MIGRATION),
+        ("0002_onboarding_tenants", ONBOARDING_TENANTS_MIGRATION),
+    ] {
+        sqlx::raw_sql(sql)
+            .execute(pool)
+            .await
+            .map_err(|e| format!("apply migration {label}: {e}"))?;
+    }
+    Ok(())
+}
