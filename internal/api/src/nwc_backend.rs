@@ -2,7 +2,7 @@
 //!
 //! Selected by [`crate::new_lightning_adapter_from_env`] when `NWC_URI` holds a
 //! valid `nostr+walletconnect://` URI. When the variable is absent or malformed
-//! the adapter keeps the fail-closed production stub, so settlement stays closed
+//! the adapter keeps the fail-closed production backend, so settlement stays closed
 //! until a wallet is configured.
 
 use crate::lightning::{
