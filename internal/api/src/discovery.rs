@@ -189,6 +189,15 @@ fn openapi_document() -> Value {
                     "responses": { "200": { "description": "Verification result." } }
                 }
             },
+            "/api/v1/capabilities": {
+                "get": {
+                    "operationId": "capabilitiesManifest",
+                    "summary": "Versioned runtime capability manifest (public)",
+                    "description": "Registered capability/adapter set bound to the Core chain taxonomy version, with per-adapter operation classes (observe/route/prepare/delegated_execute/unavailable). Advertises registration only; it does not assert health or production support.",
+                    "security": [],
+                    "responses": { "200": { "description": "Capability manifest." } }
+                }
+            },
             "/api/v1/chains/list": {
                 "get": {
                     "operationId": "chainsList",
