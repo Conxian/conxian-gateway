@@ -17,6 +17,7 @@ pub mod middleware;
 pub mod mor_webhook;
 pub mod mor_webhook_store;
 pub mod nostr;
+pub mod nwc_backend;
 pub mod onboarding;
 pub mod onboarding_store;
 pub mod rate_limit;
@@ -74,6 +75,39 @@ pub fn new_lightning_adapter() -> Arc<LightningAdapter> {
 
 pub fn new_production_lightning_adapter() -> Arc<LightningAdapter> {
     Arc::new(LightningAdapter::new(Arc::new(ProductionLightningBackend)))
+}
+
+/// Build the Lightning settlement adapter from the environment.
+///
+/// When `NWC_URI` holds a valid `nostr+walletconnect://` URI the real
+/// [`crate::nwc_backend::NwcLightningBackend`] is selected; otherwise the
+/// adapter falls back to the fail-closed production stub. Selection never
+/// panics: a malformed or absent URI logs a warning and keeps the stub, so the
+/// process always starts and x402 settlement stays closed until configured.
+pub fn new_lightning_adapter_from_env() -> Arc<LightningAdapter> {
+    match std::env::var("NWC_URI") {
+        Ok(uri) if !uri.trim().is_empty() => {
+            match crate::nostr::NwcConnection::parse_uri(uri.trim()) {
+                Ok(connection) => {
+                    tracing::info!("Lightning settlement backend: NWC (Nostr Wallet Connect)");
+                    Arc::new(LightningAdapter::new(Arc::new(
+                        crate::nwc_backend::NwcLightningBackend::new(connection),
+                    )))
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e,
+                        "NWC_URI is set but invalid; using fail-closed stub Lightning backend"
+                    );
+                    new_production_lightning_adapter()
+                }
+            }
+        }
+        _ => {
+            tracing::info!("Lightning settlement backend: fail-closed stub (NWC_URI unset)");
+            new_production_lightning_adapter()
+        }
+    }
 }
 
 pub fn new_settlement_log() -> Arc<RwLock<VecDeque<SettlementProposal>>> {
