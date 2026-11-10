@@ -1,7 +1,7 @@
 name: Deploy Gateway
 
 # Continuous delivery for the MANAGED gateway (Render service
-# srv-<redacted> -> https://gateway.conxian.org).
+# the RENDER_SERVICE_ID repository variable -> https://gateway.conxian.org).
 #
 # Gated on `main` so a deployment only follows a release that has cleared
 # dev -> staged -> main promotion and the release gate. The sovereign reference
@@ -29,7 +29,9 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  RENDER_SERVICE_ID: srv-<redacted>
+  # Read from the repository variable so the real Render service id is
+  # never hardcoded (a placeholder here silently 404s every deploy).
+  RENDER_SERVICE_ID: ${{ vars.RENDER_SERVICE_ID }}
   PUBLIC_BASE_URL: https://gateway.conxian.org
 
 jobs:
