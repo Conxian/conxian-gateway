@@ -395,6 +395,81 @@ async fn test_health_check() {
     );
 }
 
+/// Proof Guild challenge Conxian/conxian-gateway#828: the capability manifest
+/// must never advertise a non-routable adapter as supported. `bitvm3` is in the
+/// runtime adapter map (`cmd/gateway/src/main.rs`) and in this harness, but has
+/// no Core taxonomy `Chain` binding, so the live endpoint must report it
+/// `unavailable`. Run with `--nocapture` for the response transcript.
+#[tokio::test]
+async fn test_capability_manifest_never_advertises_unroutable_adapter_as_supported() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/capabilities")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    eprintln!("GET /api/v1/capabilities -> {body}");
+
+    let adapters = body["adapters"].as_array().expect("adapter manifest");
+    let adapter = |id: &str| -> serde_json::Value {
+        adapters
+            .iter()
+            .find(|a| a["adapter_id"] == id)
+            .cloned()
+            .unwrap_or_else(|| panic!("{id} is advertised"))
+    };
+
+    // The unmapped research-lane adapter: no routable class, no Core binding.
+    let bitvm3 = adapter("bitvm3");
+    assert_eq!(bitvm3["operation_classes"], json!(["unavailable"]));
+    assert!(
+        bitvm3["chain"].is_null() && bitvm3["family"].is_null(),
+        "bitvm3 must not claim a Core taxonomy binding: {bitvm3}"
+    );
+
+    // Control: a taxonomy-bound adapter keeps its routable classes, proving the
+    // `unavailable` result is a classification and not a blanket failure.
+    let liquid = adapter("liquid");
+    assert_eq!(
+        liquid["operation_classes"],
+        json!(["observe", "route", "prepare"])
+    );
+    assert_eq!(liquid["chain"], json!("liquid"));
+    assert!(liquid["family"].is_string());
+
+    // Counterexample guard: no advertised adapter carries a routable operation
+    // class without the Core `Chain` binding that justifies it.
+    for entry in adapters {
+        let id = entry["adapter_id"].as_str().expect("adapter id");
+        let classes = entry["operation_classes"].as_array().expect("classes");
+        let routable = classes
+            .iter()
+            .any(|class| matches!(class.as_str(), Some("observe" | "route" | "prepare")));
+        if routable {
+            assert!(
+                entry["chain"].is_string() && entry["family"].is_string(),
+                "counterexample: {id} is advertised routable without a Core Chain binding"
+            );
+        } else {
+            assert!(
+                entry["chain"].is_null(),
+                "counterexample: {id} claims a Core Chain binding without a routable class"
+            );
+        }
+    }
+}
+
 #[tokio::test]
 async fn test_alex_quote_marks_simulated_source_explicitly() {
     let state = Arc::new(RwLock::new(GatewayState::default()));
