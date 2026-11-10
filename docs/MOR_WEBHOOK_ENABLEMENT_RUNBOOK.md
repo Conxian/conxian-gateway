@@ -1,7 +1,7 @@
 # MoR billing webhook — production enablement runbook
 
 Operator procedure to enable the Merchant-of-Record billing webhook on the
-managed gateway (`srv-dbji535g1s2s73fqgrtg` → `https://gateway.conxian.org`).
+managed gateway (`srv-<redacted>` → `https://gateway.conxian.org`).
 
 The webhook route is mounted only when `MOR_PROVIDER`, `MOR_WEBHOOK_SECRET` and
 `MOR_WEBHOOK_DATABASE_URL` are all set; otherwise it is not advertised (a POST
@@ -12,7 +12,7 @@ change, not a code change. See `MANAGED_SAAS_BILLING_WEBHOOK.md` for the design.
 
 1. The promotion `dev -> staged -> main` has landed on `main` (the deploy gate).
 2. The operator holds the MoR signing secret for the target destination and a
-   Neon **write** role for the Gateway project (`noisy-cloud-41146057`).
+   Neon **write** role for the Gateway project (`neon-project-<redacted>`).
 3. The managed key store migration is applied (step 1) — the store fails closed
    on a missing table, so an unmigrated database would reject every delivery.
 
@@ -54,7 +54,7 @@ Creates `managed_api_keys` (key hashes only) and `billing_webhook_events`
 
 ## Step 2 — set the service environment
 
-Set these on the Render service `srv-dbji535g1s2s73fqgrtg` (Dashboard → service →
+Set these on the Render service `srv-<redacted>` (Dashboard → service →
 Environment, or the Render API). Values are operator-managed and must be entered
 through the protected channel, never committed:
 
