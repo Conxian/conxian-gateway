@@ -87,7 +87,27 @@ pub fn new_production_lightning_adapter() -> Arc<LightningAdapter> {
 pub fn new_lightning_adapter_from_env() -> Arc<LightningAdapter> {
     match std::env::var("NWC_URI") {
         Ok(uri) if !uri.trim().is_empty() => {
-            match crate::nostr::NwcConnection::parse_uri(uri.trim()) {
+            let trimmed = uri.trim();
+            let redacted_uri = match trimmed.split_once('?') {
+                Some((base, query)) => {
+                    let filtered_query = query
+                        .split('&')
+                        .filter(|pair| {
+                            let key = pair.split_once('=').map(|(k, _)| k).unwrap_or(*pair);
+                            !key.eq_ignore_ascii_case("secret")
+                        })
+                        .collect::<Vec<_>>()
+                        .join("&");
+                    if filtered_query.is_empty() {
+                        base.to_string()
+                    } else {
+                        format!("{base}?{filtered_query}")
+                    }
+                }
+                None => trimmed.to_string(),
+            };
+
+            match crate::nostr::NwcConnection::parse_uri(&redacted_uri) {
                 Ok(connection) => {
                     tracing::info!("Lightning settlement backend: NWC (Nostr Wallet Connect)");
                     Arc::new(LightningAdapter::new(Arc::new(
