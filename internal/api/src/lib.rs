@@ -28,7 +28,7 @@ pub mod tenant;
 pub mod world_id;
 pub mod x402;
 
-pub use routes::configure_routes;
+pub use routes::{configure_routes, init_managed_store};
 
 use crate::a2p::A2pRouter;
 use crate::fiat::FiatRouter;
