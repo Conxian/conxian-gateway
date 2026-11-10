@@ -2,7 +2,7 @@
 
 The gateway has **two deployment modes** (see `docs/DEPLOY_MODES.md`):
 
-- **Managed** — Render service `conxian-gateway` (`srv-dbji535g1s2s73fqgrtg`),
+- **Managed** — Render service `conxian-gateway` (`srv-<redacted>`),
   branch `main`, served at `https://gateway.conxian.org`. This is the only public
   production instance and the CI deploy target (`.github/workflows/deploy.yml`).
 - **Sovereign reference** — DO droplet `conxian-gateway-node` (161.35.222.194,
@@ -49,7 +49,7 @@ public surface. Configure (Repo → Settings → Environments → `production`):
 | `RENDER_API_KEY` | Render API token used to trigger + poll the managed deploy |
 
 No SSH secrets and no image build in CI: Render builds from the repo. The
-managed service is `srv-dbji535g1s2s73fqgrtg`; its env vars live in the Render
+managed service is `srv-<redacted>`; its env vars live in the Render
 dashboard (see `docs/DEPLOY_MODES.md`).
 
 > Note: this is a single-host pattern. Before horizontal scaling, swap
