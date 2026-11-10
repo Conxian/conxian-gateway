@@ -46,7 +46,7 @@ Before submitting changes:
 - **Stateful API Virtualization**: Use `wiremock` (`MockServer`) following WireMock Cloud / Proxymock methodologies to virtualize external financial and blockchain dependencies (e.g. ISO 20022 clearing gateways, X402 settlement LND nodes, World ID, Web3.bio).
 - **Proxymock / WireMock Scenarios**: External mock dependencies must model stateful transitions (`IN_FLIGHT` -> `CLEARED`, or invoice creation -> settlement preimage receipt) using scenario state machines.
 - **ISO 20022 (pacs.008) Pathways**: Test FI-to-FI Customer Credit Transfer XML generation (`pacs.008.001.08`) and stateful clearing verification via WireMock virtualized clearing networks.
-- **X402 Settlement Middleware**: Test protected capability endpoints (`/api/v1/canton/cbtc/verify`, `/api/v1/dlc/bond`, `/api/v1/m2m/settle`) against virtualized Lightning / Settlement backends with header validation (`x-402-payment`, `payment-required`, `payment-signature`).
+- **X402 Settlement Middleware**: Test protected capability endpoints (`/api/v1/canton/cbtc/verify`, `/api/v1/dlc/bond`, `/api/v1/dlc/cet`, `/api/v1/m2m/settle`) against virtualized Lightning / Settlement backends with header validation (`x-402-payment`, `payment-required`, `payment-signature`).
 - **Chaos Fault Injection**: Test suites MUST simulate failure modes:
   - **Server Faults**: HTTP 500 Internal Server Error injection asserting gateway error propagation (e.g., HTTP 503 `lightning_backend_unavailable`).
   - **High Latency**: Network lag delay injection (e.g., 1500ms delay) asserting timeout handling (e.g., HTTP 504 `lightning_backend_timeout`).
