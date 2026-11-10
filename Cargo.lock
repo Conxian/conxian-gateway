@@ -1578,6 +1578,7 @@ dependencies = [
  "hex",
  "hmac 0.13.0",
  "http-body-util",
+ "lib-conxian-core",
  "minreq 3.0.0",
  "nwc",
  "rand 0.10.3",
