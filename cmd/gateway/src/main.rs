@@ -436,6 +436,12 @@ async fn main() -> anyhow::Result<()> {
         coordinator,
     };
 
+    // Apply the idempotent managed-key/onboarding schema migrations when the
+    // durable store is configured, before serving any webhook/onboarding traffic.
+    conxian_api::init_managed_store()
+        .await
+        .map_err(|e| anyhow::anyhow!("managed store schema init failed: {e}"))?;
+
     // Configure and start API server
     let app = configure_routes(
         app_state,

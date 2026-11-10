@@ -49,6 +49,30 @@ pub(crate) fn mor_key_store_from_env() -> Option<std::sync::Arc<dyn KeyStore>> {
     ))
 }
 
+/// Applies the idempotent managed-key/onboarding schema migrations when
+/// `MOR_WEBHOOK_DATABASE_URL` is configured.
+///
+/// Called once at startup before serving so the durable stores have their
+/// tables. Returns `Ok(())` when the database is unconfigured (nothing to do),
+/// and an error otherwise so a half-provisioned schema fails closed rather than
+/// serving webhook/onboarding traffic against missing tables.
+pub async fn init_managed_store() -> Result<(), String> {
+    let database_url = match std::env::var("MOR_WEBHOOK_DATABASE_URL")
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+    {
+        Some(url) => url,
+        None => return Ok(()),
+    };
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(5)
+        .connect(&database_url)
+        .await
+        .map_err(|e| format!("connect managed store: {e}"))?;
+    crate::mor_webhook_store::run_migrations(&pool).await
+}
+
 /// Builds the self-serve onboarding API state (Gateway #713) from the
 /// environment, or `None` when unconfigured.
 ///
