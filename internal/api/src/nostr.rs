@@ -3,12 +3,24 @@ use serde::{Deserialize, Serialize};
 use tracing::info;
 
 /// CON-1267: Nostr Wallet Connect (NWC) transport skeleton.
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct NwcConnection {
     pub pubkey: String,
     pub relay: String,
     pub secret: String,
     pub lud16: Option<String>,
+}
+
+impl std::fmt::Debug for NwcConnection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Never expose the wallet-connect secret in logs or error output.
+        f.debug_struct("NwcConnection")
+            .field("pubkey", &self.pubkey)
+            .field("relay", &self.relay)
+            .field("secret", &"<redacted>")
+            .field("lud16", &self.lud16)
+            .finish()
+    }
 }
 
 impl NwcConnection {
@@ -27,8 +39,7 @@ impl NwcConnection {
     }
 
     pub fn parse_uri(uri: &str) -> ConxianResult<Self> {
-        info!("Parsing NWC connection URI: {}", uri);
-
+        // Do not log the URI: it carries the wallet-connect `secret` value.
         if !uri.starts_with("nostr+walletconnect://") {
             return Err(ConxianError::Compliance(
                 "Invalid NWC URI scheme".to_string(),
@@ -147,6 +158,19 @@ impl NwcConnection {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn debug_redacts_secret() {
+        let conn = NwcConnection {
+            pubkey: "pk".into(),
+            relay: "wss://relay.example".into(),
+            secret: "super-secret-value".into(),
+            lud16: None,
+        };
+        let rendered = format!("{conn:?}");
+        assert!(!rendered.contains("super-secret-value"));
+        assert!(rendered.contains("<redacted>"));
+    }
 
     #[test]
     fn test_parse_nwc_uri() {
