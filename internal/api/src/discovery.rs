@@ -53,6 +53,11 @@ fn openapi_document() -> Value {
                     "type": "http",
                     "scheme": "bearer",
                     "description": "No-card onboarding bearer token (Authorization: Bearer <token>) used only to provision a first tenant."
+                },
+                "contributionLedgerToken": {
+                    "type": "http",
+                    "scheme": "bearer",
+                    "description": "Genesis Credits operator token (Authorization: Bearer <token>). Authorises a verified-work award; only a maintainer-confirmed contribution may mint."
                 }
             },
             "schemas": {
@@ -75,6 +80,30 @@ fn openapi_document() -> Value {
                     "properties": {
                         "idempotency_key": { "type": "string", "description": "Client-supplied key; a retry returns the existing receipt." },
                         "tier": { "type": "string", "description": "Requested tier. Defaults to the no-card sandbox lane." }
+                    }
+                },
+                "AwardRequest": {
+                    "type": "object",
+                    "required": ["contributor", "contribution"],
+                    "properties": {
+                        "contributor": { "type": "string", "description": "Contributor id the credits accrue to (non-transferable)." },
+                        "contribution": {
+                            "type": "string",
+                            "enum": ["verified-disproof", "verified-reproduction", "merged-pull-request", "sdk-integration", "security-audit", "enterprise-referral"],
+                            "description": "The maintainer-confirmed contribution type."
+                        }
+                    }
+                },
+                "RedeemRequest": {
+                    "type": "object",
+                    "required": ["contributor", "redemption"],
+                    "properties": {
+                        "contributor": { "type": "string" },
+                        "redemption": {
+                            "type": "string",
+                            "enum": ["relay-credits", "tier-discount", "rate-limit-uplift", "onboarding-slot"],
+                            "description": "The platform utility the credits are spent on."
+                        }
                     }
                 },
                 "Error": {
@@ -280,6 +309,56 @@ fn openapi_document() -> Value {
                     "parameters": [ { "name": "tenant_id", "in": "path", "required": true, "schema": { "type": "string" } } ],
                     "responses": { "200": { "description": "Usage/quota." } }
                 }
+            },
+            "/api/v1/contributions/award": {
+                "post": {
+                    "operationId": "contributionAward",
+                    "summary": "Mint Genesis Credits for a maintainer-confirmed contribution",
+                    "description": "Utility-only, non-transferable credits earned for verified work. Requires the contribution-ledger operator token.",
+                    "security": [ { "contributionLedgerToken": [] } ],
+                    "requestBody": {
+                        "required": true,
+                        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AwardRequest" } } }
+                    },
+                    "responses": {
+                        "200": { "description": "Updated contributor summary." },
+                        "400": { "description": "Unknown contribution or empty contributor." },
+                        "401": { "description": "Invalid operator token." },
+                        "409": { "description": "Per-period credit cap reached." },
+                        "503": { "description": "Durable store unavailable." }
+                    }
+                }
+            },
+            "/api/v1/contributions/{contributor}": {
+                "get": {
+                    "operationId": "contributionSummary",
+                    "summary": "Genesis Credits balance and award history for a contributor",
+                    "security": [ { "contributionLedgerToken": [] } ],
+                    "parameters": [ { "name": "contributor", "in": "path", "required": true, "schema": { "type": "string" } } ],
+                    "responses": {
+                        "200": { "description": "Contributor summary." },
+                        "401": { "description": "Invalid operator token." }
+                    }
+                }
+            },
+            "/api/v1/contributions/redeem": {
+                "post": {
+                    "operationId": "contributionRedeem",
+                    "summary": "Redeem Genesis Credits for a platform utility",
+                    "description": "Spends credits on relay credits, a tier discount, a rate-limit uplift or an onboarding slot. Relay-credit redemptions grant into the metered credit balance.",
+                    "security": [ { "contributionLedgerToken": [] } ],
+                    "requestBody": {
+                        "required": true,
+                        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RedeemRequest" } } }
+                    },
+                    "responses": {
+                        "200": { "description": "Redemption receipt." },
+                        "400": { "description": "Unknown redemption." },
+                        "401": { "description": "Invalid operator token." },
+                        "402": { "description": "Insufficient credits." },
+                        "503": { "description": "Durable store or relay sink unavailable." }
+                    }
+                }
             }
         }
     })
@@ -374,13 +453,20 @@ mod tests {
         // The self-serve onboarding lane (#713) is advertised.
         assert!(paths.contains_key("/api/v1/onboard"));
         assert!(paths.contains_key("/api/v1/tenants/{tenant_id}/limits"));
+        // The Genesis Credits contribution ledger is advertised.
+        assert!(paths.contains_key("/api/v1/contributions/award"));
+        assert!(paths.contains_key("/api/v1/contributions/{contributor}"));
+        assert!(paths.contains_key("/api/v1/contributions/redeem"));
         // Every referenced schema resolves.
         let schemas = doc["components"]["schemas"].as_object().unwrap();
         assert!(schemas.contains_key("Health"));
         assert!(schemas.contains_key("OnboardRequest"));
+        assert!(schemas.contains_key("AwardRequest"));
+        assert!(schemas.contains_key("RedeemRequest"));
         // The onboarding token scheme is declared.
         let schemes = doc["components"]["securitySchemes"].as_object().unwrap();
         assert!(schemes.contains_key("onboardingToken"));
+        assert!(schemes.contains_key("contributionLedgerToken"));
     }
 
     #[test]
