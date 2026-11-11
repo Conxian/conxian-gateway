@@ -723,12 +723,6 @@ fn shared_credit_store() -> &'static std::sync::Arc<InMemoryCreditStore> {
     STORE.get_or_init(|| std::sync::Arc::new(InMemoryCreditStore::new()))
 }
 
-/// The shared metered credit store as a trait object, for callers that need to
-/// grant relay credits (the Genesis Credits redemption sink).
-pub(crate) fn shared_credit_sink() -> std::sync::Arc<dyn CreditStore> {
-    shared_credit_store().clone()
-}
-
 fn billing_service() -> &'static std::sync::Arc<BillingService> {
     static SVC: std::sync::OnceLock<std::sync::Arc<BillingService>> = std::sync::OnceLock::new();
     SVC.get_or_init(|| {
