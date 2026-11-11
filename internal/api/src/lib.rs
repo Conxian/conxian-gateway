@@ -5,6 +5,7 @@ pub mod a2p;
 pub mod admin;
 pub mod auth;
 pub mod billing;
+pub mod billing_strike;
 pub mod camt;
 pub mod capabilities;
 pub mod contribution_ledger;

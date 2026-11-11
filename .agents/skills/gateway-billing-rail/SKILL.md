@@ -27,6 +27,13 @@ business. The webhook reads the tier from `data.items[0].price.name` (Paddle) or
 - Backend: `HttpInvoiceBackend::from_env()` reads `LIGHTNING_INVOICE_CREATE_URL`,
   `LIGHTNING_INVOICE_CHECK_URL`, `LIGHTNING_INVOICE_API_KEY` (lnbits-native,
   `X-Api-Key` header). Unset → `NoInvoiceCreateUrl` (fail closed).
+- Backend selection: `InvoiceBackendSelector::from_env()` chooses the **Strike**
+  backend (`internal/api/src/billing_strike.rs`) when `STRIKE_API_KEY` is set
+  (optional `STRIKE_API_BASE_URL`, default `https://api.strike.me`; sandbox is
+  `https://api.dev.strike.me`), else the lnbits-native backend above. Strike is
+  custodial — it collects the payment; it is not a Conxian custody layer and does
+  not replace the merchant-of-record. See
+  `docs/research/STRIKE_API_LESSONS_2026_11_11.md`.
 
 ## x402 pay-per-call rail
 
