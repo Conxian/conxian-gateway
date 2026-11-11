@@ -150,6 +150,7 @@ pub enum BillingError {
     InvoiceExpired,
     ActivationUnavailable,
     KeyMint(String),
+    StrikeNotConfigured,
 }
 
 impl fmt::Display for BillingError {
@@ -181,6 +182,9 @@ impl fmt::Display for BillingError {
             Self::InvoiceExpired => write!(f, "invoice expired"),
             Self::ActivationUnavailable => write!(f, "subscription activation unavailable"),
             Self::KeyMint(detail) => write!(f, "key minting failed: {detail}"),
+            Self::StrikeNotConfigured => {
+                write!(f, "Strike invoice backend not configured (fail-closed)")
+            }
         }
     }
 }
@@ -731,11 +735,64 @@ impl TokenIssuer for FusionTokenIssuer {
 /// Concrete billing service used by the HTTP handlers (fail-closed invoice
 /// backend + durable key store + shared in-memory credit store).
 type BillingService = LightningSubscriptionService<
-    HttpInvoiceBackend,
+    InvoiceBackendSelector,
     StoreKeyMinter,
     FusionTokenIssuer,
     std::sync::Arc<InMemoryCreditStore>,
 >;
+
+/// Selects the invoice backend from the environment.
+///
+/// `STRIKE_API_KEY` (with optional `STRIKE_API_BASE_URL`) selects the Strike
+/// backend; otherwise the default lnbits-native [`HttpInvoiceBackend`] is used.
+/// The choice is made once at startup, so a misconfiguration cannot flip
+/// backends mid-run.
+pub enum InvoiceBackendSelector {
+    Lnbits(HttpInvoiceBackend),
+    Strike(crate::billing_strike::StrikeInvoiceBackend),
+}
+
+impl InvoiceBackendSelector {
+    pub(crate) fn from_env() -> Self {
+        if let Some(strike) = crate::billing_strike::StrikeConfig::from_env() {
+            tracing::info!(
+                "Managed billing invoice backend: Strike ({})",
+                strike.base_url
+            );
+            Self::Strike(crate::billing_strike::StrikeInvoiceBackend::new(Some(
+                strike,
+            )))
+        } else {
+            tracing::info!("Managed billing invoice backend: lnbits-native HTTP");
+            Self::Lnbits(HttpInvoiceBackend::from_env())
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl InvoiceBackend for InvoiceBackendSelector {
+    async fn create_invoice(
+        &self,
+        amount_sats: u64,
+        expiry_seconds: u64,
+    ) -> Result<Invoice, BillingError> {
+        match self {
+            Self::Lnbits(backend) => backend.create_invoice(amount_sats, expiry_seconds).await,
+            Self::Strike(backend) => backend.create_invoice(amount_sats, expiry_seconds).await,
+        }
+    }
+
+    async fn check_settled(
+        &self,
+        invoice_id: &str,
+        amount_sats: u64,
+    ) -> Result<bool, BillingError> {
+        match self {
+            Self::Lnbits(backend) => backend.check_settled(invoice_id, amount_sats).await,
+            Self::Strike(backend) => backend.check_settled(invoice_id, amount_sats).await,
+        }
+    }
+}
 
 /// The single process-wide metered credit store. Shared by the billing lane
 /// (which grants on activation and draws per call) and the Genesis Credits
@@ -756,7 +813,7 @@ pub(crate) fn shared_credit_sink() -> std::sync::Arc<dyn CreditStore> {
 fn billing_service() -> &'static std::sync::Arc<BillingService> {
     static SVC: std::sync::OnceLock<std::sync::Arc<BillingService>> = std::sync::OnceLock::new();
     SVC.get_or_init(|| {
-        let backend = HttpInvoiceBackend::from_env();
+        let backend = InvoiceBackendSelector::from_env();
         let minter = StoreKeyMinter::new(crate::routes::mor_key_store_from_env());
         let issuer = FusionTokenIssuer::from_env();
         let credits = shared_credit_store().clone();
