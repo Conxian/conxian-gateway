@@ -203,7 +203,7 @@ export class ConxianClient {
     }
 
     /**
-     * Fetch real-time Sovereign Yield Index (SYI) rate and market quotes.
+     * Fetch the SYI status; the current production contract is explicitly unavailable until evidence is qualified.
      */
     async getSovereignYieldIndex(): Promise<SyiResponse> {
         return this.request<SyiResponse>("/treasury/syi");

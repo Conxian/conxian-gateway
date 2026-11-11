@@ -277,7 +277,7 @@ malformed or could enable XML injection in downstream bank systems.
 - **ADAPTER_FAMILY_STRATEGY.md:** Fiat at T1 Production (776 lines)
 - **BRICS_FINANCIAL_SYSTEMS_RESEARCH.md:** Full SPFS/PAPSS/CIPS/mBridge analysis
 - **LIGHTNING_SETTLEMENT_RAIL_RESEARCH.md:** X402 middleware integration
-- **SBTC_SETTLEMENT_RAIL_RESEARCH.md:** Treasury/SYI fiat FX integration
+- **SBTC_SETTLEMENT_RAIL_RESEARCH.md:** Read-only sBTC bridge observation; no qualified Treasury/SYI or FX integration (Gateway #880)
 - **CON-41:** Industry Enhancement (AlchemyPay + Banxa)
 - **API surface:** `POST /fiat/onramp/session`, `POST /fiat/webhook`,
   `POST /ingress/iso20022`, `POST /ingress/iso20022/camt054`

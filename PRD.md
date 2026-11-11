@@ -6,7 +6,7 @@ Institutional-grade middleware bridging Bitcoin/Stacks state logic with enterpri
 Conxian is designed to capture the Total Addressable Market (TAM) of Bitcoin-native liquidity ($10B+), moving beyond the initial Stacks Serviceable Addressable Market (SAM).
 
 ### Industry Enhancement Pillars
-- **A. sBTC "Suction" Pattern**: Incentivize native BTC-to-sBTC migrations via the Sovereign Yield Index (SYI).
+- **A. sBTC "Suction" Pattern (research only)**: A proposed BTC-to-sBTC adoption hypothesis; no incentive, live SYI, or treasury value is active. Provider-backed qualification remains open under Gateway #880.
 - **B. BitVM & DLC Bonds (planned/research)**: Target trustless cross-chain state verification and non-custodial Bitcoin debt; DLC implementation and production readiness remain gated by [`docs/research/DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md`](docs/research/DLC_ECOSYSTEM_AND_MAINNET_EVIDENCE.md).
 - **C. Institutional ISO 20022 Egress**: Banking-standard messaging (pacs.008) for legacy egress.
 - **D. Workload Identity Federation (WIF)**: TEE-based agent authentication without static keys.
@@ -33,8 +33,8 @@ Conxian is designed to capture the Total Addressable Market (TAM) of Bitcoin-nat
 - [x] R19: Stale Sync Detection & Observability (Status: Complete)
 - [x] R20: ZKML Verification Support (Status: Complete)
 - [x] R21: MVCR Generation (Status: Complete)
-- [x] R22: Institutional Treasury Monitoring (Status: Complete)
-- [x] R23: TAM-Capture Strategy Implementation (Status: Complete)
+- [ ] R22: Institutional Treasury Monitoring (Status: disabled; provider-qualified balances, yield, and FX evidence are unavailable; Gateway #880)
+- [ ] R23: TAM-Capture Strategy Implementation (Status: research-only; no production TAM, liquidity-growth, or yield values are published)
 - [x] R24: WIF Identity Exchange (Status: Complete)
 - [x] R25: ISO 20022 Egress Support (Status: Complete)
 - [x] R26: BitVM Attestation Verification (Status: Complete)
@@ -48,7 +48,7 @@ Conxian is designed to capture the Total Addressable Market (TAM) of Bitcoin-nat
 - [x] R34: Advanced Axum Observability & Latency Tracking (Status: Complete)
 - [x] R35: Canonical Portfolio Mapping (Status: Complete)
 - [x] R36: Industrial Intent & x402 Alignment (Status: Complete)
-- [x] R37: Structured Finance Tranche Implementation (Status: Complete)
+- [ ] R37: Structured Finance Tranche Implementation (Status: legacy simulation only; no live tranche allocation, yield distribution, or tax calculation is qualified)
 - [x] R38: Phase 7 Sovereign Labor & Sharding Verification (Status: Complete)
 - [x] R39: Network Promotion Policy (dev -> main) Integration (Status: Complete)
 - [ ] R40: BitVM3 Adapter — Garbled Circuits & Recursive Proof Verification (Status: Research-only structural placeholder; fail-closed pending a stable BitVM3/GC SDK, audit, and verified production deployment. Tracked in #189.)
@@ -60,7 +60,7 @@ Conxian is designed to capture the Total Addressable Market (TAM) of Bitcoin-nat
     - Implemented BitVM attestation verification for trustless state layer.
     - Added ISO 20022 Egress (pacs.008) for institutional banking alignment.
     - Integrated Workload Identity Federation (WIF) for TEE-based enclave authentication.
-    - Enhanced Treasury Monitor with sBTC "Suction" simulation and Sovereign Yield Index (SYI).
+    - Added a historical sBTC "Suction" and SYI simulation; it was not provider-qualified and was disabled under Gateway #880 on 2026-11-11.
 - 2026-03-24: Fiat Gateway Implementation (Jules):
     - Implemented FiatRouter with production-grade Ramp Network, Stitch, Ozow, Alchemy Pay, and Banxa integrations.
     - Added HMAC-SHA256 signature verification for authenticated webhooks.
@@ -73,7 +73,7 @@ Conxian is designed to capture the Total Addressable Market (TAM) of Bitcoin-nat
     - Added the BitVM2 Job Card settlement API boundary; it now fails closed with HTTP 501 and does not persist a Job Card until a reviewed cryptographic verifier is available (#189).
 - 2026-04-10: Mainnet Alignment & Production Readiness (Jules):
     - Implemented SovereignCommit hooks for Tableland migration (CON-329).
-    - Enhanced institutional metrics with TAM capture and SYI tracking.
+     - Added simulated TAM/SYI metrics; these were not production evidence and are now disabled under Gateway #880.
     - Established mandatory TERMS.md and PRIVACY.md institutional documentation.
     - Created canonical portfolio map and repository inventory (CON-468/CON-410).
     - Added the ALEX read-only/shadow quote and swap surfaces; production settlement remains blocked by the evidence gate in [`docs/research/ALEX_SETTLEMENT_EVIDENCE_AND_GATE_2026-07-22.md`](docs/research/ALEX_SETTLEMENT_EVIDENCE_AND_GATE_2026-07-22.md).
@@ -94,6 +94,21 @@ Conxian is designed to capture the Total Addressable Market (TAM) of Bitcoin-nat
     - Standardized release hygiene and validated workspace-wide version consistency.
     - Aligned all documentation with v1.9.2 standards.
 
+## 2026-11-11 Treasury evidence correction
+
+Gateway #880 records that the deployed treasury monitor previously used an
+unverified ALEX quote, a fixed fallback proxy, hard-coded balances, simulated
+liquidity growth, fixed tranche/yield assumptions, and synthetic FX values.
+That implementation is not a financial or provider observation. The monitor
+and public-facing treasury values are disabled; APIs return an explicit
+unavailable state and omit unqualified Prometheus series. Historical entries
+above describe code that existed at the time, not current production capability.
+
+Reactivation requires a verified provider and network, exact asset pair and
+units, source timestamp and freshness bounds, provenance, accounting semantics,
+failure behavior, and independent operational acceptance. No signer,
+settlement, payment, custody, or treasury allocation is enabled by this work.
+
 ## 4. Technical Implementation Details
 - **Persistence and deployment boundary**: Production file persistence is an
   exclusive local writer with transactional CAS, old-or-new crash recovery,
@@ -101,7 +116,7 @@ Conxian is designed to capture the Total Addressable Market (TAM) of Bitcoin-nat
   Active-active/shared filesystems and exactly-once fee-bump claims are not
   supported. Operators must follow
   [`docs/PERSISTENCE_TOPOLOGY.md`](docs/PERSISTENCE_TOPOLOGY.md).
-- **TAM Engine**: Simulates growth of sBTC liquidity and tracks the Sovereign Yield Index.
+- **TAM Engine**: The legacy growth/SYI simulation is disabled; no live TAM, liquidity, yield, tranche, or FX metric is published pending source qualification (#880).
 - **WIF Manager**: Handles OIDC-to-GCP token exchange for enclave-signed attestations.
 - **BitVM Verifier**: Implements state-root commitment verification for optimistic fraud proofs.
 - **BitVM3 Adapter**: Research-only structural placeholder for garbled-circuit and recursive-proof verification; all paths fail closed pending a stable SDK, audit, and verified production deployment. Tracked in [#189](https://github.com/Conxian/conxian-gateway/issues/189).
