@@ -125,6 +125,7 @@ pub fn new_offline_queue(key: [u8; 32]) -> Arc<dyn conxian_core::OfflineQueue> {
             .expect("Failed to init offline queue"),
     )
 }
+
 #[cfg(test)]
 mod x402_nwc_activation_tests {
     use super::*;
@@ -133,8 +134,7 @@ mod x402_nwc_activation_tests {
 
     #[tokio::test]
     async fn configured_nwc_uri_keeps_x402_fail_closed() {
-        let adapter =
-            new_lightning_adapter_for_nwc_uri(Some("nostr+walletconnect://configured"));
+        let adapter = new_lightning_adapter_for_nwc_uri(Some("nostr+walletconnect://configured"));
         let payload = X402PaymentPayload {
             amount: 1_000,
             asset: "BTC".to_string(),
