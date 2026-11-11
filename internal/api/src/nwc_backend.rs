@@ -6,8 +6,8 @@
 //! until a wallet is configured.
 
 use crate::lightning::{
-    LightningBackend, LightningBackendError, LightningSettlementRequest,
-    LightningSettlementResponse,
+    InvoiceSettlement, IssuedInvoice, LightningBackend, LightningBackendError,
+    LightningSettlementRequest, LightningSettlementResponse,
 };
 use crate::nostr::NwcConnection;
 use async_trait::async_trait;
@@ -42,6 +42,69 @@ impl NwcLightningBackend {
 
 #[async_trait]
 impl LightningBackend for NwcLightningBackend {
+    /// Issue an invoice for the client to pay (server-issues flow). The amount
+    /// is bound by the server; the client pays the returned BOLT11.
+    async fn create_invoice(
+        &self,
+        amount_sats: u64,
+        expiry_seconds: u64,
+        description: &str,
+    ) -> Result<IssuedInvoice, LightningBackendError> {
+        let client = self.client()?;
+        let request = MakeInvoiceRequest {
+            // NIP-47 amounts are millisatoshis.
+            amount: amount_sats.saturating_mul(1000),
+            description: Some(description.to_string()),
+            description_hash: None,
+            expiry: Some(expiry_seconds),
+        };
+        let response = tokio::time::timeout(
+            self.timeout,
+            client.make_invoice(request).timeout(self.timeout),
+        )
+        .await;
+        match response {
+            Ok(Ok(invoice)) => Ok(IssuedInvoice {
+                bolt11: invoice.invoice,
+                payment_hash: invoice.payment_hash.unwrap_or_default(),
+            }),
+            Ok(Err(e)) => Err(LightningBackendError::Rejected {
+                detail: e.to_string(),
+            }),
+            Err(_) => Err(LightningBackendError::Unavailable),
+        }
+    }
+
+    /// Verify settlement of a server-issued invoice by payment hash. `settled`
+    /// is only true for `TransactionState::Settled`; an unknown/absent state is
+    /// reported as not settled so the caller fails closed.
+    async fn lookup_invoice(
+        &self,
+        payment_hash: &str,
+    ) -> Result<InvoiceSettlement, LightningBackendError> {
+        let client = self.client()?;
+        let request = LookupInvoiceRequest {
+            payment_hash: Some(payment_hash.to_string()),
+            invoice: None,
+        };
+        let response = tokio::time::timeout(
+            self.timeout,
+            client.lookup_invoice(request).timeout(self.timeout),
+        )
+        .await;
+        match response {
+            Ok(Ok(invoice)) => Ok(InvoiceSettlement {
+                settled: matches!(invoice.state, Some(TransactionState::Settled)),
+                // NIP-47 reports millisatoshis; convert to sats.
+                amount_sats: Some(invoice.amount / 1000),
+            }),
+            Ok(Err(e)) => Err(LightningBackendError::Rejected {
+                detail: e.to_string(),
+            }),
+            Err(_) => Err(LightningBackendError::Unavailable),
+        }
+    }
+
     async fn settle_payment(
         &self,
         request: LightningSettlementRequest,

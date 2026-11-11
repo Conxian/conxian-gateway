@@ -10,8 +10,8 @@
 use async_trait::async_trait;
 use axum::{body::Body, http::Request};
 use conxian_api::lightning::{
-    LightningAdapter, LightningBackend, LightningBackendError, LightningSettlementRequest,
-    LightningSettlementResponse,
+    InvoiceSettlement, IssuedInvoice, LightningAdapter, LightningBackend, LightningBackendError,
+    LightningSettlementRequest, LightningSettlementResponse,
 };
 use conxian_api::{configure_routes, AppState};
 use conxian_compliance::ZkcVerifier;
@@ -90,6 +90,30 @@ struct DummyBackend;
 
 #[async_trait]
 impl LightningBackend for DummyBackend {
+    async fn create_invoice(
+        &self,
+        amount_sats: u64,
+        _expiry_seconds: u64,
+        _description: &str,
+    ) -> Result<IssuedInvoice, LightningBackendError> {
+        Ok(IssuedInvoice {
+            bolt11: format!("lnbc-dummy-{amount_sats}"),
+            payment_hash: format!("dummy-hash-{amount_sats}"),
+        })
+    }
+
+    async fn lookup_invoice(
+        &self,
+        payment_hash: &str,
+    ) -> Result<InvoiceSettlement, LightningBackendError> {
+        Ok(InvoiceSettlement {
+            settled: true,
+            amount_sats: payment_hash
+                .strip_prefix("dummy-hash-")
+                .and_then(|s| s.parse::<u64>().ok()),
+        })
+    }
+
     async fn settle_payment(
         &self,
         request: LightningSettlementRequest,
@@ -240,11 +264,34 @@ async fn test_enterprise_workflow_1_swift_cbpr_iso20022_pain001() {
     );
     let att_header = make_attestation_header(&device_id, &payload_hash);
 
+    // Obtain a server-issued x402 challenge for the protected ingress route.
+    let challenge_res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/ingress/pain001")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(challenge_res.status(), 402);
+    let cb = challenge_res
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let cj: serde_json::Value = serde_json::from_slice(&cb).unwrap();
+    let challenge = cj["challenge"].as_str().unwrap().to_string();
+
     let ingress_req = Request::builder()
         .method("POST")
         .uri("/api/v1/ingress/pain001")
         .header("Authorization", format!("Bearer {}", TEST_TOKEN))
-        .header("x-402-payment", "proof-test")
+        .header("payment-required", challenge)
         .header("x-conxian-attestation", att_header)
         .header("x-conxian-trust-metadata", trust_metadata_json())
         .header("Content-Type", "application/xml")
