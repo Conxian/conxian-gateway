@@ -770,7 +770,10 @@ async fn test_get_state_masks_unqualified_treasury_metrics() {
         "fx_inr_usd",
         "fx_aed_usd",
     ] {
-        assert!(body["metrics"][field].is_null(), "{field} must not be published");
+        assert!(
+            body["metrics"][field].is_null(),
+            "{field} must not be published"
+        );
     }
 }
 

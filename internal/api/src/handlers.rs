@@ -74,10 +74,7 @@ pub async fn get_health() -> Json<Value> {
 pub async fn get_state(State(state): State<AppState>) -> Json<Value> {
     let s = state.shared.read().expect("lock poisoned");
     let mut snapshot = serde_json::to_value(s.clone()).unwrap_or_else(|_| json!({}));
-    if let Some(metrics) = snapshot
-        .get_mut("metrics")
-        .and_then(Value::as_object_mut)
-    {
+    if let Some(metrics) = snapshot.get_mut("metrics").and_then(Value::as_object_mut) {
         for field in [
             "treasury_balance_stx",
             "treasury_balance_btc",
