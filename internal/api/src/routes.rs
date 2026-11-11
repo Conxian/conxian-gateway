@@ -96,6 +96,31 @@ fn onboarding_api_from_env(
     crate::onboarding::OnboardingApi::from_env(service)
 }
 
+/// Builds the Genesis Credits API state from the environment, or `None` when
+/// the operator token or a durable database is unconfigured.
+///
+/// The lane requires `CONTRIBUTION_LEDGER_TOKEN` (the operator credential that
+/// authorises a verified-work award) and `MOR_WEBHOOK_DATABASE_URL` (the
+/// durable ledger). Without a durable store the routes are not mounted, so a
+/// balance is never accrued from volatile state — mirroring the onboarding and
+/// MoR-webhook fail-closed mounting. Redemption credits land in the same
+/// metered credit store the billing lane draws from.
+fn contribution_api_from_env() -> Option<crate::contribution_ledger::ContributionApi> {
+    let database_url = std::env::var("MOR_WEBHOOK_DATABASE_URL")
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())?;
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(5)
+        .connect_lazy(&database_url)
+        .ok()?;
+    let store = std::sync::Arc::new(crate::contribution_store::PgContributionStore::new(pool));
+    crate::contribution_ledger::ContributionApi::from_env(
+        store,
+        Some(crate::billing::shared_credit_sink()),
+    )
+}
+
 pub fn configure_routes(
     state: AppState,
     api_token: String,
@@ -351,6 +376,28 @@ pub fn configure_routes(
         None => Router::new(),
     };
 
+    // Genesis Credits contribution ledger (utility-only capital formation).
+    // Mounted only when the operator token and a durable store are configured;
+    // the award, summary and redeem handlers each require the operator token
+    // (fail closed).
+    let contribution_routes = match contribution_api_from_env() {
+        Some(api) => Router::new()
+            .route(
+                "/contributions/award",
+                post(crate::contribution_ledger::award_handler),
+            )
+            .route(
+                "/contributions/redeem",
+                post(crate::contribution_ledger::redeem_handler),
+            )
+            .route(
+                "/contributions/{contributor}",
+                get(crate::contribution_ledger::summary_handler),
+            )
+            .with_state(api),
+        None => Router::new(),
+    };
+
     Router::new()
         .route("/api/v1/version", get(|| async { conxian_core::VERSION }))
         // Standards-based, unauthenticated API discovery (Gateway #711).
@@ -375,7 +422,8 @@ pub fn configure_routes(
                 .merge(alex_routes)
                 .merge(managed_routes)
                 .merge(webhook_routes)
-                .merge(onboarding_routes),
+                .merge(onboarding_routes)
+                .merge(contribution_routes),
         )
         .nest("/admin/v1", admin_routes)
         .with_state(state.clone())

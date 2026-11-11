@@ -208,6 +208,31 @@ pub trait CreditStore: Send + Sync {
     /// Fails closed when the tenant has no ledger or insufficient credit.
     fn draw(&self, tenant_id: &str, amount_sats: u64, now: u64) -> Result<u64, String>;
     fn balance(&self, tenant_id: &str) -> u64;
+    /// Grants relay credits directly (no commitment quote), used when a
+    /// contributor redeems Genesis Credits for metered relay capacity. Defaults
+    /// to fail-closed so a store that does not support it cannot silently
+    /// mint unmetered credit.
+    fn grant_relay_credits(&self, _tenant_id: &str, _amount_sats: u64) -> Result<u64, String> {
+        Err("credit store does not support direct relay-credit grant".to_string())
+    }
+}
+
+/// Forwards every [`CreditStore`] method through an `Arc`, so a single store
+/// instance can be shared by the billing lane and the Genesis Credits
+/// redemption sink without duplicating state.
+impl<T: CreditStore + ?Sized> CreditStore for std::sync::Arc<T> {
+    fn grant(&self, tenant_id: &str, quote: &PrepayQuote, expires_at: u64) -> Result<(), String> {
+        (**self).grant(tenant_id, quote, expires_at)
+    }
+    fn draw(&self, tenant_id: &str, amount_sats: u64, now: u64) -> Result<u64, String> {
+        (**self).draw(tenant_id, amount_sats, now)
+    }
+    fn balance(&self, tenant_id: &str) -> u64 {
+        (**self).balance(tenant_id)
+    }
+    fn grant_relay_credits(&self, tenant_id: &str, amount_sats: u64) -> Result<u64, String> {
+        (**self).grant_relay_credits(tenant_id, amount_sats)
+    }
 }
 
 /// In-memory credit store (single process). Adequate for the first lane; swap
@@ -255,6 +280,15 @@ impl CreditStore for InMemoryCreditStore {
             .ok()
             .and_then(|m| m.get(tenant_id).map(|l| l.balance()))
             .unwrap_or(0)
+    }
+
+    fn grant_relay_credits(&self, tenant_id: &str, amount_sats: u64) -> Result<u64, String> {
+        let mut map = self.ledgers.lock().map_err(|e| e.to_string())?;
+        let ledger = map
+            .entry(tenant_id.to_string())
+            .or_insert_with(|| CreditLedger::new(tenant_id, 0, u64::MAX));
+        ledger.grant(amount_sats).map_err(|e| e.to_string())?;
+        Ok(ledger.balance())
     }
 }
 
@@ -671,13 +705,29 @@ impl TokenIssuer for FusionTokenIssuer {
 }
 
 /// Concrete billing service used by the HTTP handlers (fail-closed invoice
-/// backend + durable key store + in-memory credit store).
+/// backend + durable key store + shared in-memory credit store).
 type BillingService = LightningSubscriptionService<
     HttpInvoiceBackend,
     StoreKeyMinter,
     FusionTokenIssuer,
-    InMemoryCreditStore,
+    std::sync::Arc<InMemoryCreditStore>,
 >;
+
+/// The single process-wide metered credit store. Shared by the billing lane
+/// (which grants on activation and draws per call) and the Genesis Credits
+/// redemption sink (which grants relay credits), so a redeemed credit is
+/// immediately spendable through the same balance.
+fn shared_credit_store() -> &'static std::sync::Arc<InMemoryCreditStore> {
+    static STORE: std::sync::OnceLock<std::sync::Arc<InMemoryCreditStore>> =
+        std::sync::OnceLock::new();
+    STORE.get_or_init(|| std::sync::Arc::new(InMemoryCreditStore::new()))
+}
+
+/// The shared metered credit store as a trait object, for callers that need to
+/// grant relay credits (the Genesis Credits redemption sink).
+pub(crate) fn shared_credit_sink() -> std::sync::Arc<dyn CreditStore> {
+    shared_credit_store().clone()
+}
 
 fn billing_service() -> &'static std::sync::Arc<BillingService> {
     static SVC: std::sync::OnceLock<std::sync::Arc<BillingService>> = std::sync::OnceLock::new();
@@ -685,7 +735,7 @@ fn billing_service() -> &'static std::sync::Arc<BillingService> {
         let backend = HttpInvoiceBackend::from_env();
         let minter = StoreKeyMinter::new(crate::routes::mor_key_store_from_env());
         let issuer = FusionTokenIssuer::from_env();
-        let credits = InMemoryCreditStore::new();
+        let credits = shared_credit_store().clone();
         std::sync::Arc::new(LightningSubscriptionService::new(
             backend, minter, issuer, credits,
         ))
