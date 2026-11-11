@@ -207,6 +207,8 @@ pub const MANAGED_API_KEYS_MIGRATION: &str =
     include_str!("../../../migrations/0001_managed_api_keys.sql");
 pub const ONBOARDING_TENANTS_MIGRATION: &str =
     include_str!("../../../migrations/0002_onboarding_tenants.sql");
+pub const CONTRIBUTION_LEDGER_MIGRATION: &str =
+    include_str!("../../../migrations/0003_contribution_ledger.sql");
 
 /// Applies the idempotent schema migrations to `pool`.
 ///
@@ -218,6 +220,7 @@ pub async fn run_migrations(pool: &PgPool) -> Result<(), String> {
     for (label, sql) in [
         ("0001_managed_api_keys", MANAGED_API_KEYS_MIGRATION),
         ("0002_onboarding_tenants", ONBOARDING_TENANTS_MIGRATION),
+        ("0003_contribution_ledger", CONTRIBUTION_LEDGER_MIGRATION),
     ] {
         sqlx::raw_sql(sql)
             .execute(pool)
