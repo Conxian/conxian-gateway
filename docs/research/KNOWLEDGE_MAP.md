@@ -83,7 +83,7 @@
 - `src/bitcoin/fedimint_adapter.rs`: Fedimint guardian x-only pubkey Schnorr blind signature verification.
 - `src/brics_adapter.rs`: BRICS mBridge DLT state proof and threshold Schnorr consensus signature verification.
 - `src/stacks/sbtc.rs`: sBTC double-SHA256 raw transaction hashing and 80-byte block header PoW verification.
-- `src/treasury/mod.rs`: Sovereign Yield Index (SYI) monitoring and ALEX DEX market quote integration.
+- `src/treasury/mod.rs`: Treasury monitor disabled under Gateway #880; provider-qualified balance, yield, and FX publication is unavailable.
 
 ### 4. Client SDK & Schemas (`packages/`)
 

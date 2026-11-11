@@ -15,14 +15,15 @@ settlement rail** through a 441-line bridge monitor that tracks peg operations
 (deposits/withdrawals) via the Emily API.
 
 **Current state:** The `SbtcBridgeMonitor` polls the Emily API for deposit and
-withdrawal lifecycle events, maintains operation state, and exposes aggregated
-liquidity metrics. sBTC liquidity is a first-class input to the Treasury
-Monitor's sovereign yield index (SYI) calculation and ALEX settlement
-strategies.
+withdrawal lifecycle events and exposes aggregated bridge-observation metrics.
+Those observations are not a treasury balance, realized yield, or FX source and
+are not consumed by a live Sovereign Yield Index (SYI).
 
-**Decision:** sBTC remains a T1 production rail. The monitor is complete for
-observation and metrics. Settlement execution (initiating peg-in/peg-out) is
-deferred pending signer API access and institutional custody requirements.
+**Decision:** Treat this as a read-only observation capability. Peg-in/peg-out
+execution remains deferred pending signer API access, independent custody
+qualification, and the applicable mainnet evidence. The separate SYI path is
+disabled under Gateway #880 until its provider, network, asset, unit, freshness,
+provenance, and accounting contract is qualified.
 
 ---
 
@@ -100,9 +101,9 @@ The Gateway's `SbtcEmilyClient` maps these to typed Rust structs.
 | Deposit tracking | ✅ Live | Polls `/deposits`, tracks Pending→Accepted→Confirmed |
 | Withdrawal tracking | ✅ Live | Polls `/withdrawals`, same lifecycle |
 | Aggregated metrics | ✅ Live | `SbtcBridgeMetrics` — circulating supply, pending/confirmed counts |
-| Liquidity exposure | ✅ Live | `sbtc_liquidity_btc()` for Treasury Monitor |
+| Liquidity exposure | 🟡 Observation only | Bridge telemetry; not a verified treasury balance or SYI input |
 | Health monitoring | ✅ Live | `health_check()` on Emily API |
-| SYI contribution | ✅ Live | sBTC yield rates feed the Sovereign Yield Index |
+| SYI contribution | ⛔ Unqualified | No provider-backed SYI input is published; legacy simulation disabled by Gateway #880 |
 | Peg-in initiation | ❌ Not yet | Requires signer API with authentication |
 | Peg-out initiation | ❌ Not yet | Requires burn transaction + signer approval |
 | Signer set monitoring | ❌ Not yet | Signer rotation detection |

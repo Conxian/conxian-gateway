@@ -18,7 +18,7 @@ Provides a shared interface for applications and internal services to call curre
 - **Transaction Preparation**: Builds unsigned payloads ready for local-first signing.
 - **ISO 20022 Payment Initiation**: `generatePacs008Payment` constructs compliant `pacs.008.001.08` customer credit transfer XML documents for institutional banking rails.
 - **Identity Resolution**: `resolveIdentity` resolves BNS, Web3.bio profiles, and World ID verification states across Tier 1 identity providers.
-- **Treasury & Sovereign Yield**: `getSovereignYieldIndex` retrieves real-time SYI interest rate indices and sBTC/STX market quotes.
+- **Treasury & Sovereign Yield**: `getSovereignYieldIndex` returns an explicit unavailable status until provider, network, asset, units, freshness, and provenance evidence is qualified; it does not publish synthetic balances or yield values.
 - **Canton Network Attestation**: `verifyCbtcAttestation` verifies cBTC non-custodial attestation proofs for institutional DLTs.
 
 ## Verification boundaries

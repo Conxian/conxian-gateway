@@ -53,7 +53,7 @@ This document defines the required readiness gates across four control domains f
 
 - **conxian-business**
   - [x] **Legal**: Investigation of public/private visibility boundary complete.
-  - [x] **Strategic**: TAM-capture strategy and SYI logic aligned with ALEX.
+  - [ ] **Strategic**: SYI/TAM methodology and provider evidence remain unqualified; no live treasury or yield values are published (Gateway #880).
   - [x] **Operational**: Maintainer-controlled payout toggle verified (CON-230).
 
 ## 3. Promotion Path (Staged -> Main)
