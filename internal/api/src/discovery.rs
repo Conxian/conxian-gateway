@@ -84,26 +84,28 @@ fn openapi_document() -> Value {
                 },
                 "AwardRequest": {
                     "type": "object",
-                    "required": ["contributor", "contribution"],
+                    "required": ["contributor", "contribution", "idempotency_key"],
                     "properties": {
                         "contributor": { "type": "string", "description": "Contributor id the credits accrue to (non-transferable)." },
                         "contribution": {
                             "type": "string",
                             "enum": ["verified-disproof", "verified-reproduction", "merged-pull-request", "sdk-integration", "security-audit", "enterprise-referral"],
                             "description": "The maintainer-confirmed contribution type."
-                        }
+                        },
+                        "idempotency_key": { "type": "string", "description": "Client-supplied key; a retry returns the prior result and mints nothing further." }
                     }
                 },
                 "RedeemRequest": {
                     "type": "object",
-                    "required": ["contributor", "redemption"],
+                    "required": ["contributor", "redemption", "idempotency_key"],
                     "properties": {
                         "contributor": { "type": "string" },
                         "redemption": {
                             "type": "string",
                             "enum": ["relay-credits", "tier-discount", "rate-limit-uplift", "onboarding-slot"],
                             "description": "The platform utility the credits are spent on."
-                        }
+                        },
+                        "idempotency_key": { "type": "string", "description": "Client-supplied key; a retry returns the prior receipt and spends nothing further." }
                     }
                 },
                 "Error": {

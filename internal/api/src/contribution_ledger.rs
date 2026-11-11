@@ -120,6 +120,10 @@ pub struct CreditAward {
     pub credits: u64,
     pub awarded_at: u64,
     pub expires_at: u64,
+    /// True once expiry has been applied to the live balance. Retained in the
+    /// history so repeated reads or redemption attempts cannot deduct it twice.
+    #[serde(default)]
+    pub expiry_applied: bool,
 }
 
 /// The per-contributor Genesis Credits ledger. Non-transferable by construction:
@@ -223,6 +227,7 @@ impl ContributionLedger {
             credits: amount,
             awarded_at: now,
             expires_at: now + CREDIT_TTL_SECONDS,
+            expiry_applied: false,
         });
         Ok(self.balance)
     }
@@ -252,15 +257,17 @@ impl ContributionLedger {
         })
     }
 
-    /// Drops awards that have expired, reducing the live balance accordingly.
-    /// Keeps the history; only the balance changes.
+    /// Applies each expiry exactly once while retaining the award history. A
+    /// marked award is never deducted again, so repeated redemption attempts
+    /// (or a reload) cannot double-count the same expiry.
     fn prune_expired(&mut self, now: u64) {
-        let expired: u64 = self
-            .awards
-            .iter()
-            .filter(|a| now >= a.expires_at)
-            .map(|a| a.credits)
-            .sum();
+        let mut expired = 0u64;
+        for award in &mut self.awards {
+            if !award.expiry_applied && now >= award.expires_at {
+                expired = expired.saturating_add(award.credits);
+                award.expiry_applied = true;
+            }
+        }
         self.balance = self.balance.saturating_sub(expired.min(self.balance));
     }
 
@@ -306,25 +313,84 @@ pub struct ContributionSummary {
     pub generated_at: u64,
 }
 
+/// A durable record of one applied redemption, keyed by an idempotency key so a
+/// retried request returns the same receipt instead of spending twice.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RedemptionRecord {
+    pub redemption: String,
+    pub credits_spent: u64,
+    pub relay_credits: u64,
+    pub remaining: u64,
+    pub redeemed_at: u64,
+}
+
+/// Outcome of an award or redemption applied against a durable store.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ApplyOutcome<T> {
+    /// The mutation was applied for the first time.
+    Applied(T),
+    /// The idempotency key had already been applied; the stored result is
+    /// returned and no credit moved.
+    Duplicate(T),
+}
+
 /// Persists per-contributor Genesis Credits ledgers. Injected so the accrual
 /// rules stay unit-testable without a database; the gateway adapts this to a
 /// durable Neon/Postgres store at wiring time.
 ///
-/// Every method fails closed by returning `Err` rather than silently
-/// succeeding, so a database outage denies an award instead of minting a
-/// phantom balance that cannot later be reconciled.
+/// The mutation methods are **atomic and idempotent**: they take an idempotency
+/// key and apply the whole read-modify-write inside one serialized store
+/// transaction, so concurrent awards cannot lose updates or bypass the
+/// per-period cap, and a retried request cannot mint or spend twice. Every
+/// method fails closed by returning `Err` rather than silently succeeding.
 #[async_trait::async_trait]
 pub trait ContributionStore: Send + Sync {
     async fn get(&self, contributor: &str) -> Result<Option<ContributionLedger>, String>;
-    async fn save(&self, ledger: &ContributionLedger) -> Result<(), String>;
+
+    /// Atomically awards `contribution` to `contributor`, serialized against
+    /// concurrent awards so the per-period cap is enforced exactly. Repeating
+    /// the call with the same `idempotency_key` returns the prior result and
+    /// mints nothing further.
+    async fn award(
+        &self,
+        contributor: &str,
+        contribution: Contribution,
+        idempotency_key: &str,
+        now: u64,
+    ) -> Result<ApplyOutcome<ContributionSummary>, String>;
+
+    /// Atomically spends `redemption` for `contributor`. The debit is applied
+    /// to the durable ledger, and the relay-credit grant is handed to `grant`,
+    /// which is keyed by `idempotency_key` so an outbox retry cannot
+    /// double-grant. Repeating the call with the same `idempotency_key` returns
+    /// the prior receipt and moves no credit.
+    async fn redeem(
+        &self,
+        contributor: &str,
+        redemption: Redemption,
+        idempotency_key: &str,
+        now: u64,
+        grant: &(dyn for<'a> Fn(u64, &'a str) -> Result<(), String> + Send + Sync),
+    ) -> Result<ApplyOutcome<RedemptionReceipt>, String>;
 }
 
 /// In-memory store used by unit tests and as the process-local fallback. It is
 /// deliberately not durable: the production lane mounts the routes with a
 /// durable store so a balance survives a restart.
+///
+/// Every mutation runs under one mutex, so the award/redemption critical section
+/// (cap check, expiry application, debit, idempotency record, and the relay
+/// grant) is atomic within the process.
 #[derive(Default)]
 pub struct InMemoryContributionStore {
-    ledgers: Mutex<BTreeMap<String, ContributionLedger>>,
+    inner: Mutex<InMemoryState>,
+}
+
+#[derive(Default)]
+struct InMemoryState {
+    ledgers: BTreeMap<String, ContributionLedger>,
+    award_keys: BTreeMap<String, ContributionSummary>,
+    redeem_keys: BTreeMap<String, RedemptionReceipt>,
 }
 
 impl InMemoryContributionStore {
@@ -336,14 +402,71 @@ impl InMemoryContributionStore {
 #[async_trait::async_trait]
 impl ContributionStore for InMemoryContributionStore {
     async fn get(&self, contributor: &str) -> Result<Option<ContributionLedger>, String> {
-        let map = self.ledgers.lock().map_err(|e| e.to_string())?;
-        Ok(map.get(contributor).cloned())
+        let state = self.inner.lock().map_err(|e| e.to_string())?;
+        Ok(state.ledgers.get(contributor).cloned())
     }
 
-    async fn save(&self, ledger: &ContributionLedger) -> Result<(), String> {
-        let mut map = self.ledgers.lock().map_err(|e| e.to_string())?;
-        map.insert(ledger.contributor.clone(), ledger.clone());
-        Ok(())
+    async fn award(
+        &self,
+        contributor: &str,
+        contribution: Contribution,
+        idempotency_key: &str,
+        now: u64,
+    ) -> Result<ApplyOutcome<ContributionSummary>, String> {
+        if idempotency_key.is_empty() {
+            return Err("idempotency key must not be empty".to_string());
+        }
+        let mut state = self.inner.lock().map_err(|e| e.to_string())?;
+        if let Some(prior) = state.award_keys.get(idempotency_key) {
+            return Ok(ApplyOutcome::Duplicate(prior.clone()));
+        }
+        let ledger = state
+            .ledgers
+            .entry(contributor.to_string())
+            .or_insert_with(|| ContributionLedger::new(contributor, now));
+        ledger
+            .award(contribution, now)
+            .map_err(|e| format!("{e:?}"))?;
+        let summary = ledger.summary(now);
+        state
+            .award_keys
+            .insert(idempotency_key.to_string(), summary.clone());
+        Ok(ApplyOutcome::Applied(summary))
+    }
+
+    async fn redeem(
+        &self,
+        contributor: &str,
+        redemption: Redemption,
+        idempotency_key: &str,
+        now: u64,
+        grant: &(dyn for<'a> Fn(u64, &'a str) -> Result<(), String> + Send + Sync),
+    ) -> Result<ApplyOutcome<RedemptionReceipt>, String> {
+        if idempotency_key.is_empty() {
+            return Err("idempotency key must not be empty".to_string());
+        }
+        let mut state = self.inner.lock().map_err(|e| e.to_string())?;
+        if let Some(prior) = state.redeem_keys.get(idempotency_key) {
+            return Ok(ApplyOutcome::Duplicate(prior.clone()));
+        }
+        let ledger = state
+            .ledgers
+            .entry(contributor.to_string())
+            .or_insert_with(|| ContributionLedger::new(contributor, now));
+        // Apply the debit to a working copy; the grant runs before the debit is
+        // recorded so a failed grant leaves the ledger unchanged.
+        let mut working = ledger.clone();
+        let receipt = working
+            .redeem(redemption, now)
+            .map_err(|e| format!("{e:?}"))?;
+        if receipt.relay_credits > 0 {
+            grant(receipt.relay_credits, idempotency_key)?;
+        }
+        *ledger = working;
+        state
+            .redeem_keys
+            .insert(idempotency_key.to_string(), receipt.clone());
+        Ok(ApplyOutcome::Applied(receipt))
     }
 }
 
@@ -395,10 +518,16 @@ impl ContributionApi {
     }
 
     /// Grants redeemed relay credits into the metered credit store. Fails
-    /// closed when no sink is configured.
-    fn grant_relay_credits(&self, tenant_id: &str, amount_sats: u64) -> Result<u64, String> {
+    /// closed when no sink is configured. The `idempotency_key` makes the grant
+    /// a no-op on an outbox retry.
+    fn grant_relay_credits(
+        &self,
+        tenant_id: &str,
+        amount_sats: u64,
+        idempotency_key: &str,
+    ) -> Result<u64, String> {
         match &self.relay_sink {
-            Some(sink) => sink.grant_relay_credits(tenant_id, amount_sats),
+            Some(sink) => sink.grant_relay_credits(tenant_id, amount_sats, idempotency_key),
             None => Err("no relay-credit sink configured".to_string()),
         }
     }
@@ -450,12 +579,18 @@ pub fn parse_redemption(label: &str) -> Option<Redemption> {
 pub struct AwardRequest {
     pub contributor: String,
     pub contribution: String,
+    /// Client-supplied idempotency key. A retry with the same key returns the
+    /// prior result and mints nothing further.
+    pub idempotency_key: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RedeemRequest {
     pub contributor: String,
     pub redemption: String,
+    /// Client-supplied idempotency key. A retry with the same key returns the
+    /// prior receipt and spends nothing further.
+    pub idempotency_key: String,
 }
 
 /// API error tuple, matching the crate-wide `(StatusCode, String)` convention.
@@ -481,7 +616,9 @@ fn authorize(api: &ContributionApi, headers: &axum::http::HeaderMap) -> Result<(
 
 /// `POST /v1/contributions/award` — mint credits for a maintainer-confirmed
 /// contribution. Operator-token gated: the incentive attaches to a verified
-/// outcome, never to a self-reported claim.
+/// outcome, never to a self-reported claim. The award is applied atomically and
+/// idempotently by the store, so concurrent awards cannot bypass the cap and a
+/// retry cannot mint twice.
 pub async fn award_handler(
     axum::extract::State(api): axum::extract::State<ContributionApi>,
     headers: axum::http::HeaderMap,
@@ -500,26 +637,28 @@ pub async fn award_handler(
             "contributor must not be empty".to_string(),
         ));
     }
+    if req.idempotency_key.trim().is_empty() {
+        return Err((
+            axum::http::StatusCode::BAD_REQUEST,
+            "idempotency_key must not be empty".to_string(),
+        ));
+    }
     let now = now_secs();
-    let mut ledger = api
-        .load(&req.contributor, now)
+    let outcome = api
+        .store
+        .award(&req.contributor, contribution, &req.idempotency_key, now)
         .await
-        .map_err(|e| (axum::http::StatusCode::SERVICE_UNAVAILABLE, e))?;
-    ledger.award(contribution, now).map_err(|e| match e {
-        CreditLedgerError::PeriodCapExceeded { .. } => (
-            axum::http::StatusCode::CONFLICT,
-            format!("per-period credit cap reached: {e:?}"),
-        ),
-        other => (
-            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            format!("{other:?}"),
-        ),
-    })?;
-    api.store
-        .save(&ledger)
-        .await
-        .map_err(|e| (axum::http::StatusCode::SERVICE_UNAVAILABLE, e))?;
-    Ok(axum::Json(ledger.summary(now)))
+        .map_err(|e| {
+            let status = if e.contains("PeriodCapExceeded") {
+                axum::http::StatusCode::CONFLICT
+            } else {
+                axum::http::StatusCode::SERVICE_UNAVAILABLE
+            };
+            (status, e)
+        })?;
+    Ok(axum::Json(match outcome {
+        ApplyOutcome::Applied(summary) | ApplyOutcome::Duplicate(summary) => summary,
+    }))
 }
 
 /// `GET /v1/contributions/{contributor}` — the machine-readable summary.
@@ -539,9 +678,9 @@ pub async fn summary_handler(
 
 /// `POST /v1/contributions/redeem` — spend credits on a platform utility.
 ///
-/// Redemption is applied to a working copy and the ledger is saved only after
-/// any relay-credit grant succeeds, so a failed grant never burns the
-/// contribution credits.
+/// The debit and the relay-credit grant are applied inside one serialized,
+/// idempotent store transaction, so a failed grant leaves the balance unchanged
+/// and a retry cannot double-spend or double-grant.
 pub async fn redeem_handler(
     axum::extract::State(api): axum::extract::State<ContributionApi>,
     headers: axum::http::HeaderMap,
@@ -554,29 +693,49 @@ pub async fn redeem_handler(
             format!("unknown redemption: {}", req.redemption),
         )
     })?;
-    let now = now_secs();
-    let mut ledger = api
-        .load(&req.contributor, now)
-        .await
-        .map_err(|e| (axum::http::StatusCode::SERVICE_UNAVAILABLE, e))?;
-    let receipt = ledger.redeem(redemption, now).map_err(|e| match e {
-        CreditLedgerError::InsufficientCredits { .. } => {
-            (axum::http::StatusCode::PAYMENT_REQUIRED, format!("{e:?}"))
-        }
-        other => (
-            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            format!("{other:?}"),
-        ),
-    })?;
-    if receipt.relay_credits > 0 {
-        api.grant_relay_credits(&req.contributor, receipt.relay_credits)
-            .map_err(|e| (axum::http::StatusCode::SERVICE_UNAVAILABLE, e))?;
+    if req.contributor.trim().is_empty() {
+        return Err((
+            axum::http::StatusCode::BAD_REQUEST,
+            "contributor must not be empty".to_string(),
+        ));
     }
-    api.store
-        .save(&ledger)
+    if req.idempotency_key.trim().is_empty() {
+        return Err((
+            axum::http::StatusCode::BAD_REQUEST,
+            "idempotency_key must not be empty".to_string(),
+        ));
+    }
+    let now = now_secs();
+    // The grant closure is keyed by the request's idempotency key, so an outbox
+    // replay cannot double-grant. It fails closed when no sink is configured, so
+    // a relay redemption without a sink never burns the contribution credits.
+    let grant = |relay_credits: u64, key: &str| -> Result<(), String> {
+        api.grant_relay_credits(&req.contributor, relay_credits, key)
+            .map(|_| ())
+    };
+    let outcome = api
+        .store
+        .redeem(
+            &req.contributor,
+            redemption,
+            &req.idempotency_key,
+            now,
+            &grant,
+        )
         .await
-        .map_err(|e| (axum::http::StatusCode::SERVICE_UNAVAILABLE, e))?;
-    Ok(axum::Json(receipt))
+        .map_err(|e| {
+            let status = if e.contains("InsufficientCredits") {
+                axum::http::StatusCode::PAYMENT_REQUIRED
+            } else if e.contains("PeriodCapExceeded") {
+                axum::http::StatusCode::CONFLICT
+            } else {
+                axum::http::StatusCode::SERVICE_UNAVAILABLE
+            };
+            (status, e)
+        })?;
+    Ok(axum::Json(match outcome {
+        ApplyOutcome::Applied(receipt) | ApplyOutcome::Duplicate(receipt) => receipt,
+    }))
 }
 
 #[cfg(test)]
@@ -672,6 +831,19 @@ mod tests {
         assert_eq!(s.contributor, "c-7");
     }
 
+    #[test]
+    fn expired_awards_are_applied_only_once() {
+        let mut l = ContributionLedger::new("c-expiry-once", 0);
+        l.award(Contribution::VerifiedDisproof, 0).unwrap();
+        l.award(Contribution::SecurityAudit, CREDIT_TTL_SECONDS)
+            .unwrap();
+        let later = CREDIT_TTL_SECONDS + 1;
+        let first = l.redeem(Redemption::RelayCredits, later).unwrap();
+        assert_eq!(first.remaining, 900);
+        let second = l.redeem(Redemption::RelayCredits, later).unwrap();
+        assert_eq!(second.remaining, 800);
+    }
+
     fn api(token: &str) -> ContributionApi {
         ContributionApi {
             store: std::sync::Arc::new(InMemoryContributionStore::new()),
@@ -694,6 +866,7 @@ mod tests {
             axum::Json(AwardRequest {
                 contributor: "alice".into(),
                 contribution: "security-audit".into(),
+                idempotency_key: "k-alice".into(),
             }),
         )
         .await
@@ -722,6 +895,7 @@ mod tests {
             axum::Json(AwardRequest {
                 contributor: "alice".into(),
                 contribution: "security-audit".into(),
+                idempotency_key: "k-alice".into(),
             }),
         )
         .await
@@ -739,6 +913,7 @@ mod tests {
             axum::Json(AwardRequest {
                 contributor: "alice".into(),
                 contribution: "security-audit".into(),
+                idempotency_key: "k-alice".into(),
             }),
         )
         .await
@@ -760,6 +935,7 @@ mod tests {
             axum::Json(AwardRequest {
                 contributor: "alice".into(),
                 contribution: "free-money".into(),
+                idempotency_key: "k-alice-free".into(),
             }),
         )
         .await
@@ -781,6 +957,7 @@ mod tests {
             axum::Json(AwardRequest {
                 contributor: "bob".into(),
                 contribution: "verified-disproof".into(),
+                idempotency_key: "k-bob".into(),
             }),
         )
         .await
@@ -793,6 +970,7 @@ mod tests {
             axum::Json(RedeemRequest {
                 contributor: "bob".into(),
                 redemption: "relay-credits".into(),
+                idempotency_key: "r-bob".into(),
             }),
         )
         .await
@@ -828,6 +1006,7 @@ mod tests {
             axum::Json(AwardRequest {
                 contributor: "carol".into(),
                 contribution: "verified-disproof".into(),
+                idempotency_key: "k-carol".into(),
             }),
         )
         .await
@@ -838,6 +1017,7 @@ mod tests {
             axum::Json(RedeemRequest {
                 contributor: "carol".into(),
                 redemption: "relay-credits".into(),
+                idempotency_key: "r-carol".into(),
             }),
         )
         .await
@@ -847,5 +1027,101 @@ mod tests {
         assert_eq!(receipt.remaining, 400);
         use crate::billing::CreditStore;
         assert_eq!(sink.balance("carol"), 100_000);
+    }
+
+    #[tokio::test]
+    async fn award_is_idempotent_on_the_key() {
+        let store = InMemoryContributionStore::new();
+        let first = store
+            .award("dave", Contribution::SecurityAudit, "k-1", 0)
+            .await
+            .unwrap();
+        let second = store
+            .award("dave", Contribution::SecurityAudit, "k-1", 0)
+            .await
+            .unwrap();
+        assert!(matches!(first, ApplyOutcome::Applied(_)));
+        assert!(matches!(second, ApplyOutcome::Duplicate(_)));
+        let ledger = store.get("dave").await.unwrap().unwrap();
+        assert_eq!(ledger.balance(), 1_000, "a retry did not mint twice");
+    }
+
+    #[tokio::test]
+    async fn redeem_is_idempotent_on_the_key() {
+        let store = InMemoryContributionStore::new();
+        let sink = crate::billing::InMemoryCreditStore::new();
+        let grant = |amount: u64, key: &str| {
+            use crate::billing::CreditStore;
+            sink.grant_relay_credits("erin", amount, key).map(|_| ())
+        };
+        store
+            .award("erin", Contribution::VerifiedDisproof, "a-1", 0)
+            .await
+            .unwrap();
+        let first = store
+            .redeem("erin", Redemption::RelayCredits, "r-1", 0, &grant)
+            .await
+            .unwrap();
+        let second = store
+            .redeem("erin", Redemption::RelayCredits, "r-1", 0, &grant)
+            .await
+            .unwrap();
+        assert!(matches!(first, ApplyOutcome::Applied(_)));
+        assert!(matches!(second, ApplyOutcome::Duplicate(_)));
+        let ledger = store.get("erin").await.unwrap().unwrap();
+        assert_eq!(ledger.balance(), 400, "a retry did not spend twice");
+        use crate::billing::CreditStore;
+        assert_eq!(
+            sink.balance("erin"),
+            100_000,
+            "a retry did not double-grant relay credits"
+        );
+    }
+
+    #[tokio::test]
+    async fn concurrent_awards_cannot_bypass_the_period_cap() {
+        let store = std::sync::Arc::new(InMemoryContributionStore::new());
+        // Each award is 2_000 credits and the cap is 20_000, so exactly ten may
+        // succeed. Fire twelve concurrently and assert the cap held.
+        let mut handles = Vec::new();
+        for i in 0..12 {
+            let store = store.clone();
+            handles.push(tokio::spawn(async move {
+                store
+                    .award(
+                        "frank",
+                        Contribution::EnterpriseReferral,
+                        &format!("cap-{i}"),
+                        0,
+                    )
+                    .await
+            }));
+        }
+        let mut applied = 0;
+        for h in handles {
+            if matches!(h.await.unwrap(), Ok(ApplyOutcome::Applied(_))) {
+                applied += 1;
+            }
+        }
+        assert_eq!(applied, 10, "the cap admitted exactly ten awards");
+        let ledger = store.get("frank").await.unwrap().unwrap();
+        assert_eq!(ledger.balance(), MAX_CREDITS_PER_PERIOD);
+    }
+
+    #[tokio::test]
+    async fn redeem_requires_a_non_empty_idempotency_key() {
+        let store = InMemoryContributionStore::new();
+        store
+            .award("gina", Contribution::VerifiedDisproof, "a-g", 0)
+            .await
+            .unwrap();
+        let grant = |_: u64, _: &str| Ok(());
+        let err = store
+            .redeem("gina", Redemption::RelayCredits, "", 0, &grant)
+            .await
+            .unwrap_err();
+        assert!(err.contains("idempotency key"));
+        let ledger = store.get("gina").await.unwrap().unwrap();
+        assert_eq!(ledger.balance(), 500, "a keyless redeem moved no credit");
     }
 }
