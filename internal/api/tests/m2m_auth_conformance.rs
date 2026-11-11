@@ -13,12 +13,24 @@ use sha2::Sha256;
 
 type HmacSha256 = Hmac<Sha256>;
 
-// Secrets are generated at test time, never hard-coded, so the fixtures contain
-// no literal cryptographic value (and no secret can be mistaken for a real one).
-fn test_secret(tag: &str) -> String {
-    let mut mac = HmacSha256::new_from_slice(b"conxian-m2m-test-fixture-derivation").unwrap();
-    mac.update(tag.as_bytes());
-    hex::encode(mac.finalize().into_bytes()) // 64 hex chars >= the 32-byte minimum
+// The signing secret is random per test run (no hard-coded cryptographic value
+// anywhere in the fixture), held in one process-wide cell so `config()` and
+// `sign()` agree. The tests assert verification *behaviour*, which does not
+// depend on the secret's value.
+fn test_secret() -> &'static str {
+    use std::sync::OnceLock;
+    static SECRET: OnceLock<String> = OnceLock::new();
+    SECRET.get_or_init(|| {
+        let bytes: [u8; 32] = rand::random();
+        hex::encode(bytes) // 64 hex chars >= the 32-byte minimum
+    })
+}
+
+/// A second, independent random secret, used to prove a wrong-secret token is
+/// rejected. Distinct from `test_secret()` by construction.
+fn different_secret() -> String {
+    let bytes: [u8; 32] = rand::random();
+    hex::encode(bytes)
 }
 
 const ISSUER: &str = "conxian-platform";
@@ -59,7 +71,7 @@ fn good_header() -> serde_json::Value {
 
 fn config() -> M2mJwtConfig {
     M2mJwtConfig::new(
-        &test_secret("primary"),
+        test_secret(),
         ISSUER.to_string(),
         AUDIENCE.to_string(),
         DEFAULT_JWT_CLOCK_SKEW_SECONDS,
@@ -68,7 +80,7 @@ fn config() -> M2mJwtConfig {
 }
 
 fn sign(claims: serde_json::Value) -> String {
-    sign_with(good_header(), claims, &test_secret("primary"))
+    sign_with(good_header(), claims, test_secret())
 }
 
 #[test]
@@ -96,7 +108,7 @@ fn rejects_algorithm_and_kid_header_deviations() {
         json!({ "alg": "HS256", "typ": "JWT", "kid": "k1" }),
         json!({ "alg": "HS256" }),
     ] {
-        let token = sign_with(header, good_claims(), &test_secret("primary"));
+        let token = sign_with(header, good_claims(), test_secret());
         assert_eq!(
             verify_m2m_jwt(&token, &cfg, NOW).unwrap_err(),
             M2mJwtError::InvalidHeader
@@ -106,11 +118,7 @@ fn rejects_algorithm_and_kid_header_deviations() {
 
 #[test]
 fn rejects_bad_signature() {
-    let token = sign_with(
-        good_header(),
-        good_claims(),
-        &test_secret("a-different-value"),
-    );
+    let token = sign_with(good_header(), good_claims(), &different_secret());
     assert_eq!(
         verify_m2m_jwt(&token, &config(), NOW).unwrap_err(),
         M2mJwtError::InvalidSignature
