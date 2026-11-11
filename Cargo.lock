@@ -1558,6 +1558,7 @@ dependencies = [
  "anyhow",
  "axum",
  "minreq 3.0.0",
+ "rustls",
  "serde",
  "serde_json",
  "tokio",

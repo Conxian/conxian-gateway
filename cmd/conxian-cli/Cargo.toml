@@ -13,6 +13,10 @@ serde_json = { workspace = true }
 anyhow = { workspace = true }
 minreq = { workspace = true }
 url = { workspace = true }
+# rustls needs an explicit CryptoProvider in this workspace (two providers are
+# compiled in). The CLI installs `aws_lc_rs::default_provider()` at startup, so it
+# must depend on rustls with that feature directly.
+rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std", "tls12", "logging"] }
 
 [dev-dependencies]
 axum = { workspace = true }
