@@ -183,7 +183,7 @@ pub async fn get_prometheus_metrics(State(state): State<AppState>) -> Response<S
          conxian_bitcoin_height {btc_height}\n\
          # HELP conxian_stacks_height Stacks block height gauge.\n\
          # TYPE conxian_stacks_height gauge\n\
-         conxian_stacks_height {stx_height}\n\
+         conxian_stacks_height {stx_height}\n",
             total = s.metrics.total_requests,
             health = s.metrics.health_requests,
             verify = s.metrics.verification_requests,
