@@ -37,8 +37,16 @@ logged; only `SHA-256(key)` is persisted.
 
 | Provider | Header | Signed string | Encoding |
 |----------|--------|---------------|----------|
-| Lemon Squeezy | `X-Signature` | raw body | HMAC-SHA256 hex |
-| Paddle | `Paddle-Signature` | `{ts}:{raw_body}` | HMAC-SHA256 hex |
+| Paddle (recommended) | `Paddle-Signature` | `{ts}:{raw_body}` | HMAC-SHA256 hex |
+| Lemon Squeezy (fallback) | `X-Signature` | raw body | HMAC-SHA256 hex |
+
+Paddle is the recommended provider (selected 2026-11-11) because its catalogue is
+API-first — products and prices are created over the API, so the store is
+scriptable and sandbox-reproducible, unlike Lemon Squeezy's dashboard-only
+catalogue (`POST /v1/products` → 405). See `conxian-business`
+`docs/research/MOR_PROVIDER_API_FIRST_REPLACEMENT_2026_11_11.md`. Both schemes are
+implemented; switching is `MOR_PROVIDER=paddle` plus the destination signing
+secret.
 
 Paddle's `ts` is checked against a 5-second replay tolerance (its documented
 default); multiple `h1` values are accepted so secret rotation does not drop
