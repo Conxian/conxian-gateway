@@ -141,14 +141,17 @@ pub enum GatewayAuthMode {
     Dual,
     /// Only a valid M2M JWT is accepted.
     Jwt,
+    /// An explicitly configured but unsupported mode; protected routes deny.
+    Invalid,
 }
 
 impl GatewayAuthMode {
     pub fn from_env_value(value: &str) -> Self {
         match value.trim().to_ascii_lowercase().as_str() {
+            "legacy" => Self::Legacy,
             "dual" => Self::Dual,
             "jwt" => Self::Jwt,
-            _ => Self::Legacy,
+            _ => Self::Invalid,
         }
     }
 
@@ -255,10 +258,13 @@ impl M2mJwtConfig {
         audience: String,
         clock_skew_seconds: u64,
     ) -> Result<Self, M2mJwtError> {
-        if secret.len() < MIN_JWT_SECRET_BYTES {
-            return Err(M2mJwtError::InvalidConfiguration);
-        }
-        if clock_skew_seconds > MAX_JWT_CLOCK_SKEW_SECONDS {
+        let issuer = issuer.trim().to_string();
+        let audience = audience.trim().to_string();
+        if secret.len() < MIN_JWT_SECRET_BYTES
+            || issuer.is_empty()
+            || audience.is_empty()
+            || clock_skew_seconds > MAX_JWT_CLOCK_SKEW_SECONDS
+        {
             return Err(M2mJwtError::InvalidConfiguration);
         }
         Ok(Self {
@@ -273,14 +279,21 @@ impl M2mJwtConfig {
     /// `None` when JWT is not configured (caller keeps the legacy path).
     pub fn from_env() -> Option<Self> {
         let secret = std::env::var("GATEWAY_JWT_SECRET").ok()?;
-        let issuer =
-            std::env::var("GATEWAY_JWT_ISSUER").unwrap_or_else(|_| "conxian-platform".to_string());
-        let audience =
-            std::env::var("GATEWAY_JWT_AUDIENCE").unwrap_or_else(|_| "conxian-gateway".to_string());
-        let skew = std::env::var("GATEWAY_JWT_CLOCK_SKEW_SECONDS")
-            .ok()
-            .and_then(|value| value.parse::<u64>().ok())
-            .unwrap_or(DEFAULT_JWT_CLOCK_SKEW_SECONDS);
+        let issuer = match std::env::var("GATEWAY_JWT_ISSUER") {
+            Ok(value) => value,
+            Err(std::env::VarError::NotPresent) => "conxian-platform".to_string(),
+            Err(_) => return None,
+        };
+        let audience = match std::env::var("GATEWAY_JWT_AUDIENCE") {
+            Ok(value) => value,
+            Err(std::env::VarError::NotPresent) => "conxian-gateway".to_string(),
+            Err(_) => return None,
+        };
+        let skew = match std::env::var("GATEWAY_JWT_CLOCK_SKEW_SECONDS") {
+            Ok(value) => value.parse::<u64>().ok()?,
+            Err(std::env::VarError::NotPresent) => DEFAULT_JWT_CLOCK_SKEW_SECONDS,
+            Err(_) => return None,
+        };
         Self::new(secret.trim(), issuer, audience, skew).ok()
     }
 }
@@ -440,40 +453,64 @@ fn now_unix_secs() -> i64 {
 pub struct M2mAuthPolicy {
     mode: GatewayAuthMode,
     config: Option<M2mJwtConfig>,
+    configuration_valid: bool,
 }
 
 impl M2mAuthPolicy {
-    /// Resolve from the environment. `M2M_GATEWAY_AUTH_MODE` selects the mode
-    /// (default `legacy`); JWT configuration is required for `dual`/`jwt` and
-    /// absent otherwise. A `dual`/`jwt` mode without a usable secret falls back
-    /// to `legacy` so the process always starts (fail-safe, never fail-open:
-    /// JWT simply is not accepted until it is configured).
+    /// Resolve from the environment. An explicit JWT/dual request without a
+    /// complete usable JWT configuration stays in that requested mode and
+    /// denies protected requests; it never downgrades to legacy authentication.
     pub fn from_env() -> Self {
-        let mode = std::env::var("M2M_GATEWAY_AUTH_MODE")
-            .map(|value| GatewayAuthMode::from_env_value(&value))
-            .unwrap_or(GatewayAuthMode::Legacy);
-        let config = M2mJwtConfig::from_env();
-        if mode.accepts_jwt() && config.is_none() {
-            tracing::warn!(
-                "M2M_GATEWAY_AUTH_MODE requests JWT, but GATEWAY_JWT_SECRET is missing or too short; \
-                 falling back to legacy-only until JWT is configured"
+        let mode = match std::env::var("M2M_GATEWAY_AUTH_MODE") {
+            Ok(value) => GatewayAuthMode::from_env_value(&value),
+            Err(std::env::VarError::NotPresent) => GatewayAuthMode::Legacy,
+            Err(_) => GatewayAuthMode::Invalid,
+        };
+        let config = if mode.accepts_jwt() {
+            M2mJwtConfig::from_env()
+        } else {
+            None
+        };
+        let policy = Self::from_parts(mode, config);
+        if !policy.configuration_valid {
+            tracing::error!(
+                mode = ?policy.mode,
+                "M2M auth configuration is invalid; all protected requests will fail closed"
             );
-            return Self {
-                mode: GatewayAuthMode::Legacy,
-                config: None,
-            };
         }
-        Self { mode, config }
+        policy
+    }
+
+    fn from_parts(mode: GatewayAuthMode, config: Option<M2mJwtConfig>) -> Self {
+        let configuration_valid = match mode {
+            GatewayAuthMode::Legacy => true,
+            GatewayAuthMode::Dual | GatewayAuthMode::Jwt => config.is_some(),
+            GatewayAuthMode::Invalid => false,
+        };
+        Self {
+            mode,
+            config,
+            configuration_valid,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn new_for_test(mode: GatewayAuthMode, config: Option<M2mJwtConfig>) -> Self {
+        Self::from_parts(mode, config)
     }
 
     pub fn mode(&self) -> GatewayAuthMode {
         self.mode
     }
 
-    /// Verify a `Bearer` value as an M2M JWT. Only meaningful when the mode
-    /// accepts JWT; returns `InvalidConfiguration` otherwise.
+    pub fn configuration_valid(&self) -> bool {
+        self.configuration_valid
+    }
+
+    /// Verify a Bearer value as an M2M JWT. Only meaningful when the selected
+    /// mode accepts JWT and its full configuration was validated at startup.
     pub fn verify_bearer(&self, authorization: &str) -> Result<VerifiedM2mIdentity, M2mJwtError> {
-        if !self.mode.accepts_jwt() {
+        if !self.configuration_valid || !self.mode.accepts_jwt() {
             return Err(M2mJwtError::InvalidConfiguration);
         }
         let config = self
@@ -482,5 +519,48 @@ impl M2mAuthPolicy {
             .ok_or(M2mJwtError::InvalidConfiguration)?;
         let token = parse_bearer(authorization)?;
         verify_m2m_jwt(token, config, now_unix_secs())
+    }
+}
+
+#[cfg(test)]
+mod policy_tests {
+    use super::*;
+
+    #[test]
+    fn jwt_modes_do_not_downgrade_when_configuration_is_missing() {
+        let dual = M2mAuthPolicy::from_parts(GatewayAuthMode::Dual, None);
+        let jwt = M2mAuthPolicy::from_parts(GatewayAuthMode::Jwt, None);
+        let legacy = M2mAuthPolicy::from_parts(GatewayAuthMode::Legacy, None);
+        let invalid = M2mAuthPolicy::from_parts(GatewayAuthMode::Invalid, None);
+
+        assert!(!dual.configuration_valid());
+        assert!(!jwt.configuration_valid());
+        assert!(legacy.configuration_valid());
+        assert!(!invalid.configuration_valid());
+        assert_eq!(
+            GatewayAuthMode::from_env_value("anything-else"),
+            GatewayAuthMode::Invalid
+        );
+        assert_eq!(
+            dual.verify_bearer("Bearer invalid.jwt.token").unwrap_err(),
+            M2mJwtError::InvalidConfiguration
+        );
+        assert_eq!(
+            jwt.verify_bearer("Bearer invalid.jwt.token").unwrap_err(),
+            M2mJwtError::InvalidConfiguration
+        );
+    }
+
+    #[test]
+    fn jwt_configuration_rejects_empty_issuer_and_audience() {
+        let secret = "x".repeat(MIN_JWT_SECRET_BYTES);
+        assert_eq!(
+            M2mJwtConfig::new(&secret, " ".into(), "audience".into(), 30).unwrap_err(),
+            M2mJwtError::InvalidConfiguration
+        );
+        assert_eq!(
+            M2mJwtConfig::new(&secret, "issuer".into(), "".into(), 30).unwrap_err(),
+            M2mJwtError::InvalidConfiguration
+        );
     }
 }
