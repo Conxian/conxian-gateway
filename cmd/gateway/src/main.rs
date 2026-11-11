@@ -28,6 +28,16 @@ use supervisor::{shutdown_requested, supervise, CriticalTask};
 
 const CRITICAL_TASK_SHUTDOWN_GRACE: Duration = Duration::from_secs(30);
 
+fn init_crypto_provider() -> anyhow::Result<()> {
+    if rustls::crypto::CryptoProvider::get_default().is_some() {
+        return Ok(());
+    }
+
+    rustls::crypto::aws_lc_rs::default_provider()
+        .install_default()
+        .map_err(|_| anyhow::anyhow!("failed to install the process-wide Rustls crypto provider"))
+}
+
 fn init_tracing() {
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
@@ -47,6 +57,11 @@ fn init_tracing() {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Rustls cannot infer a provider when transitive dependencies enable both
+    // built-in backends. Select the repository default before any TLS client is
+    // constructed so listener failures cannot poison shared lazy state.
+    init_crypto_provider()?;
+
     // Initialize tracing with optional JSON format
     init_tracing();
 
@@ -524,4 +539,14 @@ async fn shutdown_signal() -> anyhow::Result<()> {
         result = terminate => result?,
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod crypto_provider_tests {
+    #[test]
+    fn crypto_provider_initialization_is_idempotent() {
+        super::init_crypto_provider().expect("first provider initialization must succeed");
+        super::init_crypto_provider().expect("repeated provider initialization must succeed");
+        assert!(rustls::crypto::CryptoProvider::get_default().is_some());
+    }
 }
