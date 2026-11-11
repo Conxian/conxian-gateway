@@ -120,6 +120,10 @@ pub struct CreditAward {
     pub credits: u64,
     pub awarded_at: u64,
     pub expires_at: u64,
+    /// True once expiry has been applied to the live balance. Retained in the
+    /// history so repeated reads or redemption attempts cannot deduct it twice.
+    #[serde(default)]
+    pub expiry_applied: bool,
 }
 
 /// The per-contributor Genesis Credits ledger. Non-transferable by construction:
@@ -223,6 +227,7 @@ impl ContributionLedger {
             credits: amount,
             awarded_at: now,
             expires_at: now + CREDIT_TTL_SECONDS,
+            expiry_applied: false,
         });
         Ok(self.balance)
     }
@@ -252,15 +257,15 @@ impl ContributionLedger {
         })
     }
 
-    /// Drops awards that have expired, reducing the live balance accordingly.
-    /// Keeps the history; only the balance changes.
+    /// Applies each expiry exactly once while retaining the award history.
     fn prune_expired(&mut self, now: u64) {
-        let expired: u64 = self
-            .awards
-            .iter()
-            .filter(|a| now >= a.expires_at)
-            .map(|a| a.credits)
-            .sum();
+        let mut expired = 0u64;
+        for award in &mut self.awards {
+            if !award.expiry_applied && now >= award.expires_at {
+                expired = expired.saturating_add(award.credits);
+                award.expiry_applied = true;
+            }
+        }
         self.balance = self.balance.saturating_sub(expired.min(self.balance));
     }
 
@@ -660,6 +665,18 @@ mod tests {
             }
             other => panic!("expected InsufficientCredits, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn expired_awards_are_applied_only_once() {
+        let mut l = ContributionLedger::new("c-expiry-once", 0);
+        l.award(Contribution::VerifiedDisproof, 0).unwrap();
+        l.award(Contribution::SecurityAudit, CREDIT_TTL_SECONDS).unwrap();
+        let later = CREDIT_TTL_SECONDS + 1;
+        let first = l.redeem(Redemption::RelayCredits, later).unwrap();
+        assert_eq!(first.remaining, 900);
+        let second = l.redeem(Redemption::RelayCredits, later).unwrap();
+        assert_eq!(second.remaining, 800);
     }
 
     #[test]

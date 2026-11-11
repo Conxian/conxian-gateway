@@ -106,19 +106,12 @@ fn onboarding_api_from_env(
 /// MoR-webhook fail-closed mounting. Redemption credits land in the same
 /// metered credit store the billing lane draws from.
 fn contribution_api_from_env() -> Option<crate::contribution_ledger::ContributionApi> {
-    let database_url = std::env::var("MOR_WEBHOOK_DATABASE_URL")
-        .ok()
-        .map(|v| v.trim().to_string())
-        .filter(|v| !v.is_empty())?;
-    let pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(5)
-        .connect_lazy(&database_url)
-        .ok()?;
-    let store = std::sync::Arc::new(crate::contribution_store::PgContributionStore::new(pool));
-    crate::contribution_ledger::ContributionApi::from_env(
-        store,
-        Some(crate::billing::shared_credit_sink()),
-    )
+    // Fail closed until awards are idempotent and serialized in the durable
+    // store, and redemption can debit and grant in one recoverable transaction.
+    // The staged implementation performs a read-modify-write upsert and grants
+    // process-local relay credit before persisting the debit, so enabling it
+    // would permit duplicate/lost awards and partial redemption.
+    None
 }
 
 pub fn configure_routes(
