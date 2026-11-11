@@ -14,8 +14,8 @@ use conxian_api::a2p::A2pRouter;
 use conxian_api::camt::{build_pacs008_xml, Pacs008Request};
 use conxian_api::fiat::FiatRouter;
 use conxian_api::lightning::{
-    LightningAdapter, LightningBackend, LightningBackendError, LightningSettlementRequest,
-    LightningSettlementResponse,
+    InvoiceSettlement, IssuedInvoice, LightningAdapter, LightningBackend, LightningBackendError,
+    LightningSettlementRequest, LightningSettlementResponse,
 };
 use conxian_api::{configure_routes, new_lightning_adapter, new_settlement_log, AppState};
 use conxian_compliance::zkc::{ATTESTATION_SIGNING_DOMAIN, TEE_DEVICE_ID_PREFIX};
@@ -447,6 +447,75 @@ impl LightningBackend for WireMockLightningBackend {
             })
         }
     }
+
+    async fn create_invoice(
+        &self,
+        _amount_sats: u64,
+        _expiry_seconds: u64,
+        _description: &str,
+    ) -> Result<IssuedInvoice, LightningBackendError> {
+        let url = format!("{}/lightning/make-invoice", self.endpoint_url);
+        let res = tokio::task::spawn_blocking(move || {
+            minreq::Request::new(minreq::Method::Post, url)
+                .with_header("Content-Type", "application/json")
+                .with_body("{}")
+                .send()
+        })
+        .await
+        .map_err(|_| LightningBackendError::Unavailable)?
+        .map_err(|_| LightningBackendError::Unavailable)?;
+        if res.status_code != 200 {
+            return Err(LightningBackendError::Unavailable);
+        }
+        let val: Value = serde_json::from_str(res.as_str().unwrap_or("{}"))
+            .map_err(|_| LightningBackendError::Unavailable)?;
+        Ok(IssuedInvoice {
+            bolt11: val["bolt11"].as_str().unwrap_or("").to_string(),
+            payment_hash: val["payment_hash"].as_str().unwrap_or("").to_string(),
+        })
+    }
+
+    async fn lookup_invoice(
+        &self,
+        _payment_hash: &str,
+    ) -> Result<InvoiceSettlement, LightningBackendError> {
+        let url = format!("{}/lightning/lookup-invoice", self.endpoint_url);
+        let res = tokio::task::spawn_blocking(move || {
+            minreq::Request::new(minreq::Method::Get, url).send()
+        })
+        .await
+        .map_err(|_| LightningBackendError::Unavailable)?
+        .map_err(|_| LightningBackendError::Unavailable)?;
+        if res.status_code != 200 {
+            return Err(LightningBackendError::Unavailable);
+        }
+        let val: Value = serde_json::from_str(res.as_str().unwrap_or("{}"))
+            .map_err(|_| LightningBackendError::Unavailable)?;
+        Ok(InvoiceSettlement {
+            settled: val["settled"].as_bool().unwrap_or(false),
+            amount_sats: val["amount_sats"].as_u64(),
+        })
+    }
+}
+
+/// Obtain a server-issued x402 challenge id for a protected path.
+async fn x402_challenge(app: &axum::Router, uri: &str) -> String {
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(uri)
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::PAYMENT_REQUIRED);
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body: Value = serde_json::from_slice(&bytes).unwrap();
+    body["challenge"].as_str().unwrap().to_string()
 }
 
 #[tokio::test]
@@ -455,13 +524,19 @@ async fn test_x402_settlement_middleware_stateful_wiremock_flow() {
 
     // Proxymock / WireMock Virtualized LND / Lightning Node
     Mock::given(method("POST"))
-        .and(path("/lightning/settle"))
+        .and(path("/lightning/make-invoice"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "settled_amount": 1000,
-            "preimage": "preimage-x402-wiremock-9988",
-            "proof": "proof-x402-wiremock-9988"
+            "bolt11": "lnbc1wiremock-9988",
+            "payment_hash": "hash-wiremock-9988"
         })))
-        .expect(1)
+        .mount(&mock_server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/lightning/lookup-invoice"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "settled": true,
+            "amount_sats": 1000
+        })))
         .mount(&mock_server)
         .await;
 
@@ -475,13 +550,13 @@ async fn test_x402_settlement_middleware_stateful_wiremock_flow() {
     );
 
     let app = create_test_app_with_lightning(adapter);
+    let challenge = x402_challenge(&app, "/api/v1/settle").await;
 
-    // Call protected CBTC verification route with valid x402 header
     let req = Request::builder()
         .method("POST")
-        .uri("/api/v1/canton/cbtc/verify")
+        .uri("/api/v1/settle")
         .header("Authorization", format!("Bearer {}", TEST_TOKEN))
-        .header("x-402-payment", "proof-x402-wiremock-9988")
+        .header("payment-required", challenge)
         .header("Content-Type", "application/json")
         .body(Body::from(json!({
             "attestation": {
@@ -496,7 +571,9 @@ async fn test_x402_settlement_middleware_stateful_wiremock_flow() {
         .unwrap();
 
     let res = app.oneshot(req).await.unwrap();
-    assert_eq!(res.status(), StatusCode::OK);
+    // The settled server-issued challenge passes the payment gate (not 402/503);
+    // the handler then rejects the attestation body shape (422).
+    assert_eq!(res.status(), StatusCode::UNPROCESSABLE_ENTITY);
 }
 
 #[tokio::test]
@@ -505,7 +582,7 @@ async fn test_x402_settlement_middleware_chaos_fault_injections() {
 
     // Chaos Scenario 1: External Settlement Node 500 Internal Error
     Mock::given(method("POST"))
-        .and(path("/lightning/settle"))
+        .and(path("/lightning/make-invoice"))
         .respond_with(
             ResponseTemplate::new(500)
                 .set_body_json(json!({ "error": "Lightning LND Daemon Unavailable" })),
@@ -521,7 +598,7 @@ async fn test_x402_settlement_middleware_chaos_fault_injections() {
 
     let req = Request::builder()
         .method("POST")
-        .uri("/api/v1/canton/cbtc/verify")
+        .uri("/api/v1/settle")
         .header("Authorization", format!("Bearer {}", TEST_TOKEN))
         .header("x-402-payment", "proof-chaos-500")
         .header("Content-Type", "application/json")
@@ -538,7 +615,8 @@ async fn test_x402_settlement_middleware_chaos_fault_injections() {
         .unwrap();
 
     let res = app.oneshot(req).await.unwrap();
-    // Backend failure translates to 503 Service Unavailable
+    // The backend cannot issue an invoice, so the server-issued challenge fails
+    // closed with 503 Service Unavailable.
     assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE);
     let body = parse_response_json(res).await;
     assert_eq!(body["code"], "lightning_backend_unavailable");
@@ -550,14 +628,13 @@ async fn test_x402_settlement_middleware_high_latency_timeout_chaos() {
 
     // Chaos Scenario 2: High Latency Network Lag Injection (Delays response past gateway timeout)
     Mock::given(method("POST"))
-        .and(path("/lightning/settle"))
+        .and(path("/lightning/make-invoice"))
         .respond_with(
             ResponseTemplate::new(200)
                 .set_delay(Duration::from_millis(500))
                 .set_body_json(json!({
-                    "settled_amount": 1000,
-                    "preimage": "slow-preimage",
-                    "proof": "slow-proof"
+                    "bolt11": "lnbc1slow",
+                    "payment_hash": "hash-slow"
                 })),
         )
         .mount(&mock_server)
@@ -576,7 +653,7 @@ async fn test_x402_settlement_middleware_high_latency_timeout_chaos() {
 
     let req = Request::builder()
         .method("POST")
-        .uri("/api/v1/canton/cbtc/verify")
+        .uri("/api/v1/settle")
         .header("Authorization", format!("Bearer {}", TEST_TOKEN))
         .header("x-402-payment", "proof-chaos-slow")
         .header("Content-Type", "application/json")

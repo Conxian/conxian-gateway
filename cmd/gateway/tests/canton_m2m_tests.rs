@@ -9,8 +9,8 @@
 use async_trait::async_trait;
 use axum::{body::Body, http::Request};
 use conxian_api::lightning::{
-    LightningAdapter, LightningBackend, LightningBackendError, LightningSettlementRequest,
-    LightningSettlementResponse,
+    InvoiceSettlement, IssuedInvoice, LightningAdapter, LightningBackend, LightningBackendError,
+    LightningSettlementRequest, LightningSettlementResponse,
 };
 use conxian_api::{configure_routes, AppState};
 use conxian_compliance::ZkcVerifier;
@@ -61,6 +61,32 @@ impl SequenceBackend {
 
 #[async_trait]
 impl LightningBackend for SequenceBackend {
+    /// Server-issued invoice: payment hash is derived from the amount so the
+    /// matching lookup reports it settled for the exact bound amount.
+    async fn create_invoice(
+        &self,
+        amount_sats: u64,
+        _expiry_seconds: u64,
+        _description: &str,
+    ) -> Result<IssuedInvoice, LightningBackendError> {
+        Ok(IssuedInvoice {
+            bolt11: format!("lnbc-seq-{amount_sats}"),
+            payment_hash: format!("seq-hash-{amount_sats}"),
+        })
+    }
+
+    async fn lookup_invoice(
+        &self,
+        payment_hash: &str,
+    ) -> Result<InvoiceSettlement, LightningBackendError> {
+        Ok(InvoiceSettlement {
+            settled: true,
+            amount_sats: payment_hash
+                .strip_prefix("seq-hash-")
+                .and_then(|s| s.parse::<u64>().ok()),
+        })
+    }
+
     async fn settle_payment(
         &self,
         request: LightningSettlementRequest,
@@ -194,6 +220,42 @@ fn authed_request(uri: &str, method: axum::http::Method, body: serde_json::Value
 
 fn post_request(uri: &str, body: serde_json::Value) -> Request<Body> {
     authed_request(uri, axum::http::Method::POST, body)
+}
+
+/// Build a POST with an already-issued x402 challenge id (server-issued flow).
+fn post_request_with_challenge(
+    uri: &str,
+    body: serde_json::Value,
+    challenge: String,
+) -> Request<Body> {
+    Request::builder()
+        .uri(uri)
+        .method(axum::http::Method::POST)
+        .header("Authorization", "Bearer test-token")
+        .header("payment-required", challenge)
+        .header("Content-Type", "application/json")
+        .body(Body::from(serde_json::to_string(&body).unwrap()))
+        .unwrap()
+}
+
+/// Obtain a server-issued x402 challenge id for a protected path.
+async fn x402_challenge(app: &axum::Router, uri: &str) -> String {
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(uri)
+                .method(axum::http::Method::POST)
+                .header("Authorization", "Bearer test-token")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::PAYMENT_REQUIRED);
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    body["challenge"].as_str().unwrap().to_string()
 }
 
 // ── G-C1: CBTC Non-Custodial Verification ─────────────────────────────────
@@ -501,6 +563,7 @@ async fn test_machine_identity_resolve_unknown_provider() {
 #[tokio::test]
 async fn test_m2m_settle_lightning_success() {
     let app = test_app();
+    let challenge = x402_challenge(&app, "/api/v1/m2m/settle").await;
     let payload = json!({
         "source_machine": {
             "device_key": "src_key_abc123",
@@ -520,7 +583,11 @@ async fn test_m2m_settle_lightning_success() {
     });
 
     let response = app
-        .oneshot(post_request("/api/v1/m2m/settle", payload))
+        .oneshot(post_request_with_challenge(
+            "/api/v1/m2m/settle",
+            payload,
+            challenge,
+        ))
         .await
         .unwrap();
 
@@ -545,6 +612,7 @@ async fn test_m2m_settle_lightning_success() {
 #[tokio::test]
 async fn test_m2m_settle_missing_source_device_key() {
     let app = test_app();
+    let challenge = x402_challenge(&app, "/api/v1/m2m/settle").await;
     let payload = json!({
         "source_machine": {
             "device_key": "",  // empty
@@ -564,7 +632,11 @@ async fn test_m2m_settle_missing_source_device_key() {
     });
 
     let response = app
-        .oneshot(post_request("/api/v1/m2m/settle", payload))
+        .oneshot(post_request_with_challenge(
+            "/api/v1/m2m/settle",
+            payload,
+            challenge,
+        ))
         .await
         .unwrap();
 
@@ -577,6 +649,7 @@ async fn test_m2m_settle_missing_source_device_key() {
 #[tokio::test]
 async fn test_m2m_settle_zero_amount() {
     let app = test_app();
+    let challenge = x402_challenge(&app, "/api/v1/m2m/settle").await;
     let payload = json!({
         "source_machine": { "device_key": "src_key", "machine_type": "SENSOR" },
         "target_machine": { "device_key": "tgt_key", "machine_type": "SENSOR" },
@@ -590,7 +663,11 @@ async fn test_m2m_settle_zero_amount() {
     });
 
     let response = app
-        .oneshot(post_request("/api/v1/m2m/settle", payload))
+        .oneshot(post_request_with_challenge(
+            "/api/v1/m2m/settle",
+            payload,
+            challenge,
+        ))
         .await
         .unwrap();
 
@@ -603,6 +680,7 @@ async fn test_m2m_settle_zero_amount() {
 #[tokio::test]
 async fn test_m2m_settle_invalid_scale() {
     let app = test_app();
+    let challenge = x402_challenge(&app, "/api/v1/m2m/settle").await;
     let payload = json!({
         "source_machine": { "device_key": "src_key", "machine_type": "SENSOR" },
         "target_machine": { "device_key": "tgt_key", "machine_type": "SENSOR" },
@@ -616,7 +694,11 @@ async fn test_m2m_settle_invalid_scale() {
     });
 
     let response = app
-        .oneshot(post_request("/api/v1/m2m/settle", payload))
+        .oneshot(post_request_with_challenge(
+            "/api/v1/m2m/settle",
+            payload,
+            challenge,
+        ))
         .await
         .unwrap();
 
@@ -629,6 +711,7 @@ async fn test_m2m_settle_invalid_scale() {
 #[tokio::test]
 async fn test_m2m_settle_peaq_rail_not_implemented() {
     let app = test_app();
+    let challenge = x402_challenge(&app, "/api/v1/m2m/settle").await;
     let payload = json!({
         "source_machine": { "device_key": "src_key", "machine_type": "SENSOR" },
         "target_machine": { "device_key": "tgt_key", "machine_type": "SENSOR" },
@@ -641,7 +724,11 @@ async fn test_m2m_settle_peaq_rail_not_implemented() {
     });
 
     let response = app
-        .oneshot(post_request("/api/v1/m2m/settle", payload))
+        .oneshot(post_request_with_challenge(
+            "/api/v1/m2m/settle",
+            payload,
+            challenge,
+        ))
         .await
         .unwrap();
 
