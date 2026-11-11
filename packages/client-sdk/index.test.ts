@@ -99,10 +99,12 @@ describe('ConxianClient', () => {
         expect(result).toEqual(expectedResponse);
     });
 
-    it('should fetch Sovereign Yield Index rate from treasury', async () => {
+    it('should report the Sovereign Yield Index as unavailable until evidence is qualified', async () => {
         const expectedResponse = {
-            syi_rate: 0.052,
-            timestamp: 1700000000,
+            status: 'unavailable',
+            syi_rate: null,
+            timestamp: null,
+            reason: 'provider_evidence_unqualified',
         };
         (global.fetch as any).mockResolvedValue({
             ok: true,

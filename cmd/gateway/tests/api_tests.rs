@@ -701,8 +701,13 @@ async fn test_get_metrics_authorized() {
 }
 
 #[tokio::test]
-async fn test_get_sovereign_yield_index_returns_tracked_rate() {
+async fn test_get_sovereign_yield_index_reports_unavailable() {
     let state = Arc::new(RwLock::new(GatewayState::default()));
+    {
+        let mut current = state.write().unwrap();
+        current.metrics.syi_index = 0.078;
+        current.metrics.last_treasury_update = 1_700_000_000;
+    }
     let app = setup_app(state);
 
     let response = app
@@ -719,11 +724,86 @@ async fn test_get_sovereign_yield_index_returns_tracked_rate() {
     assert_eq!(response.status(), StatusCode::OK);
     let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
     let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
-    assert!(body["syi_rate"].is_number());
-    assert!(body["timestamp"].is_number());
-    // Quotes are not tracked by the treasury monitor and must not be synthesized.
-    assert!(body.get("btc_quote").is_none());
-    assert!(body.get("stx_quote").is_none());
+    assert_eq!(body["status"], "unavailable");
+    assert!(body["syi_rate"].is_null());
+    assert!(body["timestamp"].is_null());
+    assert_eq!(body["reason"], "provider_evidence_unqualified");
+}
+
+#[tokio::test]
+async fn test_get_state_masks_unqualified_treasury_metrics() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    {
+        let mut current = state.write().unwrap();
+        current.metrics.treasury_balance_stx = 1_000_000.0;
+        current.metrics.treasury_balance_btc = 1_050_000_000;
+        current.metrics.sbtc_liquidity = 5_000_000.0;
+        current.metrics.syi_index = 0.078;
+        current.metrics.last_treasury_update = 1_700_000_000;
+        current.metrics.fx_rmb_usd = 0.1425;
+    }
+    let app = setup_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/state")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(body["metrics"]["treasury_data_status"], "unavailable");
+    for field in [
+        "treasury_balance_stx",
+        "treasury_balance_btc",
+        "last_treasury_update",
+        "sbtc_liquidity",
+        "syi_index",
+        "fx_rmb_usd",
+        "fx_rub_usd",
+        "fx_inr_usd",
+        "fx_aed_usd",
+    ] {
+        assert!(body["metrics"][field].is_null(), "{field} must not be published");
+    }
+}
+
+#[tokio::test]
+async fn test_metrics_json_masks_unqualified_treasury_values() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    {
+        let mut current = state.write().unwrap();
+        current.metrics.treasury_balance_stx = 1_000_000.0;
+        current.metrics.treasury_balance_btc = 1_050_000_000;
+    }
+    let app = setup_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/metrics")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("x-402-payment", TEST_X402_PROOF)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(body["treasury_data_status"], "unavailable");
+    assert!(body["treasury_balance_stx"].is_null());
+    assert!(body["treasury_balance_btc"].is_null());
+    assert!(body["syi_rate"].is_null());
+    assert!(body["treasury_timestamp"].is_null());
 }
 
 #[tokio::test]
@@ -2776,6 +2856,7 @@ async fn test_prometheus_metrics_endpoint() {
         s.metrics.health_requests = 10;
         s.metrics.verification_success = 5;
         s.metrics.treasury_balance_btc = 1_050_000_000;
+        s.metrics.syi_index = 0.078;
         s.bitcoin.height = 850_000;
         s.stacks.height = 175_000;
     }
@@ -2802,10 +2883,11 @@ async fn test_prometheus_metrics_endpoint() {
     assert!(body.contains("conxian_requests_total 42"));
     assert!(body.contains("conxian_health_requests_total 10"));
     assert!(body.contains("conxian_verification_success_total 5"));
-    assert!(body.contains("conxian_treasury_balance_btc 1050000000"));
+    assert!(body.contains("conxian_treasury_data_available 0"));
+    assert!(!body.contains("conxian_treasury_balance_btc"));
+    assert!(!body.contains("conxian_syi_index"));
     assert!(body.contains("conxian_bitcoin_height 850000"));
     assert!(body.contains("conxian_stacks_height 175000"));
-    assert!(body.contains("conxian_syi_index"));
 }
 
 // ============================================================
@@ -2813,7 +2895,7 @@ async fn test_prometheus_metrics_endpoint() {
 // ============================================================
 
 #[tokio::test]
-async fn test_prometheus_metrics_includes_fx_rates() {
+async fn test_prometheus_metrics_omits_unqualified_fx_rates() {
     let state = Arc::new(RwLock::new(GatewayState::default()));
     {
         let mut s = state.write().unwrap();
@@ -2839,10 +2921,11 @@ async fn test_prometheus_metrics_includes_fx_rates() {
     let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
     let body = String::from_utf8(body_bytes.to_vec()).unwrap();
 
-    assert!(body.contains("conxian_fx_rmb_usd 0.14"));
-    assert!(body.contains("conxian_fx_rub_usd 0.011"));
-    assert!(body.contains("conxian_fx_inr_usd 0.012"));
-    assert!(body.contains("conxian_fx_aed_usd 0.272"));
+    assert!(body.contains("conxian_treasury_data_available 0"));
+    assert!(!body.contains("conxian_fx_rmb_usd"));
+    assert!(!body.contains("conxian_fx_rub_usd"));
+    assert!(!body.contains("conxian_fx_inr_usd"));
+    assert!(!body.contains("conxian_fx_aed_usd"));
 }
 
 // ============================================================
