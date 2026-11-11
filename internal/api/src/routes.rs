@@ -1,4 +1,5 @@
 use crate::auth::auth_middleware;
+use crate::m2m_auth::M2mAuthPolicy;
 use crate::middleware::latency_tracker;
 use crate::mor_webhook::{provider_from_env, KeyStore, MorWebhookState};
 use crate::tenant::{managed_auth_middleware, ManagedAuth};
@@ -130,6 +131,13 @@ pub fn configure_routes(
     let token_for_auth = api_token.clone();
     let token_for_alex = api_token.clone();
 
+    // M2M bearer-auth policy (legacy / dual / jwt), resolved once from the
+    // environment and shared by every authenticated route.
+    let m2m_policy = std::sync::Arc::new(M2mAuthPolicy::from_env());
+    let policy_for_auth = m2m_policy.clone();
+    let policy_for_alex = m2m_policy.clone();
+    let policy_for_admin = m2m_policy.clone();
+
     // Durable managed-key store, shared by the MoR webhook receiver and the
     // managed-auth path so a webhook-minted key authenticates immediately.
     let mor_store = mor_key_store_from_env();
@@ -165,6 +173,7 @@ pub fn configure_routes(
                 req,
                 next,
                 token_for_admin.clone(),
+                policy_for_admin.clone(),
                 server_start,
                 token_ttl_seconds,
             )
@@ -274,6 +283,7 @@ pub fn configure_routes(
                 req,
                 next,
                 token_for_auth.clone(),
+                policy_for_auth.clone(),
                 server_start,
                 token_ttl_seconds,
             )
@@ -292,6 +302,7 @@ pub fn configure_routes(
                 req,
                 next,
                 token_for_alex.clone(),
+                policy_for_alex.clone(),
                 server_start,
                 token_ttl_seconds,
             )

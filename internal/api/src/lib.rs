@@ -15,6 +15,7 @@ pub mod discovery;
 pub mod fiat;
 pub mod handlers;
 pub mod lightning;
+pub mod m2m_auth;
 pub mod mempool_telemetry;
 pub mod middleware;
 pub mod mor_webhook;
