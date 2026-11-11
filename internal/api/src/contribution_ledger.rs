@@ -671,7 +671,8 @@ mod tests {
     fn expired_awards_are_applied_only_once() {
         let mut l = ContributionLedger::new("c-expiry-once", 0);
         l.award(Contribution::VerifiedDisproof, 0).unwrap();
-        l.award(Contribution::SecurityAudit, CREDIT_TTL_SECONDS).unwrap();
+        l.award(Contribution::SecurityAudit, CREDIT_TTL_SECONDS)
+            .unwrap();
         let later = CREDIT_TTL_SECONDS + 1;
         let first = l.redeem(Redemption::RelayCredits, later).unwrap();
         assert_eq!(first.remaining, 900);
