@@ -5,6 +5,37 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+/// CLI version, sourced from the workspace so it cannot drift from the package.
+pub const CLI_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Global output mode. `--json` makes every command machine-readable so an
+/// autonomous agent (the primary ICP) can consume the CLI without parsing prose.
+#[derive(Clone, Copy, PartialEq)]
+pub enum OutputMode {
+    Human,
+    Json,
+}
+
+/// A single place to print a result line, so `--json` and human output cannot
+/// diverge. In JSON mode each call emits one JSON object per line (JSONL).
+pub fn emit(mode: OutputMode, level: &str, message: &str) {
+    match mode {
+        OutputMode::Json => {
+            let line = serde_json::json!({ "level": level, "message": message });
+            println!("{line}");
+        }
+        OutputMode::Human => println!("{message}"),
+    }
+}
+
+/// Emits a structured JSON payload (the command's result) in JSON mode, or a
+/// human summary in human mode.
+pub fn emit_data(mode: OutputMode, value: &serde_json::Value) {
+    if mode == OutputMode::Json {
+        println!("{value}");
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct InstallerConfig {
     pub auth_token: String,
@@ -322,20 +353,142 @@ pub async fn probe_gateway_status(gateway_url: &str) -> Result<String> {
     .context("Task join error during gateway health probe")?
 }
 
+/// A generic authenticated JSON request to the gateway API. Returns the HTTP
+/// status and the raw body text. `bearer` may be empty for unauthenticated
+/// endpoints (e.g. `/billing/quote`). Never logs or echoes the bearer.
+pub async fn api_request(
+    gateway_base_url: &str,
+    method: &str,
+    path: &str,
+    bearer: Option<&str>,
+    body: Option<serde_json::Value>,
+) -> Result<(u16, String)> {
+    let mut url = normalize_api_base(gateway_base_url)?;
+    url.set_path(path);
+    let target = url.to_string();
+    let method = method.to_string();
+    let bearer = bearer.unwrap_or("").to_string();
+    let body = body.map(|b| b.to_string());
+    tokio::task::spawn_blocking(move || {
+        let mut req = match method.as_str() {
+            "GET" => minreq::get(target.as_str()),
+            "POST" => minreq::post(target.as_str()),
+            "DELETE" => minreq::delete(target.as_str()),
+            other => return Err(anyhow::anyhow!("Unsupported HTTP method {other}")),
+        };
+        if !bearer.is_empty() {
+            req = req.with_header("Authorization", format!("Bearer {bearer}"));
+        }
+        if let Some(body) = body {
+            req = req
+                .with_header("Content-Type", "application/json")
+                .with_body(body);
+        }
+        let mut resp = req
+            .with_timeout(15)
+            .with_follow_redirects(false)
+            .with_max_headers_size(16384)
+            .with_max_status_line_length(1024)
+            .send_lazy()
+            .map_err(|_| anyhow::anyhow!("Gateway request failed"))?;
+        let status = resp.status_code;
+        let mut text = String::new();
+        std::io::Read::read_to_string(&mut resp, &mut text)
+            .map_err(|_| anyhow::anyhow!("Failed to read response body"))?;
+        Ok::<_, anyhow::Error>((status, text))
+    })
+    .await
+    .context("Task join error during gateway request")?
+}
+
+/// Path of the persistent CLI profile store (`~/.config/conxian/config.json`).
+/// Holds the default gateway URL and the managed key path, so a customer does
+/// not have to export environment variables for every invocation.
+pub fn config_path() -> Option<PathBuf> {
+    let base = env::var("XDG_CONFIG_HOME")
+        .ok()
+        .map(PathBuf::from)
+        .or_else(|| {
+            env::var("HOME")
+                .ok()
+                .map(|h| PathBuf::from(h).join(".config"))
+        })?;
+    Some(base.join("conxian").join("config.json"))
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct Profile {
+    #[serde(default)]
+    pub gateway_url: Option<String>,
+    #[serde(default)]
+    pub tenant_id: Option<String>,
+    #[serde(default)]
+    pub key_file: Option<String>,
+}
+
+pub fn load_profile() -> Profile {
+    config_path()
+        .and_then(|p| fs::read_to_string(p).ok())
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+pub fn save_profile(profile: &Profile) -> Result<()> {
+    let path = config_path().context("No HOME/XDG_CONFIG_HOME to store CLI config")?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).context("Cannot create CLI config directory")?;
+    }
+    let json = serde_json::to_string_pretty(profile).context("Failed to encode profile")?;
+    fs::write(&path, json).context("Failed to write CLI config")?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o600));
+    }
+    Ok(())
+}
+
+/// Resolves the gateway base URL from (in order): an explicit flag, the
+/// `GATEWAY_URL` env var, the stored profile, then localhost.
+pub fn resolve_gateway(flags: &std::collections::HashMap<String, String>) -> String {
+    flags
+        .get("gateway")
+        .cloned()
+        .or_else(|| env::var("GATEWAY_URL").ok())
+        .or_else(|| load_profile().gateway_url)
+        .unwrap_or_else(|| "http://127.0.0.1:8080".to_string())
+}
+
 fn print_usage() {
-    println!("Conxian Sovereign Settlement Suite - Unified Installer & CLI (v0.1.5)");
-    println!("Usage: conxian-cli <subcommand> [options]\n");
-    println!("Subcommands:");
-    println!("  init     Initialize client deployment configuration (.env, docker-compose.yml)");
-    println!("  doctor   Inspect default installer configuration (no connectivity probes)");
-    println!("  start    Print startup instructions (does not launch a process)");
-    println!("  status   Probe Gateway HTTP liveness only");
-    println!("  onboard  Provision a tenant via POST /v1/onboard and verify the minted key\n");
-    println!("onboard options:");
-    println!("  --gateway <url>          Gateway base URL (default: $GATEWAY_URL or http://127.0.0.1:8080)");
-    println!("  --tier <tier>            Requested tier (default: sandbox)");
-    println!("  --idempotency-key <key>  Idempotency key (default: generated per run)");
-    println!("  --write-env <path>       Write the minted key to a 0600 env file (optional)");
+    println!("Conxian Sovereign Settlement Suite - Unified Installer & CLI (v{CLI_VERSION})");
+    println!("Usage: conxian-cli <subcommand> [options]");
+    println!("Global flags: --json (machine-readable output), --help, --version\n");
+    println!("Deployment:");
+    println!("  init      Write .env.production + docker-compose.yml templates");
+    println!("  doctor    Preflight checks (syntax; --probe adds connectivity)");
+    println!("  start     Print startup instructions (does not launch a process)\n");
+    println!("Account & provisioning:");
+    println!("  onboard   Provision a tenant (POST /onboard) and verify the minted key");
+    println!("  deploy    Deploy a provisioned tenant (POST /tenants/{{id}}/deploy)");
+    println!("  status    Probe the gateway, or the site's multi-service /api/status\n");
+    println!("Self-management (requires a managed key):");
+    println!("  limits    Show a tenant's published limits");
+    println!("  usage     Show a tenant's metered usage");
+    println!("  keys      rotate | revoke a tenant key\n");
+    println!("Billing (the Lightning subscription rail):");
+    println!("  quote     Price a plan (no account needed)");
+    println!("  subscribe Create a Lightning invoice for a plan");
+    println!("  verify    Verify a settled invoice and mint the key");
+    println!("  balance   Show a tenant's credit balance\n");
+    println!("Configuration:");
+    println!("  config    get | set | show the persistent CLI profile\n");
+    println!("Common flags:");
+    println!("  --gateway <url>   Gateway base URL (default: $GATEWAY_URL, profile, or :8080)");
+    println!("  --tenant <id>     Tenant id");
+    println!("  --key-file <path> File holding the managed key (0600)");
+    println!("  --tier <tier>     sandbox | starter | indie | business | enterprise");
+    println!("  --plan <plan>     Billing plan (quote/subscribe/verify)");
+    println!("  --json            Emit machine-readable JSON output");
     println!("  Onboarding token is read from $ONBOARDING_TOKEN only (never a flag).");
 }
 
@@ -436,11 +589,32 @@ async fn run_onboard(args: &[String]) -> Result<()> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // rustls 0.23 cannot auto-select a CryptoProvider when more than one provider
+    // feature is compiled into the process (the workspace enables both
+    // `aws-lc-rs` via reqwest and `ring` via async-wsocket). Without an explicit
+    // default, every HTTPS call panics. Install one up front.
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
         print_usage();
         return Ok(());
     }
+
+    // Global flags handled before dispatch so every command supports them.
+    if args.iter().any(|a| a == "--version" || a == "-V") {
+        println!("conxian-cli {CLI_VERSION}");
+        return Ok(());
+    }
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        print_usage();
+        return Ok(());
+    }
+    let mode = if args.iter().any(|a| a == "--json") {
+        OutputMode::Json
+    } else {
+        OutputMode::Human
+    };
 
     match args[1].as_str() {
         "init" => {
@@ -522,11 +696,311 @@ async fn main() -> Result<()> {
         "onboard" => {
             run_onboard(&args[2..]).await?;
         }
+        "deploy" => {
+            run_deploy(&args[2..], mode).await?;
+        }
+        "limits" => {
+            run_tenant_get(&args[2..], mode, "limits").await?;
+        }
+        "usage" => {
+            run_tenant_get(&args[2..], mode, "usage").await?;
+        }
+        "keys" => {
+            run_keys(&args[2..], mode).await?;
+        }
+        "quote" => {
+            run_billing(&args[2..], mode, "quote").await?;
+        }
+        "subscribe" => {
+            run_billing(&args[2..], mode, "subscribe").await?;
+        }
+        "verify" => {
+            run_billing(&args[2..], mode, "verify").await?;
+        }
+        "balance" => {
+            run_billing(&args[2..], mode, "balance").await?;
+        }
+        "config" => {
+            run_config(&args[2..], mode)?;
+        }
         _ => {
             print_usage();
         }
     }
 
+    Ok(())
+}
+
+/// Reads the managed key from `--key-file`, or the profile's key file, or
+/// `GATEWAY_MANAGED_API_KEY`. The key is never taken from a flag.
+fn resolve_managed_key(flags: &std::collections::HashMap<String, String>) -> Result<String> {
+    if let Some(path) = flags.get("key-file") {
+        let content =
+            fs::read_to_string(path).with_context(|| format!("Cannot read key file {path}"))?;
+        return extract_env_value(&content, "GATEWAY_MANAGED_API_KEY")
+            .or_else(|| Some(content.trim().to_string()).filter(|s| !s.is_empty()))
+            .context("Key file did not contain a managed key");
+    }
+    if let Some(path) = load_profile().key_file {
+        if let Ok(content) = fs::read_to_string(&path) {
+            if let Some(key) = extract_env_value(&content, "GATEWAY_MANAGED_API_KEY") {
+                return Ok(key);
+            }
+        }
+    }
+    env::var("GATEWAY_MANAGED_API_KEY").context(
+        "No managed key: pass --key-file, set the profile key_file, or set GATEWAY_MANAGED_API_KEY",
+    )
+}
+
+/// Extracts `KEY=value` from a dotenv-style file, stripping surrounding quotes.
+fn extract_env_value(content: &str, key: &str) -> Option<String> {
+    for line in content.lines() {
+        let line = line.trim();
+        if let Some(rest) = line.strip_prefix(&format!("{key}=")) {
+            return Some(rest.trim().trim_matches('\'').trim_matches('"').to_string());
+        }
+    }
+    None
+}
+
+fn resolve_tenant(flags: &std::collections::HashMap<String, String>) -> Result<String> {
+    flags
+        .get("tenant")
+        .cloned()
+        .or_else(|| env::var("GATEWAY_TENANT_ID").ok())
+        .or_else(|| load_profile().tenant_id)
+        .context("No tenant id: pass --tenant or set GATEWAY_TENANT_ID")
+}
+
+/// `deploy` — POST /tenants/{id}/deploy (operator-token gated).
+async fn run_deploy(args: &[String], mode: OutputMode) -> Result<()> {
+    let flags = parse_flags(args);
+    let gateway = resolve_gateway(&flags);
+    let tenant = resolve_tenant(&flags)?;
+    validate_tenant_id(&tenant)?;
+    let token = env::var("ONBOARDING_TOKEN")
+        .context("ONBOARDING_TOKEN must be set (the CLI never takes it as a flag)")?;
+    let (status, text) = api_request(
+        &gateway,
+        "POST",
+        &format!("/api/v1/tenants/{tenant}/deploy"),
+        Some(&token),
+        Some(serde_json::json!({})),
+    )
+    .await?;
+    anyhow::ensure!(status == 200, "Deploy returned HTTP {status}");
+    emit(mode, "success", &format!("Deploy accepted for {tenant}"));
+    emit_data(
+        mode,
+        &serde_json::json!({ "tenant_id": tenant, "status": status, "response": text }),
+    );
+    Ok(())
+}
+
+/// `limits` / `usage` — GET /tenants/{id}/{limits|usage} (managed-key gated).
+async fn run_tenant_get(args: &[String], mode: OutputMode, what: &str) -> Result<()> {
+    let flags = parse_flags(args);
+    let gateway = resolve_gateway(&flags);
+    let tenant = resolve_tenant(&flags)?;
+    validate_tenant_id(&tenant)?;
+    let key = resolve_managed_key(&flags)?;
+    let (status, text) = api_request(
+        &gateway,
+        "GET",
+        &format!("/api/v1/tenants/{tenant}/{what}"),
+        Some(&key),
+        None,
+    )
+    .await?;
+    anyhow::ensure!(
+        status == 200,
+        "{what} returned HTTP {status} (key rejected?)"
+    );
+    emit(mode, "success", &format!("{what} for {tenant}: {text}"));
+    emit_data(
+        mode,
+        &serde_json::json!({ "tenant_id": tenant, "result": text }),
+    );
+    Ok(())
+}
+
+/// `keys rotate|revoke` — POST/DELETE /tenants/{id}/keys[/{key_id}].
+async fn run_keys(args: &[String], mode: OutputMode) -> Result<()> {
+    let action = args.first().map(String::as_str).unwrap_or("");
+    let flags = parse_flags(args);
+    let gateway = resolve_gateway(&flags);
+    let tenant = resolve_tenant(&flags)?;
+    validate_tenant_id(&tenant)?;
+    let key = resolve_managed_key(&flags)?;
+    match action {
+        "rotate" => {
+            let (status, text) = api_request(
+                &gateway,
+                "POST",
+                &format!("/api/v1/tenants/{tenant}/keys"),
+                Some(&key),
+                Some(serde_json::json!({})),
+            )
+            .await?;
+            anyhow::ensure!(status == 200, "Key rotation returned HTTP {status}");
+            emit(mode, "success", &format!("Rotated key for {tenant}"));
+            emit_data(
+                mode,
+                &serde_json::json!({ "tenant_id": tenant, "result": text }),
+            );
+        }
+        "revoke" => {
+            let key_id = flags
+                .get("key-id")
+                .context("--key-id is required for revoke")?;
+            let (status, text) = api_request(
+                &gateway,
+                "DELETE",
+                &format!("/api/v1/tenants/{tenant}/keys/{key_id}"),
+                Some(&key),
+                None,
+            )
+            .await?;
+            anyhow::ensure!(status == 200, "Key revocation returned HTTP {status}");
+            emit(
+                mode,
+                "success",
+                &format!("Revoked key {key_id} for {tenant}"),
+            );
+            emit_data(
+                mode,
+                &serde_json::json!({ "tenant_id": tenant, "key_id": key_id, "result": text }),
+            );
+        }
+        _ => anyhow::bail!("keys expects 'rotate' or 'revoke'"),
+    }
+    Ok(())
+}
+
+/// `quote|subscribe|verify|balance` — the gateway's Lightning billing rail.
+async fn run_billing(args: &[String], mode: OutputMode, what: &str) -> Result<()> {
+    let flags = parse_flags(args);
+    let gateway = resolve_gateway(&flags);
+    match what {
+        "quote" | "subscribe" => {
+            let plan = flags.get("plan").context("--plan is required")?;
+            let (status, text) = api_request(
+                &gateway,
+                "POST",
+                &format!("/api/v1/billing/{what}"),
+                None,
+                Some(serde_json::json!({ "plan": plan })),
+            )
+            .await?;
+            anyhow::ensure!(status == 200, "{what} returned HTTP {status}");
+            emit(mode, "success", &format!("{what} {plan}: {text}"));
+            emit_data(mode, &serde_json::json!({ "plan": plan, "result": text }));
+        }
+        "verify" => {
+            let plan = flags.get("plan").context("--plan is required")?;
+            let tenant = resolve_tenant(&flags)?;
+            let invoice_id = flags
+                .get("invoice-id")
+                .context("--invoice-id is required")?;
+            let (status, text) = api_request(
+                &gateway, "POST", "/api/v1/billing/verify", None,
+                Some(serde_json::json!({ "plan": plan, "tenant_id": tenant, "invoice_id": invoice_id })),
+            ).await?;
+            // 402 means "not settled yet" — a normal, non-fatal state.
+            if status == 402 {
+                emit(mode, "info", "Invoice not settled yet");
+                emit_data(
+                    mode,
+                    &serde_json::json!({ "settled": false, "detail": text }),
+                );
+                return Ok(());
+            }
+            anyhow::ensure!(status == 200, "verify returned HTTP {status}");
+            emit(mode, "success", "Invoice settled; managed key minted");
+            emit_data(
+                mode,
+                &serde_json::json!({ "settled": true, "result": text }),
+            );
+        }
+        "balance" => {
+            let tenant = resolve_tenant(&flags)?;
+            let (status, text) = api_request(
+                &gateway,
+                "GET",
+                &format!("/api/v1/billing/balance?tenant_id={tenant}"),
+                None,
+                None,
+            )
+            .await?;
+            anyhow::ensure!(status == 200, "balance returned HTTP {status}");
+            emit(mode, "success", &format!("balance for {tenant}: {text}"));
+            emit_data(
+                mode,
+                &serde_json::json!({ "tenant_id": tenant, "result": text }),
+            );
+        }
+        _ => anyhow::bail!("unknown billing subcommand {what}"),
+    }
+    Ok(())
+}
+
+/// `config get|set|show` — the persistent CLI profile.
+fn run_config(args: &[String], mode: OutputMode) -> Result<()> {
+    let action = args.first().map(String::as_str).unwrap_or("show");
+    let flags = parse_flags(args);
+    let mut profile = load_profile();
+    match action {
+        "set" => {
+            if let Some(v) = flags.get("gateway") {
+                profile.gateway_url = Some(v.clone());
+            }
+            if let Some(v) = flags.get("tenant") {
+                profile.tenant_id = Some(v.clone());
+            }
+            if let Some(v) = flags.get("key-file") {
+                profile.key_file = Some(v.clone());
+            }
+            save_profile(&profile)?;
+            emit(mode, "success", "Profile saved");
+            emit_data(
+                mode,
+                &serde_json::json!({ "gateway_url": profile.gateway_url, "tenant_id": profile.tenant_id, "key_file": profile.key_file }),
+            );
+        }
+        "get" => {
+            let key = args.get(1).map(String::as_str).unwrap_or("");
+            let value = match key {
+                "gateway" => profile.gateway_url,
+                "tenant" => profile.tenant_id,
+                "key-file" => profile.key_file,
+                _ => anyhow::bail!("config get expects gateway|tenant|key-file"),
+            };
+            if let Some(v) = value {
+                println!("{v}");
+            }
+        }
+        _ => {
+            emit_data(
+                mode,
+                &serde_json::json!({ "gateway_url": profile.gateway_url, "tenant_id": profile.tenant_id, "key_file": profile.key_file }),
+            );
+            if mode == OutputMode::Human {
+                println!(
+                    "gateway: {}",
+                    profile.gateway_url.unwrap_or_else(|| "(unset)".into())
+                );
+                println!(
+                    "tenant:  {}",
+                    profile.tenant_id.unwrap_or_else(|| "(unset)".into())
+                );
+                println!(
+                    "key-file:{}",
+                    profile.key_file.unwrap_or_else(|| "(unset)".into())
+                );
+            }
+        }
+    }
     Ok(())
 }
 
