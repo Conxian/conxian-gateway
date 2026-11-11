@@ -149,4 +149,3 @@ mod x402_nwc_activation_tests {
         ));
     }
 }
-
