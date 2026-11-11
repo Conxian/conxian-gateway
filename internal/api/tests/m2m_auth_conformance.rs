@@ -273,8 +273,10 @@ fn auth_mode_acceptance_matrix() {
     assert_eq!(GatewayAuthMode::from_env_value("jwt"), GatewayAuthMode::Jwt);
     assert_eq!(
         GatewayAuthMode::from_env_value("anything-else"),
-        GatewayAuthMode::Legacy
+        GatewayAuthMode::Invalid
     );
+    assert!(!GatewayAuthMode::Invalid.accepts_legacy());
+    assert!(!GatewayAuthMode::Invalid.accepts_jwt());
 
     assert!(GatewayAuthMode::Legacy.accepts_legacy());
     assert!(!GatewayAuthMode::Legacy.accepts_jwt());
