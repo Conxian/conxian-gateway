@@ -92,7 +92,11 @@ pub fn new_production_lightning_adapter() -> Arc<LightningAdapter> {
 /// The NWC adapter remains in the codebase for the separately reviewed future
 /// integration, but `NWC_URI` is deliberately not an activation switch.
 fn new_lightning_adapter_for_nwc_uri(nwc_uri: Option<&str>) -> Arc<LightningAdapter> {
-    if nwc_uri.map(str::trim).filter(|uri| !uri.is_empty()).is_some() {
+    if nwc_uri
+        .map(str::trim)
+        .filter(|uri| !uri.is_empty())
+        .is_some()
+    {
         tracing::error!(
             "NWC_URI is configured, but NWC x402 settlement is disabled until server-issued invoice verification is implemented (#874)"
         );
@@ -111,6 +115,16 @@ pub fn new_lightning_adapter_from_env() -> Arc<LightningAdapter> {
     new_lightning_adapter_for_nwc_uri(nwc_uri.as_deref())
 }
 
+pub fn new_settlement_log() -> Arc<RwLock<VecDeque<SettlementProposal>>> {
+    Arc::new(RwLock::new(VecDeque::new()))
+}
+
+pub fn new_offline_queue(key: [u8; 32]) -> Arc<dyn conxian_core::OfflineQueue> {
+    Arc::new(
+        conxian_core::persistence::EncryptedOfflineQueue::new("offline_queue.db", key)
+            .expect("Failed to init offline queue"),
+    )
+}
 #[cfg(test)]
 mod x402_nwc_activation_tests {
     use super::*;
@@ -136,13 +150,3 @@ mod x402_nwc_activation_tests {
     }
 }
 
-pub fn new_settlement_log() -> Arc<RwLock<VecDeque<SettlementProposal>>> {
-    Arc::new(RwLock::new(VecDeque::new()))
-}
-
-pub fn new_offline_queue(key: [u8; 32]) -> Arc<dyn conxian_core::OfflineQueue> {
-    Arc::new(
-        conxian_core::persistence::EncryptedOfflineQueue::new("offline_queue.db", key)
-            .expect("Failed to init offline queue"),
-    )
-}
