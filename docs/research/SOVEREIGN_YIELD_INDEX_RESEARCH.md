@@ -1,31 +1,64 @@
 # Research: Sovereign Yield Index (SYI)
 
-## 1. Concept
-The SYI is a protocol-level metric that tracks the relative yield performance of sBTC vs native BTC and other Stacks-based yield instruments. It is the core incentive mechanism for the "sBTC Suction" pattern.
+## Current operational status — 2026-11-11
 
-## 2. Calculation
-$SYI = \frac{\text{sBTC Realized Yield}}{\text{BTC Opportunity Cost}} \times \text{Sovereignty Multiplier}$
+SYI is a research concept, not a live financial metric. The legacy Gateway
+TreasuryMonitor used an unverified ALEX quote, substituted a fixed fallback
+proxy on quote failure, seeded hard-coded treasury balances, generated
+synthetic liquidity growth, applied fixed tranche/yield/tax assumptions, and
+derived FX values from the same proxy. These values were written into shared
+Gateway state and exposed by API/metrics surfaces. Gateway #880 records the
+production evidence and the fail-closed correction.
 
-- **Sovereignty Multiplier**: Higher for non-custodial instruments.
-- **Opportunity Cost**: Derived from ALEX and other DEX oracles.
+The monitor no longer polls or mutates state. The treasury SYI API contract
+returns an unavailable status, null rate/timestamp, and an explicit reason.
+Treasury fields in state and JSON metrics are null and marked unavailable;
+unqualified financial Prometheus series are omitted. Historical source and UI
+values must not be interpreted as observed assets, yield, customer balances,
+revenue, or adoption.
 
-## 3. Implementation in Gateway
-The `TreasuryMonitor` in `internal/engine/src/treasury/mod.rs` will be enhanced to poll ALEX liquidity pools and calculate the SYI in real-time, exposing it via the `/api/v1/metrics` endpoint.
+## Proposed methodology (not implemented)
 
-## 4. Next Steps
-- Integrate ALEX oracle feeds for real-time yield tracking.
-- Implement TEE-signed attestation for SYI reports to ensure institutional-grade reporting.
+The conceptual ratio below is a research hypothesis only:
 
+\[
+SYI = \frac{\text{sBTC realized yield}}{\text{BTC opportunity cost}}
+     \times \text{sovereignty adjustment}
+\]
 
-## 5. Multi-Cloud Telemetry Ingress & Real-Time 80/10/10 Yield Splitting (CON-1329 / CON-1600)
+No production value can be calculated until both numerator and denominator
+are sourced from authoritative, independently verifiable observations with
+compatible asset definitions, units, windows, and accounting treatment.
+A non-custodial design preference is not itself a quantitative yield premium;
+any adjustment factor requires a documented, defensible methodology and review.
 
-To validate the **80/10/10 yield splitting calculations** in real time, Phase 10 implements multi-cloud scorecard alignment across all Gateway infrastructure:
+## Minimum reactivation evidence
 
-1. **Multi-Cloud Data Aggregation**:
-   - Telemetry streams are collected from **Supabase BOS** (auth and edge state events), **Neon Postgres** (persistence health and query performance), and **Render** (container availability and API latency).
-2. **Autonomous SLA Engine Feed**:
-   - SLA health scores feed directly into `TreasuryMonitor` and `SettlementProposal` yield streaming calculators.
-   - When SLA metrics meet institutional thresholds (>=99.9% uptime, <200ms latency), yield distribution dynamically allocates:
-     - **80%**: Productive Liquidity Yield / Treasury
-     - **10%**: Founder Royalty / Protocol Sustainability
-     - **10%**: Ecosystem Reserve / Safety Module
+1. **Provider and network** — identify the authoritative provider, chain/network,
+   contract/pool, and endpoint; prove the provider is not a fixture or
+   compatibility-only endpoint.
+2. **Asset identity and units** — bind the exact sBTC/BTC/STX assets, decimals,
+   quote direction, input amount, and conversion semantics.
+3. **Observation quality** — capture source timestamp, observed timestamp,
+   freshness/expiry, block height or equivalent, and reject stale, malformed,
+   substituted, or incomplete observations.
+4. **Accounting semantics** — distinguish balances, liquidity, market depth,
+   realized yield, projected yield, fees, taxes, and hypothetical allocations.
+   Do not infer ownership or treasury control from a market quote.
+5. **Failure behavior** — unavailable provider data must produce unavailable
+   status, never a fallback proxy, seeded balance, or growth estimate.
+6. **API and telemetry** — preserve explicit availability and provenance;
+   never expose null/unknown as zero or label fixtures as live.
+7. **Independent acceptance** — verify the exact source, artifact, runtime
+   configuration, provider/network journey, rollback, and operational soak.
+
+## Boundaries
+
+- This research does not authorize peg-in/peg-out, signing, custody, swaps,
+  treasury allocation, settlement, payment entitlement, or on-chain value.
+- The sBTC bridge monitor remains a separate read-only lifecycle observation
+  path; it is not an SYI data source until separately qualified.
+- Proposed 80/10/10 or senior/junior distributions are not live calculations,
+  approved commercial terms, or customer commitments.
+- Gateway #880 owns the runtime correction and evidence gate. Historical
+  implementation notes remain history, not current readiness claims.

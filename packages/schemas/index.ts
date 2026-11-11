@@ -141,16 +141,17 @@ export interface IdentityResolutionResponse {
 }
 
 /**
- * Sovereign Yield Index (SYI) Treasury structures.
+ * Sovereign Yield Index (SYI) response.
  *
- * BTC/STX USD price quotes are not tracked by the treasury monitor, so they
- * are optional and omitted rather than synthesized.
+ * The live Gateway currently reports unavailable until source, network, asset,
+ * units, observation time, freshness, and provenance are independently
+ * qualified. Numeric treasury values are not inferred from fixtures/defaults.
  */
 export interface SyiResponse {
-    syi_rate: number;
-    timestamp: number;
-    btc_quote?: number;
-    stx_quote?: number;
+    status: "unavailable";
+    syi_rate: null;
+    timestamp: null;
+    reason: string;
 }
 
 /**

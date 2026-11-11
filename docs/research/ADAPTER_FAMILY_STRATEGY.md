@@ -51,7 +51,7 @@ The Gateway supports 15+ protocol adapters grouped by architectural family. Each
 | Rail | Status | Lines | Notes |
 |------|--------|-------|-------|
 | **Lightning** | ✅ Live | 2,600 | 806-line handler + NWC NIP-47 relay-settle + X402 middleware + M2M; [full research](LIGHTNING_SETTLEMENT_RAIL_RESEARCH.md) |
-| **sBTC** | ✅ Live | 441 | Deposit/withdrawal lifecycle monitor via Emily API; Treasury/SYI integration; [full research](SBTC_SETTLEMENT_RAIL_RESEARCH.md) |
+| **sBTC** | 🟡 Observation | 441 | Read-only deposit/withdrawal lifecycle monitor via Emily API; no qualified Treasury/SYI integration or peg execution; [full research](SBTC_SETTLEMENT_RAIL_RESEARCH.md) |
 | **Fiat (ISO 20022)** | ✅ Live | 1,396 | 5 on-ramp providers + CAMT.053/054 + X402 webhook verify; [full research](FIAT_ISO20022_SETTLEMENT_RAIL_RESEARCH.md) |
 | **x402** | ✅ Live | 776 | HTTP 402 payment protocol |
 

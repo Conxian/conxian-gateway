@@ -1,129 +1,52 @@
 use crate::shutdown::sleep_or_shutdown;
 use crate::stacks::alex::AlexClient;
-use conxian_core::{AlexSwapRequest, ConxianResult, SharedState};
+use conxian_core::{ConxianError, ConxianResult, SharedState};
 use std::sync::Arc;
 use tokio::sync::watch;
 use tokio::time::Duration;
-use tracing::{error, info, warn};
+use tracing::warn;
 
+/// Treasury publication is intentionally disabled until its provider and
+/// accounting evidence contract is qualified. The constructor is retained so
+/// the existing task graph remains stable without writing synthetic values.
 pub struct TreasuryMonitor {
-    state: SharedState,
+    _state: SharedState,
     interval_secs: u64,
-    alex: Arc<dyn AlexClient>,
+    _alex: Arc<dyn AlexClient>,
 }
 
 impl TreasuryMonitor {
     pub fn new(state: SharedState, interval_secs: u64, alex: Arc<dyn AlexClient>) -> Self {
         Self {
-            state,
+            _state: state,
             interval_secs,
-            alex,
+            _alex: alex,
         }
     }
 
-    /// Treasury owns no Gateway persistence checkpoint, so transient ALEX
-    /// failures remain retryable while shutdown is observed between updates.
+    /// Keep the task lifecycle and shutdown behavior, but do not poll an
+    /// unverified quote or mutate live Gateway state.
     pub async fn run_until_shutdown(
         &self,
         mut shutdown: watch::Receiver<bool>,
     ) -> ConxianResult<()> {
-        info!("Starting Treasury Monitor with ALEX-driven Sovereign Yield Index (SYI)...");
+        warn!(
+            "Treasury monitor disabled: provider-backed balance, yield, and FX evidence is not qualified (#880)"
+        );
 
         loop {
-            if let Err(e) = self.update_balances().await {
-                error!("Treasury monitor error: {}", e);
-            }
-
             if sleep_or_shutdown(&mut shutdown, Duration::from_secs(self.interval_secs)).await {
                 return Ok(());
             }
         }
     }
 
+    /// Explicit update requests fail closed. No fixture, default, quote proxy,
+    /// or simulated growth may enter live Gateway state.
     pub async fn update_balances(&self) -> ConxianResult<()> {
-        // Fetch real-time market data from ALEX to anchor SYI
-        let quote_req = AlexSwapRequest {
-            token_x: "sBTC".to_string(),
-            token_y: "STX".to_string(),
-            factor: 100_000_000,
-            amount: 100_000_000, // 1 sBTC
-            min_dy: None,
-        };
-
-        let market_yield_proxy = match self.alex.get_swap_quote(quote_req).await {
-            Ok(quote) => {
-                info!("ALEX Market Quote (1 sBTC -> STX): {}", quote);
-                // Use quote volatility or depth as a proxy for opportunity cost in SYI
-                (quote as f64 / 1_000_000.0).min(1.0)
-            }
-            Err(e) => {
-                warn!(
-                    "Failed to fetch ALEX quote for SYI: {}, falling back to simulation",
-                    e
-                );
-                0.5 // Fallback proxy
-            }
-        };
-
-        let mut s = self.state.write().expect("lock poisoned");
-
-        // Initial setup for institutional balances
-        if s.metrics.treasury_balance_stx == 0.0 {
-            s.metrics.treasury_balance_stx = 1_000_000.0;
-        }
-        if s.metrics.treasury_balance_btc == 0 {
-            s.metrics.treasury_balance_btc = 1_050_000_000; // 10.5 BTC in satoshis
-        }
-
-        // Industry Enhancement: The sBTC "Suction" Pattern
-        if s.metrics.sbtc_liquidity == 0.0 {
-            s.metrics.sbtc_liquidity = 5_000_000.0; // Starting at $5M SAM
-        }
-
-        // SYI calculation: Anchored in ALEX market depth + Sovereign multiplier
-        let sovereignty_multiplier = 1.2; // Reward for non-custodial paths
-        s.metrics.syi_index = (0.04 + (market_yield_proxy * 0.05)) * sovereignty_multiplier;
-        // G-B2: Multi-currency FX Tracking (RMB, RUB, INR, AED)
-        // In production, these would be sourced via specialized oracles or the ALEX corridor feed.
-        s.metrics.fx_rmb_usd = 0.14 + (market_yield_proxy * 0.005); // ~7.14 CNY/USD
-        s.metrics.fx_rub_usd = 0.011 + (market_yield_proxy * 0.001); // ~90.9 RUB/USD
-        s.metrics.fx_inr_usd = 0.012 + (market_yield_proxy * 0.001); // ~83.3 INR/USD
-        s.metrics.fx_aed_usd = 0.272 + (market_yield_proxy * 0.002); // ~3.67 AED/USD
-
-        // Simulate growth towards TAM ($10B+)
-        let growth_factor = if s.metrics.sbtc_liquidity > 1_000_000_000.0 {
-            0.00005
-        } else {
-            0.0002
-        };
-        s.metrics.sbtc_liquidity += s.metrics.sbtc_liquidity * growth_factor;
-
-        // CON-452: Structured Finance Yield Distribution
-        let base_yield_stx = 1250.0 * (1.0 + market_yield_proxy);
-        let senior_share = 0.6; // 60% fixed to senior
-        let junior_share = 0.4; // 40% to junior
-
-        let senior_yield = base_yield_stx * senior_share;
-        let junior_yield = base_yield_stx * junior_share;
-
-        // Simulate tax on total yield
-        let tax_stx = base_yield_stx * 0.01;
-
-        s.metrics.treasury_balance_stx += base_yield_stx - tax_stx;
-        s.metrics.last_treasury_update = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("system clock moved backwards")
-            .as_secs();
-
-        info!(
-            "TAM Capture Update: sBTC Liquidity: ${:.2}, SYI: {:.4}%. Tranche Yields: Senior ${:.2}, Junior ${:.2}",
-            s.metrics.sbtc_liquidity,
-            s.metrics.syi_index * 100.0,
-            senior_yield,
-            junior_yield
-        );
-
-        Ok(())
+        Err(ConxianError::Internal(
+            "treasury values are unavailable until provider, network, asset, unit, observation-time, freshness, and provenance evidence is qualified (#880)".to_string(),
+        ))
     }
 }
 
@@ -135,20 +58,32 @@ mod tests {
     use std::sync::RwLock;
 
     #[tokio::test]
-    async fn test_treasury_monitor_syi_calculation() {
-        let state: SharedState = Arc::new(RwLock::new(GatewayState::new()));
-        let alex = Arc::new(SimulatedAlexClient);
-        let monitor = TreasuryMonitor::new(state.clone(), 1, alex);
+    async fn unqualified_treasury_update_fails_without_mutating_state() {
+        let mut initial = GatewayState::new();
+        initial.metrics.treasury_balance_stx = 1_000_000.0;
+        initial.metrics.treasury_balance_btc = 1_050_000_000;
+        initial.metrics.sbtc_liquidity = 5_000_000.0;
+        initial.metrics.syi_index = 0.078;
+        initial.metrics.last_treasury_update = 1_700_000_000;
+        initial.metrics.fx_rmb_usd = 0.1425;
+        initial.metrics.fx_rub_usd = 0.0115;
+        initial.metrics.fx_inr_usd = 0.0125;
+        initial.metrics.fx_aed_usd = 0.273;
 
-        monitor.update_balances().await.unwrap();
+        let state: SharedState = Arc::new(RwLock::new(initial));
+        let monitor = TreasuryMonitor::new(state.clone(), 1, Arc::new(SimulatedAlexClient));
 
-        let s = state.read().expect("lock poisoned");
-        assert!(s.metrics.syi_index > 0.0);
-        assert!(s.metrics.treasury_balance_stx > 1000000.0);
-        assert!(s.metrics.fx_rmb_usd > 0.0);
-        assert!(s.metrics.fx_rub_usd > 0.0);
-        assert!(s.metrics.fx_inr_usd > 0.0);
-        assert!(s.metrics.fx_aed_usd > 0.0);
-        assert_eq!(s.metrics.treasury_balance_btc, 1050000000);
+        assert!(monitor.update_balances().await.is_err());
+
+        let current = state.read().expect("lock poisoned");
+        assert_eq!(current.metrics.treasury_balance_stx, 1_000_000.0);
+        assert_eq!(current.metrics.treasury_balance_btc, 1_050_000_000);
+        assert_eq!(current.metrics.sbtc_liquidity, 5_000_000.0);
+        assert_eq!(current.metrics.syi_index, 0.078);
+        assert_eq!(current.metrics.last_treasury_update, 1_700_000_000);
+        assert_eq!(current.metrics.fx_rmb_usd, 0.1425);
+        assert_eq!(current.metrics.fx_rub_usd, 0.0115);
+        assert_eq!(current.metrics.fx_inr_usd, 0.0125);
+        assert_eq!(current.metrics.fx_aed_usd, 0.273);
     }
 }

@@ -71,9 +71,26 @@ pub async fn get_health() -> Json<Value> {
     Json(json!({ "status": "ok", "service": "conxian-gateway" }))
 }
 
-pub async fn get_state(State(state): State<AppState>) -> Json<conxian_core::GatewayState> {
+pub async fn get_state(State(state): State<AppState>) -> Json<Value> {
     let s = state.shared.read().expect("lock poisoned");
-    Json(s.clone())
+    let mut snapshot = serde_json::to_value(s.clone()).unwrap_or_else(|_| json!({}));
+    if let Some(metrics) = snapshot.get_mut("metrics").and_then(Value::as_object_mut) {
+        for field in [
+            "treasury_balance_stx",
+            "treasury_balance_btc",
+            "last_treasury_update",
+            "sbtc_liquidity",
+            "syi_index",
+            "fx_rmb_usd",
+            "fx_rub_usd",
+            "fx_inr_usd",
+            "fx_aed_usd",
+        ] {
+            metrics.insert(field.to_string(), Value::Null);
+        }
+        metrics.insert("treasury_data_status".to_string(), json!("unavailable"));
+    }
+    Json(snapshot)
 }
 
 pub async fn get_metrics(State(state): State<AppState>) -> Json<Value> {
@@ -88,22 +105,26 @@ pub async fn get_metrics(State(state): State<AppState>) -> Json<Value> {
         "total_requests": s.metrics.total_requests,
         "trust_policy_allow": s.metrics.trust_policy_allow,
         "trust_policy_block": s.metrics.trust_policy_block,
-        "treasury_balance_stx": s.metrics.treasury_balance_stx,
-        "treasury_balance_btc": s.metrics.treasury_balance_btc,
+        "treasury_data_status": "unavailable",
+        "treasury_balance_stx": Value::Null,
+        "treasury_balance_btc": Value::Null,
+        "syi_rate": Value::Null,
+        "treasury_timestamp": Value::Null,
     }))
 }
 
 /// Read-only Sovereign Yield Index (SYI) endpoint.
 ///
-/// Returns the real tracked SYI rate and its last-update timestamp from the
-/// treasury monitor. No quotes are fabricated: BTC/STX USD price quotes are
-/// not tracked by the treasury monitor and are therefore omitted rather than
-/// synthesized.
-pub async fn get_sovereign_yield_index(State(state): State<AppState>) -> Json<Value> {
-    let s = state.shared.read().expect("lock poisoned");
+/// The former treasury monitor generated synthetic balances, FX rates, and
+/// yield values. Until a provider, network, asset pair, units, observation
+/// time, freshness window, and provenance contract are qualified, the API
+/// reports unavailable rather than returning a numeric proxy.
+pub async fn get_sovereign_yield_index(_state: State<AppState>) -> Json<Value> {
     Json(json!({
-        "syi_rate": s.metrics.syi_index,
-        "timestamp": s.metrics.last_treasury_update,
+        "status": "unavailable",
+        "syi_rate": Value::Null,
+        "timestamp": Value::Null,
+        "reason": "provider_evidence_unqualified",
     }))
 }
 
@@ -154,33 +175,12 @@ pub async fn get_prometheus_metrics(State(state): State<AppState>) -> Response<S
          # HELP conxian_trust_policy_block_total Settlements blocked by trust policy.\n\
          # TYPE conxian_trust_policy_block_total counter\n\
          conxian_trust_policy_block_total {trust_block}\n\
-         # HELP conxian_treasury_balance_stx Treasury STX balance gauge.\n\
-         # TYPE conxian_treasury_balance_stx gauge\n\
-         conxian_treasury_balance_stx {stx}\n\
-         # HELP conxian_treasury_balance_btc Treasury BTC balance gauge.\n\
-         # TYPE conxian_treasury_balance_btc gauge\n\
-         conxian_treasury_balance_btc {btc}\n\
          # HELP conxian_bitcoin_height Bitcoin block height gauge.\n\
          # TYPE conxian_bitcoin_height gauge\n\
          conxian_bitcoin_height {btc_height}\n\
          # HELP conxian_stacks_height Stacks block height gauge.\n\
          # TYPE conxian_stacks_height gauge\n\
-         conxian_stacks_height {stx_height}\n\
-         # HELP conxian_syi_index Sovereign Yield Index gauge.\n\
-         # TYPE conxian_syi_index gauge\n\
-         conxian_syi_index {syi}\n\
-         # HELP conxian_fx_rmb_usd RMB/USD exchange rate gauge.\n\
-         # TYPE conxian_fx_rmb_usd gauge\n\
-         conxian_fx_rmb_usd {rmb}\n\
-         # HELP conxian_fx_rub_usd RUB/USD exchange rate gauge.\n\
-         # TYPE conxian_fx_rub_usd gauge\n\
-         conxian_fx_rub_usd {rub}\n\
-         # HELP conxian_fx_inr_usd INR/USD exchange rate gauge.\n\
-         # TYPE conxian_fx_inr_usd gauge\n\
-         conxian_fx_inr_usd {inr}\n\
-         # HELP conxian_fx_aed_usd AED/USD exchange rate gauge.\n\
-         # TYPE conxian_fx_aed_usd gauge\n\
-         conxian_fx_aed_usd {aed}\n",
+         conxian_stacks_height {stx_height}\n",
             total = s.metrics.total_requests,
             health = s.metrics.health_requests,
             verify = s.metrics.verification_requests,
@@ -188,17 +188,15 @@ pub async fn get_prometheus_metrics(State(state): State<AppState>) -> Response<S
             verify_fail = s.metrics.verification_failure,
             trust_allow = s.metrics.trust_policy_allow,
             trust_block = s.metrics.trust_policy_block,
-            stx = s.metrics.treasury_balance_stx,
-            btc = s.metrics.treasury_balance_btc,
             btc_height = s.bitcoin.height,
             stx_height = s.stacks.height,
-            syi = s.metrics.syi_index,
-            rmb = s.metrics.fx_rmb_usd,
-            rub = s.metrics.fx_rub_usd,
-            inr = s.metrics.fx_inr_usd,
-            aed = s.metrics.fx_aed_usd,
         )
     };
+    body.push_str(
+        "# HELP conxian_treasury_data_available Whether provider-qualified treasury observations are available.\n\
+         # TYPE conxian_treasury_data_available gauge\n\
+         conxian_treasury_data_available 0\n",
+    );
     let (tracked_mempool, tracked_state_available) = match state.persistence.clone() {
         Some(persistence) => match load_persisted_state(persistence).await {
             Ok(persisted) => (
