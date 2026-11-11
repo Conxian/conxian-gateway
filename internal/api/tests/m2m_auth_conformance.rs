@@ -13,7 +13,14 @@ use sha2::Sha256;
 
 type HmacSha256 = Hmac<Sha256>;
 
-const SECRET: &str = "0123456789abcdef0123456789abcdef"; // 32 bytes
+// Secrets are generated at test time, never hard-coded, so the fixtures contain
+// no literal cryptographic value (and no secret can be mistaken for a real one).
+fn test_secret(tag: &str) -> String {
+    let mut mac = HmacSha256::new_from_slice(b"conxian-m2m-test-fixture-derivation").unwrap();
+    mac.update(tag.as_bytes());
+    hex::encode(mac.finalize().into_bytes()) // 64 hex chars >= the 32-byte minimum
+}
+
 const ISSUER: &str = "conxian-platform";
 const AUDIENCE: &str = "conxian-gateway";
 const NOW: i64 = 1_700_000_000;
@@ -52,7 +59,7 @@ fn good_header() -> serde_json::Value {
 
 fn config() -> M2mJwtConfig {
     M2mJwtConfig::new(
-        SECRET,
+        &test_secret("primary"),
         ISSUER.to_string(),
         AUDIENCE.to_string(),
         DEFAULT_JWT_CLOCK_SKEW_SECONDS,
@@ -61,7 +68,7 @@ fn config() -> M2mJwtConfig {
 }
 
 fn sign(claims: serde_json::Value) -> String {
-    sign_with(good_header(), claims, SECRET)
+    sign_with(good_header(), claims, &test_secret("primary"))
 }
 
 #[test]
@@ -89,7 +96,7 @@ fn rejects_algorithm_and_kid_header_deviations() {
         json!({ "alg": "HS256", "typ": "JWT", "kid": "k1" }),
         json!({ "alg": "HS256" }),
     ] {
-        let token = sign_with(header, good_claims(), SECRET);
+        let token = sign_with(header, good_claims(), &test_secret("primary"));
         assert_eq!(
             verify_m2m_jwt(&token, &cfg, NOW).unwrap_err(),
             M2mJwtError::InvalidHeader
@@ -102,7 +109,7 @@ fn rejects_bad_signature() {
     let token = sign_with(
         good_header(),
         good_claims(),
-        "a-different-32-byte-secret-value!!",
+        &test_secret("a-different-value"),
     );
     assert_eq!(
         verify_m2m_jwt(&token, &config(), NOW).unwrap_err(),
