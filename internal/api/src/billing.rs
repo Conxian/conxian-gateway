@@ -209,10 +209,17 @@ pub trait CreditStore: Send + Sync {
     fn draw(&self, tenant_id: &str, amount_sats: u64, now: u64) -> Result<u64, String>;
     fn balance(&self, tenant_id: &str) -> u64;
     /// Grants relay credits directly (no commitment quote), used when a
-    /// contributor redeems Genesis Credits for metered relay capacity. Defaults
-    /// to fail-closed so a store that does not support it cannot silently
-    /// mint unmetered credit.
-    fn grant_relay_credits(&self, _tenant_id: &str, _amount_sats: u64) -> Result<u64, String> {
+    /// contributor redeems Genesis Credits for metered relay capacity. The
+    /// `idempotency_key` makes the grant a no-op on a replay, so an outbox retry
+    /// after a crash between the durable debit and the grant cannot double-grant.
+    /// Defaults to fail-closed so a store that does not support it cannot
+    /// silently mint unmetered credit.
+    fn grant_relay_credits(
+        &self,
+        _tenant_id: &str,
+        _amount_sats: u64,
+        _idempotency_key: &str,
+    ) -> Result<u64, String> {
         Err("credit store does not support direct relay-credit grant".to_string())
     }
 }
@@ -230,8 +237,13 @@ impl<T: CreditStore + ?Sized> CreditStore for std::sync::Arc<T> {
     fn balance(&self, tenant_id: &str) -> u64 {
         (**self).balance(tenant_id)
     }
-    fn grant_relay_credits(&self, tenant_id: &str, amount_sats: u64) -> Result<u64, String> {
-        (**self).grant_relay_credits(tenant_id, amount_sats)
+    fn grant_relay_credits(
+        &self,
+        tenant_id: &str,
+        amount_sats: u64,
+        idempotency_key: &str,
+    ) -> Result<u64, String> {
+        (**self).grant_relay_credits(tenant_id, amount_sats, idempotency_key)
     }
 }
 
@@ -239,12 +251,16 @@ impl<T: CreditStore + ?Sized> CreditStore for std::sync::Arc<T> {
 /// for a Neon/durable backend before horizontal scaling.
 pub struct InMemoryCreditStore {
     ledgers: std::sync::Mutex<std::collections::HashMap<String, CreditLedger>>,
+    /// Applied relay-credit grants, keyed by idempotency key, so an outbox
+    /// retry cannot double-grant within the process.
+    granted: std::sync::Mutex<std::collections::HashSet<String>>,
 }
 
 impl InMemoryCreditStore {
     pub fn new() -> Self {
         Self {
             ledgers: std::sync::Mutex::new(std::collections::HashMap::new()),
+            granted: std::sync::Mutex::new(std::collections::HashSet::new()),
         }
     }
 }
@@ -282,12 +298,20 @@ impl CreditStore for InMemoryCreditStore {
             .unwrap_or(0)
     }
 
-    fn grant_relay_credits(&self, tenant_id: &str, amount_sats: u64) -> Result<u64, String> {
+    fn grant_relay_credits(
+        &self,
+        tenant_id: &str,
+        amount_sats: u64,
+        idempotency_key: &str,
+    ) -> Result<u64, String> {
+        let mut granted = self.granted.lock().map_err(|e| e.to_string())?;
         let mut map = self.ledgers.lock().map_err(|e| e.to_string())?;
         let ledger = map
             .entry(tenant_id.to_string())
             .or_insert_with(|| CreditLedger::new(tenant_id, 0, u64::MAX));
-        ledger.grant(amount_sats).map_err(|e| e.to_string())?;
+        if granted.insert(idempotency_key.to_string()) {
+            ledger.grant(amount_sats).map_err(|e| e.to_string())?;
+        }
         Ok(ledger.balance())
     }
 }
