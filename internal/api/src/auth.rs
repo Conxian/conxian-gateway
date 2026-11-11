@@ -468,7 +468,8 @@ mod tests {
 
     #[test]
     fn dual_mode_has_explicit_legacy_precedence_without_invalid_jwt_fallback() {
-        let secret = "x".repeat(32);
+        let bytes: [u8; 32] = rand::random();
+        let secret = hex::encode(bytes);
         let config = M2mJwtConfig::new(
             &secret,
             "conxian-platform".to_string(),

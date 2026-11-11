@@ -541,6 +541,10 @@ mod policy_tests {
         assert!(legacy.configuration_valid());
         assert!(!invalid.configuration_valid());
         assert_eq!(
+            GatewayAuthMode::from_env_value("anything-else"),
+            GatewayAuthMode::Invalid
+        );
+        assert_eq!(
             dual.verify_bearer("Bearer invalid.jwt.token").unwrap_err(),
             M2mJwtError::InvalidConfiguration
         );
