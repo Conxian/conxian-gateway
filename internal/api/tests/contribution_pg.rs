@@ -150,21 +150,33 @@ async fn pg_expiry_is_applied_only_once() {
     let pool = fixture_pool().await;
     let store = PgContributionStore::new(pool);
     let grant = |_: u64, _: &str| Ok(());
+    let later = 366 * 24 * 60 * 60;
+    // One award expires before `later`; a second is still live there, so the
+    // redemption can proceed and the expired award must be deducted once.
     store
         .award("pg_exp", Contribution::VerifiedDisproof, "e-1", 0)
         .await
         .unwrap();
-    let later = 366 * 24 * 60 * 60;
+    store
+        .award("pg_exp", Contribution::SecurityAudit, "e-2", later)
+        .await
+        .unwrap();
     let first = store
         .redeem("pg_exp", Redemption::RelayCredits, "x-1", later, &grant)
         .await
         .unwrap();
-    assert!(matches!(first, ApplyOutcome::Applied(_)));
-    // The expired award is gone, so a second, distinct redemption must fail
-    // rather than deduct the same expiry again.
-    let err = store
+    // 500 (expired, pruned once) + 1000 (live) - 100 = 900; a second expiry of
+    // the same award would show here as 400.
+    match first {
+        ApplyOutcome::Applied(r) => assert_eq!(r.remaining, 900),
+        other => panic!("expected Applied, got {other:?}"),
+    }
+    let second = store
         .redeem("pg_exp", Redemption::RelayCredits, "x-2", later, &grant)
         .await
-        .unwrap_err();
-    assert!(err.contains("InsufficientCredits"), "got {err}");
+        .unwrap();
+    match second {
+        ApplyOutcome::Applied(r) => assert_eq!(r.remaining, 800),
+        other => panic!("expected Applied, got {other:?}"),
+    }
 }
