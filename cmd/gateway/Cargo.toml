@@ -32,6 +32,7 @@ serde_json.workspace = true
 serde.workspace = true
 tower.workspace = true
 url.workspace = true
+rustls.workspace = true
 libc.workspace = true
 http-body-util = "0.1.3"
 
