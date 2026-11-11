@@ -16,16 +16,46 @@ change, not a code change. See `MANAGED_SAAS_BILLING_WEBHOOK.md` for the design.
 3. The managed key store migration is applied (step 1) — the store fails closed
    on a missing table, so an unmigrated database would reject every delivery.
 
-## Step 0 — Lemon Squeezy store, product and checkout
+## Step 0 — provider store, product and checkout
 
-The selected provider is **Lemon Squeezy** (`MOR_PROVIDER=lemonsqueezy`). Set the
-store up so it produces exactly what the handler reads:
+The recommended provider is **Paddle** (`MOR_PROVIDER=paddle`), selected
+2026-11-11 for API-first catalogue management (products and prices are created
+over the API, so the catalogue is scriptable and reproducible in a sandbox).
+**Lemon Squeezy** (`MOR_PROVIDER=lemonsqueezy`) remains fully supported as the
+fallback; the handler is provider-neutral and both are implemented. See
+`conxian-business` `docs/research/MOR_PROVIDER_API_FIRST_REPLACEMENT_2026_11_11.md`.
+
+Set the provider up so it produces exactly what the handler reads.
+
+### Paddle (recommended)
+
+1. **Product + price** — create one product (type `standard`, tax category
+   `saas`) and a recurring price per tier via the API
+   (`POST /products`, `POST /prices`). The tier is read from the subscription
+   price's product, so name products by tier (`managed`, `indie`, `business`).
+2. **Checkout custom data** — the checkout must carry
+   `custom_data.tenant_id=<tenant_id>`. The handler reads
+   `data.custom_data.tenant_id` to decide which tenant to mint a key for; a
+   delivery with no tenant id is rejected (fail closed).
+3. **Notification destination** — add a destination pointing at
+   `https://gateway.conxian.org/api/v1/billing/mor/webhook`, subscribed to
+   `subscription.created`, `subscription.activated`, `subscription.trialing`,
+   `subscription.updated`, `subscription.resumed`, `subscription.canceled`,
+   `subscription.past_due`, `subscription.paused`, `transaction.payment_failed`,
+   `transaction.canceled`. Copy the destination **signing secret** for
+   `MOR_WEBHOOK_SECRET`.
+4. **Sandbox first** — use `sandbox-api.paddle.com` and Paddle simulations to
+   drive a `subscription.created` → `subscription.canceled` cycle before
+   pointing production at the destination.
+
+### Lemon Squeezy (fallback)
 
 1. **Store** — create the store (name `Conxian Labs`, a unique slug, and the
    country of the registered legal entity).
 2. **Product + variant** — one subscription product whose variant name is the
    tier (`managed`, `indie`, or `business`). The handler reads the tier from
-   `data.attributes.variant_name`.
+   `data.attributes.variant_name`. Note: the product catalogue is dashboard-only
+   (`POST /v1/products` → 405), which is why Paddle is preferred.
 3. **Checkout custom data** — the buyer's checkout link must carry
    `checkout[custom][tenant_id]=<tenant_id>` (via the checkout URL query or the
    checkout API `checkout_data.custom`). The handler reads
@@ -60,7 +90,7 @@ through the protected channel, never committed:
 
 | Variable | Value |
 |----------|-------|
-| `MOR_PROVIDER` | `lemonsqueezy` (selected) |
+| `MOR_PROVIDER` | `paddle` (recommended) or `lemonsqueezy` (fallback) |
 | `MOR_WEBHOOK_SECRET` | the MoR webhook signing secret for this destination |
 | `MOR_WEBHOOK_DATABASE_URL` | Neon connection string for the key store (same database as step 1) |
 
