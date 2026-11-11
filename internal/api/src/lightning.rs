@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use axum::http::StatusCode;
 use conxian_core::{FailureTaxonomy, PaymentIntent, PaymentLifecycle};
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     sync::{Arc, Mutex},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -30,6 +30,27 @@ pub struct LightningSettlementResponse {
     pub proof: String,
 }
 
+/// A server-issued Lightning invoice the client must pay (x402 server-issues →
+/// client-pays → server-verifies). Returned by `make_invoice`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IssuedInvoice {
+    /// BOLT11 payment request the client pays.
+    pub bolt11: String,
+    /// Payment hash used to look the invoice up for settlement verification.
+    pub payment_hash: String,
+}
+
+/// The settlement state of a server-issued invoice, as reported by
+/// `lookup_invoice`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InvoiceSettlement {
+    pub settled: bool,
+    /// Amount received, in satoshi, when the backend reports it. `None` means
+    /// the backend does not expose the amount (the caller then trusts the
+    /// invoice's bound amount).
+    pub amount_sats: Option<u64>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LightningBackendError {
     Unavailable,
@@ -40,10 +61,36 @@ pub enum LightningBackendError {
 
 #[async_trait]
 pub trait LightningBackend: Send + Sync {
+    /// Legacy: settle by paying an invoice. **Never call this with a
+    /// client-supplied invoice** — it spends the operator wallet. The x402 rail
+    /// uses [`Self::create_invoice`] + [`Self::lookup_invoice`] instead.
     async fn settle_payment(
         &self,
         request: LightningSettlementRequest,
     ) -> Result<LightningSettlementResponse, LightningBackendError>;
+
+    /// Issue an invoice for the client to pay (server-issues flow).
+    ///
+    /// Defaults to `Unavailable` (fail-closed) so a backend that cannot issue
+    /// invoices keeps x402 settlement closed rather than mis-paying.
+    async fn create_invoice(
+        &self,
+        _amount_sats: u64,
+        _expiry_seconds: u64,
+        _description: &str,
+    ) -> Result<IssuedInvoice, LightningBackendError> {
+        Err(LightningBackendError::Unavailable)
+    }
+
+    /// Verify settlement of a server-issued invoice by payment hash.
+    ///
+    /// Defaults to `Unavailable` (fail-closed).
+    async fn lookup_invoice(
+        &self,
+        _payment_hash: &str,
+    ) -> Result<InvoiceSettlement, LightningBackendError> {
+        Err(LightningBackendError::Unavailable)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,18 +103,44 @@ pub struct LightningExecutionReceipt {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LightningAdapterError {
-    ExpiredInvoice { expiry: u64, now: u64 },
-    UnsupportedAsset { asset: String },
-    ReplayDetected { challenge: String },
-    AmountMismatch { expected: u128, settled: u128 },
+    ExpiredInvoice {
+        expiry: u64,
+        now: u64,
+    },
+    UnsupportedAsset {
+        asset: String,
+    },
+    ReplayDetected {
+        challenge: String,
+    },
+    AmountMismatch {
+        expected: u128,
+        settled: u128,
+    },
     MissingPreimage,
     MissingProof,
     ProofMismatch,
     BackendUnavailable,
     BackendTimeout,
-    BackendRejected { detail: String },
-    PartialFailure { detail: String },
-    ReplayStoreFailure { detail: String },
+    BackendRejected {
+        detail: String,
+    },
+    PartialFailure {
+        detail: String,
+    },
+    ReplayStoreFailure {
+        detail: String,
+    },
+    /// The client returned a challenge the server never issued.
+    UnknownChallenge {
+        challenge: String,
+    },
+    /// The challenge was issued for a different resource than the one requested.
+    ChallengeResourceMismatch {
+        challenge: String,
+    },
+    /// The server-issued invoice has not been settled yet.
+    NotSettled,
 }
 
 impl LightningAdapterError {
@@ -85,6 +158,9 @@ impl LightningAdapterError {
             Self::BackendTimeout => StatusCode::GATEWAY_TIMEOUT,
             Self::PartialFailure { .. } => StatusCode::BAD_GATEWAY,
             Self::ReplayStoreFailure { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::UnknownChallenge { .. }
+            | Self::ChallengeResourceMismatch { .. }
+            | Self::NotSettled => StatusCode::PAYMENT_REQUIRED,
         }
     }
 
@@ -102,6 +178,9 @@ impl LightningAdapterError {
             Self::BackendRejected { .. } => "lightning_backend_rejected",
             Self::PartialFailure { .. } => "lightning_partial_failure",
             Self::ReplayStoreFailure { .. } => "lightning_replay_store_failure",
+            Self::UnknownChallenge { .. } => "x402_unknown_challenge",
+            Self::ChallengeResourceMismatch { .. } => "x402_challenge_resource_mismatch",
+            Self::NotSettled => "x402_invoice_not_settled",
         }
     }
 
@@ -135,6 +214,13 @@ impl LightningAdapterError {
             Self::ReplayStoreFailure { detail } => {
                 format!("Lightning replay store failure: {detail}")
             }
+            Self::UnknownChallenge { challenge } => {
+                format!("Challenge was not issued by this server: {challenge}")
+            }
+            Self::ChallengeResourceMismatch { challenge } => {
+                format!("Challenge {challenge} was not issued for this resource")
+            }
+            Self::NotSettled => "Server-issued invoice has not been settled".to_string(),
         }
     }
 
@@ -145,13 +231,16 @@ impl LightningAdapterError {
             | Self::AmountMismatch { .. }
             | Self::ProofMismatch
             | Self::BackendRejected { .. }
-            | Self::ReplayDetected { .. } => FailureTaxonomy::Permanent,
+            | Self::ReplayDetected { .. }
+            | Self::UnknownChallenge { .. }
+            | Self::ChallengeResourceMismatch { .. } => FailureTaxonomy::Permanent,
             Self::BackendUnavailable | Self::BackendTimeout | Self::ReplayStoreFailure { .. } => {
                 FailureTaxonomy::Transient
             }
-            Self::PartialFailure { .. } | Self::MissingPreimage | Self::MissingProof => {
-                FailureTaxonomy::Indeterminate
-            }
+            Self::PartialFailure { .. }
+            | Self::MissingPreimage
+            | Self::MissingProof
+            | Self::NotSettled => FailureTaxonomy::Indeterminate,
         }
     }
 }
@@ -204,6 +293,40 @@ pub struct SimulatedLightningBackend;
 
 #[async_trait]
 impl LightningBackend for SimulatedLightningBackend {
+    /// Simulated server-issued invoice: the payment hash is derived from the
+    /// amount so the matching `lookup_invoice` reports it settled for the exact
+    /// bound amount.
+    async fn create_invoice(
+        &self,
+        amount_sats: u64,
+        _expiry_seconds: u64,
+        _description: &str,
+    ) -> Result<IssuedInvoice, LightningBackendError> {
+        Ok(IssuedInvoice {
+            bolt11: format!("lnbc-sim-{amount_sats}"),
+            payment_hash: format!("sim-hash-{amount_sats}"),
+        })
+    }
+
+    async fn lookup_invoice(
+        &self,
+        payment_hash: &str,
+    ) -> Result<InvoiceSettlement, LightningBackendError> {
+        let amount_sats = payment_hash
+            .strip_prefix("sim-hash-")
+            .and_then(|s| s.parse::<u64>().ok());
+        match amount_sats {
+            Some(amount) => Ok(InvoiceSettlement {
+                settled: true,
+                amount_sats: Some(amount),
+            }),
+            None => Ok(InvoiceSettlement {
+                settled: false,
+                amount_sats: None,
+            }),
+        }
+    }
+
     async fn settle_payment(
         &self,
         request: LightningSettlementRequest,
@@ -238,6 +361,32 @@ pub struct LightningAdapter {
     backend_timeout: Duration,
     max_retries: usize,
     now: Arc<dyn Fn() -> u64 + Send + Sync>,
+    issued: Arc<Mutex<HashMap<String, IssuedChallenge>>>,
+}
+
+/// A challenge the server issued: the invoice the client must pay, bound to the
+/// amount, resource, and expiry the server chose. Looked up by the opaque
+/// challenge id the client returns (never trusting a client-supplied invoice).
+#[derive(Debug, Clone)]
+pub struct IssuedChallenge {
+    pub challenge: String,
+    pub payment_hash: String,
+    pub bolt11: String,
+    pub amount_sats: u64,
+    pub asset: String,
+    pub resource: String,
+    pub expiry: u64,
+}
+
+/// The 402 body a client receives: the invoice to pay, bound server-side.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct X402ChallengeResponse {
+    pub challenge: String,
+    pub bolt11: String,
+    pub amount_satoshi: u64,
+    pub asset: String,
+    pub expiry: u64,
+    pub resource: String,
 }
 
 impl LightningAdapter {
@@ -248,6 +397,7 @@ impl LightningAdapter {
             backend_timeout: DEFAULT_BACKEND_TIMEOUT,
             max_retries: DEFAULT_MAX_RETRIES,
             now: Arc::new(now_unix_secs),
+            issued: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -268,6 +418,124 @@ impl LightningAdapter {
         self.max_retries = max_retries;
         self.backend_timeout = backend_timeout;
         self
+    }
+
+    /// Issue a server-bound x402 challenge for `resource`: the server picks the
+    /// amount and expiry, issues an invoice the client must pay, and records the
+    /// binding so a later return can be verified against the server's record
+    /// (never against a client-supplied invoice).
+    pub async fn issue_challenge(
+        &self,
+        resource: &str,
+        amount_sats: u64,
+        expiry_seconds: u64,
+    ) -> Result<X402ChallengeResponse, LightningAdapterError> {
+        let issued = timeout(
+            self.backend_timeout,
+            self.backend
+                .create_invoice(amount_sats, expiry_seconds, "Conxian x402"),
+        )
+        .await
+        .map_err(|_| LightningAdapterError::BackendTimeout)?
+        .map_err(map_backend_error)?;
+        if issued.bolt11.is_empty() || issued.payment_hash.is_empty() {
+            return Err(LightningAdapterError::MissingProof);
+        }
+        let now = (self.now)();
+        let challenge = uuid::Uuid::new_v4().to_string();
+        let record = IssuedChallenge {
+            challenge: challenge.clone(),
+            payment_hash: issued.payment_hash.clone(),
+            bolt11: issued.bolt11.clone(),
+            amount_sats,
+            asset: crate::x402::X402_ASSET.to_string(),
+            resource: resource.to_string(),
+            expiry: now + expiry_seconds,
+        };
+        self.issued
+            .lock()
+            .map_err(|e| LightningAdapterError::ReplayStoreFailure {
+                detail: e.to_string(),
+            })?
+            .insert(challenge.clone(), record);
+        Ok(X402ChallengeResponse {
+            challenge,
+            bolt11: issued.bolt11,
+            amount_satoshi: amount_sats,
+            asset: crate::x402::X402_ASSET.to_string(),
+            expiry: now + expiry_seconds,
+            resource: resource.to_string(),
+        })
+    }
+
+    /// Verify a returned challenge against the server's own record: the challenge
+    /// must have been issued, be unexpired, and be for this exact resource; the
+    /// invoice must be settled for at least the bound amount. The challenge is
+    /// claimed exactly once, so a settled challenge cannot be replayed.
+    pub async fn verify_challenge(
+        &self,
+        challenge: &str,
+        resource: &str,
+    ) -> Result<IssuedChallenge, LightningAdapterError> {
+        let record = {
+            let issued =
+                self.issued
+                    .lock()
+                    .map_err(|e| LightningAdapterError::ReplayStoreFailure {
+                        detail: e.to_string(),
+                    })?;
+            issued.get(challenge).cloned().ok_or_else(|| {
+                LightningAdapterError::UnknownChallenge {
+                    challenge: challenge.to_string(),
+                }
+            })?
+        };
+
+        if record.resource != resource {
+            return Err(LightningAdapterError::ChallengeResourceMismatch {
+                challenge: challenge.to_string(),
+            });
+        }
+
+        let now = (self.now)();
+        if record.expiry < now {
+            return Err(LightningAdapterError::ExpiredInvoice {
+                expiry: record.expiry,
+                now,
+            });
+        }
+
+        let settlement = timeout(
+            self.backend_timeout,
+            self.backend.lookup_invoice(&record.payment_hash),
+        )
+        .await
+        .map_err(|_| LightningAdapterError::BackendTimeout)?
+        .map_err(map_backend_error)?;
+        if !settlement.settled {
+            return Err(LightningAdapterError::NotSettled);
+        }
+        if let Some(received) = settlement.amount_sats {
+            if (received as u128) < (record.amount_sats as u128) {
+                return Err(LightningAdapterError::AmountMismatch {
+                    expected: record.amount_sats as u128,
+                    settled: received as u128,
+                });
+            }
+        }
+
+        // Claim exactly once; a replay of a settled challenge is rejected.
+        if !self
+            .replay_guard
+            .claim(&record.payment_hash)
+            .map_err(|e| LightningAdapterError::ReplayStoreFailure { detail: e })?
+        {
+            return Err(LightningAdapterError::ReplayDetected {
+                challenge: challenge.to_string(),
+            });
+        }
+
+        Ok(record)
     }
 
     pub async fn execute_payment(
@@ -404,6 +672,23 @@ fn validate_request(payload: &X402PaymentPayload, now: u64) -> Result<(), Lightn
     }
 
     Ok(())
+}
+
+/// Map a backend error from the server-issued invoice flow (`create_invoice` /
+/// `lookup_invoice`) to an adapter error. A backend that cannot issue or verify
+/// invoices maps to `BackendUnavailable`, so settlement stays fail-closed.
+fn map_backend_error(error: LightningBackendError) -> LightningAdapterError {
+    match error {
+        LightningBackendError::Rejected { detail } => {
+            LightningAdapterError::BackendRejected { detail }
+        }
+        LightningBackendError::PartialFailure { detail } => {
+            LightningAdapterError::PartialFailure { detail }
+        }
+        LightningBackendError::Retryable { .. } | LightningBackendError::Unavailable => {
+            LightningAdapterError::BackendUnavailable
+        }
+    }
 }
 
 fn now_unix_secs() -> u64 {
@@ -802,5 +1087,178 @@ mod additional_lightning_tests {
         let response = backend.settle_payment(request).await.unwrap();
         assert!(response.preimage.contains("c1"));
         assert_eq!(response.proof, "some-random-ref");
+    }
+
+    /// A backend that implements the server-issued invoice flow with a fixed
+    /// settlement result, so `issue_challenge`/`verify_challenge` can be tested
+    /// without a Lightning node.
+    struct ServerIssuedBackend {
+        settled: bool,
+        amount_sats: Option<u64>,
+        issued: bool,
+    }
+
+    #[async_trait]
+    impl LightningBackend for ServerIssuedBackend {
+        async fn settle_payment(
+            &self,
+            _req: LightningSettlementRequest,
+        ) -> Result<LightningSettlementResponse, LightningBackendError> {
+            Err(LightningBackendError::Unavailable)
+        }
+
+        async fn create_invoice(
+            &self,
+            _amount_sats: u64,
+            _expiry_seconds: u64,
+            _description: &str,
+        ) -> Result<IssuedInvoice, LightningBackendError> {
+            if !self.issued {
+                return Err(LightningBackendError::Unavailable);
+            }
+            Ok(IssuedInvoice {
+                bolt11: "lnbc1servertest".to_string(),
+                payment_hash: "hash-server-test".to_string(),
+            })
+        }
+
+        async fn lookup_invoice(
+            &self,
+            _payment_hash: &str,
+        ) -> Result<InvoiceSettlement, LightningBackendError> {
+            Ok(InvoiceSettlement {
+                settled: self.settled,
+                amount_sats: self.amount_sats,
+            })
+        }
+    }
+
+    fn issued_adapter(settled: bool, amount_sats: Option<u64>) -> LightningAdapter {
+        LightningAdapter::new(Arc::new(ServerIssuedBackend {
+            settled,
+            amount_sats,
+            issued: true,
+        }))
+        .with_clock(|| 1_000)
+    }
+
+    #[tokio::test]
+    async fn issue_then_verify_settled_challenge_succeeds() {
+        let adapter = issued_adapter(true, Some(1000));
+        let issued = adapter.issue_challenge("/settle", 1000, 900).await.unwrap();
+        assert_eq!(issued.amount_satoshi, 1000);
+        assert_eq!(issued.bolt11, "lnbc1servertest");
+        let record = adapter
+            .verify_challenge(&issued.challenge, "/settle")
+            .await
+            .unwrap();
+        assert_eq!(record.payment_hash, "hash-server-test");
+        assert_eq!(record.amount_sats, 1000);
+    }
+
+    #[tokio::test]
+    async fn unissued_challenge_is_rejected() {
+        let adapter = issued_adapter(true, Some(1000));
+        let err = adapter
+            .verify_challenge("not-issued-by-us", "/settle")
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            LightningAdapterError::UnknownChallenge { .. }
+        ));
+        assert_eq!(err.code(), "x402_unknown_challenge");
+    }
+
+    #[tokio::test]
+    async fn challenge_for_a_different_resource_is_rejected() {
+        let adapter = issued_adapter(true, Some(1000));
+        let issued = adapter.issue_challenge("/settle", 1000, 900).await.unwrap();
+        let err = adapter
+            .verify_challenge(&issued.challenge, "/erp/sync")
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            LightningAdapterError::ChallengeResourceMismatch { .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn unsettled_invoice_is_rejected() {
+        let adapter = issued_adapter(false, Some(0));
+        let issued = adapter.issue_challenge("/settle", 1000, 900).await.unwrap();
+        let err = adapter
+            .verify_challenge(&issued.challenge, "/settle")
+            .await
+            .unwrap_err();
+        assert!(matches!(err, LightningAdapterError::NotSettled));
+    }
+
+    #[tokio::test]
+    async fn underpaid_invoice_is_rejected() {
+        // The invoice settled for less than the bound amount.
+        let adapter = issued_adapter(true, Some(500));
+        let issued = adapter.issue_challenge("/settle", 1000, 900).await.unwrap();
+        let err = adapter
+            .verify_challenge(&issued.challenge, "/settle")
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            LightningAdapterError::AmountMismatch {
+                expected: 1000,
+                settled: 500
+            }
+        ));
+    }
+
+    #[tokio::test]
+    async fn settled_challenge_cannot_be_replayed() {
+        let adapter = issued_adapter(true, Some(1000));
+        let issued = adapter.issue_challenge("/settle", 1000, 900).await.unwrap();
+        adapter
+            .verify_challenge(&issued.challenge, "/settle")
+            .await
+            .unwrap();
+        let err = adapter
+            .verify_challenge(&issued.challenge, "/settle")
+            .await
+            .unwrap_err();
+        assert!(matches!(err, LightningAdapterError::ReplayDetected { .. }));
+    }
+
+    #[tokio::test]
+    async fn expired_challenge_is_rejected() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        let clock = Arc::new(AtomicU64::new(1_000));
+        let handle = clock.clone();
+        let adapter = LightningAdapter::new(Arc::new(ServerIssuedBackend {
+            settled: true,
+            amount_sats: Some(1000),
+            issued: true,
+        }))
+        .with_clock(move || handle.load(Ordering::SeqCst));
+        // Issued at t=1000 with a 60s expiry -> valid until 1060.
+        let issued = adapter.issue_challenge("/settle", 1000, 60).await.unwrap();
+        // Advance the clock past the expiry.
+        clock.store(2_000, Ordering::SeqCst);
+        let err = adapter
+            .verify_challenge(&issued.challenge, "/settle")
+            .await
+            .unwrap_err();
+        assert!(matches!(err, LightningAdapterError::ExpiredInvoice { .. }));
+    }
+
+    #[tokio::test]
+    async fn backend_without_invoice_support_fails_closed() {
+        // The default trait methods return Unavailable, so a backend that cannot
+        // issue invoices keeps x402 settlement closed.
+        let adapter = LightningAdapter::new(Arc::new(ProductionLightningBackend));
+        let err = adapter
+            .issue_challenge("/settle", 1000, 900)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, LightningAdapterError::BackendUnavailable));
     }
 }

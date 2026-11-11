@@ -32,6 +32,10 @@ pub const X402_PER_CALL_SATOSHI: u128 = 1000;
 /// Canonical x402 settlement asset for the per-call price.
 pub const X402_ASSET: &str = "sBTC";
 
+/// Seconds a server-issued x402 challenge (and its invoice) stays valid before
+/// the client must request a new one.
+pub const X402_CHALLENGE_EXPIRY_SECONDS: u64 = 900;
+
 /// Routes that require an x402 payment. Kept as one list so the middleware and
 /// the discovery document describe the same payable surface.
 pub const X402_PROTECTED_SUFFIXES: &[&str] = &[
@@ -124,106 +128,136 @@ pub async fn x402_filter(
     }
 
     let requires_payment = is_strictly_protected_path(path);
-    let has_any_header = has_payment_headers(req.headers());
+    let challenge = read_challenge_header(req.headers());
 
-    if requires_payment && !has_any_header {
-        return Err((
-            StatusCode::PAYMENT_REQUIRED,
-            Json(json!({
-                "error": "Payment Required",
-                "code": "x402_required",
-                "challenge": uuid::Uuid::new_v4().to_string(),
-                "amount_satoshi": X402_PER_CALL_SATOSHI,
-                "asset": X402_ASSET
-            })),
-        ));
-    }
-
-    if !has_any_header {
-        return Ok(next.run(req).await);
-    }
-
-    let payload = match parse_gateway_x402_payload(req.headers()) {
-        Ok(payload) => payload,
-        Err(error) => {
-            warn!(
-                path = %path,
-                status = %error.status_code(),
-                code = %error.code(),
-                "X402 validation failed: {}", error.message()
-            );
-            return Err((
-                error.status_code(),
-                Json(json!({ "error": error.message(), "code": error.code() })),
-            ));
+    // No challenge supplied. A protected route gets a *server-issued* 402
+    // challenge: the server issues the invoice (bound to this resource, amount,
+    // and expiry) and returns it. The client pays it and returns the opaque
+    // challenge id. This is the server-issues -> client-pays -> server-verifies
+    // flow; the gateway never pays a client-supplied invoice.
+    let challenge = match challenge {
+        Some(challenge) => challenge,
+        None => {
+            if !requires_payment {
+                return Ok(next.run(req).await);
+            }
+            return match state
+                .lightning
+                .issue_challenge(
+                    path,
+                    X402_PER_CALL_SATOSHI as u64,
+                    X402_CHALLENGE_EXPIRY_SECONDS,
+                )
+                .await
+            {
+                Ok(issued) => Err((
+                    StatusCode::PAYMENT_REQUIRED,
+                    Json(json!({
+                        "error": "Payment Required",
+                        "code": "x402_required",
+                        "challenge": issued.challenge,
+                        "invoice": issued.bolt11,
+                        "amount_satoshi": issued.amount_satoshi,
+                        "asset": issued.asset,
+                        "expiry": issued.expiry,
+                        "resource": issued.resource
+                    })),
+                )),
+                Err(e) => Err(x402_settlement_error(path, "unissued", e)),
+            };
         }
     };
 
-    match state.lightning.execute_payment(&payload).await {
-        Ok(receipt) => {
+    // A challenge was supplied: verify it against the server's own record. The
+    // resource is taken from the request path, so a challenge issued for one
+    // route cannot be replayed on another.
+    match state.lightning.verify_challenge(&challenge, path).await {
+        Ok(record) => {
             info!(
                 path = %path,
-                challenge = %receipt.challenge,
-                amount = receipt.settled_amount,
-                "X402 payment validated successfully"
+                challenge = %record.challenge,
+                amount = record.amount_sats,
+                "X402 payment verified (server-issued invoice settled)"
             );
             Ok(next.run(req).await)
         }
-        Err(e) => {
-            warn!(
-                path = %path,
-                challenge = %payload.challenge,
-                error = ?e,
-                "X402 settlement failed"
-            );
-            let (status, code) = match e {
-                LightningAdapterError::ExpiredInvoice { .. } => {
-                    (StatusCode::BAD_REQUEST, "lightning_expired_invoice")
-                }
-                LightningAdapterError::UnsupportedAsset { .. } => {
-                    (StatusCode::BAD_REQUEST, "lightning_unsupported_asset")
-                }
-                LightningAdapterError::ReplayDetected { .. } => {
-                    (StatusCode::CONFLICT, "lightning_replay_detected")
-                }
-                LightningAdapterError::BackendUnavailable => (
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "lightning_backend_unavailable",
-                ),
-                LightningAdapterError::BackendTimeout => {
-                    (StatusCode::GATEWAY_TIMEOUT, "lightning_backend_timeout")
-                }
-                LightningAdapterError::BackendRejected { .. } => {
-                    (StatusCode::FORBIDDEN, "lightning_backend_rejected")
-                }
-                LightningAdapterError::PartialFailure { .. } => {
-                    (StatusCode::BAD_GATEWAY, "lightning_partial_failure")
-                }
-                _ => (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "lightning_internal_error",
-                ),
-            };
-
-            Err((
-                status,
-                Json(json!({ "error": format!("{:?}", e), "code": code })),
-            ))
-        }
+        Err(e) => Err(x402_settlement_error(path, &challenge, e)),
     }
+}
+
+/// Translate a settlement error into the HTTP response. Fail-closed: an unknown
+/// or unverifiable challenge never reaches the handler.
+fn x402_settlement_error(
+    path: &str,
+    challenge: &str,
+    e: LightningAdapterError,
+) -> (StatusCode, Json<Value>) {
+    warn!(path = %path, challenge = %challenge, error = ?e, "X402 settlement failed");
+    let (status, code) = match e {
+        LightningAdapterError::ExpiredInvoice { .. } => {
+            (StatusCode::BAD_REQUEST, "lightning_expired_invoice")
+        }
+        LightningAdapterError::UnsupportedAsset { .. } => {
+            (StatusCode::BAD_REQUEST, "lightning_unsupported_asset")
+        }
+        LightningAdapterError::ReplayDetected { .. } => {
+            (StatusCode::CONFLICT, "lightning_replay_detected")
+        }
+        LightningAdapterError::UnknownChallenge { .. } => {
+            (StatusCode::PAYMENT_REQUIRED, "x402_unknown_challenge")
+        }
+        LightningAdapterError::ChallengeResourceMismatch { .. } => (
+            StatusCode::PAYMENT_REQUIRED,
+            "x402_challenge_resource_mismatch",
+        ),
+        LightningAdapterError::NotSettled => {
+            (StatusCode::PAYMENT_REQUIRED, "x402_invoice_not_settled")
+        }
+        LightningAdapterError::AmountMismatch { .. } => {
+            (StatusCode::PAYMENT_REQUIRED, "lightning_amount_mismatch")
+        }
+        LightningAdapterError::BackendUnavailable => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "lightning_backend_unavailable",
+        ),
+        LightningAdapterError::BackendTimeout => {
+            (StatusCode::GATEWAY_TIMEOUT, "lightning_backend_timeout")
+        }
+        LightningAdapterError::BackendRejected { .. } => {
+            (StatusCode::FORBIDDEN, "lightning_backend_rejected")
+        }
+        LightningAdapterError::PartialFailure { .. } => {
+            (StatusCode::BAD_GATEWAY, "lightning_partial_failure")
+        }
+        _ => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "lightning_internal_error",
+        ),
+    };
+
+    (
+        status,
+        Json(json!({ "error": format!("{:?}", e), "code": code })),
+    )
+}
+
+/// Read the opaque challenge id the client returns after paying. The client
+/// never supplies an invoice: only this id, which the server looks up in its own
+/// issued-challenge record.
+fn read_challenge_header(headers: &HeaderMap) -> Option<String> {
+    PAYMENT_REQUIRED_ALIASES
+        .iter()
+        .find_map(|h| headers.get(*h))
+        .and_then(|val| val.to_str().ok())
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(str::to_string)
 }
 
 fn is_strictly_protected_path(path: &str) -> bool {
     X402_PROTECTED_SUFFIXES
         .iter()
         .any(|suffix| path.ends_with(suffix))
-}
-
-fn has_payment_headers(headers: &HeaderMap) -> bool {
-    headers.contains_key(LEGACY_PAYMENT_HEADER)
-        || PAYMENT_REQUIRED_ALIASES
-            .iter()
-            .any(|h| headers.contains_key(*h))
 }
 
 pub fn parse_gateway_x402_payload(

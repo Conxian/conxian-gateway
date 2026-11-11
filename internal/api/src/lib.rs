@@ -81,37 +81,44 @@ pub fn new_production_lightning_adapter() -> Arc<LightningAdapter> {
     Arc::new(LightningAdapter::new(Arc::new(ProductionLightningBackend)))
 }
 
-/// Select the production Lightning adapter without enabling the legacy NWC
-/// pay-invoice path.
+/// Select the production Lightning adapter from the environment.
 ///
-/// The current x402 request parser accepts caller-supplied invoice data, while
-/// `NwcLightningBackend` calls `pay_invoice`. That is the inverse of the
-/// required server-issues/client-pays/server-verifies flow and can spend an
-/// operator wallet on an invoice supplied by an API-token holder. Keep the
-/// production backend fail-closed until #874 implements server-issued invoices,
-/// durable resource/amount/expiry binding, and `lookup_invoice` verification.
+/// When `NWC_URI` holds a valid `nostr+walletconnect://` URI the real
+/// [`crate::nwc_backend::NwcLightningBackend`] is selected; otherwise the
+/// fail-closed production backend. Selection never panics: a malformed or absent
+/// URI logs a warning and keeps the fail-closed backend.
 ///
-/// The NWC adapter remains in the codebase for the separately reviewed future
-/// integration, but `NWC_URI` is deliberately not an activation switch.
+/// The x402 rail uses the **server-issues → client-pays → server-verifies**
+/// flow (`issue_challenge` / `verify_challenge`): the server issues the invoice
+/// with `make_invoice`, and verifies settlement with `lookup_invoice`. It never
+/// pays a client-supplied invoice, so enabling NWC no longer enables the
+/// inverted fund-drain path (#874).
 fn new_lightning_adapter_for_nwc_uri(nwc_uri: Option<&str>) -> Arc<LightningAdapter> {
-    if nwc_uri
-        .map(str::trim)
-        .filter(|uri| !uri.is_empty())
-        .is_some()
-    {
-        tracing::error!(
-            "NWC_URI is configured, but NWC x402 settlement is disabled until server-issued invoice verification is implemented (#874)"
-        );
-    } else {
-        tracing::info!("Lightning settlement backend: fail-closed default (NWC_URI unset)");
+    match nwc_uri.map(str::trim).filter(|uri| !uri.is_empty()) {
+        Some(uri) => match crate::nostr::NwcConnection::parse_uri(uri) {
+            Ok(connection) => {
+                tracing::info!("Lightning settlement backend: NWC (Nostr Wallet Connect)");
+                Arc::new(LightningAdapter::new(Arc::new(
+                    crate::nwc_backend::NwcLightningBackend::new(connection),
+                )))
+            }
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "NWC_URI is set but invalid; using the fail-closed Lightning backend"
+                );
+                new_production_lightning_adapter()
+            }
+        },
+        None => {
+            tracing::info!("Lightning settlement backend: fail-closed default (NWC_URI unset)");
+            new_production_lightning_adapter()
+        }
     }
-
-    new_production_lightning_adapter()
 }
 
-/// Build the Lightning settlement adapter from the environment.
-/// `NWC_URI` is read only to emit a safe configuration warning; its value is
-/// never logged, parsed, or used to enable wallet payments.
+/// Build the Lightning settlement adapter from the environment. `NWC_URI` (when
+/// valid) selects the NWC backend; its value is never logged.
 pub fn new_lightning_adapter_from_env() -> Arc<LightningAdapter> {
     let nwc_uri = std::env::var("NWC_URI").ok();
     new_lightning_adapter_for_nwc_uri(nwc_uri.as_deref())
@@ -132,21 +139,23 @@ pub fn new_offline_queue(key: [u8; 32]) -> Arc<dyn conxian_core::OfflineQueue> {
 mod x402_nwc_activation_tests {
     use super::*;
     use crate::lightning::LightningAdapterError;
-    use crate::x402::X402PaymentPayload;
 
     #[tokio::test]
-    async fn configured_nwc_uri_keeps_x402_fail_closed() {
+    async fn invalid_nwc_uri_keeps_x402_fail_closed() {
+        // A malformed URI falls back to the fail-closed production backend, so a
+        // protected route cannot issue an invoice (and therefore cannot settle).
         let adapter = new_lightning_adapter_for_nwc_uri(Some("nostr+walletconnect://configured"));
-        let payload = X402PaymentPayload {
-            amount: 1_000,
-            asset: "BTC".to_string(),
-            challenge: "client-supplied-invoice-must-not-be-paid".to_string(),
-            expiry: u64::MAX,
-            proof_refs: vec![],
-        };
-
         assert!(matches!(
-            adapter.execute_payment(&payload).await,
+            adapter.issue_challenge("/settle", 1_000, 900).await,
+            Err(LightningAdapterError::BackendUnavailable)
+        ));
+    }
+
+    #[tokio::test]
+    async fn unset_nwc_uri_keeps_x402_fail_closed() {
+        let adapter = new_lightning_adapter_for_nwc_uri(None);
+        assert!(matches!(
+            adapter.issue_challenge("/settle", 1_000, 900).await,
             Err(LightningAdapterError::BackendUnavailable)
         ));
     }
