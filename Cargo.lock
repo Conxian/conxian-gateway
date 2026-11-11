@@ -2727,6 +2727,7 @@ dependencies = [
  "http-body-util",
  "libc",
  "minreq 3.0.0",
+ "rustls",
  "secp256k1 0.29.1",
  "serde",
  "serde_json",
