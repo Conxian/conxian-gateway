@@ -163,6 +163,7 @@ mod tests {
             relay: relay.into(),
             secret: secret.into(),
             lud16: None,
+            relays: vec![],
         }
     }
 
@@ -170,6 +171,29 @@ mod tests {
     fn valid_uri_builds_client() {
         let backend = NwcLightningBackend::new(connection("wss://relay.damus.io", VALID_SECRET));
         assert!(backend.client().is_ok());
+    }
+
+    #[test]
+    fn multi_relay_connection_builds_client() {
+        // Several relays produce a multi-relay URI the `nwc` client connects to.
+        let conn = NwcConnection {
+            pubkey: VALID_PUBKEY.into(),
+            relay: "wss://relay.damus.io".into(),
+            secret: VALID_SECRET.into(),
+            lud16: None,
+            relays: vec![
+                "wss://relay.damus.io".into(),
+                "wss://nos.lol".into(),
+                "wss://relay.primal.net".into(),
+            ],
+        };
+        let backend = NwcLightningBackend::new(conn);
+        assert!(backend.client().is_ok());
+        // The rebuilt URI carries every relay.
+        let uri = backend.connection.to_uri_string();
+        assert!(uri.contains("relay=wss%3A%2F%2Frelay.damus.io"));
+        assert!(uri.contains("relay=wss%3A%2F%2Fnos.lol"));
+        assert!(uri.contains("relay=wss%3A%2F%2Frelay.primal.net"));
     }
 
     #[test]
