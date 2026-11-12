@@ -211,18 +211,15 @@ pub async fn probe_rpc_reachable(url: &str) -> bool {
     let target = parsed.as_str().to_string();
     tokio::task::spawn_blocking(move || {
         let body = r#"{"jsonrpc":"2.0","id":1,"method":"getblockchaininfo","params":[]}"#;
-        match minreq::post(&target)
+        // Any HTTP status (including 401/405) proves the host answered.
+        minreq::post(&target)
             .with_header("content-type", "application/json")
             .with_body(body)
             .with_timeout(4)
             .with_follow_redirects(false)
             .with_max_headers_size(8192)
             .send_lazy()
-        {
-            // Any HTTP status (including 401/405) proves the host answered.
-            Ok(_) => true,
-            Err(_) => false,
-        }
+            .is_ok()
     })
     .await
     .unwrap_or(false)
@@ -536,18 +533,26 @@ fn print_usage() {
     println!("  Onboarding token is read from $ONBOARDING_TOKEN only (never a flag).");
 }
 
-/// Parses `--flag value` pairs into a map. Unknown flags are ignored so the
-/// command stays forward-compatible.
+/// Parses `--flag value` pairs into a map. A flag whose next token is another
+/// flag (or absent) is stored with an empty value, so bare boolean flags like
+/// `--probe` and `--json` are detected via `contains_key`. Unknown flags are
+/// ignored so the command stays forward-compatible.
 fn parse_flags(args: &[String]) -> std::collections::HashMap<String, String> {
     let mut flags = std::collections::HashMap::new();
     let mut index = 0;
     while index < args.len() {
         if let Some(name) = args[index].strip_prefix("--") {
-            if index + 1 < args.len() {
+            let has_value = args
+                .get(index + 1)
+                .is_some_and(|next| !next.starts_with("--"));
+            if has_value {
                 flags.insert(name.to_string(), args[index + 1].clone());
                 index += 2;
-                continue;
+            } else {
+                flags.insert(name.to_string(), String::new());
+                index += 1;
             }
+            continue;
         }
         index += 1;
     }
@@ -718,7 +723,11 @@ async fn main() -> Result<()> {
                 println!("Running Conxian Preflight Diagnostic Checks...");
                 println!(
                     "  - Default installer API token configured (not a strength test): {}",
-                    if report.secret_valid { "PASS" } else { "FAIL (sentinel or empty)" }
+                    if report.secret_valid {
+                        "PASS"
+                    } else {
+                        "FAIL (sentinel or empty)"
+                    }
                 );
                 println!(
                     "  - Trust Tier Verification (T1/T2): {}",
@@ -726,16 +735,26 @@ async fn main() -> Result<()> {
                 );
                 println!(
                     "  - Bitcoin RPC URL syntax{}: {}",
-                    if probe { " + reachability" } else { " (connectivity not tested)" },
+                    if probe {
+                        " + reachability"
+                    } else {
+                        " (connectivity not tested)"
+                    },
                     describe_rpc(report.btc_rpc_reachable, btc_probe)
                 );
                 println!(
                     "  - Stacks RPC URL syntax{}: {}",
-                    if probe { " + reachability" } else { " (connectivity not tested)" },
+                    if probe {
+                        " + reachability"
+                    } else {
+                        " (connectivity not tested)"
+                    },
                     describe_rpc(report.stacks_rpc_reachable, stacks_probe)
                 );
                 if all_ok {
-                    println!("\nConfiguration checks passed; deployment readiness is not established.");
+                    println!(
+                        "\nConfiguration checks passed; deployment readiness is not established."
+                    );
                 } else {
                     println!("\nSystem Diagnostics Warnings Detected. Review above parameters.");
                 }
@@ -1072,7 +1091,7 @@ fn run_config(args: &[String], mode: OutputMode) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{routing::get, routing::post, http::StatusCode, Router};
+    use axum::{http::StatusCode, routing::get, routing::post, Router};
 
     #[test]
     fn test_installer_config_default_and_env_gen() {
@@ -1128,6 +1147,28 @@ mod tests {
         assert_eq!(describe_rpc(true, None), "PASS (valid URL)");
         assert_eq!(describe_rpc(true, Some(true)), "PASS (reachable)");
         assert_eq!(describe_rpc(true, Some(false)), "FAIL (unreachable)");
+    }
+
+    #[test]
+    fn parse_flags_handles_bare_boolean_flags() {
+        // A bare flag followed by another flag must not swallow it as a value.
+        let args: Vec<String> = ["--json", "--probe"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let flags = parse_flags(&args);
+        assert!(flags.contains_key("json"));
+        assert!(flags.contains_key("probe"));
+        assert_eq!(flags["probe"], "");
+
+        // A flag with a value still captures it.
+        let args: Vec<String> = ["--tier", "business", "--probe"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let flags = parse_flags(&args);
+        assert_eq!(flags["tier"], "business");
+        assert!(flags.contains_key("probe"));
     }
 
     #[tokio::test]
