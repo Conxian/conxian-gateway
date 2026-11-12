@@ -13,7 +13,7 @@
 - **Rust Edition**: 2021, **MSRV**: 1.98.1
 - **Framework**: Axum (HTTP), Tokio (Runtime)
 - **Security**: Mandatory Bearer token auth for sensitive endpoints.
-- **M2M authorization**: JWTs must be authorized by the method/path scope matrix in `internal/api/src/auth.rs`. Every new route added to the private, admin, or ALEX bearer-auth routers must have an explicit scope mapping and route-coverage test; unmapped routes deny JWTs. JWT/dual configuration errors must fail closed and must never downgrade to legacy auth.
+- **M2M authorization**: JWTs must be authorized by the method/path scope matrix in `internal/api/src/auth.rs`. Every new route added to the private, admin, or ALEX bearer-auth routers must have an explicit scope mapping and route-coverage test; unmapped routes deny JWTs. JWT/dual configuration errors must fail closed and must never downgrade to legacy auth. The contract and modes are documented in `docs/M2M_AUTHENTICATION.md`; `M2M_GATEWAY_AUTH_MODE` defaults to `legacy` and JWT/dual modes stay unactivated until the activation gate is met.
 - **Observability**: Prometheus metrics and structured tracing required for all new modules.
 - **Persistence**: Any stateful component must use the atomic persistence layer.
 

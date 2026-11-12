@@ -24,6 +24,8 @@ Conxian has no native token, staking asset, or speculative tokenomics. Gateway m
 
 The current managed-auth middleware provides strict JWT/API-key validation, a single-process rate limiter, and structured audit hooks. Multi-replica commercial service remains gated on a shared atomic rate-limit backend and durable append-only audit sink.
 
+Machine-to-machine callers can authenticate with the organization's short-lived scoped service JWTs (the same contract `conxius-platform` issues and `conxian_market` verifies). The Gateway verifies them, enforces a deny-by-default per-route scope matrix, and fails closed on misconfiguration; `M2M_GATEWAY_AUTH_MODE` (`legacy`|`dual`|`jwt`) selects the accepted credential kinds and defaults to `legacy`, so M2M JWT/dual modes are **not active** until explicitly enabled. See [M2M authentication](docs/M2M_AUTHENTICATION.md).
+
 Institutional-grade middleware bridging Bitcoin and Stacks state logic with enterprise compliance.
 
 [![License](https://img.shields.io/badge/License-MIT%20%2B%20AGPL--3.0-blue.svg)](LICENSING.md)
