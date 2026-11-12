@@ -139,7 +139,9 @@ fn default_doctor_reports_configuration_scope_and_exits_unsuccessfully() {
     assert!(!output.status.success());
     let text = String::from_utf8_lossy(&output.stdout);
     assert!(text.contains("connectivity not tested"));
-    assert!(text.contains("not a strength test"));
+    assert!(text.contains("Secret validation: not displayed"));
+    assert!(!text.contains("Default installer API token configured"));
+    assert!(!text.contains("FAIL (sentinel or empty)"));
     assert!(!text.contains("Ready for deployment"));
 }
 
