@@ -825,25 +825,25 @@ async fn main() -> Result<()> {
                 (None, None)
             };
 
-            let all_ok = doctor_configuration_ok(&report, btc_probe, stacks_probe);
+            let all_ok = report.secret_valid && doctor_configuration_ok(&report, btc_probe, stacks_probe);
 
             if mode == OutputMode::Json {
                 let value = serde_json::json!({
                     "command": "doctor",
                     "probed": probe,
-                    "secret_validation": "not_inspected",
+                    "secret_validation": "not_disclosed",
                     "tier_valid": report.tier_valid,
                     "bitcoin_rpc_syntax_ok": report.btc_rpc_reachable,
                     "bitcoin_rpc_reachable": btc_probe,
                     "stacks_rpc_syntax_ok": report.stacks_rpc_reachable,
                     "stacks_rpc_reachable": stacks_probe,
                     "ok": all_ok,
-                    "note": "trust-tier and RPC syntax/optional reachability only; secret configuration is not inspected and deployment readiness is not established",
+                    "note": "trust-tier and RPC syntax/optional reachability are reported; secret validation status is not displayed and deployment readiness is not established",
                 });
                 emit_data(mode, &value);
             } else {
                 println!("Running Conxian Preflight Diagnostic Checks...");
-                println!("  - Secret configuration: NOT INSPECTED (secret values and validity are not logged)");
+                println!("  - Secret validation: not displayed (secret values and validity are never logged)");
                 println!(
                     "  - Trust Tier Verification (T1/T2): {}",
                     if report.tier_valid { "PASS" } else { "FAIL" }
