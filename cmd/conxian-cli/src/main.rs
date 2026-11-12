@@ -200,6 +200,19 @@ pub fn run_doctor_checks(config: &InstallerConfig) -> DoctorReport {
     }
 }
 
+/// Public doctor output deliberately excludes secret state. The CLI's default
+/// installer template is not an authenticated environment read, so reporting
+/// token validity would be both misleading and a sensitive log disclosure.
+fn doctor_configuration_ok(
+    report: &DoctorReport,
+    btc_probe: Option<bool>,
+    stacks_probe: Option<bool>,
+) -> bool {
+    let btc_ok = report.btc_rpc_reachable && btc_probe.unwrap_or(true);
+    let stacks_ok = report.stacks_rpc_reachable && stacks_probe.unwrap_or(true);
+    report.tier_valid && btc_ok && stacks_ok
+}
+
 /// Human label for an RPC check: syntax-only, or syntax + (optional) reachability.
 fn describe_rpc(syntax_ok: bool, probed: Option<bool>) -> String {
     match (syntax_ok, probed) {
@@ -812,34 +825,26 @@ async fn main() -> Result<()> {
                 (None, None)
             };
 
-            let btc_ok = report.btc_rpc_reachable && btc_probe.unwrap_or(true);
-            let stacks_ok = report.stacks_rpc_reachable && stacks_probe.unwrap_or(true);
-            let all_ok = report.secret_valid && report.tier_valid && btc_ok && stacks_ok;
+            let all_ok =
+                report.secret_valid && doctor_configuration_ok(&report, btc_probe, stacks_probe);
 
             if mode == OutputMode::Json {
                 let value = serde_json::json!({
                     "command": "doctor",
                     "probed": probe,
-                    "secret_valid": report.secret_valid,
+                    "secret_validation": "not_disclosed",
                     "tier_valid": report.tier_valid,
                     "bitcoin_rpc_syntax_ok": report.btc_rpc_reachable,
                     "bitcoin_rpc_reachable": btc_probe,
                     "stacks_rpc_syntax_ok": report.stacks_rpc_reachable,
                     "stacks_rpc_reachable": stacks_probe,
                     "ok": all_ok,
-                    "note": "syntax and optional reachability only; deployment readiness is not established",
+                    "note": "trust-tier and RPC syntax/optional reachability are reported; secret validation status is not displayed and deployment readiness is not established",
                 });
                 emit_data(mode, &value);
             } else {
                 println!("Running Conxian Preflight Diagnostic Checks...");
-                println!(
-                    "  - Default installer API token configured (not a strength test): {}",
-                    if report.secret_valid {
-                        "PASS"
-                    } else {
-                        "FAIL (sentinel or empty)"
-                    }
-                );
+                println!("  - Secret validation: not displayed (secret values and validity are never logged)");
                 println!(
                     "  - Trust Tier Verification (T1/T2): {}",
                     if report.tier_valid { "PASS" } else { "FAIL" }
@@ -1257,6 +1262,14 @@ mod tests {
         config.auth_token = "sentinel_API_TOKEN".to_string();
         let report2 = run_doctor_checks(&config);
         assert!(!report2.secret_valid);
+    }
+
+    #[test]
+    fn doctor_configuration_check_does_not_expose_or_require_secret_state() {
+        let report = run_doctor_checks(&InstallerConfig::default());
+        assert!(!report.secret_valid);
+        assert!(doctor_configuration_ok(&report, None, None));
+        assert!(!doctor_configuration_ok(&report, Some(false), None));
     }
 
     #[test]
