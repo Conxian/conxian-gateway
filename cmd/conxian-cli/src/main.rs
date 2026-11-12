@@ -184,6 +184,47 @@ pub fn run_doctor_checks(config: &InstallerConfig) -> DoctorReport {
     }
 }
 
+/// Human label for an RPC check: syntax-only, or syntax + (optional) reachability.
+fn describe_rpc(syntax_ok: bool, probed: Option<bool>) -> String {
+    match (syntax_ok, probed) {
+        (false, _) => "FAIL (invalid URL)".to_string(),
+        (true, None) => "PASS (valid URL)".to_string(),
+        (true, Some(true)) => "PASS (reachable)".to_string(),
+        (true, Some(false)) => "FAIL (unreachable)".to_string(),
+    }
+}
+
+/// Connectivity probe for an RPC endpoint: a short TCP connect + HTTP POST of a
+/// minimal JSON-RPC `getblockchaininfo`/`getinfo`-style body. Returns Ok(true) on
+/// any HTTP response (reachable), Ok(false) on a transport failure, and never
+/// reads or echoes the response body. Used by `doctor --probe` to distinguish a
+/// reachable endpoint from a syntactically-valid one. Read-only; no auth is
+/// attempted (an authenticated endpoint returns 401, which still proves
+/// reachability).
+pub async fn probe_rpc_reachable(url: &str) -> bool {
+    let Ok(parsed) = url::Url::parse(url) else {
+        return false;
+    };
+    if parsed.scheme() != "http" && parsed.scheme() != "https" {
+        return false;
+    }
+    let target = parsed.as_str().to_string();
+    tokio::task::spawn_blocking(move || {
+        let body = r#"{"jsonrpc":"2.0","id":1,"method":"getblockchaininfo","params":[]}"#;
+        // Any HTTP status (including 401/405) proves the host answered.
+        minreq::post(&target)
+            .with_header("content-type", "application/json")
+            .with_body(body)
+            .with_timeout(4)
+            .with_follow_redirects(false)
+            .with_max_headers_size(8192)
+            .send_lazy()
+            .is_ok()
+    })
+    .await
+    .unwrap_or(false)
+}
+
 /// Validates a Gateway base URL and normalizes it to the `/api/v1` API base.
 ///
 /// Accepts an HTTP(S) origin or an explicit `/api/v1` base, and rejects
@@ -465,7 +506,7 @@ fn print_usage() {
     println!("Global flags: --json (machine-readable output), --help, --version\n");
     println!("Deployment:");
     println!("  init      Write .env.production + docker-compose.yml templates");
-    println!("  doctor    Preflight checks (syntax; --probe adds connectivity)");
+    println!("  doctor    Preflight checks (syntax; --probe adds RPC reachability)");
     println!("  start     Print startup instructions (does not launch a process)\n");
     println!("Account & provisioning:");
     println!("  onboard   Provision a tenant (POST /onboard) and verify the minted key");
@@ -492,18 +533,26 @@ fn print_usage() {
     println!("  Onboarding token is read from $ONBOARDING_TOKEN only (never a flag).");
 }
 
-/// Parses `--flag value` pairs into a map. Unknown flags are ignored so the
-/// command stays forward-compatible.
+/// Parses `--flag value` pairs into a map. A flag whose next token is another
+/// flag (or absent) is stored with an empty value, so bare boolean flags like
+/// `--probe` and `--json` are detected via `contains_key`. Unknown flags are
+/// ignored so the command stays forward-compatible.
 fn parse_flags(args: &[String]) -> std::collections::HashMap<String, String> {
     let mut flags = std::collections::HashMap::new();
     let mut index = 0;
     while index < args.len() {
         if let Some(name) = args[index].strip_prefix("--") {
-            if index + 1 < args.len() {
+            let has_value = args
+                .get(index + 1)
+                .is_some_and(|next| !next.starts_with("--"));
+            if has_value {
                 flags.insert(name.to_string(), args[index + 1].clone());
                 index += 2;
-                continue;
+            } else {
+                flags.insert(name.to_string(), String::new());
+                index += 1;
             }
+            continue;
         }
         index += 1;
     }
@@ -636,48 +685,83 @@ async fn main() -> Result<()> {
             println!("\nTemplates created. Complete the current startup secret and persistence contract before use.");
         }
         "doctor" => {
-            println!("Running Conxian Preflight Diagnostic Checks...");
+            let flags = parse_flags(&args[2..]);
+            let probe = flags.contains_key("probe");
             let config = InstallerConfig::default();
             let report = run_doctor_checks(&config);
 
-            println!(
-                "  - Default installer API token configured (not a strength test): {}",
-                if report.secret_valid {
-                    "PASS"
-                } else {
-                    "FAIL (sentinel or empty)"
-                }
-            );
-            println!(
-                "  - Trust Tier Verification (T1/T2): {}",
-                if report.tier_valid { "PASS" } else { "FAIL" }
-            );
-            println!(
-                "  - Bitcoin RPC URL syntax (connectivity not tested): {}",
-                if report.btc_rpc_reachable {
-                    "PASS (Valid URL)"
-                } else {
-                    "FAIL"
-                }
-            );
-            println!(
-                "  - Stacks RPC URL syntax (connectivity not tested): {}",
-                if report.stacks_rpc_reachable {
-                    "PASS (Valid URL)"
-                } else {
-                    "FAIL"
-                }
-            );
-
-            if report.secret_valid
-                && report.tier_valid
-                && report.btc_rpc_reachable
-                && report.stacks_rpc_reachable
-            {
-                println!("\nConfiguration checks passed; deployment readiness is not established.");
+            // Optional connectivity probe: distinguishes a reachable endpoint
+            // from a syntactically-valid one. Never reads the response body.
+            let (btc_probe, stacks_probe) = if probe {
+                (
+                    Some(probe_rpc_reachable(&config.bitcoin_rpc_url).await),
+                    Some(probe_rpc_reachable(&config.stacks_rpc_url).await),
+                )
             } else {
-                println!("\nSystem Diagnostics Warnings Detected. Review above parameters.");
-                anyhow::bail!("Default installer configuration is incomplete; runtime readiness was not tested");
+                (None, None)
+            };
+
+            let btc_ok = report.btc_rpc_reachable && btc_probe.unwrap_or(true);
+            let stacks_ok = report.stacks_rpc_reachable && stacks_probe.unwrap_or(true);
+            let all_ok = report.secret_valid && report.tier_valid && btc_ok && stacks_ok;
+
+            if mode == OutputMode::Json {
+                let value = serde_json::json!({
+                    "command": "doctor",
+                    "probed": probe,
+                    "secret_valid": report.secret_valid,
+                    "tier_valid": report.tier_valid,
+                    "bitcoin_rpc_syntax_ok": report.btc_rpc_reachable,
+                    "bitcoin_rpc_reachable": btc_probe,
+                    "stacks_rpc_syntax_ok": report.stacks_rpc_reachable,
+                    "stacks_rpc_reachable": stacks_probe,
+                    "ok": all_ok,
+                    "note": "syntax and optional reachability only; deployment readiness is not established",
+                });
+                emit_data(mode, &value);
+            } else {
+                println!("Running Conxian Preflight Diagnostic Checks...");
+                println!(
+                    "  - Default installer API token configured (not a strength test): {}",
+                    if report.secret_valid {
+                        "PASS"
+                    } else {
+                        "FAIL (sentinel or empty)"
+                    }
+                );
+                println!(
+                    "  - Trust Tier Verification (T1/T2): {}",
+                    if report.tier_valid { "PASS" } else { "FAIL" }
+                );
+                println!(
+                    "  - Bitcoin RPC URL syntax{}: {}",
+                    if probe {
+                        " + reachability"
+                    } else {
+                        " (connectivity not tested)"
+                    },
+                    describe_rpc(report.btc_rpc_reachable, btc_probe)
+                );
+                println!(
+                    "  - Stacks RPC URL syntax{}: {}",
+                    if probe {
+                        " + reachability"
+                    } else {
+                        " (connectivity not tested)"
+                    },
+                    describe_rpc(report.stacks_rpc_reachable, stacks_probe)
+                );
+                if all_ok {
+                    println!(
+                        "\nConfiguration checks passed; deployment readiness is not established."
+                    );
+                } else {
+                    println!("\nSystem Diagnostics Warnings Detected. Review above parameters.");
+                }
+            }
+
+            if !all_ok {
+                anyhow::bail!("Installer configuration is incomplete or an endpoint was unreachable; runtime readiness was not tested");
             }
         }
         "start" => {
@@ -1007,7 +1091,7 @@ fn run_config(args: &[String], mode: OutputMode) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{routing::get, Router};
+    use axum::{http::StatusCode, routing::get, routing::post, Router};
 
     #[test]
     fn test_installer_config_default_and_env_gen() {
@@ -1055,6 +1139,55 @@ mod tests {
         config.auth_token = "sentinel_API_TOKEN".to_string();
         let report2 = run_doctor_checks(&config);
         assert!(!report2.secret_valid);
+    }
+
+    #[test]
+    fn describe_rpc_labels_syntax_and_reachability() {
+        assert_eq!(describe_rpc(false, None), "FAIL (invalid URL)");
+        assert_eq!(describe_rpc(true, None), "PASS (valid URL)");
+        assert_eq!(describe_rpc(true, Some(true)), "PASS (reachable)");
+        assert_eq!(describe_rpc(true, Some(false)), "FAIL (unreachable)");
+    }
+
+    #[test]
+    fn parse_flags_handles_bare_boolean_flags() {
+        // A bare flag followed by another flag must not swallow it as a value.
+        let args: Vec<String> = ["--json", "--probe"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let flags = parse_flags(&args);
+        assert!(flags.contains_key("json"));
+        assert!(flags.contains_key("probe"));
+        assert_eq!(flags["probe"], "");
+
+        // A flag with a value still captures it.
+        let args: Vec<String> = ["--tier", "business", "--probe"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let flags = parse_flags(&args);
+        assert_eq!(flags["tier"], "business");
+        assert!(flags.contains_key("probe"));
+    }
+
+    #[tokio::test]
+    async fn probe_rpc_reachable_detects_listening_and_closed_ports() {
+        // A listening server (any HTTP status) is reachable.
+        let app = Router::new().route("/", post(|| async { StatusCode::UNAUTHORIZED }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        assert!(probe_rpc_reachable(&format!("http://{addr}")).await);
+
+        // A closed port is not reachable.
+        let closed = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let closed_addr = closed.local_addr().unwrap();
+        drop(closed);
+        assert!(!probe_rpc_reachable(&format!("http://{closed_addr}")).await);
+
+        // A non-HTTP scheme is rejected without a probe.
+        assert!(!probe_rpc_reachable("ftp://example.invalid").await);
     }
 
     #[test]
