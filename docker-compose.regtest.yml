@@ -1,0 +1,105 @@
+# Conxian Gateway — reference regtest dev stack (Gateway #549).
+#
+# A minimal, runnable local stack: pruned-less bitcoind in regtest mode plus a
+# gateway wired to it. It is the first increment of the #549 reference stack
+# (regtest bitcoind + gateway). Further services (electrs/esplora, LND, Postgres,
+# Keycloak, Prometheus/Jaeger, WireMock, Toxiproxy) are tracked on the issue.
+#
+#   docker compose -f docker-compose.regtest.yml up -d
+#   docker compose -f docker-compose.regtest.yml exec bitcoind \
+#     bitcoin-cli -regtest -rpcuser=conxian -rpcpassword=regtest getblockchaininfo
+#
+# REGTEST ONLY. The credentials here are non-secret development values and the
+# network is a throwaway regtest chain; never reuse this file for production.
+name: conxian-gateway-regtest
+
+services:
+  bitcoind:
+    image: lncm/bitcoind:v28.0
+    container_name: conxian-regtest-bitcoind
+    command:
+      - -regtest=1
+      - -server=1
+      - -txindex=1
+      - -rpcuser=conxian
+      - -rpcpassword=regtest
+      - -rpcbind=0.0.0.0
+      # Regtest is a private, local chain; the compose network is the only
+      # intended peer. Do not widen this for a public network.
+      - -rpcallowip=0.0.0.0/0
+      - -fallbackfee=0.0002
+      - -zmqpubrawblock=tcp://0.0.0.0:28332
+      - -zmqpubrawtx=tcp://0.0.0.0:28333
+    volumes:
+      - regtest-bitcoin-data:/data
+    # RPC/ZMQ stay on the compose network; the gateway reaches bitcoind by
+    # service name. Not published to the host by default.
+    expose:
+      - "18443"
+      - "28332"
+      - "28333"
+    healthcheck:
+      test: ["CMD", "bitcoin-cli", "-regtest", "-rpcuser=conxian", "-rpcpassword=regtest", "getblockchaininfo"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  # Creates the initial regtest wallet and mines one block so the gateway has a
+  # chain to observe. Idempotent: a second run finds the wallet already present.
+  regtest-init:
+    image: lncm/bitcoind:v28.0
+    container_name: conxian-regtest-init
+    depends_on:
+      bitcoind:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        bitcoin-cli -regtest -rpcuser=conxian -rpcpassword=regtest -rpcconnect=bitcoind createwallet devwallet 2>/dev/null || bitcoin-cli -regtest -rpcuser=conxian -rpcpassword=regtest -rpcconnect=bitcoind loadwallet devwallet 2>/dev/null || true
+        ADDR=$$(bitcoin-cli -regtest -rpcuser=conxian -rpcpassword=regtest -rpcconnect=bitcoind -rpcwallet=devwallet getnewaddress)
+        bitcoin-cli -regtest -rpcuser=conxian -rpcpassword=regtest -rpcconnect=bitcoind -rpcwallet=devwallet generatetoaddress 1 "$$ADDR"
+        bitcoin-cli -regtest -rpcuser=conxian -rpcpassword=regtest -rpcconnect=bitcoind getblockcount
+    restart: "no"
+
+  gateway:
+    build: .
+    image: conxian-gateway:latest
+    container_name: conxian-regtest-gateway
+    depends_on:
+      bitcoind:
+        condition: service_healthy
+    environment:
+      - API_TOKEN=${REGTEST_API_TOKEN:-regtest-dev-token}
+      - API_PORT=3000
+      - BITCOIN_RPC_URL=http://bitcoind:18443
+      - BITCOIN_RPC_USER=conxian
+      - BITCOIN_RPC_PASS=regtest
+      - BITCOIN_CORE_SHADOW_OBSERVATION_ENABLED=${BITCOIN_CORE_SHADOW_OBSERVATION_ENABLED:-true}
+      - BITCOIN_SYNC_INTERVAL=10
+      # Every external rail stays disabled in the reference dev stack.
+      - RAMP_MODE=disabled
+      - STITCH_MODE=disabled
+      - OZOW_MODE=disabled
+      - ALCHEMY_PAY_MODE=disabled
+      - BANXA_MODE=disabled
+      - INFOBIP_MODE=disabled
+      - RGB_MODE=disabled
+      - M2M_GATEWAY_AUTH_MODE=legacy
+      - HMAC_SECRET=${HMAC_SECRET:-regtest-hmac-secret}
+      - OFFLINE_QUEUE_SECRET=${OFFLINE_QUEUE_SECRET:-regtest-offline-secret}
+      - FIAT_WEBHOOK_SECRET=${FIAT_WEBHOOK_SECRET:-regtest-fiat-secret}
+      - SETTLEMENT_INGRESS_SECRET=${SETTLEMENT_INGRESS_SECRET:-regtest-ingress-secret}
+      - GATEWAY_STATE_PATH=/usr/app/gateway_state.json
+      - GATEWAY_PERSISTENCE_MODE=exclusive-local-writer
+      - GATEWAY_ALLOW_UNKNOWN_STATE_FILESYSTEM=false
+    ports:
+      - "3000:3000"
+    volumes:
+      - regtest-gateway-data:/usr/app
+    restart: unless-stopped
+
+volumes:
+  regtest-bitcoin-data:
+  regtest-gateway-data:
