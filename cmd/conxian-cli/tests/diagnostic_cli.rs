@@ -139,7 +139,9 @@ fn default_doctor_reports_configuration_scope_and_exits_unsuccessfully() {
     assert!(!output.status.success());
     let text = String::from_utf8_lossy(&output.stdout);
     assert!(text.contains("connectivity not tested"));
-    assert!(text.contains("not a strength test"));
+    assert!(text.contains("Secret validation: not displayed"));
+    assert!(!text.contains("Default installer API token configured"));
+    assert!(!text.contains("FAIL (sentinel or empty)"));
     assert!(!text.contains("Ready for deployment"));
 }
 
@@ -158,4 +160,78 @@ fn invalid_status_base_fails_without_echoing_the_input() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(!combined.contains("private-synthetic-input"));
+}
+
+#[test]
+fn version_reports_the_cli_version() {
+    let out = Command::new(env!("CARGO_BIN_EXE_conxian-cli"))
+        .arg("version")
+        .env_clear()
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    assert!(String::from_utf8_lossy(&out.stdout).contains("conxian-cli"));
+}
+
+#[test]
+fn uninstall_removes_generated_templates_with_force() {
+    let dir = Scratch::new();
+    assert!(dir.init().status.success());
+    let out = Command::new(env!("CARGO_BIN_EXE_conxian-cli"))
+        .args(["uninstall", "--force"])
+        .current_dir(&dir.0)
+        .env_clear()
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    assert!(!dir.0.join(".env.production").exists());
+    assert!(!dir.0.join("docker-compose.yml").exists());
+}
+
+#[test]
+fn uninstall_preserves_files_it_did_not_generate() {
+    let dir = Scratch::new();
+    // A user-authored compose file must never be deleted.
+    std::fs::write(
+        dir.0.join("docker-compose.yml"),
+        "services:\n  mine:\n    image: nginx\n",
+    )
+    .unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_conxian-cli"))
+        .args(["uninstall", "--force"])
+        .current_dir(&dir.0)
+        .env_clear()
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    assert!(
+        dir.0.join("docker-compose.yml").exists(),
+        "user file was deleted"
+    );
+}
+
+#[test]
+fn unknown_subcommand_exits_nonzero() {
+    let out = Command::new(env!("CARGO_BIN_EXE_conxian-cli"))
+        .arg("definitely-not-a-command")
+        .env_clear()
+        .output()
+        .unwrap();
+    assert!(!out.status.success(), "unknown subcommand must fail");
+}
+
+#[test]
+fn subcommand_help_shows_command_specific_flags() {
+    let out = Command::new(env!("CARGO_BIN_EXE_conxian-cli"))
+        .args(["doctor", "--help"])
+        .env_clear()
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("--probe"), "doctor help must mention --probe");
+    assert!(
+        !text.contains("onboard"),
+        "doctor help must not list other commands"
+    );
 }
