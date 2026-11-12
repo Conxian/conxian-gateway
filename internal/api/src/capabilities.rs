@@ -10,6 +10,20 @@ use std::collections::BTreeSet;
 /// `dlc` is the settlement-rail capability served at `POST /api/v1/dlc/cet`.
 const ALWAYS_ON_CAPABILITIES: &[&str] = &["dlc"];
 
+/// Structural evidence for one advertised capability. Every field is
+/// `not_evidenced` unless a producer has recorded independent evidence; the
+/// manifest never infers support from registration alone (Gateway #526).
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct CapabilityEvidence {
+    pub api: &'static str,
+    pub implementation: &'static str,
+    pub integration: &'static str,
+    pub independent_review: &'static str,
+    pub production_support: &'static str,
+    /// Non-authoritative references a consumer must resolve itself.
+    pub references: Vec<String>,
+}
+
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct AdapterRegistration {
     pub adapter_id: String,
@@ -24,6 +38,13 @@ pub struct AdapterRegistration {
     /// Bound Core taxonomy identity, when the adapter id maps to a known chain.
     pub chain: Option<String>,
     pub family: Option<String>,
+    /// Settlement finality class of the bound chain, when one exists. A chain
+    /// with no taxonomy binding carries no finality claim.
+    pub finality: Option<String>,
+    /// Structural evidence; never a live-support or custody claim.
+    pub evidence: CapabilityEvidence,
+    /// This gateway surface never takes custody of user funds.
+    pub no_custody: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -80,6 +101,20 @@ fn classify(adapter_id: &str) -> (Vec<String>, Option<String>, Option<String>) {
     }
 }
 
+/// Structural evidence with every producer fact unclaimed. Registration and a
+/// mounted route are not API/implementation/integration/review evidence, so all
+/// fields stay `not_evidenced`; a consumer must resolve its own evidence.
+fn unclaimed_evidence() -> CapabilityEvidence {
+    CapabilityEvidence {
+        api: "not_evidenced",
+        implementation: "not_evidenced",
+        integration: "not_evidenced",
+        independent_review: "not_evidenced",
+        production_support: "not_evidenced",
+        references: vec!["GET /api/v1/capabilities".to_string()],
+    }
+}
+
 pub fn discover_registered_adapters(
     ids: impl IntoIterator<Item = String>,
 ) -> AdapterDiscoveryManifest {
@@ -108,6 +143,12 @@ pub fn discover_registered_adapters(
                     operation_classes,
                     chain,
                     family,
+                    // No producer binds a chain to a settlement finality class
+                    // yet; the manifest reports the absence explicitly instead of
+                    // inferring one from the chain family (Gateway #526).
+                    finality: None,
+                    evidence: unclaimed_evidence(),
+                    no_custody: true,
                 }
             })
             .collect(),
@@ -227,5 +268,33 @@ mod tests {
             ["delegated_execute"]
         );
         assert!(manifest.adapters[0].chain.is_none());
+    }
+
+    #[test]
+    fn registration_never_claims_evidence_or_finality() {
+        // Gateway #526: registration is not evidence. Every adapter reports
+        // unclaimed structural evidence and no finality claim, and no_custody is
+        // explicit, regardless of whether the chain maps to the Core taxonomy.
+        let manifest =
+            discover_registered_adapters(["bitcoin", "citrea", "bitvm3", "dlc"].map(String::from));
+        for adapter in &manifest.adapters {
+            assert_eq!(adapter.evidence.api, "not_evidenced");
+            assert_eq!(adapter.evidence.implementation, "not_evidenced");
+            assert_eq!(adapter.evidence.integration, "not_evidenced");
+            assert_eq!(adapter.evidence.independent_review, "not_evidenced");
+            assert_eq!(adapter.evidence.production_support, "not_evidenced");
+            assert!(adapter.finality.is_none());
+            assert!(adapter.no_custody);
+        }
+    }
+
+    #[test]
+    fn taxonomy_bound_adapter_reports_family_but_no_finality_claim() {
+        let manifest = discover_registered_adapters(["citrea"].map(String::from));
+        let citrea = &manifest.adapters[0];
+        assert_eq!(citrea.chain.as_deref(), Some("citrea"));
+        assert!(citrea.family.is_some());
+        // No producer binds finality yet; absence is explicit, not inferred.
+        assert!(citrea.finality.is_none());
     }
 }
