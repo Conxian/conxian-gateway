@@ -825,7 +825,8 @@ async fn main() -> Result<()> {
                 (None, None)
             };
 
-            let all_ok = report.secret_valid && doctor_configuration_ok(&report, btc_probe, stacks_probe);
+            let all_ok =
+                report.secret_valid && doctor_configuration_ok(&report, btc_probe, stacks_probe);
 
             if mode == OutputMode::Json {
                 let value = serde_json::json!({
