@@ -1,0 +1,34 @@
+# CODEOWNERS — team-based review routing
+#
+# Worker-agnostic by design: code is owned by TEAMS and ROLES, never by a named
+# individual. A team may hold human or machine (agent/bot) workers, so review
+# coverage survives any single worker joining, leaving or being unavailable.
+# Last match wins.
+#
+# Enforcement: the repository "main" ruleset requires 1 approving review and a
+# code-owner review. Organization administrators retain a permanent bypass, so
+# the owner is never blocked (see the ruleset bypass_actors).
+
+# Default owner: any reviewer-team member can satisfy the code-owner review.
+*                                   @Conxian/reviewers
+
+# Governance, policy and this file itself — org administration.
+/CODEOWNERS                         @Conxian/conxian-admin
+/GOVERNANCE.md                      @Conxian/conxian-admin
+/CONTRIBUTING.md                    @Conxian/conxian-admin
+/SECURITY.md                        @Conxian/conxian-admin
+/.github/                           @Conxian/conxian-admin
+
+# CI/CD, automation and infrastructure — operations.
+/.github/workflows/                 @Conxian/ops
+/scripts/                           @Conxian/ops
+/infra/                             @Conxian/ops
+/infrastructure/                    @Conxian/ops
+/deploy/                            @Conxian/ops
+/docker/                            @Conxian/ops
+/Dockerfile                         @Conxian/ops
+/docker-compose.yml                 @Conxian/ops
+
+# Shared protocol / SDK code — core engineering.
+/lib-conxian-core/                  @Conxian/core-devs
+/conxius-enclave-sdk/               @Conxian/core-devs
