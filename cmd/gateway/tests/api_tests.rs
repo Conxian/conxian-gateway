@@ -2028,6 +2028,11 @@ async fn test_list_supported_chains() {
         .collect();
     assert!(chains.contains(&"bitvm"));
     assert!(chains.contains(&"bitvm3"));
+    // Gateway #526: the legacy surface is explicitly deprecated and carries no
+    // availability claim; consumers must use the capability manifest.
+    assert_eq!(body["deprecated"], true);
+    assert_eq!(body["availability_claim"], false);
+    assert_eq!(body["capability_manifest"], "/api/v1/capabilities");
 }
 
 #[tokio::test]

@@ -1174,11 +1174,19 @@ pub async fn update_handoff_state(
 }
 
 pub async fn list_supported_chains(State(state): State<AppState>) -> Json<Value> {
+    // Deprecated compatibility surface (Gateway #526): `supported_chains` lists
+    // the registered runtime adapter keys, which are NOT a support/availability
+    // claim. The field is retained for backward compatibility but explicitly
+    // marked deprecated; consumers must negotiate exact capabilities via
+    // GET /api/v1/capabilities. No count is advertised as live support.
     let mut chains: Vec<String> = state.multi_chain.keys().cloned().collect();
     chains.sort();
     Json(json!({
         "supported_chains": chains,
+        "deprecated": true,
+        "deprecated_by": "/api/v1/capabilities",
         "semantics": "registered-adapters-only",
+        "availability_claim": false,
         "capability_manifest": "/api/v1/capabilities",
         "production_support": "not-advertised"
     }))
