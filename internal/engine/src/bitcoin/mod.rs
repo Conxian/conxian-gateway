@@ -1,10 +1,15 @@
 pub mod fee_bump_policy;
+pub mod fee_inputs;
 pub mod listener;
 pub mod mempool_orchestrator;
 pub mod rpc;
 pub mod shadow_observation;
 
 pub use fee_bump_policy::FeeBumpPolicyConfig;
+pub use fee_inputs::{
+    MeasuredInputState, MeasuredInputUnit, MeasuredLoadOracle, MempoolLoadObservation,
+    DEFAULT_MEMPOOL_FRESHNESS_SECONDS, MEMPOOL_INPUT_SCHEMA_VERSION,
+};
 pub use listener::BitcoinListener;
 pub use mempool_orchestrator::MempoolOrchestrator;
 pub use rpc::{BitcoinRpc, BitcoinRpcClient};
