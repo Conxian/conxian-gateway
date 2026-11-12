@@ -97,7 +97,11 @@ fn new_lightning_adapter_for_nwc_uri(nwc_uri: Option<&str>) -> Arc<LightningAdap
     match nwc_uri.map(str::trim).filter(|uri| !uri.is_empty()) {
         Some(uri) => match crate::nostr::NwcConnection::parse_uri(uri) {
             Ok(connection) => {
-                tracing::info!("Lightning settlement backend: NWC (Nostr Wallet Connect)");
+                let relays = connection.relay_list();
+                tracing::info!(
+                    relays = relays.len(),
+                    "Lightning settlement backend: NWC (Nostr Wallet Connect)"
+                );
                 Arc::new(LightningAdapter::new(Arc::new(
                     crate::nwc_backend::NwcLightningBackend::new(connection),
                 )))
