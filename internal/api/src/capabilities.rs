@@ -275,8 +275,8 @@ mod tests {
         // Gateway #526: registration is not evidence. Every adapter reports
         // unclaimed structural evidence and no finality claim, and no_custody is
         // explicit, regardless of whether the chain maps to the Core taxonomy.
-        let manifest = discover_registered_adapters(["bitcoin", "citrea", "bitvm3", "dlc"]
-            .map(String::from));
+        let manifest =
+            discover_registered_adapters(["bitcoin", "citrea", "bitvm3", "dlc"].map(String::from));
         for adapter in &manifest.adapters {
             assert_eq!(adapter.evidence.api, "not_evidenced");
             assert_eq!(adapter.evidence.implementation, "not_evidenced");
