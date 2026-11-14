@@ -1,0 +1,20 @@
+[package]
+name = "conxian-device"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Conxian device lifecycle contract: typed, signed desired-state manifests, plan and apply engines (pull-based, no remote execution)"
+license = "MIT"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+sha2.workspace = true
+chrono.workspace = true
+async-trait.workspace = true
+hex = "0.4.3"
+secp256k1.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

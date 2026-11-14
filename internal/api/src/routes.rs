@@ -387,6 +387,27 @@ pub fn configure_routes(
         None => Router::new(),
     };
 
+    // Fleet-agent device lifecycle (Track B). Mounted only when the manifest
+    // signing key and the enrollment token are configured (fail closed). The
+    // GET serves a signed desired-state manifest the device verifies against
+    // its pinned key; the POST records the device's apply report.
+    let device_routes = match crate::device::DeviceApi::from_env(std::sync::Arc::new(
+        crate::device::DeviceRegistry::new(),
+    )) {
+        Some(api) => Router::new()
+            .route(
+                "/devices/{device_id}/desired-state",
+                get(crate::device::get_desired_state)
+                    .post(crate::device::put_desired_state),
+            )
+            .route(
+                "/devices/{device_id}/report",
+                post(crate::device::post_report),
+            )
+            .with_state(api),
+        None => Router::new(),
+    };
+
     // Genesis Credits contribution ledger (utility-only capital formation).
     // Mounted only when the operator token and a durable store are configured;
     // the award, summary and redeem handlers each require the operator token
@@ -434,6 +455,7 @@ pub fn configure_routes(
                 .merge(managed_routes)
                 .merge(webhook_routes)
                 .merge(onboarding_routes)
+                .merge(device_routes)
                 .merge(contribution_routes),
         )
         .nest("/admin/v1", admin_routes)

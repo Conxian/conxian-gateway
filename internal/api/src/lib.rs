@@ -11,6 +11,7 @@ pub mod capabilities;
 pub mod contribution_ledger;
 pub mod contribution_store;
 pub mod credit_ledger;
+pub mod device;
 pub mod discovery;
 pub mod fiat;
 pub mod handlers;

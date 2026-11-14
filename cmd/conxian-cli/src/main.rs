@@ -5,6 +5,8 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+mod device;
+
 /// CLI version, sourced from the workspace so it cannot drift from the package.
 pub const CLI_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -583,6 +585,10 @@ fn print_usage() {
     println!("  balance   Show a tenant's credit balance\n");
     println!("Configuration:");
     println!("  config    get | set | show the persistent CLI profile\n");
+    println!("Device lifecycle (pull-based; server proposes, user acknowledges):");
+    println!("  migrate   Apply the control-plane schema to a local database (--database-url)");
+    println!("  device    sign | verify | plan | apply | pull a signed desired-state manifest");
+    println!("            pull = fetch a signed manifest, verify, plan, apply with consent, report\n");
     println!("Common flags:");
     println!("  --gateway <url>   Gateway base URL (default: $GATEWAY_URL, profile, or :8080)");
     println!("  --tenant <id>     Tenant id");
@@ -922,6 +928,20 @@ async fn main() -> Result<()> {
         }
         "config" => {
             run_config(&args[2..], mode)?;
+        }
+        "migrate" => {
+            device::run_migrate(&args[2..]).await?;
+        }
+        "device" => {
+            let sub = args.get(2).map(String::as_str).unwrap_or("plan");
+            match sub {
+                "sign" => device::run_device_sign(&args[3..])?,
+                "verify" => device::run_device_verify(&args[3..])?,
+                "plan" => device::run_device_plan(&args[3..])?,
+                "apply" => device::run_device_apply(&args[3..]).await?,
+                "pull" => device::run_device_pull(&args[3..], mode).await?,
+                other => anyhow::bail!("unknown device subcommand: {other} (sign|verify|plan|apply|pull)"),
+            }
         }
         "help" | "--help" | "-h" => match args.get(2).map(String::as_str) {
             Some(topic) => print_command_help(topic),

@@ -13,6 +13,9 @@ serde_json = { workspace = true }
 anyhow = { workspace = true }
 minreq = { workspace = true }
 url = { workspace = true }
+chrono = { workspace = true }
+conxian-device = { path = "../../pkg/conxian-device" }
+async-trait.workspace = true
 # rustls needs an explicit CryptoProvider in this workspace (two providers are
 # compiled in). The CLI installs `aws_lc_rs::default_provider()` at startup, so it
 # must depend on rustls with that feature directly.
