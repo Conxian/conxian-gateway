@@ -31,7 +31,7 @@ fn openapi_document() -> Value {
                 This document describes the public and managed-agent route subset. \
                 Authenticated management surfaces (admin, private) are intentionally \
                 omitted. Payment-gated operations require an x402 payment demand.",
-            "license": { "name": "BUSL-1.1" }
+            "license": { "name": "AGPL-3.0-or-later" }
         },
         "servers": [
             { "url": API_BASE_URL, "description": "Production middleware host" }
