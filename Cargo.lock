@@ -1556,13 +1556,31 @@ name = "conxian-cli"
 version = "0.1.5"
 dependencies = [
  "anyhow",
+ "async-trait",
  "axum",
+ "chrono",
+ "conxian-device",
  "minreq 3.0.0",
  "rustls",
  "serde",
  "serde_json",
  "tokio",
  "url",
+]
+
+[[package]]
+name = "conxian-device"
+version = "0.1.5"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "hex",
+ "secp256k1 0.29.1",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "thiserror 2.0.21",
+ "tokio",
 ]
 
 [[package]]
@@ -1573,6 +1591,8 @@ dependencies = [
  "async-trait",
  "axum",
  "base64 0.23.1",
+ "chrono",
+ "conxian-device",
  "conxian_compliance",
  "conxian_core",
  "conxian_engine",
