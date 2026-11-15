@@ -1,3 +1,7 @@
+// The OpenAPI document is one deeply nested `json!` literal; the default macro
+// recursion limit is too low for its current depth.
+#![recursion_limit = "256"]
+
 #[cfg(all(feature = "mock-integrations", not(any(debug_assertions, test))))]
 compile_error!("feature `mock-integrations` must not be enabled in release builds");
 

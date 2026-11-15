@@ -119,4 +119,21 @@ impl OnboardingStore for PgOnboardingStore {
         .map_err(|e| format!("upsert tenant: {e}"))?;
         Ok(())
     }
+
+    async fn count(&self) -> Result<usize, String> {
+        let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM onboarding_tenants")
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| format!("count tenants: {e}"))?;
+        Ok(n as usize)
+    }
+
+    async fn delete(&self, tenant_id: &str) -> Result<bool, String> {
+        let result = sqlx::query("DELETE FROM onboarding_tenants WHERE tenant_id = $1")
+            .bind(tenant_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| format!("delete tenant: {e}"))?;
+        Ok(result.rows_affected() > 0)
+    }
 }
