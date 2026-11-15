@@ -3484,3 +3484,107 @@ async fn test_get_rootstock_chain_height_fallback() {
     assert_eq!(body["chain"], "rootstock");
     assert_eq!(body["height"], 0);
 }
+
+#[tokio::test]
+async fn test_submit_fee_report_accepts_market_payload() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    // The store is process-global and this test binary runs tests in parallel,
+    // so assert a *delta* rather than an absolute count.
+    let before = read_report_totals(&app).await;
+
+    // `generate_protocol_fee_report` filters to the *current* billing period, so
+    // the report must carry a current timestamp (the market sends the settlement
+    // time). A stale timestamp would be correctly excluded from the report.
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+
+    // Exactly the body `gateway_client.ts::submitFeeReport` posts (#359).
+    let payload = json!({
+        "periodStart": now,
+        "periodEnd": now,
+        "totalSettledSat": "10000",
+        "totalFeesSat": "50",
+        "effectiveFeeBps": 50,
+        "byRail": [{
+            "rail": "lightning",
+            "count": 1,
+            "totalAmountSat": "10000",
+            "totalFeeSat": "50",
+            "avgFeeBps": 50
+        }],
+        "byTier": [{ "tier": "Expedient", "count": 1, "totalFeeSat": "50" }],
+        "eventCount": 1
+    });
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/billing/fee-report")
+                .method("POST")
+                .header("Content-Type", "application/json")
+                .body(Body::from(serde_json::to_string(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(body["received"], true);
+    assert_eq!(body["records"], 1);
+
+    // The GET aggregates the record just ingested (delta, not absolute).
+    let after = read_report_totals(&app).await;
+    assert!(after.0 >= before.0 + 1, "event_count did not grow");
+    assert!(after.1 >= before.1 + 50, "total_fees_sat did not grow by 50");
+}
+
+/// Reads `(event_count, total_fees_sat)` from `GET /billing/fee-report`.
+async fn read_report_totals(app: &axum::Router) -> (u64, u64) {
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/billing/fee-report")
+                .method("GET")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    (
+        body["event_count"].as_u64().unwrap(),
+        body["total_fees_sat"].as_u64().unwrap(),
+    )
+}
+
+#[tokio::test]
+async fn test_submit_fee_report_rejects_malformed_body() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    // `byRail` missing entirely -> 422 (fail-closed: the client rejects the
+    // settlement rather than letting it settle untracked).
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/billing/fee-report")
+                .method("POST")
+                .header("Content-Type", "application/json")
+                .body(Body::from("{\"not\":\"a report\"}"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}

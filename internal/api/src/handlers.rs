@@ -369,12 +369,26 @@ pub async fn sync_erp_ledger(
 
 pub async fn settle_job_card(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(payload): Json<JobCardSettlementRequest>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     match finalize_job_card_settlement(state.compliance.verify_bitvm2_settlement(&payload), || {
         state.compliance.commit_job_card(&payload.job_card)
     }) {
-        Ok(txid) => Ok(Json(json!({ "status": "success", "txid": txid }))),
+        Ok(txid) => {
+            // #974: accumulate the priced protocol fee the market carried on the
+            // settlement headers. A settlement without priced headers (or an
+            // unpriced self-hosted call) accumulates nothing.
+            let intent = &payload.job_card.work_intent;
+            crate::protocol_fee::accumulate(crate::protocol_fee::record_from_headers(
+                &headers,
+                &txid,
+                &intent.receiver_address,
+                intent.amount_sbtc,
+                Some(txid.clone()),
+            ));
+            Ok(Json(json!({ "status": "success", "txid": txid })))
+        }
         Err(ConxianError::VerifierUnavailable) => Err(verifier_unavailable_response("bitvm")),
         Err(e) => Err((
             StatusCode::BAD_REQUEST,
