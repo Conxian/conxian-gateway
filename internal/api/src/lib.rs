@@ -25,6 +25,7 @@ pub mod nostr;
 pub mod nwc_backend;
 pub mod onboarding;
 pub mod onboarding_store;
+pub mod protocol_fee;
 pub mod rate_limit;
 pub mod routes;
 pub mod sentinel;

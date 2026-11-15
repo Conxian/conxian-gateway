@@ -155,6 +155,14 @@ pub fn configure_routes(
         .route("/billing/verify", post(crate::billing::verify_handler))
         .route("/billing/quote", post(crate::billing::quote_handler))
         .route("/billing/balance", get(crate::billing::balance_handler))
+        // Protocol-fee meter (#974): the market SDK posts a priced fee report
+        // here after each settlement; the GET returns the gateway's own
+        // aggregated report. Read-only accounting — no value moves.
+        .route(
+            "/billing/fee-report",
+            post(crate::protocol_fee::submit_fee_report_handler)
+                .get(crate::protocol_fee::get_fee_report_handler),
+        )
         .with_state(state.clone());
 
     let token_for_admin = api_token.clone();
