@@ -7,27 +7,25 @@
 ---
 ## 1. Repository Inventory (corrected)
 
-Fifteen repositories across four layers. Names below are the current GitHub
+Thirteen repositories across four layers. Names below are the current GitHub
 slugs (correcting stale references such as `Conxian_UI`, `stacksorbit`, and
-`conxian.github.io` layering).
+`conxius-orbit`, which do not exist in the organization).
 
 | Layer | Repository | Language | Production Path | Notes |
 |-------|-----------|----------|-----------------|-------|
-| L0 Protocol/DAO | `Conxian` | Clarity | main | Smart contracts, CXIP, system index |
 | L1 Verification | `conxian-nexus` | Rust | main | Glass Node proof layer, MMR state roots, BLS12-381/Arkworks |
 | L1 Routing | `conxian-gateway` | Rust | main | Transport/RPC adaptation, ISO 20022, settlement rails |
 | L2 Core/SDK | `lib-conxian-core` | Rust | main | Shared protocol primitives, chain adapters, control models |
 | L2 Enclave SDK | `conxius-enclave-sdk` | Rust | main | Hardware-backed signing/attestation/policy (beta/conditional) |
 | L2 App surface | `conxius-wallet` | TypeScript | main | Sovereign wallet/reference client |
-| L2 App surface | `conxian_ui` | TypeScript | main | Web UI |
 | L2 App surface | `conxian_market` | TypeScript | main | Treasury dashboard/reporting |
 | L2 Site | `conxian-labs-site` | HTML | main | Public site |
-| L2 Site | `conxian.github.io` | HTML | main | GitHub Pages |
+| L2 Site | `conxian-org-site` | HTML | main | Organization landing site |
+| L2 Site | `conxian.github.io` | HTML | main | GitHub Pages (archived) |
 | L3 Control plane | `conxius-platform` | TypeScript | main | Admin dashboard / control plane |
 | L3 Strategy | `conxian-business` | Python | main | BOS operating system, research |
 | L3 Governance | `.github` | Python | main | Org operating model, rulesets |
 | L3 Governance | `.github-private` | Python | main | Private governance (not audited) |
-| L3 Archived | `conxius-orbit` | Python | main | Archived |
 
 ---
 
@@ -37,7 +35,7 @@ The Gateway resolves two upstream Conxian crates, both via git tags.
 
 | Dependency | Gateway source | Pinned version | Latest release | Status |
 |-----------|----------------|----------------|----------------|--------|
-| `lib-conxian-core` | workspace `Cargo.toml` (`tag = "v0.3.3"`) | v0.3.3 | v0.3.3 (2026-08-14) | ✅ Current |
+| `lib-conxian-core` | workspace `Cargo.toml` (exact full-SHA `rev`) | v0.3.3 | v0.3.3 (2026-08-14) | ✅ Current |
 | `conxius-enclave-sdk` | transitive via `lib-conxian-core` `full-sdk`/`sdk-blockchain` | v2.0.16 | v2.0.17 (2026-08-30) | 🟡 One patch behind (controlled by `lib-conxian-core`, not Gateway) |
 | `conxian-nexus` | not a crate dependency | n/a | v0.4.22 (README says v0.4.23) | ⚠️ Cross-repo proof surface (see gaps) |
 
