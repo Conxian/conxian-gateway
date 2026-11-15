@@ -3542,7 +3542,10 @@ async fn test_submit_fee_report_accepts_market_payload() {
     // The GET aggregates the record just ingested (delta, not absolute).
     let after = read_report_totals(&app).await;
     assert!(after.0 >= before.0 + 1, "event_count did not grow");
-    assert!(after.1 >= before.1 + 50, "total_fees_sat did not grow by 50");
+    assert!(
+        after.1 >= before.1 + 50,
+        "total_fees_sat did not grow by 50"
+    );
 }
 
 /// Reads `(event_count, total_fees_sat)` from `GET /billing/fee-report`.
