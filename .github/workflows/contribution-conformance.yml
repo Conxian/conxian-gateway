@@ -65,7 +65,7 @@ jobs:
           toolchain: "1.99.1"
 
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31 # v2.7.7
+        uses: Swatinem/rust-cache@eedcf2fb1c22f010a0eb66b92f378c110977f266 # v2.7.7
 
       - name: Confirm the disposable fixture is reachable
         run: |
