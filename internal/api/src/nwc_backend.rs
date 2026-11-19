@@ -124,8 +124,9 @@ impl LightningBackend for NwcLightningBackend {
 
         match result {
             Ok(Ok(response)) => {
+                // A Lightning preimage is bearer proof of payment. Never emit it
+                // to logs, even at debug level; retain only non-secret fee metadata.
                 debug!(
-                    preimage = %response.preimage,
                     fees_paid = ?response.fees_paid,
                     "NWC payment settled"
                 );
