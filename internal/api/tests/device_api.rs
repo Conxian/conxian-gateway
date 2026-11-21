@@ -5,7 +5,9 @@
 //! using the real `conxian_device` verifier. No mocks.
 
 use axum::{routing::get, routing::post, Router};
-use conxian_api::device::{get_desired_state, post_report, put_desired_state, DeviceApi, DeviceRegistry};
+use conxian_api::device::{
+    get_desired_state, post_report, put_desired_state, DeviceApi, DeviceRegistry,
+};
 use conxian_device::{verify_manifest, ActionKind, SignedManifest};
 use std::sync::Arc;
 use tower::ServiceExt;
@@ -27,7 +29,9 @@ fn router() -> Router {
 }
 
 async fn body_json(resp: axum::response::Response) -> serde_json::Value {
-    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
     serde_json::from_slice(&bytes).unwrap()
 }
 
@@ -156,7 +160,9 @@ async fn report_rejects_a_bad_credential() {
                 .uri("/devices/dev-1/report")
                 .header("authorization", "Bearer wrong")
                 .header("content-type", "application/json")
-                .body(axum::body::Body::from(r#"{"device":"d","manifestDigest":"x","status":"applied"}"#))
+                .body(axum::body::Body::from(
+                    r#"{"device":"d","manifestDigest":"x","status":"applied"}"#,
+                ))
                 .unwrap(),
         )
         .await

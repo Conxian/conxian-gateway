@@ -405,8 +405,7 @@ pub fn configure_routes(
         Some(api) => Router::new()
             .route(
                 "/devices/{device_id}/desired-state",
-                get(crate::device::get_desired_state)
-                    .post(crate::device::put_desired_state),
+                get(crate::device::get_desired_state).post(crate::device::put_desired_state),
             )
             .route(
                 "/devices/{device_id}/report",

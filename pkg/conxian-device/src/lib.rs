@@ -21,8 +21,6 @@ pub mod signing;
 
 pub use apply::{apply, ActionExecutor, ApplyReport, Consent, StepOutcome};
 pub use error::DeviceError;
-pub use manifest::{
-    ActionKind, DesiredStateManifest, SignedManifest, SCHEMA_VERSION,
-};
+pub use manifest::{ActionKind, DesiredStateManifest, SignedManifest, SCHEMA_VERSION};
 pub use plan::{manifest_digest, plan, ObservedState, Plan, PlanStep, StepStatus};
 pub use signing::{sign_manifest, verify_manifest};

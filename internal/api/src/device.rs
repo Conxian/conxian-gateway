@@ -142,11 +142,10 @@ pub async fn get_desired_state(
 
     // A device with no desired state converges to an empty manifest: the pull
     // loop then reports "noop" and the device keeps running.
-    let manifest = api
-        .registry
-        .desired(&device_id)
-        .await
-        .unwrap_or_else(|| DesiredStateManifest::new(&device_id, chrono::Utc::now().to_rfc3339()));
+    let manifest =
+        api.registry.desired(&device_id).await.unwrap_or_else(|| {
+            DesiredStateManifest::new(&device_id, chrono::Utc::now().to_rfc3339())
+        });
 
     match api.sign(&manifest) {
         Ok(signed) => (StatusCode::OK, Json(signed)).into_response(),
