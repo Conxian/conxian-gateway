@@ -74,7 +74,11 @@ pub async fn run_device_pull(args: &[String], mode: OutputMode) -> Result<()> {
     let trusted = read_trusted_signer()?;
     let now = chrono::Utc::now().to_rfc3339();
     verify_manifest(&signed, &trusted, Some(&now)).map_err(map_device_err)?;
-    emit(mode, "verified", &format!("manifest verified for device {device_id}"));
+    emit(
+        mode,
+        "verified",
+        &format!("manifest verified for device {device_id}"),
+    );
 
     // 3. Plan.
     let observed = read_observed();
@@ -119,10 +123,22 @@ pub async fn run_device_pull(args: &[String], mode: OutputMode) -> Result<()> {
     } else {
         "failed"
     };
-    report_outcome(&gateway, &device_id, &enrollment_token, &p, status, &outcomes).await?;
+    report_outcome(
+        &gateway,
+        &device_id,
+        &enrollment_token,
+        &p,
+        status,
+        &outcomes,
+    )
+    .await?;
 
     if report.all_succeeded() {
-        emit(mode, "applied", &format!("{} step(s) applied", report.outcomes.len()));
+        emit(
+            mode,
+            "applied",
+            &format!("{} step(s) applied", report.outcomes.len()),
+        );
         Ok(())
     } else {
         anyhow::bail!("apply failed; see the reported outcomes")
@@ -354,7 +370,10 @@ pub async fn run_migrate(args: &[String]) -> Result<()> {
 // helpers
 // ---------------------------------------------------------------------------
 
-fn load_signed(_args: &[String], flags: &std::collections::HashMap<String, String>) -> Result<SignedManifest> {
+fn load_signed(
+    _args: &[String],
+    flags: &std::collections::HashMap<String, String>,
+) -> Result<SignedManifest> {
     if let Some(url) = flags.get("gateway") {
         // The pull path is wired in the agent loop; here we only read a file.
         let _ = url;
@@ -543,7 +562,9 @@ impl ActionExecutor for LocalExecutor {
                     };
                 }
                 let sql = match target.as_str() {
-                    "control-plane" => include_str!("../../../migrations/0002_onboarding_tenants.sql"),
+                    "control-plane" => {
+                        include_str!("../../../migrations/0002_onboarding_tenants.sql")
+                    }
                     other => {
                         return StepOutcome::Failed {
                             reason: format!("unknown migration target: {other}"),
@@ -560,9 +581,7 @@ impl ActionExecutor for LocalExecutor {
                 }
                 docker_action(&["pull", image]).await
             }
-            ActionKind::RestartService { service } => {
-                docker_action(&["restart", service]).await
-            }
+            ActionKind::RestartService { service } => docker_action(&["restart", service]).await,
         }
     }
 }
@@ -576,7 +595,9 @@ async fn docker_action(args: &[&str]) -> StepOutcome {
             .stderr(std::process::Stdio::piped())
             .spawn()
             .map_err(|e| format!("docker not available: {e}"))?;
-        let out = child.wait_with_output().map_err(|e| format!("docker: {e}"))?;
+        let out = child
+            .wait_with_output()
+            .map_err(|e| format!("docker: {e}"))?;
         if out.status.success() {
             Ok(())
         } else {

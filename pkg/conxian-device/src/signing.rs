@@ -65,11 +65,11 @@ pub fn verify_manifest(
 ) -> DeviceResult<()> {
     signed.manifest.check_schema()?;
 
-    let trusted = hex::decode(trusted_signer_hex.trim())
-        .map_err(|_| DeviceError::BadSigningKey)?;
+    let trusted = hex::decode(trusted_signer_hex.trim()).map_err(|_| DeviceError::BadSigningKey)?;
     let trusted = XOnlyPublicKey::from_slice(&trusted).map_err(|_| DeviceError::BadSigningKey)?;
 
-    let envelope_signer = hex::decode(signed.signer.trim()).map_err(|_| DeviceError::BadSignature)?;
+    let envelope_signer =
+        hex::decode(signed.signer.trim()).map_err(|_| DeviceError::BadSignature)?;
     let envelope_signer =
         XOnlyPublicKey::from_slice(&envelope_signer).map_err(|_| DeviceError::BadSignature)?;
 

@@ -40,7 +40,9 @@ pub enum StepStatus {
     Satisfied,
     /// The action cannot be planned because a precondition is unmet locally
     /// (for example an `ensureEnv` key that has no value in the local store).
-    Blocked { reason: String },
+    Blocked {
+        reason: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

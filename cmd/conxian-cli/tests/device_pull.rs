@@ -45,8 +45,14 @@ fn sign_manifest_via_cli(s: &Scratch) -> String {
     let signed = s.path("signed.json");
     let out = Command::new(env!("CARGO_BIN_EXE_conxian-cli"))
         .args([
-            "device", "sign", "--manifest", manifest.to_str().unwrap(),
-            "--key", SK, "--out", signed.to_str().unwrap(),
+            "device",
+            "sign",
+            "--manifest",
+            manifest.to_str().unwrap(),
+            "--key",
+            SK,
+            "--out",
+            signed.to_str().unwrap(),
         ])
         .output()
         .unwrap();
@@ -69,12 +75,7 @@ async fn pull_verifies_plans_and_reports_against_a_real_server() {
             "/api/v1/devices/{id}/desired-state",
             get(move || {
                 let b = body.clone();
-                async move {
-                    (
-                        [(axum::http::header::CONTENT_TYPE, "application/json")],
-                        b,
-                    )
-                }
+                async move { ([(axum::http::header::CONTENT_TYPE, "application/json")], b) }
             }),
         )
         .route(
@@ -128,8 +129,7 @@ async fn pull_verifies_plans_and_reports_against_a_real_server() {
 #[tokio::test(flavor = "multi_thread")]
 async fn pull_refuses_an_unverifiable_manifest() {
     let s = Scratch::new();
-    let mut envelope: serde_json::Value =
-        serde_json::from_str(&sign_manifest_via_cli(&s)).unwrap();
+    let mut envelope: serde_json::Value = serde_json::from_str(&sign_manifest_via_cli(&s)).unwrap();
     // Tamper the manifest after signing.
     envelope["manifest"]["device"] = serde_json::json!("tampered");
     let body = serde_json::to_string(&envelope).unwrap();
@@ -160,7 +160,10 @@ async fn pull_refuses_an_unverifiable_manifest() {
         .output()
         .unwrap();
 
-    assert!(!out.status.success(), "an unverifiable manifest must fail the pull");
+    assert!(
+        !out.status.success(),
+        "an unverifiable manifest must fail the pull"
+    );
     assert!(String::from_utf8_lossy(&out.stderr).contains("signature"));
 
     server.abort();
