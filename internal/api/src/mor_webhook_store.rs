@@ -6,7 +6,7 @@
 //! silently succeeding.
 
 use crate::mor_webhook::{
-    mint_material, ApplyOutcome, KeyAction, KeyStore, StoredKey, SubscriptionEvent,
+    mint_key_material, ApplyOutcome, KeyAction, KeyStore, StoredKey, SubscriptionEvent,
 };
 use sqlx::PgPool;
 
@@ -50,7 +50,7 @@ impl KeyStore for PgKeyStore {
 
         let outcome = match event.action {
             KeyAction::Mint | KeyAction::Rotate => {
-                let (key, hash) = mint_material();
+                let (key, hash) = mint_key_material();
                 sqlx::query(
                     "UPDATE managed_api_keys SET status = 'rotating', rotated_at = now() \
                      WHERE tenant_id = $1 AND status = 'active'",

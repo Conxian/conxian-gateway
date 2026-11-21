@@ -17,25 +17,33 @@ managed-auth path as a webhook-minted key.
 
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
-| `POST` | `/api/v1/onboard` | onboarding token | Provision a tenant; returns a receipt. Idempotent on `idempotency_key`. |
+| `POST` | `/api/v1/signup` | **none** (open) | Self-service signup: provision a `sandbox` tenant + mint a key. Off unless `SELF_SERVE_SIGNUP_ENABLED`. |
+| `POST` | `/api/v1/onboard` | onboarding token | Provision a tenant (operator lane); returns a receipt. Idempotent on `idempotency_key`. |
 | `GET` | `/api/v1/onboard/{tenant_id}` | onboarding token | Current onboarding state + per-step detail. |
+| `GET` | `/api/v1/tenants/{tenant_id}` | managed key | Read the tenant's own record. |
 | `GET` | `/api/v1/tenants/{tenant_id}/limits` | managed key | Published quota / trial / always-free data. |
 | `POST` | `/api/v1/tenants/{tenant_id}/keys` | managed key | Rotate the active key (new plaintext returned once). |
 | `DELETE` | `/api/v1/tenants/{tenant_id}/keys/{key_id}` | managed key | Revoke the active key. |
 | `POST` | `/api/v1/tenants/{tenant_id}/deploy` | onboarding token | Resume/re-run provisioning. |
+| `POST` | `/api/v1/tenants/{tenant_id}/terminate` | managed key | Cancel/close the account (reversible; keeps the record). |
+| `DELETE` | `/api/v1/tenants/{tenant_id}` | managed key | Delete the account (terminal; erases the record). |
+| `DELETE` | `/api/v1/tenants/{tenant_id}/purge` | onboarding token | Operator erasure, reachable after a terminate revoked the tenant key. |
 | `GET` | `/api/v1/tenants/{tenant_id}/usage` | managed key | Quota for the current period. |
 
 The gate is split by what the caller can hold:
 
+- **Open self-service** (`signup`) requires no credential. It is mounted only when
+  `SELF_SERVE_SIGNUP_ENABLED` is set, always provisions the `sandbox` tier (paid
+  tiers require a verified payment), and is bounded by `SELF_SERVE_MAX_TENANTS`.
 - **Provisioning operations** (`onboard`, `status`, `deploy`) require the no-card
   **onboarding token** (`ONBOARDING_TOKEN`). They must be reachable *without* a
   tenant key, because a tenant that failed at the key step has none and would
   otherwise be unable to read its state or resume.
-- **Tenant self-service** (`limits`, `usage`, `rotate`, `revoke`) requires the
-  **managed tenant key**, and enforces that the authenticated tenant matches the
-  path tenant (403 on mismatch). Verifying a minted key against `/limits` is the
-  self-verification step: a 200 proves the key authenticates through the same
-  managed-auth path as any other key.
+- **Tenant self-service** (`limits`, `usage`, `get`, `rotate`, `revoke`,
+  `terminate`, `delete`) requires the **managed tenant key**, and enforces that
+  the authenticated tenant matches the path tenant (403 on mismatch). Verifying a
+  minted key against `/limits` is the self-verification step: a 200 proves the key
+  authenticates through the same managed-auth path as any other key.
 
 ## Design rules enforced
 
@@ -58,13 +66,18 @@ The gate is split by what the caller can hold:
 requested ─► provisioning ─► active
                   │
                   └──► failed (resumable via POST /deploy)
-active ─► terminated  (key revoked)
+active ─► terminated  (key revoked, record kept)
+terminated ─► deleted (record erased; terminal)
 ```
 
 ## Configuration
 
 - `ONBOARDING_TOKEN` — the no-card evaluation credential. When unset the
   onboarding routes are **not mounted** (fail closed).
+- `SELF_SERVE_SIGNUP_ENABLED` — mounts the open `POST /api/v1/signup` lane.
+  Off unless truthy, so the public lane cannot be enabled by accident.
+- `SELF_SERVE_MAX_TENANTS` — global cap on tenants minted through the open lane
+  (`0` = uncapped). Enforced before provisioning.
 - `MOR_WEBHOOK_DATABASE_URL` — the durable Neon/Postgres store. Required; without
   it the routes are not mounted, so an entitlement is never granted from volatile
   state.
@@ -103,8 +116,8 @@ new key is minted and the command says so.
   validation without network, an end-to-end provision+verify against a stand-in
   server, and fail-closed behavior when the minted key is rejected.
 - `internal/api/tests/onboarding_pg.rs` — real PostgreSQL conformance for the
-  durable store (round-trip, upsert, idempotency uniqueness), run by
-  `.github/workflows/onboarding-conformance.yml`.
+  durable store (round-trip, upsert, idempotency uniqueness, count, delete), run
+  by `.github/workflows/onboarding-conformance.yml`.
 
 ## Not claimed
 

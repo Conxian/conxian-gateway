@@ -361,7 +361,7 @@ pub trait KeyStore: Send + Sync {
 }
 
 /// Generates a fresh `cxn_agent_<32-hex>` key and its SHA-256 hex hash.
-pub(crate) fn mint_material() -> (String, String) {
+pub(crate) fn mint_key_material() -> (String, String) {
     // A random 128-bit key is unguessable; UUID v4 draws from the OS CSPRNG.
     let bytes = uuid::Uuid::new_v4().into_bytes();
     let key = format!("cxn_agent_{}", hex::encode(bytes));
@@ -595,7 +595,7 @@ mod tests {
             }
             match event.action {
                 KeyAction::Mint | KeyAction::Rotate => {
-                    let (key, hash) = mint_material();
+                    let (key, hash) = mint_key_material();
                     self.mint_key(&event.tenant_id, &hash, &event.plan).await?;
                     Ok(match event.action {
                         KeyAction::Mint => ApplyOutcome::Minted { key },

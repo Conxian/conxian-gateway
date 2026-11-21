@@ -79,7 +79,8 @@ fn openapi_document() -> Value {
                     "required": ["idempotency_key"],
                     "properties": {
                         "idempotency_key": { "type": "string", "description": "Client-supplied key; a retry returns the existing receipt." },
-                        "tier": { "type": "string", "description": "Requested tier. Defaults to the no-card sandbox lane." }
+                        "tier": { "type": "string", "description": "Requested tier. Defaults to the no-card sandbox lane. Ignored by /signup, which always provisions sandbox." },
+                        "tenant_id": { "type": "string", "description": "Optional caller-chosen tenant id (1-64 chars of [A-Za-z0-9_-], starting alphanumeric). Omit to have one generated." }
                     }
                 },
                 "AwardRequest": {
@@ -262,6 +263,61 @@ fn openapi_document() -> Value {
                     "security": [ { "onboardingToken": [] } ],
                     "parameters": [ { "name": "tenant_id", "in": "path", "required": true, "schema": { "type": "string" } } ],
                     "responses": { "200": { "description": "Tenant record." }, "404": { "description": "Unknown tenant." } }
+                }
+            },
+            "/api/v1/signup": {
+                "post": {
+                    "operationId": "selfServeSignup",
+                    "summary": "Open self-service signup (no-card sandbox tenant)",
+                    "description": "Provisions a sandbox tenant and returns an API key with no operator involvement. Mounted only when SELF_SERVE_SIGNUP_ENABLED is set; bounded by SELF_SERVE_MAX_TENANTS (0 = uncapped). The tier is forced to sandbox; paid tiers require a verified payment. No authentication required.",
+                    "security": [],
+                    "requestBody": {
+                        "required": true,
+                        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OnboardRequest" } } }
+                    },
+                    "responses": {
+                        "200": { "description": "Onboarding receipt (api_key present exactly once)." },
+                        "400": { "description": "Empty idempotency key or malformed tenant_id." },
+                        "409": { "description": "Self-service lane at capacity, or the requested tenant_id is taken." },
+                        "503": { "description": "A durable step failed; the tenant is resumable." }
+                    }
+                }
+            },
+            "/api/v1/tenants/{tenant_id}": {
+                "get": {
+                    "operationId": "tenantGet",
+                    "summary": "Read the tenant's own record",
+                    "security": [ { "managedKey": [] } ],
+                    "parameters": [ { "name": "tenant_id", "in": "path", "required": true, "schema": { "type": "string" } } ],
+                    "responses": { "200": { "description": "Tenant record." }, "404": { "description": "Unknown tenant." } }
+                },
+                "delete": {
+                    "operationId": "tenantDelete",
+                    "summary": "Delete the account (terminal, erases the record)",
+                    "description": "Revokes any active key and removes the tenant record entirely. Self-service, gated by the tenant's own key. A second delete is a 404.",
+                    "security": [ { "managedKey": [] } ],
+                    "parameters": [ { "name": "tenant_id", "in": "path", "required": true, "schema": { "type": "string" } } ],
+                    "responses": { "204": { "description": "Deleted." }, "404": { "description": "Unknown tenant." } }
+                }
+            },
+            "/api/v1/tenants/{tenant_id}/terminate": {
+                "post": {
+                    "operationId": "tenantTerminate",
+                    "summary": "Cancel/close the account (reversible; keeps the record)",
+                    "description": "Revokes the active key and marks the tenant terminated, but keeps the record. Self-service, gated by the tenant's own key.",
+                    "security": [ { "managedKey": [] } ],
+                    "parameters": [ { "name": "tenant_id", "in": "path", "required": true, "schema": { "type": "string" } } ],
+                    "responses": { "204": { "description": "Terminated." }, "404": { "description": "Unknown tenant." } }
+                }
+            },
+            "/api/v1/tenants/{tenant_id}/purge": {
+                "delete": {
+                    "operationId": "tenantPurge",
+                    "summary": "Operator erasure of a tenant record",
+                    "description": "Revokes any active key and removes the record entirely. The operator-lane counterpart to the tenant-facing delete, reachable when the tenant can no longer authenticate. Requires the onboarding token. A second purge is a 404.",
+                    "security": [ { "onboardingToken": [] } ],
+                    "parameters": [ { "name": "tenant_id", "in": "path", "required": true, "schema": { "type": "string" } } ],
+                    "responses": { "204": { "description": "Deleted." }, "404": { "description": "Unknown tenant." } }
                 }
             },
             "/api/v1/tenants/{tenant_id}/limits": {
@@ -455,6 +511,11 @@ mod tests {
         // The self-serve onboarding lane (#713) is advertised.
         assert!(paths.contains_key("/api/v1/onboard"));
         assert!(paths.contains_key("/api/v1/tenants/{tenant_id}/limits"));
+        // The open self-service lane and account lifecycle are advertised.
+        assert!(paths.contains_key("/api/v1/signup"));
+        assert!(paths.contains_key("/api/v1/tenants/{tenant_id}"));
+        assert!(paths.contains_key("/api/v1/tenants/{tenant_id}/terminate"));
+        assert!(paths.contains_key("/api/v1/tenants/{tenant_id}/purge"));
         // The Genesis Credits contribution ledger is advertised.
         assert!(paths.contains_key("/api/v1/contributions/award"));
         assert!(paths.contains_key("/api/v1/contributions/{contributor}"));

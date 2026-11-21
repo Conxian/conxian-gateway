@@ -35,7 +35,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use subtle::ConstantTimeEq;
 
-use crate::mor_webhook::{mint_material, KeyStore};
+use crate::mor_webhook::{mint_key_material, KeyStore};
 use crate::tenant::TenantContext;
 
 /// The ordered provisioning steps. Each is independently observable and
@@ -246,6 +246,13 @@ pub trait OnboardingStore: Send + Sync {
     async fn get(&self, tenant_id: &str) -> Result<Option<TenantRecord>, String>;
     /// Inserts or updates a record.
     async fn save(&self, record: &TenantRecord) -> Result<(), String>;
+    /// Counts tenant records. Used to bound the open self-service lane so a
+    /// public endpoint cannot mint unbounded tenants.
+    async fn count(&self) -> Result<usize, String>;
+    /// Permanently removes a tenant record (account deletion / GDPR erasure).
+    /// Returns whether a row was removed. Unlike key revocation this drops the
+    /// record, so no residual tenant data remains.
+    async fn delete(&self, tenant_id: &str) -> Result<bool, String>;
 }
 
 /// In-memory store used by unit tests and as a fallback when no database is
@@ -288,6 +295,21 @@ impl OnboardingStore for InMemoryOnboardingStore {
             .insert(record.tenant_id.clone(), record.clone());
         Ok(())
     }
+
+    async fn count(&self) -> Result<usize, String> {
+        Ok(self.tenants.lock().unwrap().len())
+    }
+
+    async fn delete(&self, tenant_id: &str) -> Result<bool, String> {
+        let removed = self.tenants.lock().unwrap().remove(tenant_id).is_some();
+        if removed {
+            self.idempotency
+                .lock()
+                .unwrap()
+                .retain(|_, tid| tid != tenant_id);
+        }
+        Ok(removed)
+    }
 }
 
 /// A request to provision a tenant.
@@ -299,6 +321,12 @@ pub struct OnboardRequest {
     /// Requested tier. Defaults to the no-card `sandbox` lane.
     #[serde(default)]
     pub tier: Option<String>,
+    /// Optional client-supplied tenant id. When present it is used verbatim
+    /// (after charset validation) so a self-service caller chooses a stable
+    /// identifier; when absent the service generates one. A collision with an
+    /// existing tenant is a `Conflict`, never a silent overwrite.
+    #[serde(default)]
+    pub tenant_id: Option<String>,
 }
 
 /// A successful provisioning outcome. `api_key` is the plaintext key, present
@@ -319,6 +347,9 @@ pub enum OnboardError {
     NotFound(String),
     /// A durable step failed; the record is left resumable.
     Step(String),
+    /// The request is valid but cannot proceed (e.g. the open lane is at its
+    /// tenant cap, or the tenant id is already taken).
+    Conflict(String),
 }
 
 impl OnboardError {
@@ -327,6 +358,7 @@ impl OnboardError {
             OnboardError::BadRequest(m) => (StatusCode::BAD_REQUEST, m),
             OnboardError::NotFound(m) => (StatusCode::NOT_FOUND, m),
             OnboardError::Step(m) => (StatusCode::SERVICE_UNAVAILABLE, m),
+            OnboardError::Conflict(m) => (StatusCode::CONFLICT, m),
         };
         (code, Json(json!({ "error": msg })))
     }
@@ -413,7 +445,24 @@ impl OnboardingService {
             });
         }
 
-        let tenant_id = format!("t_{}", hex::encode(uuid::Uuid::new_v4().into_bytes()));
+        let tenant_id = match req.tenant_id.as_deref().map(str::trim) {
+            Some(id) if !id.is_empty() => {
+                validate_tenant_id(id)?;
+                if self
+                    .store
+                    .get(id)
+                    .await
+                    .map_err(OnboardError::Step)?
+                    .is_some()
+                {
+                    return Err(OnboardError::Conflict(format!(
+                        "tenant {id:?} already exists"
+                    )));
+                }
+                id.to_string()
+            }
+            _ => format!("t_{}", hex::encode(uuid::Uuid::new_v4().into_bytes())),
+        };
         let mut record = TenantRecord::new(tenant_id, idempotency_key, &tier);
         self.store.save(&record).await.map_err(OnboardError::Step)?;
 
@@ -556,6 +605,61 @@ impl OnboardingService {
         self.store.get(tenant_id).await
     }
 
+    /// Number of tenants currently provisioned. Bounds the open self-service lane.
+    pub async fn tenant_count(&self) -> Result<usize, String> {
+        self.store.count().await
+    }
+
+    /// Terminates a tenant: revokes its active key and marks it `terminated`,
+    /// but keeps the record. This is the reversible "cancel/close account" step.
+    pub async fn terminate(&self, tenant_id: &str) -> Result<(), OnboardError> {
+        let mut record = self
+            .store
+            .get(tenant_id)
+            .await
+            .map_err(OnboardError::Step)?
+            .ok_or_else(|| OnboardError::NotFound(tenant_id.to_string()))?;
+        if let Some(ks) = &self.key_store {
+            ks.revoke_active(tenant_id)
+                .await
+                .map_err(OnboardError::Step)?;
+        }
+        record.key_id = None;
+        record.state = OnboardingState::Terminated.as_str().to_string();
+        record.touch();
+        self.store.save(&record).await.map_err(OnboardError::Step)?;
+        Ok(())
+    }
+
+    /// Permanently deletes a tenant: revokes any active key and removes the
+    /// record entirely (account deletion / GDPR erasure). Idempotent from the
+    /// caller's view — deleting an absent tenant is a `NotFound`. After it no
+    /// tenant data remains.
+    pub async fn delete(&self, tenant_id: &str) -> Result<(), OnboardError> {
+        let existing = self
+            .store
+            .get(tenant_id)
+            .await
+            .map_err(OnboardError::Step)?
+            .ok_or_else(|| OnboardError::NotFound(tenant_id.to_string()))?;
+        if existing.state != OnboardingState::Terminated.as_str() {
+            if let Some(ks) = &self.key_store {
+                ks.revoke_active(tenant_id)
+                    .await
+                    .map_err(OnboardError::Step)?;
+            }
+        }
+        let removed = self
+            .store
+            .delete(tenant_id)
+            .await
+            .map_err(OnboardError::Step)?;
+        if !removed {
+            return Err(OnboardError::NotFound(tenant_id.to_string()));
+        }
+        Ok(())
+    }
+
     fn tenant_endpoint(&self, tenant_id: &str) -> String {
         format!("{}/api/v1/agent?tenant={tenant_id}", self.public_base)
     }
@@ -576,7 +680,7 @@ impl OnboardingService {
             return Ok(None);
         };
 
-        let (key, hash) = mint_material();
+        let (key, hash) = mint_key_material();
         if let Err(err) = ks.mint_key(&record.tenant_id, &hash, &record.tier).await {
             if let Some(step) = record.step_mut("key") {
                 step.failed(err.clone());
@@ -605,6 +709,42 @@ fn now_secs() -> u64 {
         .unwrap_or(0)
 }
 
+/// Maximum length of a caller-chosen tenant id.
+const MAX_TENANT_ID_LEN: usize = 64;
+
+/// Validates a caller-supplied tenant id: non-empty, at most
+/// [`MAX_TENANT_ID_LEN`], ASCII alphanumeric / `_` / `-` only, and starting
+/// with an alphanumeric. Rejecting path separators, whitespace and control
+/// characters keeps the id safe to echo into the endpoint URL and to log.
+fn validate_tenant_id(id: &str) -> Result<(), OnboardError> {
+    let ok = !id.is_empty()
+        && id.len() <= MAX_TENANT_ID_LEN
+        && id.chars().next().is_some_and(|c| c.is_ascii_alphanumeric())
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
+    if ok {
+        Ok(())
+    } else {
+        Err(OnboardError::BadRequest(
+            "tenant_id must be 1-64 chars of [A-Za-z0-9_-] and start alphanumeric".to_string(),
+        ))
+    }
+}
+
+/// Counts tenants for the open self-service lane's global cap. Returns `None`
+/// when no cap is configured.
+async fn open_lane_cap(api: &OnboardingApi) -> Result<Option<usize>, ApiError> {
+    if api.self_serve_max_tenants == 0 {
+        return Ok(None);
+    }
+    api.service
+        .tenant_count()
+        .await
+        .map(Some)
+        .map_err(|e| (StatusCode::SERVICE_UNAVAILABLE, Json(json!({"error": e}))))
+}
+
 /// Shared state for the onboarding routes.
 #[derive(Clone)]
 pub struct OnboardingApi {
@@ -612,6 +752,13 @@ pub struct OnboardingApi {
     /// Bearer required to call `POST /v1/onboard`. A shared sandbox/onboarding
     /// token — this is the "no card to evaluate" entry credential.
     pub onboarding_token: String,
+    /// Whether the open (no-token) self-service lane is enabled
+    /// (`SELF_SERVE_SIGNUP_ENABLED`). When false, `POST /v1/signup` is not
+    /// mounted at all.
+    pub self_serve_enabled: bool,
+    /// Global cap on tenants minted through the open lane
+    /// (`SELF_SERVE_MAX_TENANTS`); 0 disables the cap.
+    pub self_serve_max_tenants: usize,
 }
 
 impl OnboardingApi {
@@ -624,9 +771,22 @@ impl OnboardingApi {
             .ok()
             .map(|v| v.trim().to_string())
             .filter(|v| !v.is_empty())?;
+        let self_serve_enabled = std::env::var("SELF_SERVE_SIGNUP_ENABLED")
+            .ok()
+            .map(|v| {
+                let v = v.trim().to_ascii_lowercase();
+                v == "1" || v == "true" || v == "yes"
+            })
+            .unwrap_or(false);
+        let self_serve_max_tenants = std::env::var("SELF_SERVE_MAX_TENANTS")
+            .ok()
+            .and_then(|v| v.trim().parse::<usize>().ok())
+            .unwrap_or(0);
         Some(Self {
             service: Arc::new(service),
             onboarding_token,
+            self_serve_enabled,
+            self_serve_max_tenants,
         })
     }
 
@@ -671,6 +831,111 @@ pub async fn post_onboard(
     }
 }
 
+/// `POST /v1/signup` — open self-service signup.
+///
+/// The no-card, no-operator entry point: a caller provisions a `sandbox` tenant
+/// and receives an API key without emailing anyone. Mounted only when
+/// `SELF_SERVE_SIGNUP_ENABLED` is set, so the lane is off by default and cannot
+/// be opened by accident. Gated by a global tenant cap
+/// (`SELF_SERVE_MAX_TENANTS`, 0 = uncapped) so a public endpoint cannot mint
+/// unbounded tenants. Idempotent on `idempotency_key`, exactly like
+/// [`post_onboard`]. The tier is forced to `sandbox`: paid tiers require a
+/// verified payment through `/billing/verify` or the MoR webhook, never a
+/// public, unauthenticated call.
+pub async fn post_signup(
+    State(api): State<OnboardingApi>,
+    Json(mut req): Json<OnboardRequest>,
+) -> Result<Json<Value>, ApiError> {
+    // Validate caller input before the capacity gate, so a malformed request is
+    // a 400 whether or not the lane is full.
+    if let Some(id) = req.tenant_id.as_deref().map(str::trim) {
+        if !id.is_empty() {
+            validate_tenant_id(id).map_err(OnboardError::into_error)?;
+        }
+    }
+    if let Some(cap) = open_lane_cap(&api).await? {
+        if cap >= api.self_serve_max_tenants {
+            return Err((
+                StatusCode::CONFLICT,
+                Json(json!({
+                    "error": "self-service signup is at capacity",
+                    "code": "self_serve_at_capacity"
+                })),
+            ));
+        }
+    }
+    req.tier = Some("sandbox".to_string());
+    match api.service.provision(req).await {
+        Ok(outcome) => Ok(Json(receipt_json(&outcome))),
+        Err(e) => Err(e.into_error()),
+    }
+}
+
+/// `GET /v1/tenants/{tenant_id}` — read a tenant's own record.
+pub async fn get_tenant(
+    State(api): State<OnboardingApi>,
+    Extension(ctx): Extension<TenantContext>,
+    Path(tenant_id): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    if !tenant_matches(&ctx, &tenant_id) {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(json!({"error": "tenant mismatch"})),
+        ));
+    }
+    match api.service.get(&tenant_id).await {
+        Ok(Some(record)) => Ok(Json(record_json(&record))),
+        Ok(None) => Err((
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "unknown tenant"})),
+        )),
+        Err(e) => Err((StatusCode::SERVICE_UNAVAILABLE, Json(json!({"error": e})))),
+    }
+}
+
+/// `POST /v1/tenants/{tenant_id}/terminate` — cancel/close the account.
+///
+/// Revokes the active key and marks the tenant `terminated`, keeping the record
+/// (the reversible step). Self-service: gated by the tenant's own key.
+pub async fn terminate_tenant(
+    State(api): State<OnboardingApi>,
+    Extension(ctx): Extension<TenantContext>,
+    Path(tenant_id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    if !tenant_matches(&ctx, &tenant_id) {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(json!({"error": "tenant mismatch"})),
+        ));
+    }
+    match api.service.terminate(&tenant_id).await {
+        Ok(()) => Ok(StatusCode::NO_CONTENT),
+        Err(e) => Err(e.into_error()),
+    }
+}
+
+/// `DELETE /v1/tenants/{tenant_id}` — delete the account.
+///
+/// The terminal lifecycle step: revokes any active key and removes the tenant
+/// record entirely (GDPR-style erasure). Self-service: gated by the tenant's
+/// own key. Idempotent from the caller's view — a second delete is a `404`.
+pub async fn delete_tenant(
+    State(api): State<OnboardingApi>,
+    Extension(ctx): Extension<TenantContext>,
+    Path(tenant_id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    if !tenant_matches(&ctx, &tenant_id) {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(json!({"error": "tenant mismatch"})),
+        ));
+    }
+    match api.service.delete(&tenant_id).await {
+        Ok(()) => Ok(StatusCode::NO_CONTENT),
+        Err(e) => Err(e.into_error()),
+    }
+}
+
 /// `GET /v1/onboard/{tenant_id}` — current onboarding state.
 ///
 /// Gated by the onboarding token (not a tenant key): a tenant that failed at
@@ -694,6 +959,30 @@ pub async fn get_onboard(
             Json(json!({"error": "unknown tenant"})),
         )),
         Err(e) => Err((StatusCode::SERVICE_UNAVAILABLE, Json(json!({"error": e})))),
+    }
+}
+
+/// `DELETE /v1/tenants/{tenant_id}/purge` — operator erasure of a tenant record.
+///
+/// The tenant-facing delete is gated by the tenant's own key, so a tenant that
+/// terminated (key revoked) can no longer erase its own record. This
+/// operator-lane counterpart closes that gap: gated by the onboarding token, it
+/// revokes any active key and removes the record entirely, and is the terminal
+/// step of the lifecycle. A second purge is a `404`.
+pub async fn purge_tenant(
+    State(api): State<OnboardingApi>,
+    headers: header::HeaderMap,
+    Path(tenant_id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    if !api.token_ok(&headers) {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"error": "invalid onboarding token"})),
+        ));
+    }
+    match api.service.delete(&tenant_id).await {
+        Ok(()) => Ok(StatusCode::NO_CONTENT),
+        Err(e) => Err(e.into_error()),
     }
 }
 
@@ -920,6 +1209,7 @@ mod tests {
             .provision(OnboardRequest {
                 idempotency_key: "idem-1".to_string(),
                 tier: None,
+                tenant_id: None,
             })
             .await
             .expect("provision");
@@ -951,6 +1241,7 @@ mod tests {
             .provision(OnboardRequest {
                 idempotency_key: "idem-x".to_string(),
                 tier: None,
+                tenant_id: None,
             })
             .await
             .unwrap();
@@ -958,6 +1249,7 @@ mod tests {
             .provision(OnboardRequest {
                 idempotency_key: "idem-x".to_string(),
                 tier: None,
+                tenant_id: None,
             })
             .await
             .unwrap();
@@ -973,6 +1265,7 @@ mod tests {
             .provision(OnboardRequest {
                 idempotency_key: "idem-2".to_string(),
                 tier: Some("platinum".to_string()),
+                tenant_id: None,
             })
             .await
             .unwrap_err();
@@ -986,6 +1279,7 @@ mod tests {
             .provision(OnboardRequest {
                 idempotency_key: "  ".to_string(),
                 tier: None,
+                tenant_id: None,
             })
             .await
             .unwrap_err();
@@ -1027,6 +1321,7 @@ mod tests {
             .provision(OnboardRequest {
                 idempotency_key: "idem-f".to_string(),
                 tier: None,
+                tenant_id: None,
             })
             .await
             .unwrap_err();
@@ -1051,6 +1346,7 @@ mod tests {
             .provision(OnboardRequest {
                 idempotency_key: "idem-r".to_string(),
                 tier: None,
+                tenant_id: None,
             })
             .await
             .unwrap();
@@ -1079,6 +1375,7 @@ mod tests {
             .provision(OnboardRequest {
                 idempotency_key: "idem-v".to_string(),
                 tier: None,
+                tenant_id: None,
             })
             .await
             .unwrap();
@@ -1101,6 +1398,7 @@ mod tests {
             .provision(OnboardRequest {
                 idempotency_key: "idem-w".to_string(),
                 tier: None,
+                tenant_id: None,
             })
             .await
             .unwrap();
@@ -1137,6 +1435,7 @@ mod tests {
             .provision(OnboardRequest {
                 idempotency_key: "idem-l".to_string(),
                 tier: Some("business".to_string()),
+                tenant_id: None,
             })
             .await
             .unwrap();
@@ -1153,6 +1452,7 @@ mod tests {
             .provision(OnboardRequest {
                 idempotency_key: "idem-res".to_string(),
                 tier: None,
+                tenant_id: None,
             })
             .await
             .unwrap();
@@ -1184,6 +1484,8 @@ mod tests {
                 Some(Arc::new(MemKeyStore::default())),
             )),
             onboarding_token: "onboarding-secret".to_string(),
+            self_serve_enabled: false,
+            self_serve_max_tenants: 0,
         };
         let operator = axum::Router::new()
             .route("/onboard", post(post_onboard))
@@ -1219,5 +1521,216 @@ mod tests {
             .await
             .unwrap();
         assert_ne!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn self_service_signup_provisions_sandbox_and_is_capped() {
+        use axum::body::Body;
+        use axum::http::Request;
+        use axum::routing::post;
+        use tower::ServiceExt;
+
+        let api = OnboardingApi {
+            service: Arc::new(service_with(
+                Arc::new(InMemoryOnboardingStore::new()),
+                Some(Arc::new(MemKeyStore::default())),
+            )),
+            onboarding_token: "onboarding-secret".to_string(),
+            self_serve_enabled: true,
+            self_serve_max_tenants: 1,
+        };
+        let app = axum::Router::new()
+            .route("/signup", post(post_signup))
+            .with_state(api);
+
+        // First signup: no token, forced sandbox, mints a key.
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/signup")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        r#"{"idempotency_key":"ss-1","tier":"enterprise","tenant_id":"acme"}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let v: Value = serde_json::from_slice(&body).unwrap();
+        // Tier is forced to sandbox regardless of the requested tier.
+        assert_eq!(v["tier"], "sandbox");
+        assert_eq!(v["tenant_id"], "acme");
+        assert!(v["api_key"].as_str().unwrap().starts_with("cxn_agent_"));
+
+        // Second, distinct signup is refused: the cap (1) is reached.
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/signup")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(r#"{"idempotency_key":"ss-2"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::CONFLICT);
+    }
+
+    #[tokio::test]
+    async fn signup_rejects_a_malformed_tenant_id() {
+        let svc = service_with(
+            Arc::new(InMemoryOnboardingStore::new()),
+            Some(Arc::new(MemKeyStore::default())),
+        );
+        let err = svc
+            .provision(OnboardRequest {
+                idempotency_key: "idem-bad".to_string(),
+                tier: None,
+                tenant_id: Some("../etc/passwd".to_string()),
+            })
+            .await
+            .unwrap_err();
+        assert!(matches!(err, OnboardError::BadRequest(_)));
+    }
+
+    #[tokio::test]
+    async fn signup_conflicts_on_a_taken_tenant_id() {
+        let svc = service_with(
+            Arc::new(InMemoryOnboardingStore::new()),
+            Some(Arc::new(MemKeyStore::default())),
+        );
+        svc.provision(OnboardRequest {
+            idempotency_key: "idem-a".to_string(),
+            tier: None,
+            tenant_id: Some("taken".to_string()),
+        })
+        .await
+        .unwrap();
+        let err = svc
+            .provision(OnboardRequest {
+                idempotency_key: "idem-b".to_string(),
+                tier: None,
+                tenant_id: Some("taken".to_string()),
+            })
+            .await
+            .unwrap_err();
+        assert!(matches!(err, OnboardError::Conflict(_)));
+    }
+
+    #[tokio::test]
+    async fn terminate_revokes_key_and_blocks_rotation_then_delete_erases() {
+        let store = Arc::new(InMemoryOnboardingStore::new());
+        let ks = Arc::new(MemKeyStore::default());
+        let svc = service_with(store.clone(), Some(ks.clone()));
+        let out = svc
+            .provision(OnboardRequest {
+                idempotency_key: "idem-term".to_string(),
+                tier: None,
+                tenant_id: Some("acct".to_string()),
+            })
+            .await
+            .unwrap();
+        let key = out.api_key.clone().unwrap();
+
+        // Terminate: key revoked, state terminated, record kept.
+        svc.terminate("acct").await.unwrap();
+        assert!(ks
+            .active_key_by_hash(&hash_key(&key))
+            .await
+            .unwrap()
+            .is_none());
+        let rec = store.get("acct").await.unwrap().unwrap();
+        assert_eq!(rec.state, "terminated");
+        // A terminated tenant cannot rotate a key.
+        assert!(matches!(
+            svc.rotate_key("acct").await.unwrap_err(),
+            OnboardError::BadRequest(_)
+        ));
+
+        // Delete: record is gone entirely; a second delete is NotFound.
+        svc.delete("acct").await.unwrap();
+        assert!(store.get("acct").await.unwrap().is_none());
+        assert!(matches!(
+            svc.delete("acct").await.unwrap_err(),
+            OnboardError::NotFound(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn operator_purge_is_gated_by_the_onboarding_token() {
+        use axum::body::Body;
+        use axum::http::Request;
+        use axum::routing::delete;
+        use tower::ServiceExt;
+
+        let store = Arc::new(InMemoryOnboardingStore::new());
+        let api = OnboardingApi {
+            service: Arc::new(service_with(store.clone(), None)),
+            onboarding_token: "onboarding-secret".to_string(),
+            self_serve_enabled: false,
+            self_serve_max_tenants: 0,
+        };
+        api.service
+            .provision(OnboardRequest {
+                idempotency_key: "idem-purge".to_string(),
+                tier: None,
+                tenant_id: Some("gone".to_string()),
+            })
+            .await
+            .unwrap();
+        let app = axum::Router::new()
+            .route("/tenants/{tenant_id}/purge", delete(purge_tenant))
+            .with_state(api);
+
+        // No token: rejected, record intact.
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("DELETE")
+                    .uri("/tenants/gone/purge")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+        assert!(store.get("gone").await.unwrap().is_some());
+
+        // With the onboarding token: erased; a second purge is NotFound.
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("DELETE")
+                    .uri("/tenants/gone/purge")
+                    .header(header::AUTHORIZATION, "Bearer onboarding-secret")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+        assert!(store.get("gone").await.unwrap().is_none());
+
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("DELETE")
+                    .uri("/tenants/gone/purge")
+                    .header(header::AUTHORIZATION, "Bearer onboarding-secret")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     }
 }
