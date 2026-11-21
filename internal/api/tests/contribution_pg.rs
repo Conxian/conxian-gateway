@@ -7,7 +7,7 @@
 //!
 //! It is `#[ignore]` by default so the general workspace test run does not
 //! require a database. The dedicated `contribution-conformance` workflow runs it
-//! with `--ignored` against a `postgres:17` service and a disposable database
+//! with `--ignored` against a `postgres:19` service and a disposable database
 //! supplied through `CONTRIBUTION_TEST_DATABASE_URL`. Run it explicitly with:
 //!
 //! ```text

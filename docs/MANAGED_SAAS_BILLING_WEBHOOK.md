@@ -105,7 +105,7 @@ request (fail closed).
 > The webhook requires MoR credentials (webhook signing secret + Neon write
 > role). These are operator-managed and intentionally out of scope for CI. The
 > `mor-webhook-conformance` workflow verifies the store against a disposable
-> `postgres:17` service container using `MOR_WEBHOOK_TEST_DATABASE_URL`; no
+> `postgres:19` service container using `MOR_WEBHOOK_TEST_DATABASE_URL`; no
 > production credential or live payment is involved. A real payer journey
 > (payment → entitlement → metering → support) remains a separate acceptance
 > gate under Business #1343 / #1591.
