@@ -123,19 +123,24 @@ async fn main() -> anyhow::Result<()> {
     let state: SharedState = Arc::new(RwLock::new(initial_state));
 
     // Initialize Redis coordinator if configured
-    let coordinator = config.redis_url.as_ref().and_then(|url| {
-        match RedisCoordinator::new(
-            url,
-            config.redis_username.as_deref(),
-            config.redis_password.as_deref(),
-        ) {
-            Ok(c) => Some(Arc::new(c)),
-            Err(e) => {
-                error!("Failed to initialize Redis coordinator: {}", e);
-                None
+    let coordinator = match config.redis_url.as_ref() {
+        Some(url) => {
+            match RedisCoordinator::new(
+                url,
+                config.redis_username.as_deref(),
+                config.redis_password.as_deref(),
+            )
+            .await
+            {
+                Ok(c) => Some(Arc::new(c)),
+                Err(e) => {
+                    error!("Failed to initialize Redis coordinator: {}", e);
+                    None
+                }
             }
         }
-    });
+        None => None,
+    };
 
     // Initialize Bitcoin RPC
     let btc_rpc = BitcoinRpcClient::new(

@@ -25,53 +25,48 @@ impl StateRootPublisher for RedisCoordinator {
 impl RedisCoordinator {
     /// Create a new RedisCoordinator with optional username/password for ACL auth.
     /// Sends AUTH + PING on construction to fail-fast on misconfiguration.
-    pub fn new(url: &str, username: Option<&str>, password: Option<&str>) -> ConxianResult<Self> {
+    pub async fn new(
+        url: &str,
+        username: Option<&str>,
+        password: Option<&str>,
+    ) -> ConxianResult<Self> {
         let client = Client::open(url).map_err(|e| {
             ConxianError::Internal(format!("Failed to connect to Redis at {}: {}", url, e))
         })?;
 
         let has_auth = password.is_some();
-        let rt = tokio::runtime::Handle::try_current().map_err(|_| {
-            ConxianError::Internal("RedisCoordinator requires a Tokio runtime".into())
-        })?;
 
-        rt.block_on(async {
-            let mut conn: MultiplexedConnection = client
-                .get_multiplexed_async_connection()
-                .await
-                .map_err(|e| {
-                ConxianError::Internal(format!("Redis connection error: {}", e))
-            })?;
+        let mut conn: MultiplexedConnection = client
+            .get_multiplexed_async_connection()
+            .await
+            .map_err(|e| ConxianError::Internal(format!("Redis connection error: {}", e)))?;
 
-            if let Some(pw) = password {
-                if let Some(user) = username.filter(|u| !u.is_empty()) {
-                    let _: () = redis::cmd("AUTH")
-                        .arg(user)
-                        .arg(pw)
-                        .query_async(&mut conn)
-                        .await
-                        .map_err(|e| {
-                            ConxianError::Internal(format!(
-                                "Redis AUTH failed for user '{}': {}",
-                                user, e
-                            ))
-                        })?;
-                } else {
-                    let _: () = redis::cmd("AUTH")
-                        .arg(pw)
-                        .query_async(&mut conn)
-                        .await
-                        .map_err(|e| ConxianError::Internal(format!("Redis AUTH failed: {}", e)))?;
-                }
+        if let Some(pw) = password {
+            if let Some(user) = username.filter(|u| !u.is_empty()) {
+                let _: () = redis::cmd("AUTH")
+                    .arg(user)
+                    .arg(pw)
+                    .query_async(&mut conn)
+                    .await
+                    .map_err(|e| {
+                        ConxianError::Internal(format!(
+                            "Redis AUTH failed for user '{}': {}",
+                            user, e
+                        ))
+                    })?;
+            } else {
+                let _: () = redis::cmd("AUTH")
+                    .arg(pw)
+                    .query_async(&mut conn)
+                    .await
+                    .map_err(|e| ConxianError::Internal(format!("Redis AUTH failed: {}", e)))?;
             }
+        }
 
-            let _: () = redis::cmd("PING")
-                .query_async(&mut conn)
-                .await
-                .map_err(|e| ConxianError::Internal(format!("Redis PING failed: {}", e)))?;
-
-            Ok(())
-        })?;
+        let _: () = redis::cmd("PING")
+            .query_async(&mut conn)
+            .await
+            .map_err(|e| ConxianError::Internal(format!("Redis PING failed: {}", e)))?;
 
         if !has_auth {
             warn!("Redis connection initialized without AUTH — ensure this is intentional");
