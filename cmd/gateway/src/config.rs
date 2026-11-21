@@ -272,6 +272,72 @@ impl Config {
         val
     }
 
+    /// Collects every missing mandatory value in one pass, so an operator sees the
+    /// complete requirement instead of discovering it one panic at a time.
+    fn collect_missing_required_env(problems: &mut Vec<String>) {
+        let mut check = |key: &str, sentinel: &str| match env::var(key) {
+            Err(_) => problems.push(format!("{key} must be set")),
+            Ok(raw) => {
+                let value = raw.trim().to_string();
+                if value.is_empty() || value == sentinel {
+                    problems.push(format!("{key} must be a non-empty secret (not {sentinel})"));
+                }
+            }
+        };
+
+        check(
+            "SETTLEMENT_INGRESS_SECRET",
+            SETTLEMENT_INGRESS_SECRET_SENTINEL,
+        );
+        check("OFFLINE_QUEUE_SECRET", OFFLINE_QUEUE_SECRET_SENTINEL);
+
+        let fiat_enabled = [
+            "RAMP_MODE",
+            "STITCH_MODE",
+            "OZOW_MODE",
+            "PAPSS_MODE",
+            "ALCHEMY_PAY_MODE",
+            "BANXA_MODE",
+        ]
+        .iter()
+        .any(|mode| Self::provider_enabled(mode));
+        if fiat_enabled {
+            check("FIAT_WEBHOOK_SECRET", FIAT_WEBHOOK_SECRET_SENTINEL);
+        }
+        if Self::provider_enabled("RAMP_MODE") {
+            check("RAMP_API_KEY", RAMP_API_KEY_SENTINEL);
+        }
+        if Self::provider_enabled("STITCH_MODE") {
+            check("STITCH_CLIENT_ID", STITCH_CLIENT_ID_SENTINEL);
+            check("STITCH_CLIENT_SECRET", STITCH_CLIENT_SECRET_SENTINEL);
+        }
+        if Self::provider_enabled("ALCHEMY_PAY_MODE") {
+            check("ALCHEMY_PAY_APP_ID", ALCHEMY_PAY_APP_ID_SENTINEL);
+        }
+        if Self::provider_enabled("INFOBIP_MODE") {
+            check("INFOBIP_API_KEY", INFOBIP_API_KEY_SENTINEL);
+            check("HMAC_SECRET", HMAC_SECRET_SENTINEL);
+        }
+
+        if let Err(message) = resolve_api_token_with(|key| env::var(key)) {
+            problems.push(message);
+        }
+    }
+
+    /// One failure that names every missing value, rather than the first.
+    fn report_incomplete_env() {
+        let mut problems = Vec::new();
+        Self::collect_missing_required_env(&mut problems);
+        if problems.is_empty() {
+            return;
+        }
+        panic!(
+            "gateway configuration is incomplete ({} problem(s)); set every value below:\n  - {}",
+            problems.len(),
+            problems.join("\n  - ")
+        );
+    }
+
     fn optional_env(key: &str) -> Option<String> {
         env::var(key).ok().and_then(|value| {
             let value = value.trim().to_string();
@@ -315,6 +381,7 @@ impl Config {
     }
 
     pub fn from_env() -> Self {
+        Self::report_incomplete_env();
         let fiat_enabled = [
             "RAMP_MODE",
             "STITCH_MODE",
@@ -883,6 +950,39 @@ mod tests {
             .or_else(|| err.downcast_ref::<&str>().map(|s| s.to_string()))
             .unwrap_or_default();
         assert!(message.contains("must be distinct"));
+    }
+
+    #[test]
+    fn from_env_reports_every_missing_value_at_once() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        let _env_restore = FullEnvRestore::new();
+        set_test_envs();
+
+        env::remove_var("SETTLEMENT_INGRESS_SECRET");
+        env::remove_var("OFFLINE_QUEUE_SECRET");
+        env::remove_var("API_TOKEN");
+        env::set_var("STITCH_MODE", "active");
+        env::remove_var("STITCH_CLIENT_SECRET");
+
+        let panic = match std::panic::catch_unwind(Config::from_env) {
+            Ok(_) => panic!("expected Config::from_env to report incomplete configuration"),
+            Err(payload) => payload,
+        };
+        let message = panic
+            .downcast_ref::<String>()
+            .cloned()
+            .or_else(|| panic.downcast_ref::<&str>().map(|s| s.to_string()))
+            .unwrap_or_default();
+
+        for key in [
+            "SETTLEMENT_INGRESS_SECRET",
+            "OFFLINE_QUEUE_SECRET",
+            "API_TOKEN",
+            "STITCH_CLIENT_SECRET",
+        ] {
+            assert!(message.contains(key), "{key} missing from: {message}");
+        }
+        assert!(message.contains("4 problem(s)"), "{message}");
     }
 
     #[test]
