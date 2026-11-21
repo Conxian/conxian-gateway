@@ -588,7 +588,9 @@ fn print_usage() {
     println!("Device lifecycle (pull-based; server proposes, user acknowledges):");
     println!("  migrate   Apply the control-plane schema to a local database (--database-url)");
     println!("  device    sign | verify | plan | apply | pull a signed desired-state manifest");
-    println!("            pull = fetch a signed manifest, verify, plan, apply with consent, report\n");
+    println!(
+        "            pull = fetch a signed manifest, verify, plan, apply with consent, report\n"
+    );
     println!("Common flags:");
     println!("  --gateway <url>   Gateway base URL (default: $GATEWAY_URL, profile, or :8080)");
     println!("  --tenant <id>     Tenant id");
@@ -940,7 +942,9 @@ async fn main() -> Result<()> {
                 "plan" => device::run_device_plan(&args[3..])?,
                 "apply" => device::run_device_apply(&args[3..]).await?,
                 "pull" => device::run_device_pull(&args[3..], mode).await?,
-                other => anyhow::bail!("unknown device subcommand: {other} (sign|verify|plan|apply|pull)"),
+                other => anyhow::bail!(
+                    "unknown device subcommand: {other} (sign|verify|plan|apply|pull)"
+                ),
             }
         }
         "help" | "--help" | "-h" => match args.get(2).map(String::as_str) {

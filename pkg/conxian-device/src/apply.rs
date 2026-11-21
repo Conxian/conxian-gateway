@@ -174,10 +174,7 @@ mod tests {
             calls: AtomicUsize::new(0),
             fail_on: None,
         };
-        let report = apply(&p, Consent::Granted, &exec)
-            .await
-            .unwrap()
-            .unwrap();
+        let report = apply(&p, Consent::Granted, &exec).await.unwrap().unwrap();
         assert_eq!(exec.calls.load(Ordering::SeqCst), 0);
         assert_eq!(report.outcomes[0].1, StepOutcome::NoOp);
     }
@@ -212,10 +209,7 @@ mod tests {
             calls: AtomicUsize::new(0),
             fail_on: Some("pullImage"),
         };
-        let report = apply(&p, Consent::Granted, &exec)
-            .await
-            .unwrap()
-            .unwrap();
+        let report = apply(&p, Consent::Granted, &exec).await.unwrap().unwrap();
         assert!(!report.all_succeeded());
         assert_eq!(report.outcomes.len(), 1, "run must stop at first failure");
         assert_eq!(exec.calls.load(Ordering::SeqCst), 1);
@@ -237,10 +231,7 @@ mod tests {
             calls: AtomicUsize::new(0),
             fail_on: None,
         };
-        let report = apply(&p1, Consent::Granted, &exec)
-            .await
-            .unwrap()
-            .unwrap();
+        let report = apply(&p1, Consent::Granted, &exec).await.unwrap().unwrap();
         let observed = ObservedState {
             satisfied: report.satisfied_after.clone(),
             ..Default::default()
