@@ -367,6 +367,10 @@ pub fn configure_routes(
                     "/tenants/{tenant_id}/deploy",
                     post(crate::onboarding::post_deploy),
                 )
+                .route(
+                    "/tenants/{tenant_id}/purge",
+                    delete(crate::onboarding::purge_tenant),
+                )
                 .with_state(api.clone());
             let tenant_routes = Router::new()
                 .route(
@@ -376,6 +380,14 @@ pub fn configure_routes(
                 .route(
                     "/tenants/{tenant_id}/usage",
                     get(crate::onboarding::get_usage),
+                )
+                .route(
+                    "/tenants/{tenant_id}",
+                    get(crate::onboarding::get_tenant).delete(crate::onboarding::delete_tenant),
+                )
+                .route(
+                    "/tenants/{tenant_id}/terminate",
+                    post(crate::onboarding::terminate_tenant),
                 )
                 .route(
                     "/tenants/{tenant_id}/keys",
@@ -389,8 +401,20 @@ pub fn configure_routes(
                     managed_auth.clone(),
                     managed_auth_middleware,
                 ))
-                .with_state(api);
-            operator_routes.merge(tenant_routes)
+                .with_state(api.clone());
+            // Open, no-token self-service signup. Mounted only when explicitly
+            // enabled so the lane is off by default and cannot be opened by
+            // accident. The global tenant cap is enforced inside the handler.
+            let self_serve_routes = if api.self_serve_enabled {
+                Router::new()
+                    .route("/signup", post(crate::onboarding::post_signup))
+                    .with_state(api)
+            } else {
+                Router::new()
+            };
+            operator_routes
+                .merge(tenant_routes)
+                .merge(self_serve_routes)
         }
         None => Router::new(),
     };

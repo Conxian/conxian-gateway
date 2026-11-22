@@ -690,7 +690,7 @@ impl KeyMinter for StoreKeyMinter {
         _expires_at: u64,
     ) -> Result<String, BillingError> {
         // Shared with the MoR webhook so the key format and hash can never drift.
-        let (key, hash) = crate::mor_webhook::mint_material();
+        let (key, hash) = crate::mor_webhook::mint_key_material();
         if let Some(store) = self.store.as_ref() {
             store
                 .mint_key(tenant_id, &hash, tier)

@@ -53,4 +53,44 @@ services:
         value: gateway.conxian.org
       - key: MANAGED_SUBSCRIBER_HOST
         value: api.conxian-labs.com
+      # --- Self-service onboarding / tenant lifecycle (Gateway #713) ---
+      # Durable store for tenants, managed keys and webhook idempotency. Without
+      # it the onboarding, billing and lifecycle routes stay unmounted.
+      - key: MOR_WEBHOOK_DATABASE_URL
+        fromDatabase:
+          name: conxian-gateway-db
+          property: connectionString
+      # No-card onboarding credential for POST /api/v1/onboard (operator lane).
+      - key: ONBOARDING_TOKEN
+        sync: false
+      # Open self-service signup lane. Set to "false" to withdraw the public
+      # endpoint without redeploying code; the route is simply not mounted.
+      - key: SELF_SERVE_SIGNUP_ENABLED
+        value: "true"
+      # Global cap on tenants minted through the open lane (0 = uncapped).
+      - key: SELF_SERVE_MAX_TENANTS
+        value: "1000"
+      # Public base the onboarding receipt derives each tenant endpoint from.
+      - key: GATEWAY_PUBLIC_BASE_URL
+        value: https://api.conxian-labs.com
+      # Signs the short-lived Fusion JWTs the managed-auth path accepts.
+      - key: FUSION_JWT_SECRET
+        sync: false
+      # Optional static managed API keys (JSON map). Leave unset to rely on
+      # durable keys minted by onboarding / billing / the MoR webhook.
+      - key: MANAGED_API_KEYS
+        sync: false
+      # Merchant-of-Record webhook (LemonSqueezy / Paddle) — the paid
+      # payment->entitlement loop. Unset leaves the webhook unmounted.
+      - key: MOR_PROVIDER
+        sync: false
+      - key: MOR_WEBHOOK_SECRET
+        sync: false
+
+databases:
+  - name: conxian-gateway-db
+    plan: free
+    region: oregon
+    databaseName: conxian_gateway
+    user: conxian_gateway
 

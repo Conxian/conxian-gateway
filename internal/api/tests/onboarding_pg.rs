@@ -117,6 +117,7 @@ async fn pg_service_provisions_idempotently_without_a_key_store() {
         .provision(OnboardRequest {
             idempotency_key: "idem-pg".to_string(),
             tier: None,
+            tenant_id: None,
         })
         .await
         .expect("provision");
@@ -127,6 +128,7 @@ async fn pg_service_provisions_idempotently_without_a_key_store() {
         .provision(OnboardRequest {
             idempotency_key: "idem-pg".to_string(),
             tier: None,
+            tenant_id: None,
         })
         .await
         .expect("reprovision");
@@ -140,4 +142,27 @@ async fn pg_service_provisions_idempotently_without_a_key_store() {
         mem.get(&first.record.tenant_id).await.unwrap().unwrap(),
         first.record
     );
+}
+
+#[tokio::test]
+#[ignore = "requires ONBOARDING_TEST_DATABASE_URL and a PostgreSQL fixture"]
+async fn pg_store_counts_and_deletes_tenant_records() {
+    let pool = fixture_pool().await;
+    let store = PgOnboardingStore::new(pool.clone());
+
+    store.save(&record("t_one", "idem-one")).await.unwrap();
+    store.save(&record("t_two", "idem-two")).await.unwrap();
+    let before = store.count().await.unwrap();
+
+    // Delete removes the row and its idempotency mapping; a second delete is false.
+    assert!(store.delete("t_one").await.unwrap());
+    assert_eq!(store.count().await.unwrap(), before - 1);
+    assert!(store.get("t_one").await.unwrap().is_none());
+    assert!(store
+        .find_by_idempotency("idem-one")
+        .await
+        .unwrap()
+        .is_none());
+    assert!(!store.delete("t_one").await.unwrap());
+    assert_eq!(store.count().await.unwrap(), before - 1);
 }
