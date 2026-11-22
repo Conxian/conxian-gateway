@@ -14,7 +14,7 @@ permissions:
   security-events: write
 
 env:
-  RUST_TOOLCHAIN: 1.99.1
+  RUST_TOOLCHAIN: 1.100.0
   CARGO_AUDIT_VERSION: 0.22.2
 
 jobs:
