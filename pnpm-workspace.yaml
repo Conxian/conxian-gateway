@@ -20,3 +20,8 @@ overrides:
   # @typescript-eslint/typescript-estree; scope the override to that parent so
   # consumers that still need the 3.x API are untouched.
   '@typescript-eslint/typescript-estree>minimatch': ^11.0.4
+  # minimatch 11 calls require('brace-expansion').expand, but the global
+  # brace-expansion ^2.1.7 pin above resolves a 2.x whose export is a bare
+  # function — lint dies with "expand is not a function". 5.0.13 is outside the
+  # >=4.0.0,<5.0.9 advisory, so scope 5.x to the minimatch 11 parent only.
+  'minimatch@>=11>brace-expansion': ^5.0.13
