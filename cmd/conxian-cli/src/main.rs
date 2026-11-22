@@ -225,6 +225,319 @@ fn describe_rpc(syntax_ok: bool, probed: Option<bool>) -> String {
     }
 }
 
+/// Parses a dotenv file (`KEY=value` per line) into a map. Blank lines and `#`
+/// comments are skipped; surrounding single or double quotes are stripped.
+/// Values are treated as literal (no shell or `$` expansion), matching Compose's
+/// single-quoted semantics.
+pub fn load_dotenv(path: &Path) -> Result<std::collections::BTreeMap<String, String>> {
+    let text = fs::read_to_string(path)
+        .with_context(|| format!("Cannot read env file {}", path.display()))?;
+    let mut map = std::collections::BTreeMap::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let value = value
+            .trim()
+            .trim_matches('\'')
+            .trim_matches('"')
+            .to_string();
+        map.insert(key.trim().to_string(), value);
+    }
+    Ok(map)
+}
+
+/// The values `start` and `doctor` actually need from a generated
+/// `.env.production`, resolved from the file rather than a compile-time default.
+/// Reading the file is what lets a fresh install pass its own preflight once the
+/// template placeholders are replaced; validating `InstallerConfig::default()`
+/// would test a token the client never set.
+pub struct InstallerEnv {
+    pub api_token: String,
+    pub gateway_image: String,
+    pub bitcoin_rpc_url: String,
+    pub stacks_rpc_url: String,
+    pub secrets: Vec<(&'static str, String)>,
+}
+
+impl InstallerEnv {
+    pub fn from_map(map: &std::collections::BTreeMap<String, String>) -> Self {
+        let get = |k: &str| map.get(k).cloned().unwrap_or_default();
+        Self {
+            api_token: get("API_TOKEN"),
+            gateway_image: get("GATEWAY_IMAGE"),
+            bitcoin_rpc_url: get("BITCOIN_RPC_URL"),
+            stacks_rpc_url: get("STACKS_RPC_URL"),
+            secrets: [
+                "FIAT_WEBHOOK_SECRET",
+                "SETTLEMENT_INGRESS_SECRET",
+                "HMAC_SECRET",
+                "OFFLINE_QUEUE_SECRET",
+            ]
+            .iter()
+            .map(|k| (*k, get(k)))
+            .collect(),
+        }
+    }
+
+    /// A value is a placeholder when it is empty, a `sentinel_*` stub, or the
+    /// template's explicit "required" token.
+    fn is_placeholder(value: &str) -> bool {
+        let value = value.trim();
+        value.is_empty()
+            || value.starts_with("sentinel_")
+            || value == "CONXIAN_PROD_AUTH_TOKEN_REQUIRED"
+    }
+
+    /// Blocking problems, named by key only (values are never included, so the
+    /// list is safe to print or emit). `require_image` adds the digest-pinned
+    /// image check that `start` needs but a syntax-only `doctor` need not.
+    pub fn problems(&self, require_image: bool) -> Vec<String> {
+        let mut out = Vec::new();
+        if Self::is_placeholder(&self.api_token) {
+            out.push("API_TOKEN is missing or still the template placeholder".to_string());
+        }
+        if require_image {
+            if self.gateway_image.trim().is_empty() {
+                out.push("GATEWAY_IMAGE is unset (set image@sha256:digest)".to_string());
+            } else if !self.gateway_image.contains("@sha256:") {
+                out.push("GATEWAY_IMAGE is not pinned by digest (a tag is mutable)".to_string());
+            }
+        }
+        for (key, value) in &self.secrets {
+            if Self::is_placeholder(value) {
+                out.push(format!(
+                    "{key} is missing or still the template placeholder"
+                ));
+            }
+        }
+        for (key, value) in [
+            ("BITCOIN_RPC_URL", &self.bitcoin_rpc_url),
+            ("STACKS_RPC_URL", &self.stacks_rpc_url),
+        ] {
+            if url::Url::parse(value).is_err() {
+                out.push(format!("{key} is not a valid URL"));
+            }
+        }
+        out
+    }
+}
+
+/// `start` — actually launch the deployment stack from the generated files,
+/// instead of printing instructions. Fails closed (naming the missing keys,
+/// never their values) when the install is not ready or `docker` is
+/// unavailable. `--dry-run` prints the exact command without executing it.
+async fn run_start(args: &[String], mode: OutputMode) -> Result<()> {
+    let flags = parse_flags(args);
+    let dry_run = flags.contains_key("dry-run");
+    let foreground = flags.contains_key("foreground");
+    let env_path = flags
+        .get("env-file")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(".env.production"));
+    let compose_path = flags
+        .get("file")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("docker-compose.yml"));
+
+    anyhow::ensure!(
+        env_path.exists(),
+        "No {} found; run `conxian-cli init` and fill it in first",
+        env_path.display()
+    );
+    anyhow::ensure!(
+        compose_path.exists(),
+        "No {} found; run `conxian-cli init` first",
+        compose_path.display()
+    );
+
+    let env = InstallerEnv::from_map(&load_dotenv(&env_path)?);
+    let problems = env.problems(true);
+    anyhow::ensure!(
+        problems.is_empty(),
+        "Refusing to start; resolve these install problems first:\n  - {}",
+        problems.join("\n  - ")
+    );
+
+    let mut command: Vec<String> = vec![
+        "docker".into(),
+        "compose".into(),
+        "--env-file".into(),
+        env_path.display().to_string(),
+        "-f".into(),
+        compose_path.display().to_string(),
+        "up".into(),
+    ];
+    if !foreground {
+        command.push("-d".into());
+    }
+    let rendered = command.join(" ");
+
+    if dry_run {
+        if mode == OutputMode::Json {
+            emit_data(
+                mode,
+                &serde_json::json!({
+                    "command": "start",
+                    "dry_run": true,
+                    "launched": false,
+                    "foreground": foreground,
+                    "exec": rendered,
+                    "env_file": env_path.display().to_string(),
+                    "compose_file": compose_path.display().to_string(),
+                }),
+            );
+        } else {
+            println!("Start plan (dry run; nothing launched):");
+            println!("  env file:     {}", env_path.display());
+            println!("  compose file: {}", compose_path.display());
+            println!("  would run:    {rendered}");
+        }
+        return Ok(());
+    }
+
+    let status = tokio::task::spawn_blocking(move || {
+        std::process::Command::new(&command[0])
+            .args(&command[1..])
+            .status()
+    })
+    .await
+    .context("Task join error while launching the stack")?;
+
+    let status = status.map_err(|e| {
+        anyhow::anyhow!("Failed to run docker: {e} (is Docker installed and the daemon running?)")
+    })?;
+    anyhow::ensure!(status.success(), "docker compose exited with {status}");
+
+    if mode == OutputMode::Json {
+        emit_data(
+            mode,
+            &serde_json::json!({
+                "command": "start",
+                "launched": true,
+                "foreground": foreground,
+                "exec": rendered,
+            }),
+        );
+    } else {
+        println!("Stack launched: {rendered}");
+        println!("Check readiness with: conxian-cli status");
+    }
+    Ok(())
+}
+
+/// `logs` — stream the stack's container logs via `docker compose logs`. The
+/// monitor stage had `status` but no way to see output; this runs the real
+/// command rather than describing it. `--follow` tails, `-n <lines>` bounds it.
+async fn run_logs(args: &[String]) -> Result<()> {
+    let flags = parse_flags(args);
+    let follow = flags.contains_key("follow") || flags.contains_key("f");
+    let env_path = flags
+        .get("env-file")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(".env.production"));
+    let compose_path = flags
+        .get("file")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("docker-compose.yml"));
+    anyhow::ensure!(
+        compose_path.exists(),
+        "No {} found; run `conxian-cli init` first",
+        compose_path.display()
+    );
+    let mut command: Vec<String> = vec![
+        "docker".into(),
+        "compose".into(),
+        "--env-file".into(),
+        env_path.display().to_string(),
+        "-f".into(),
+        compose_path.display().to_string(),
+        "logs".into(),
+    ];
+    if follow {
+        command.push("--follow".into());
+    }
+    // Accept both `--tail <n>` and the conventional short `-n <n>`; parse_flags
+    // only understands `--` flags, so `-n` is read directly.
+    let tail = flags.get("tail").cloned().or_else(|| {
+        args.iter()
+            .position(|a| a == "-n")
+            .and_then(|i| args.get(i + 1))
+            .cloned()
+    });
+    if let Some(n) = tail {
+        anyhow::ensure!(
+            !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()),
+            "-n/--tail expects a line count"
+        );
+        command.push("--tail".into());
+        command.push(n);
+    }
+    let status = tokio::task::spawn_blocking(move || {
+        std::process::Command::new(&command[0])
+            .args(&command[1..])
+            .status()
+    })
+    .await
+    .context("Task join error while reading logs")?;
+    let status = status.map_err(|e| {
+        anyhow::anyhow!("Failed to run docker: {e} (is Docker installed and the daemon running?)")
+    })?;
+    anyhow::ensure!(status.success(), "docker compose logs exited with {status}");
+    Ok(())
+}
+
+/// `completion <bash|zsh|fish>` — emit a shell completion script for the known
+/// subcommands. Static output; no dependency and no network.
+fn run_completion(args: &[String]) -> Result<()> {
+    const SUBCOMMANDS: &[&str] = &[
+        "init",
+        "uninstall",
+        "doctor",
+        "start",
+        "status",
+        "logs",
+        "onboard",
+        "deploy",
+        "limits",
+        "usage",
+        "keys",
+        "quote",
+        "subscribe",
+        "verify",
+        "balance",
+        "config",
+        "migrate",
+        "device",
+        "completion",
+        "version",
+        "help",
+    ];
+    let words = SUBCOMMANDS.join(" ");
+    let shell = args.first().map(String::as_str).unwrap_or("");
+    match shell {
+        "bash" => println!(
+            "_conxian_cli() {{\n  local cur=\"${{COMP_WORDS[COMP_CWORD]}}\"\n  COMPREPLY=( $(compgen -W \"{words}\" -- \"$cur\") )\n}}\ncomplete -F _conxian_cli conxian-cli"
+        ),
+        "zsh" => println!(
+            "#compdef conxian-cli\n_conxian_cli() {{\n  local -a cmds\n  cmds=({words})\n  _describe 'subcommand' cmds\n}}\ncompdef _conxian_cli conxian-cli"
+        ),
+        "fish" => {
+            for sub in SUBCOMMANDS {
+                println!("complete -c conxian-cli -n '__fish_use_subcommand' -a '{sub}'");
+            }
+        }
+        other => {
+            anyhow::bail!("completion expects bash, zsh or fish (got '{other}')")
+        }
+    }
+    Ok(())
+}
+
 /// Connectivity probe for an RPC endpoint: a short TCP connect + HTTP POST of a
 /// minimal JSON-RPC `getblockchaininfo`/`getinfo`-style body. Returns Ok(true) on
 /// any HTTP response (reachable), Ok(false) on a transport failure, and never
@@ -537,9 +850,11 @@ fn print_command_help(topic: &str) {
     let text = match topic {
         "init" => "conxian-cli init\n\n  Write hardened .env.production + docker-compose.yml templates.\n  Refuses to overwrite an existing file. No credentials or readiness are\n  established; complete the secret and persistence contract before use.",
         "uninstall" => "conxian-cli uninstall [--force]\n\n  Remove the templates generated by `init`. Removes a file only if it matches\n  the generated template; a user-authored file is left in place. `--force`\n  skips the interactive prompt (required when stdin is not a terminal).\n  The gateway data volume and any database are NOT removed.",
-        "doctor" => "conxian-cli doctor [--probe] [--json]\n\n  Preflight checks: API token configured, trust tier, RPC URL syntax.\n  --probe adds a real reachability check for the Bitcoin and Stacks RPC\n  endpoints (a short TCP+HTTP probe; never reads the response body).",
-        "start" => "conxian-cli start\n\n  Print the startup instructions. It does NOT launch a process.",
-        "status" => "conxian-cli status [--gateway <url>]\n\n  Probe the gateway liveness endpoint (or the site's multi-service /api/status).",
+        "doctor" => "conxian-cli doctor [--probe] [--env-file <path>] [--json]\n\n  Preflight checks against .env.production (or --env-file): required secret keys\n  and placeholder detection, RPC URL syntax. --probe adds a real reachability\n  check for the Bitcoin and Stacks RPC endpoints (a short TCP+HTTP probe; never\n  reads the response body). Secret values are never printed.",
+        "start" => "conxian-cli start [--dry-run] [--foreground] [--env-file <path>] [--file <compose>]\n\n  Launch the deployment stack with `docker compose up` from the generated files.\n  Fails closed (naming missing keys, never their values) if the install is not\n  ready or Docker is unavailable. --dry-run prints the exact command only.",
+        "status" => "conxian-cli status [--gateway <url>] [--json]\n\n  Probe the gateway liveness endpoint (or the site's multi-service /api/status).\n  --json emits one machine-readable object instead of a prose line.",
+        "logs" => "conxian-cli logs [--follow] [-n <lines>] [--env-file <path>] [--file <compose>]\n\n  Stream the stack's container logs via `docker compose logs`. --follow tails.",
+        "completion" => "conxian-cli completion <bash|zsh|fish>\n\n  Print a shell completion script for the subcommands.",
         "onboard" => "conxian-cli onboard [--tier <tier>] [--write-env <path>]\n\n  Provision a tenant (POST /onboard) and verify the minted key. The onboarding\n  token is read from $ONBOARDING_TOKEN only (never a flag).",
         "deploy" => "conxian-cli deploy --tenant <id> [--key-file <path>]\n\n  Deploy a provisioned tenant (POST /tenants/{id}/deploy).",
         "limits" | "usage" => "conxian-cli <limits|usage> --tenant <id> [--key-file <path>]\n\n  Show a tenant's published limits / metered usage. Requires a managed key.",
@@ -565,15 +880,17 @@ fn print_usage() {
     println!("Global flags: --json (machine-readable output), --help, --version\n");
     println!("Deployment:");
     println!("  init      Write .env.production + docker-compose.yml templates");
-    println!("  doctor    Preflight checks (syntax; --probe adds RPC reachability)");
-    println!("  start     Print startup instructions (does not launch a process)");
+    println!("  doctor    Preflight checks against the install (--probe adds RPC reachability)");
+    println!("  start     Launch the stack with docker compose (--dry-run prints the command)");
     println!("  uninstall Remove the generated templates (--force skips the prompt)\n");
     println!("Diagnostics:");
-    println!("  version   Print the CLI version\n");
+    println!("  version   Print the CLI version");
+    println!("  completion Print a shell completion script (bash|zsh|fish)\n");
     println!("Account & provisioning:");
     println!("  onboard   Provision a tenant (POST /onboard) and verify the minted key");
     println!("  deploy    Deploy a provisioned tenant (POST /tenants/{{id}}/deploy)");
-    println!("  status    Probe the gateway, or the site's multi-service /api/status\n");
+    println!("  status    Probe the gateway, or the site's multi-service /api/status");
+    println!("  logs      Stream the stack's container logs (--follow tails)\n");
     println!("Self-management (requires a managed key):");
     println!("  limits    Show a tenant's published limits");
     println!("  usage     Show a tenant's metered usage");
@@ -819,7 +1136,25 @@ async fn main() -> Result<()> {
         "doctor" => {
             let flags = parse_flags(&args[2..]);
             let probe = flags.contains_key("probe");
-            let config = InstallerConfig::default();
+            // Validate the client's actual install when one is present; fall back
+            // to the template defaults only for a bare, pre-`init` environment.
+            // Reading `.env.production` is what makes preflight reflect reality.
+            let env_path = flags
+                .get("env-file")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from(".env.production"));
+            let (config, install_problems, checked_install) = if env_path.exists() {
+                let env = InstallerEnv::from_map(&load_dotenv(&env_path)?);
+                let config = InstallerConfig {
+                    auth_token: env.api_token.clone(),
+                    bitcoin_rpc_url: env.bitcoin_rpc_url.clone(),
+                    stacks_rpc_url: env.stacks_rpc_url.clone(),
+                    ..InstallerConfig::default()
+                };
+                (config, env.problems(false), true)
+            } else {
+                (InstallerConfig::default(), Vec::new(), false)
+            };
             let report = run_doctor_checks(&config);
 
             // Optional connectivity probe: distinguishes a reachable endpoint
@@ -833,13 +1168,16 @@ async fn main() -> Result<()> {
                 (None, None)
             };
 
-            let all_ok =
-                report.secret_valid && doctor_configuration_ok(&report, btc_probe, stacks_probe);
+            let all_ok = report.secret_valid
+                && doctor_configuration_ok(&report, btc_probe, stacks_probe)
+                && install_problems.is_empty();
 
             if mode == OutputMode::Json {
                 let value = serde_json::json!({
                     "command": "doctor",
                     "probed": probe,
+                    "checked_install": checked_install,
+                    "install_problems": install_problems,
                     "secret_validation": "not_disclosed",
                     "tier_valid": report.tier_valid,
                     "bitcoin_rpc_syntax_ok": report.btc_rpc_reachable,
@@ -847,11 +1185,19 @@ async fn main() -> Result<()> {
                     "stacks_rpc_syntax_ok": report.stacks_rpc_reachable,
                     "stacks_rpc_reachable": stacks_probe,
                     "ok": all_ok,
-                    "note": "trust-tier and RPC syntax/optional reachability are reported; secret validation status is not displayed and deployment readiness is not established",
+                    "note": "secret values and validity are not displayed; deployment readiness is not established",
                 });
                 emit_data(mode, &value);
             } else {
                 println!("Running Conxian Preflight Diagnostic Checks...");
+                println!(
+                    "  - Install file: {}",
+                    if checked_install {
+                        format!("{} (validated)", env_path.display())
+                    } else {
+                        format!("{} (absent; template defaults only)", env_path.display())
+                    }
+                );
                 println!("  - Secret validation: not displayed (secret values and validity are never logged)");
                 println!(
                     "  - Trust Tier Verification (T1/T2): {}",
@@ -875,6 +1221,9 @@ async fn main() -> Result<()> {
                     },
                     describe_rpc(report.stacks_rpc_reachable, stacks_probe)
                 );
+                for problem in &install_problems {
+                    println!("  - INSTALL: {problem}");
+                }
                 if all_ok {
                     println!(
                         "\nConfiguration checks passed; deployment readiness is not established."
@@ -889,17 +1238,34 @@ async fn main() -> Result<()> {
             }
         }
         "start" => {
-            println!("Starting Conxian Sovereign Gateway Deployment Stack...");
-            println!("Startup instructions only; no process has been launched.");
-            println!("Complete .env.production, then run: docker compose --env-file .env.production up -d");
-            println!("For binary deployment, run: cargo run --bin gateway");
+            run_start(&args[2..], mode).await?;
         }
         "status" => {
-            println!("Probing Conxian Gateway Health...");
-            let gateway_url =
-                env::var("GATEWAY_URL").unwrap_or_else(|_| "http://127.0.0.1:8080".to_string());
+            let flags = parse_flags(&args[2..]);
+            let gateway_url = resolve_gateway(&flags);
+            if mode == OutputMode::Human {
+                println!("Probing Conxian Gateway Health...");
+            }
             let message = probe_gateway_status(&gateway_url).await?;
-            println!("  [STATUS] {}", message);
+            if mode == OutputMode::Json {
+                emit_data(
+                    mode,
+                    &serde_json::json!({
+                        "command": "status",
+                        "ok": true,
+                        "gateway": gateway_url,
+                        "detail": message,
+                    }),
+                );
+            } else {
+                println!("  [STATUS] {}", message);
+            }
+        }
+        "completion" => {
+            run_completion(&args[2..])?;
+        }
+        "logs" => {
+            run_logs(&args[2..]).await?;
         }
         "onboard" => {
             run_onboard(&args[2..]).await?;

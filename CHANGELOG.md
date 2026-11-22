@@ -10,11 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Align CLI-generated templates with startup secret, API-port and persistent-state contracts; require explicit image selection, keep credentials out of Compose, bind locally by default and preserve existing files/symlinks with private Unix permissions (#466, Business #1411).
 
 ### Fixed
+- `conxian-cli doctor` now validates the client's actual `.env.production` (or `--env-file`) instead of the compile-time template, so a completed install can pass its own preflight; problems are reported by key only, never by value (Business #1411).
 - Bind startup-secret documentation to the runtime/preflight contract, add an environment-independent contract description, and distinguish CLI configuration/liveness checks from connectivity and deployment readiness (#466; Business #1411/#1423).
 - Align installer/runtime startup authentication on `API_TOKEN`, retain absence-only legacy token compatibility, and keep preflight/deployment declarations consistent without replacing current runtime behavior (#544).
 
 ### Added
 
+- `conxian-cli start` launches the stack with `docker compose up` (fails closed, naming missing keys, when the install is not ready or Docker is unavailable) instead of printing instructions; `--dry-run` prints the exact command, `--foreground` runs attached (Business #1411).
+- `conxian-cli status --json` emits one machine-readable object; `conxian-cli logs [--follow] [-n <lines>]` streams container logs; `conxian-cli completion bash|zsh|fish` emits a shell completion script (Business #1411).
 - Create the Stitch Express hosted checkout server-side (token exchange + payment
   link, integer ZAR minor units, sanitised merchant reference) instead of a static
   redirect URL; require `STITCH_CLIENT_ID`/`STITCH_CLIENT_SECRET` when `STITCH_MODE`
