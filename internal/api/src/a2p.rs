@@ -159,11 +159,7 @@ impl A2pRouter {
         let expected_hmac =
             self.generate_hmac(&request.phone_number, &request.otp_code, request.timestamp)?;
 
-        if request.hmac != expected_hmac {
-            return Ok(false);
-        }
-
-        Ok(true)
+        Ok(request.hmac == expected_hmac)
     }
 
     fn generate_hmac(&self, phone: &str, code: &str, timestamp: u64) -> ConxianResult<String> {
