@@ -965,13 +965,8 @@ impl conxian_core::Bip322Verifier for ZkcVerifier {
         }
 
         let to_spend_txid = to_spend.compute_txid();
-        if to_sign.input[0].previous_output.txid != to_spend_txid
-            || to_sign.input[0].previous_output.vout != 0
-        {
-            return Ok(false);
-        }
-
-        Ok(true)
+        Ok(to_sign.input[0].previous_output.txid == to_spend_txid
+            && to_sign.input[0].previous_output.vout == 0)
     }
 }
 
