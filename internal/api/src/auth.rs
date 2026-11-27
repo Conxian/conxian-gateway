@@ -178,6 +178,31 @@ fn is_chain_route(path: &str, action: &str) -> bool {
     }
 }
 
+/// Matches `/payments/intents/{id}` — one intent, no trailing action.
+fn is_payment_intent_id(path: &str) -> bool {
+    let mut segments = path.strip_prefix('/').unwrap_or(path).split('/');
+    matches!(
+        (segments.next(), segments.next(), segments.next(), segments.next()),
+        (Some("payments"), Some("intents"), Some(id), None) if !id.is_empty()
+    )
+}
+
+/// Matches `/payments/intents/{id}/{action}` for the four lifecycle actions.
+fn is_payment_intent_action(path: &str, action: &str) -> bool {
+    let mut segments = path.strip_prefix('/').unwrap_or(path).split('/');
+    matches!(
+        (
+            segments.next(),
+            segments.next(),
+            segments.next(),
+            segments.next(),
+            segments.next(),
+        ),
+        (Some("payments"), Some("intents"), Some(id), Some(act), None)
+            if !id.is_empty() && act == action
+    )
+}
+
 /// Required M2M scope for every route protected by the private, admin, and ALEX
 /// bearer-auth middleware. Keep this matrix in sync with routes.rs. Returning
 /// None is an intentional deny-by-default for any new or unrecognised route.
@@ -202,6 +227,12 @@ fn required_scope_for_request(method: &Method, raw_path: &str) -> Option<&'stati
         ("POST", "/musig2/aggregate-keys") => Some("admin:secrets"),
         ("POST", "/a2p/otp" | "/a2p/verify") => Some("write:admin"),
 
+        // Payment control (P16) and reference-matched collections (P17).
+        ("GET", "/payments/journal" | "/collections/statement") => Some("read:settlement"),
+        ("POST", "/payments/intents" | "/collections/references" | "/collections/inbound") => {
+            Some("write:settlement")
+        }
+
         (
             "POST",
             "/verify" | "/identity/resolve" | "/identity/resolve/machine" | "/verify/worldcoin",
@@ -213,12 +244,15 @@ fn required_scope_for_request(method: &Method, raw_path: &str) -> Option<&'stati
         _ => None,
     }
     .or_else(|| {
-        if (method == Method::GET && is_chain_route(path, "height"))
+        if (method == Method::GET && (is_chain_route(path, "height") || is_payment_intent_id(path)))
             || (method == Method::POST && is_chain_route(path, "verify"))
         {
             Some("read:settlement")
         } else if method == Method::POST
-            && (is_chain_route(path, "prepare")
+            && (["submit", "approve", "reject", "release"]
+                .iter()
+                .any(|action| is_payment_intent_action(path, action))
+                || is_chain_route(path, "prepare")
                 || matches!(
                     path,
                     "/fiat/session"
@@ -353,6 +387,16 @@ mod tests {
             ("GET", "/api/v1/alex/quote"),
             ("POST", "/api/v1/alex/prepare"),
             ("POST", "/api/v1/alex/swap"),
+            ("GET", "/api/v1/payments/journal"),
+            ("GET", "/api/v1/payments/intents/pi_1"),
+            ("POST", "/api/v1/payments/intents"),
+            ("POST", "/api/v1/payments/intents/pi_1/submit"),
+            ("POST", "/api/v1/payments/intents/pi_1/approve"),
+            ("POST", "/api/v1/payments/intents/pi_1/reject"),
+            ("POST", "/api/v1/payments/intents/pi_1/release"),
+            ("POST", "/api/v1/collections/references"),
+            ("POST", "/api/v1/collections/inbound"),
+            ("GET", "/api/v1/collections/statement"),
             ("POST", "/admin/v1/releases/request-approval"),
             ("POST", "/admin/v1/releases/decision"),
             ("POST", "/admin/v1/governance/decision"),
