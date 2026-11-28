@@ -86,6 +86,7 @@ crash recovery, backup, mempool reconciliation, and shutdown procedures in
 - **Institutional Egress**: ISO 20022 (pacs.008) banking-standard messaging.
 - **Mempool Orchestration**: Automated RBF/CPFP fee-bumping for high-priority settlements.
 - **Identity Bridge**: Unified resolution for BNS, ENS, and World ID.
+- **Payment Control (P16/P17)**: Payment-level maker-checker and reference-matched collections, off by default. See [`docs/PAYMENT_CONTROL.md`](docs/PAYMENT_CONTROL.md).
 
 ## Sovereign Multi-Rail Installer (`conxian-cli`)
 

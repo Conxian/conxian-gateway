@@ -317,6 +317,71 @@ pub fn configure_routes(
         }))
         .with_state(state.clone());
 
+    // Payment control (P16 maker-checker) and reference-matched collections
+    // (P17). Off by default: the routes are mounted only when
+    // `PAYMENT_CONTROL_ENABLED` is set, so an unconfigured deployment exposes
+    // nothing. The bearer layer is applied here for the same reason as ALEX —
+    // these routes carry their own state and are merged after auth.
+    let payment_routes = match crate::payment_control::from_env() {
+        Some(control) => {
+            let token_for_payments = api_token.clone();
+            let policy_for_payments = m2m_policy.clone();
+            Router::new()
+                .route(
+                    "/payments/intents",
+                    post(crate::payment_control::create_intent),
+                )
+                .route(
+                    "/payments/intents/{id}",
+                    get(crate::payment_control::get_intent),
+                )
+                .route(
+                    "/payments/intents/{id}/submit",
+                    post(crate::payment_control::submit_intent),
+                )
+                .route(
+                    "/payments/intents/{id}/approve",
+                    post(crate::payment_control::approve_intent),
+                )
+                .route(
+                    "/payments/intents/{id}/reject",
+                    post(crate::payment_control::reject_intent),
+                )
+                .route(
+                    "/payments/intents/{id}/release",
+                    post(crate::payment_control::release_intent),
+                )
+                .route(
+                    "/collections/references",
+                    post(crate::payment_control::issue_reference),
+                )
+                .route(
+                    "/collections/inbound",
+                    post(crate::payment_control::record_inbound),
+                )
+                .route(
+                    "/collections/statement",
+                    get(crate::payment_control::get_statement),
+                )
+                .route(
+                    "/payments/journal",
+                    get(crate::payment_control::get_journal),
+                )
+                .layer(axum::Extension(control))
+                .layer(middleware::from_fn(move |req, next| {
+                    auth_middleware(
+                        req,
+                        next,
+                        token_for_payments.clone(),
+                        policy_for_payments.clone(),
+                        server_start,
+                        token_ttl_seconds,
+                    )
+                }))
+        }
+        None => Router::new(),
+    };
+
     // Managed SaaS Gateway subscriber surface (`/api/v1/agent/*`), bound to
     // https://api.conxian-labs.com/v1/agent in production. Multi-tenant keys or
     // Fusion JWTs are accepted; legacy institutional bearer tokens remain valid.
@@ -487,7 +552,8 @@ pub fn configure_routes(
                 .merge(webhook_routes)
                 .merge(onboarding_routes)
                 .merge(device_routes)
-                .merge(contribution_routes),
+                .merge(contribution_routes)
+                .merge(payment_routes),
         )
         .nest("/admin/v1", admin_routes)
         .with_state(state.clone())

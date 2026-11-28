@@ -70,6 +70,12 @@ attached to request extensions for downstream handlers.
 - **Every new route added to a bearer-auth router must have an explicit scope
   mapping and a route-coverage test.**
 
+Payment control (P16/P17) follows the same rule: `/payments/*` and
+`/collections/*` mutations require `write:settlement`, reads require
+`read:settlement`, and the parameterised intent routes are matched by
+`is_payment_intent_id` / `is_payment_intent_action`. See
+[`PAYMENT_CONTROL.md`](PAYMENT_CONTROL.md).
+
 This closes the authorization defect tracked in
 [#896](https://github.com/Conxian/conxian-gateway/issues/896) (a verified token
 could otherwise reach any protected route).

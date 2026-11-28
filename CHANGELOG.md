@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add payment control (P16) — a payment-level maker-checker with separation of duties, a configurable approval quorum and an ordered audit trail — and reference-matched collections (P17) — deterministic per-payer references, idempotent inbound matching and a per-tenant statement. Mounted only when `PAYMENT_CONTROL_ENABLED` is set; the store is process-local and in memory (Gateway #1003).
 - `conxian-cli start` launches the stack with `docker compose up` (fails closed, naming missing keys, when the install is not ready or Docker is unavailable) instead of printing instructions; `--dry-run` prints the exact command, `--foreground` runs attached (Business #1411).
 - `conxian-cli status --json` emits one machine-readable object; `conxian-cli logs [--follow] [-n <lines>]` streams container logs; `conxian-cli completion bash|zsh|fish` emits a shell completion script (Business #1411).
 - Create the Stitch Express hosted checkout server-side (token exchange + payment
