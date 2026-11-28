@@ -1581,6 +1581,150 @@ async fn test_ingress_iso20022_authorized() {
 }
 
 #[tokio::test]
+async fn test_ingress_fdc3_payment_translates_to_pacs008() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let payment = json!({
+        "type": "fdc3.payment",
+        "id": { "UETR": "123e4567-e89b-12d3-a456-426614174000" },
+        "name": "ISO 20022 pacs.008 Settlement",
+        "amount": 125.55,
+        "currency": "ZAR",
+        "debtor": {
+            "name": "Originating Bank",
+            "account": "ZA12345678901234567890"
+        },
+        "creditor": {
+            "name": "Receiving Bank",
+            "account": "ZA09876543210987654321"
+        },
+        "networkRouting": { "settlementDate": "2026-10-13" }
+    });
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/ingress/fdc3/payment")
+                .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("Content-Type", "application/json")
+                .body(Body::from(payment.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(result["type"], "fdc3.transactionResult");
+    assert_eq!(result["status"], "Created");
+    assert_eq!(
+        result["context"]["payload"]["transaction_id"],
+        "123e4567-e89b-12d3-a456-426614174000"
+    );
+    assert_eq!(result["context"]["payload"]["amount_minor"], 12_555);
+    assert_eq!(result["context"]["payload"]["currency"], "ZAR");
+    assert_eq!(result["context"]["payload"]["finality"], "UNKNOWN");
+    assert!(result["message"]
+        .as_str()
+        .unwrap()
+        .contains("no settlement was executed"));
+}
+
+#[tokio::test]
+async fn test_ingress_fdc3_payment_fails_closed_without_creditor_account() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let payment = json!({
+        "type": "fdc3.payment",
+        "id": { "UETR": "123e4567-e89b-12d3-a456-426614174001" },
+        "amount": 10.0,
+        "currency": "ZAR",
+        "debtor": { "account": "ZA12345678901234567890" },
+        "creditor": { "name": "No Account" }
+    });
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/ingress/fdc3/payment")
+                .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("Content-Type", "application/json")
+                .body(Body::from(payment.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(result["type"], "fdc3.transactionResult");
+    assert_eq!(result["status"], "Failed");
+    assert!(result["message"].as_str().unwrap().contains("account"));
+}
+
+#[tokio::test]
+async fn test_ingress_fdc3_payment_requires_explicit_context_type() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let payment = json!({
+        "id": { "UETR": "123e4567-e89b-12d3-a456-426614174002" },
+        "amount": 10.0,
+        "currency": "ZAR",
+        "debtor": { "account": "ZA12345678901234567890" },
+        "creditor": { "account": "ZA09876543210987654321" }
+    });
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/ingress/fdc3/payment")
+                .method("POST")
+                .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+                .header("Content-Type", "application/json")
+                .body(Body::from(payment.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(result["status"], "Failed");
+    assert!(result["message"]
+        .as_str()
+        .unwrap()
+        .contains("type must be fdc3.payment"));
+}
+
+#[tokio::test]
+async fn test_ingress_fdc3_payment_requires_auth() {
+    let state = Arc::new(RwLock::new(GatewayState::default()));
+    let app = setup_app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/fdc3/payment")
+                .method("POST")
+                .header("Content-Type", "application/json")
+                .body(Body::from("{}"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
 async fn test_ingress_iso20022_missing_trust_metadata_blocked() {
     let state = Arc::new(RwLock::new(GatewayState::default()));
     let app = setup_app(state);

@@ -230,6 +230,11 @@ pub fn configure_routes(
         .route("/settlement/mbridge", post(handlers::ingress_mbridge))
         .route("/ingress/iso20022", post(handlers::ingress_iso20022))
         .route("/ingress/pain001", post(handlers::ingress_iso20022))
+        .route(
+            "/ingress/fdc3/payment",
+            post(handlers::ingress_fdc3_payment),
+        )
+        .route("/fdc3/payment", post(handlers::ingress_fdc3_payment))
         .route("/ingress/papss", post(handlers::ingress_papss))
         .route("/ingress/brics", post(handlers::ingress_brics))
         .route("/ingress/cips", post(handlers::ingress_cips))
