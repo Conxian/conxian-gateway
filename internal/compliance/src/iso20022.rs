@@ -37,11 +37,16 @@ pub struct Iso20022RoutingEvent {
     pub message_id: String,
     pub instruction_id: Option<String>,
     pub end_to_end_id: Option<String>,
+    pub uetr: Option<String>,
     pub amount_minor: u64,
     pub amount_scale: u32,
     pub currency: String,
     pub debtor: String,
     pub creditor: String,
+    pub debtor_account: Option<String>,
+    pub creditor_account: Option<String>,
+    pub debtor_agent: Option<String>,
+    pub creditor_agent: Option<String>,
     pub settlement_date: Option<String>,
     pub payload_sha256: String,
 }
@@ -53,10 +58,20 @@ struct JsonProfile {
     message_id: String,
     instruction_id: Option<String>,
     end_to_end_id: Option<String>,
+    #[serde(default)]
+    uetr: Option<String>,
     amount: String,
     currency: String,
     debtor: String,
     creditor: String,
+    #[serde(default)]
+    debtor_account: Option<String>,
+    #[serde(default)]
+    creditor_account: Option<String>,
+    #[serde(default)]
+    debtor_agent: Option<String>,
+    #[serde(default)]
+    creditor_agent: Option<String>,
     settlement_date: Option<String>,
 }
 
@@ -66,10 +81,15 @@ struct XmlProfile {
     message_id: Option<String>,
     instruction_id: Option<String>,
     end_to_end_id: Option<String>,
+    uetr: Option<String>,
     amount: Option<String>,
     currency: Option<String>,
     debtor: Option<String>,
     creditor: Option<String>,
+    debtor_account: Option<String>,
+    creditor_account: Option<String>,
+    debtor_agent: Option<String>,
+    creditor_agent: Option<String>,
     settlement_date: Option<String>,
 }
 
@@ -110,10 +130,15 @@ fn translate_json(payload: &[u8], digest: String) -> ConxianResult<Iso20022Routi
         profile.message_id,
         profile.instruction_id,
         profile.end_to_end_id,
+        profile.uetr,
         profile.amount,
         profile.currency,
         profile.debtor,
         profile.creditor,
+        profile.debtor_account,
+        profile.creditor_account,
+        profile.debtor_agent,
+        profile.creditor_agent,
         profile.settlement_date,
         digest,
     )
@@ -218,10 +243,15 @@ fn translate_xml(payload: &[u8], digest: String) -> ConxianResult<Iso20022Routin
         required(profile.message_id, "MsgId")?,
         profile.instruction_id,
         profile.end_to_end_id,
+        profile.uetr,
         required(profile.amount, "settlement amount")?,
         required(profile.currency, "settlement currency")?,
         required(profile.debtor, "debtor")?,
         required(profile.creditor, "creditor")?,
+        profile.debtor_account,
+        profile.creditor_account,
+        profile.debtor_agent,
+        profile.creditor_agent,
         profile.settlement_date,
         digest,
     )
@@ -241,6 +271,9 @@ fn capture_xml_value(
         "MsgId"
             | "InstrId"
             | "EndToEndId"
+            | "UETR"
+            | "IBAN"
+            | "BICFI"
             | "IntrBkSttlmAmt"
             | "InstdAmt"
             | "IntrBkSttlmDt"
@@ -259,6 +292,25 @@ fn capture_xml_value(
         "MsgId" if profile.message_id.is_none() => profile.message_id = Some(value),
         "InstrId" if profile.instruction_id.is_none() => profile.instruction_id = Some(value),
         "EndToEndId" if profile.end_to_end_id.is_none() => profile.end_to_end_id = Some(value),
+        "UETR" if profile.uetr.is_none() => profile.uetr = Some(value),
+        "IBAN"
+            if profile.debtor_account.is_none() && path.iter().any(|part| part == "DbtrAcct") =>
+        {
+            profile.debtor_account = Some(value)
+        }
+        "IBAN"
+            if profile.creditor_account.is_none() && path.iter().any(|part| part == "CdtrAcct") =>
+        {
+            profile.creditor_account = Some(value)
+        }
+        "BICFI" if profile.debtor_agent.is_none() && path.iter().any(|part| part == "DbtrAgt") => {
+            profile.debtor_agent = Some(value)
+        }
+        "BICFI"
+            if profile.creditor_agent.is_none() && path.iter().any(|part| part == "CdtrAgt") =>
+        {
+            profile.creditor_agent = Some(value)
+        }
         "IntrBkSttlmAmt" | "InstdAmt" if profile.amount.is_none() => {
             profile.amount = Some(value);
             profile.currency = amount_currency;
@@ -294,10 +346,15 @@ fn build_event(
     message_id: String,
     instruction_id: Option<String>,
     end_to_end_id: Option<String>,
+    uetr: Option<String>,
     amount: String,
     currency: String,
     debtor: String,
     creditor: String,
+    debtor_account: Option<String>,
+    creditor_account: Option<String>,
+    debtor_agent: Option<String>,
+    creditor_agent: Option<String>,
     settlement_date: Option<String>,
     payload_sha256: String,
 ) -> ConxianResult<Iso20022RoutingEvent> {
@@ -308,6 +365,7 @@ fn build_event(
     let end_to_end_id = end_to_end_id
         .map(|value| field(&value, "EndToEndId"))
         .transpose()?;
+    let uetr = uetr.map(|value| field(&value, "UETR")).transpose()?;
     let debtor = field(&debtor, "debtor")?;
     let creditor = field(&creditor, "creditor")?;
     let settlement_date = settlement_date
@@ -318,6 +376,18 @@ fn build_event(
     if currency.len() != 3 || !currency.bytes().all(|byte| byte.is_ascii_uppercase()) {
         return Err(compliance("currency must be a three-letter uppercase code"));
     }
+    let debtor_account = debtor_account
+        .map(|value| field(&value, "debtor account"))
+        .transpose()?;
+    let creditor_account = creditor_account
+        .map(|value| field(&value, "creditor account"))
+        .transpose()?;
+    let debtor_agent = debtor_agent
+        .map(|value| field(&value, "debtor agent"))
+        .transpose()?;
+    let creditor_agent = creditor_agent
+        .map(|value| field(&value, "creditor agent"))
+        .transpose()?;
     if message_id == "NOTPROVIDED" {
         return Err(compliance("MsgId must identify the source message"));
     }
@@ -328,11 +398,16 @@ fn build_event(
         message_id,
         instruction_id,
         end_to_end_id,
+        uetr,
         amount_minor,
         amount_scale,
         currency,
         debtor,
         creditor,
+        debtor_account,
+        creditor_account,
+        debtor_agent,
+        creditor_agent,
         settlement_date,
         payload_sha256,
     })
