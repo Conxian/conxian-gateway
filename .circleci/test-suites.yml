@@ -1,0 +1,8 @@
+---
+name: js
+# vitest picks up the Playwright spec in apps/control-plane with its default
+# include pattern and crashes importing it; that suite belongs to Playwright.
+discover: pnpm exec vitest list --filesOnly | grep -v "^apps/control-plane/"
+run: pnpm exec vitest run --reporter=junit --outputFile="<< outputs.junit >>" --bail 0 << test.atoms >>
+options:
+  store-test-results: true

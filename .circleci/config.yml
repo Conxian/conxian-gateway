@@ -21,6 +21,24 @@ jobs:
           paths:
             - ~/.cargo/registry
             - target
+  js-tests:
+    docker:
+      - image: cimg/node:26.13.1
+    parallelism: 2
+    resource_class: medium
+    steps:
+      - checkout
+      - run:
+          name: install
+          command: sudo npm install -g pnpm@11.28.9 && pnpm install --frozen-lockfile --ignore-scripts
+      - run:
+          name: install the Smarter Testing CLI
+          command: |
+            curl -fLSs https://circle.ci/cli | sudo bash
+            circleci extension install testsuite
+      - run:
+          name: client-sdk tests (split by timing across nodes)
+          command: circleci testsuite run "js"
 workflows:
   ci:
-    jobs: [test]
+    jobs: [test, js-tests]
