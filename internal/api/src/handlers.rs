@@ -507,6 +507,120 @@ pub async fn ingress_iso20022(
     }
 }
 
+/// Translates a standard FDC3 `fdc3.payment` context into the Gateway's
+/// bounded ISO 20022 `pacs.008` routing profile.
+///
+/// This is deliberately not a settlement endpoint: it does not create a
+/// settlement proposal, move value, or assert finality. It exists so a
+/// Desktop Agent can complete the intent handshake and receive a typed
+/// `fdc3.transactionResult` while the signed, attested settlement path stays
+/// separate.
+pub async fn ingress_fdc3_payment(
+    State(state): State<AppState>,
+    body: Body,
+) -> Result<Json<conxian_compliance::fdc3::Fdc3TransactionResult>, (StatusCode, Json<Value>)> {
+    let raw_payload = body
+        .collect()
+        .await
+        .map_err(|e| {
+            fdc3_failed(
+                StatusCode::BAD_REQUEST,
+                format!("Body collection failed: {e}"),
+            )
+        })?
+        .to_bytes();
+
+    let payload: Value = serde_json::from_slice(&raw_payload).map_err(|e| {
+        fdc3_failed(
+            StatusCode::BAD_REQUEST,
+            format!("Invalid fdc3.payment JSON: {e}"),
+        )
+    })?;
+    let context_type = payload
+        .get("type")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if context_type != conxian_compliance::fdc3::FDC3_PAYMENT_CONTEXT_TYPE {
+        return Err(fdc3_failed(
+            StatusCode::BAD_REQUEST,
+            format!(
+                "type must be {}",
+                conxian_compliance::fdc3::FDC3_PAYMENT_CONTEXT_TYPE
+            ),
+        ));
+    }
+
+    let payment: conxian_compliance::fdc3::Fdc3Payment =
+        serde_json::from_value(payload).map_err(|e| {
+            fdc3_failed(
+                StatusCode::BAD_REQUEST,
+                format!("Invalid fdc3.payment JSON: {e}"),
+            )
+        })?;
+
+    payment
+        .validate()
+        .map_err(|e| fdc3_failed(StatusCode::BAD_REQUEST, e.to_string()))?;
+
+    let iso_profile = payment
+        .to_iso20022_json()
+        .map_err(|e| fdc3_failed(StatusCode::BAD_REQUEST, e.to_string()))?;
+    let payload_hash = sha256_hex(iso_profile.as_bytes());
+    let envelope = state
+        .compliance
+        .normalize_iso20022_ingress(&iso_profile, payload_hash)
+        .map_err(|e| fdc3_failed(StatusCode::BAD_REQUEST, e.to_string()))?;
+
+    let mut context = serde_json::to_value(&envelope)
+        .map_err(|e| fdc3_failed(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    if let Some(object) = context.as_object_mut() {
+        object.insert("type".to_string(), json!("conxian.iso20022.routing"));
+    }
+
+    let result = conxian_compliance::fdc3::Fdc3TransactionResult {
+        context_type: conxian_compliance::fdc3::FDC3_TRANSACTION_RESULT_CONTEXT_TYPE.to_string(),
+        status: conxian_compliance::fdc3::Fdc3TransactionStatus::Created,
+        context: Some(context),
+        message: Some(
+            "Translated fdc3.payment to ISO 20022 pacs.008 routing envelope; no settlement was executed."
+                .to_string(),
+        ),
+    };
+    result
+        .validate()
+        .map_err(|e| fdc3_failed(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let transaction_id = result
+        .context
+        .as_ref()
+        .and_then(|value| value.pointer("/payload/transaction_id"))
+        .and_then(|value| value.as_str())
+        .unwrap_or("unknown");
+    info!(
+        transaction_id = %transaction_id,
+        "Accepted FDC3 payment for ISO 20022 translation"
+    );
+    Ok(Json(result))
+}
+
+fn fdc3_failed(status: StatusCode, message: impl Into<String>) -> (StatusCode, Json<Value>) {
+    let result = conxian_compliance::fdc3::Fdc3TransactionResult {
+        context_type: conxian_compliance::fdc3::FDC3_TRANSACTION_RESULT_CONTEXT_TYPE.to_string(),
+        status: conxian_compliance::fdc3::Fdc3TransactionStatus::Failed,
+        context: None,
+        message: Some(message.into()),
+    };
+    (
+        status,
+        Json(serde_json::to_value(result).unwrap_or_else(|_| {
+            json!({
+                "type": conxian_compliance::fdc3::FDC3_TRANSACTION_RESULT_CONTEXT_TYPE,
+                "status": "Failed"
+            })
+        })),
+    )
+}
+
 pub async fn ingress_papss(
     headers: HeaderMap,
     State(state): State<AppState>,

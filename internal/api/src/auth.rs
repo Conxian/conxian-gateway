@@ -272,6 +272,8 @@ fn required_scope_for_request(method: &Method, raw_path: &str) -> Option<&'stati
                         | "/settlement/mbridge"
                         | "/ingress/iso20022"
                         | "/ingress/pain001"
+                        | "/ingress/fdc3/payment"
+                        | "/fdc3/payment"
                         | "/ingress/papss"
                         | "/ingress/brics"
                         | "/ingress/cips"
@@ -351,6 +353,8 @@ mod tests {
             ("POST", "/api/v1/settlement/mbridge"),
             ("POST", "/api/v1/ingress/iso20022"),
             ("POST", "/api/v1/ingress/pain001"),
+            ("POST", "/api/v1/ingress/fdc3/payment"),
+            ("POST", "/api/v1/fdc3/payment"),
             ("POST", "/api/v1/ingress/papss"),
             ("POST", "/api/v1/ingress/brics"),
             ("POST", "/api/v1/ingress/cips"),
